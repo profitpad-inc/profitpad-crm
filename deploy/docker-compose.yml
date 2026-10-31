@@ -1,0 +1,24 @@
+# The CRM API container. nginx on the host terminates TLS for
+# api.test-crm.profitpad.com and forwards to 127.0.0.1:3100.
+# Run from this folder: docker compose up -d --build
+services:
+  api:
+    build: ../api
+    image: profitpad-crm-api
+    container_name: test-crm-api
+    restart: unless-stopped
+    # PGUSER, PGPASSWORD, PGDATABASE, CORS_ORIGINS, DOCS_PUBLIC, TRUST_PROXY
+    env_file: .env
+    environment:
+      PGHOST: postgres          # the postgres container, reached over n8n_net
+      PGPORT: "5432"
+      HOST: 0.0.0.0
+      PORT: "3100"
+    ports:
+      - "127.0.0.1:3100:3100"
+    networks:
+      - n8n_net
+
+networks:
+  n8n_net:
+    external: true

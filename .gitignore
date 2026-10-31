@@ -1,0 +1,11 @@
+node_modules/
+api/.env
+backups/
+dist/
+.DS_Store
+deploy/.env
+# local scratch: test scripts hold a live API key
+scripts/test.py
+scripts/test copy.py
+output.json
+.claude/settings.local.json

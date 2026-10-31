@@ -1,0 +1,265 @@
+import type { FastifyInstance } from 'fastify';
+import { pool, withTx } from '../db.js';
+import { badRequest, notFound } from '../errors.js';
+import { requireScope } from '../auth.js';
+import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
+
+// Schema changes always go through the meta.* functions, which enforce the
+// naming, typing and dependency rules and log to meta.schema_changes.
+
+function objectOut(o: ObjectDef) {
+  return {
+    object_type_id: o.object_type_id,
+    api_name: o.api_name,
+    label_singular: o.label_singular,
+    label_plural: o.label_plural,
+    kind: o.kind,
+    description: o.description,
+    search_properties: o.search_properties,
+    id_property: o.id_column
+  };
+}
+
+export function propertyOut(p: PropertyDef) {
+  return {
+    id: p.pc_0002_id,
+    api_name: p.api_name,
+    label: p.label,
+    description: p.description,
+    type: p.type,
+    options: p.options,
+    dropdown_options: p.type === 'dropdown' ? p.dropdown_options : undefined,
+    calc_sql: p.calc_sql ?? undefined,
+    calc_output_type: p.calc_output_type ?? undefined,
+    calc_last_error: p.calc_last_error ?? undefined,
+    is_base: p.is_base,
+    is_native: p.is_native,
+    read_only: p.read_only || p.type === 'calculation',
+    row_status: p.row_status
+  };
+}
+
+async function findProperty(objectKey: string, name: string): Promise<[ObjectDef, PropertyDef]> {
+  const obj = await getObject(objectKey);
+  const prop = getProperty(obj, name);
+  if (!prop) throw notFound(`unknown property "${name}" on ${obj.api_name}`);
+  return [obj, prop];
+}
+
+export async function schemaRoutes(app: FastifyInstance) {
+  app.get('/v1/schema', async (req) => {
+    requireScope(req.principal!, 'read');
+    const reg = await getRegistry();
+    return { results: reg.objects.filter((o) => o.row_status === 'active').map(objectOut) };
+  });
+
+  app.get<{ Params: { object: string } }>('/v1/schema/:object', async (req) => {
+    requireScope(req.principal!, 'read');
+    const obj = await getObject(req.params.object);
+    return { ...objectOut(obj), properties: obj.properties.filter((p) => p.row_status === 'active').map(propertyOut) };
+  });
+
+  app.post<{ Body: { api_name: string; label_singular: string; label_plural: string; description?: string } }>('/v1/schema', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const b = req.body ?? ({} as never);
+    const code = await withTx({ actor: p.actor }, async (c) => {
+      const { rows } = await c.query('select meta.create_object($1, $2, $3, $4) as code', [b.api_name, b.label_singular, b.label_plural, b.description ?? null]);
+      return rows[0].code as string;
+    });
+    reply.code(201);
+    return objectOut(await getObject(code));
+  });
+
+  // which text properties the search box matches (contacts: name, first/last name, email, phone)
+  app.put<{ Params: { object: string }; Body: { search_properties: string[] } }>('/v1/schema/:object/search-properties', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const obj = await getObject(req.params.object);
+    await withTx({ actor: p.actor }, (c) => c.query('select meta.set_search_properties($1, $2)', [obj.object_type_id, req.body?.search_properties ?? null]));
+    return objectOut(await getObject(obj.object_type_id));
+  });
+
+  app.patch<{ Params: { object: string }; Body: { label_singular?: string; label_plural?: string; description?: string } }>(
+    '/v1/schema/:object',
+    async (req) => {
+      const p = req.principal!;
+      requireScope(p, 'schema');
+      const obj = await getObject(req.params.object);
+      const b = req.body ?? {};
+      await withTx({ actor: p.actor }, (c) =>
+        c.query('select meta.update_object($1, $2, $3, $4)', [obj.object_type_id, b.label_singular ?? null, b.label_plural ?? null, b.description ?? null])
+      );
+      return objectOut(await getObject(obj.object_type_id));
+    }
+  );
+
+  app.get<{ Params: { object: string }; Querystring: { include_archived?: string } }>('/v1/schema/:object/properties', async (req) => {
+    requireScope(req.principal!, 'read');
+    const obj = await getObject(req.params.object);
+    const all = req.query.include_archived === 'true';
+    return { results: obj.properties.filter((p) => all || p.row_status === 'active').map(propertyOut) };
+  });
+
+  app.get<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property', async (req) => {
+    requireScope(req.principal!, 'read');
+    const [, prop] = await findProperty(req.params.object, req.params.property);
+    return propertyOut(prop);
+  });
+
+  app.post<{
+    Params: { object: string };
+    Body: {
+      api_name: string; label: string; type: string; description?: string; options?: Record<string, unknown>;
+      dropdown_options?: { api_value: string; label: string; description?: string; display_order?: number }[];
+      calc_sql?: string; calc_output_type?: string;
+    };
+  }>('/v1/schema/:object/properties', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const obj = await getObject(req.params.object);
+    const b = req.body ?? ({} as never);
+    await withTx({ actor: p.actor }, (c) =>
+      c.query(
+        `select meta.create_property(p_object => $1, p_api_name => $2, p_label => $3, p_type => $4, p_options => $5,
+           p_description => $6, p_dropdown_options => $7, p_calc_sql => $8, p_calc_output_type => $9)`,
+        [obj.object_type_id, b.api_name, b.label, b.type, JSON.stringify(b.options ?? {}), b.description ?? null,
+          JSON.stringify(b.dropdown_options ?? []), b.calc_sql ?? null, b.calc_output_type ?? null]
+      )
+    );
+    reply.code(201);
+    const [, prop] = await findProperty(obj.object_type_id, b.api_name);
+    return propertyOut(prop);
+  });
+
+  app.patch<{
+    Params: { object: string; property: string };
+    Body: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string };
+  }>('/v1/schema/:object/properties/:property', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    const b = req.body ?? {};
+    await withTx({ actor: p.actor }, async (c) => {
+      if (b.label !== undefined || b.description !== undefined || b.options !== undefined) {
+        await c.query('select meta.update_property($1, $2, $3, $4, $5)', [
+          obj.object_type_id, prop.api_name, b.label ?? null, b.description ?? null, b.options ? JSON.stringify(b.options) : null
+        ]);
+      }
+      if (b.calc_sql !== undefined || b.calc_output_type !== undefined) {
+        await c.query('select meta.update_calculation($1, $2, $3, $4)', [
+          obj.object_type_id, prop.api_name, b.calc_sql ?? prop.calc_sql, b.calc_output_type ?? null
+        ]);
+      }
+    });
+    const [, updated] = await findProperty(obj.object_type_id, prop.api_name);
+    return propertyOut(updated);
+  });
+
+  app.post<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property/archive', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    await withTx({ actor: p.actor }, (c) => c.query('select meta.archive_property($1, $2)', [obj.object_type_id, prop.api_name]));
+    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+  });
+
+  app.post<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property/unarchive', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    await withTx({ actor: p.actor }, (c) => c.query('select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name]));
+    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+  });
+
+  app.delete<{ Params: { object: string; property: string }; Body: { confirm?: string } }>('/v1/schema/:object/properties/:property', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'admin');
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    await withTx({ actor: p.actor }, (c) => c.query('select meta.delete_property($1, $2, $3)', [obj.object_type_id, prop.api_name, req.body?.confirm ?? null]));
+    reply.code(204);
+  });
+
+  // dropdown options
+  app.post<{ Params: { object: string; property: string }; Body: { api_value: string; label: string; display_order?: number; description?: string } }>(
+    '/v1/schema/:object/properties/:property/options',
+    async (req, reply) => {
+      const p = req.principal!;
+      requireScope(p, 'schema');
+      const [obj, prop] = await findProperty(req.params.object, req.params.property);
+      const b = req.body ?? ({} as never);
+      await withTx({ actor: p.actor }, (c) =>
+        c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null])
+      );
+      reply.code(201);
+      return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+    }
+  );
+
+  app.patch<{
+    Params: { object: string; property: string; value: string };
+    Body: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' };
+  }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    const b = req.body ?? {};
+    await withTx({ actor: p.actor }, (c) =>
+      c.query('select meta.update_option($1, $2, $3, $4, $5, $6, $7)', [
+        obj.object_type_id, prop.api_name, req.params.value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.row_status ?? null
+      ])
+    );
+    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+  });
+
+  app.delete<{ Params: { object: string; property: string; value: string } }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    await withTx({ actor: p.actor }, (c) => c.query('select meta.delete_option($1, $2, $3)', [obj.object_type_id, prop.api_name, req.params.value]));
+    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+  });
+
+  // association labels
+  app.get<{ Querystring: { object?: string } }>('/v1/association-labels', async (req) => {
+    requireScope(req.principal!, 'read');
+    const code = req.query.object ? (await getObject(req.query.object)).object_type_id : null;
+    const { rows } = await pool.query(
+      `select pc_0004_id as id, from_object_type, to_object_type, label, inverse_label, is_default, is_symmetric, category,
+              max_to_per_from, max_from_per_to
+       from meta.pc_0004 where row_status = 'active' and ($1::text is null or $1 in (from_object_type, to_object_type))
+       order by from_object_type, to_object_type, label nulls first`,
+      [code]
+    );
+    return { results: rows };
+  });
+
+  app.post<{
+    Body: { from_object: string; to_object: string; label: string; inverse_label?: string; is_symmetric?: boolean; max_to_per_from?: number; max_from_per_to?: number };
+  }>('/v1/association-labels', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'schema');
+    const b = req.body ?? ({} as never);
+    if (!b.from_object || !b.to_object) throw badRequest('from_object and to_object are required');
+    const id = await withTx({ actor: p.actor }, async (c) => {
+      const { rows } = await c.query('select meta.create_association_label($1, $2, $3, $4, $5, $6, $7) as id', [
+        b.from_object, b.to_object, b.label, b.inverse_label ?? null, b.is_symmetric ?? false, b.max_to_per_from ?? null, b.max_from_per_to ?? null
+      ]);
+      return rows[0].id as string;
+    });
+    reply.code(201);
+    return { id };
+  });
+
+  app.get<{ Querystring: { object?: string; limit?: string } }>('/v1/schema-changes', async (req) => {
+    requireScope(req.principal!, 'schema');
+    const code = req.query.object ? (await getObject(req.query.object)).object_type_id : null;
+    const limit = Math.min(Number(req.query.limit ?? 100), 1000);
+    const { rows } = await pool.query(
+      `select id, changed_at, changed_by, action, object_type_id, property_id, details, statements
+       from meta.schema_changes where ($1::text is null or object_type_id = $1) order by id desc limit ${limit}`,
+      [code]
+    );
+    return { results: rows };
+  });
+}

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api-local-copy",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5499", "PGUSER=claude_admin", "PGDATABASE=test_crm", "PORT=3001", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "port": 3001
+    },
+    {
+      "name": "web-local-copy",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["API_URL=http://127.0.0.1:3001", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
+    }
+  ]
+}

@@ -1,0 +1,301 @@
+import type { FastifyInstance } from 'fastify';
+import { pool } from '../db.js';
+import { badRequest, forbidden, notFound } from '../errors.js';
+import { requireScope, type Principal } from '../auth.js';
+import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
+
+// Admins: keys with the admin scope, or user keys whose roles include an admin role.
+export function isAdmin(p: Principal): boolean {
+  return p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
+}
+
+function requireAdmin(p: Principal): void {
+  if (!isAdmin(p)) throw forbidden('only admins can change this');
+}
+
+function canRead(p: Principal, obj: ObjectDef): boolean {
+  return !p.permissions || p.permissions.objects.get(obj.object_type_id)?.read === true;
+}
+
+// ---- theme -----------------------------------------------------------------
+
+export const THEME_KEYS = [
+  'primary', 'sidebar_background', 'sidebar_text', 'sidebar_active', 'page_background', 'surface', 'text', 'muted_text', 'border'
+] as const;
+
+function validateTheme(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw badRequest('theme must be an object of colors');
+  for (const [k, v] of Object.entries(value)) {
+    if (!(THEME_KEYS as readonly string[]).includes(k)) throw badRequest(`unknown theme color "${k}" (allowed: ${THEME_KEYS.join(', ')})`);
+    if (typeof v !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v)) throw badRequest(`theme color "${k}" must look like #1a2b3c`);
+  }
+  return value as Record<string, string>;
+}
+
+// ---- sidebar menus -----------------------------------------------------------
+
+type NavItem =
+  | { type: 'home' | 'reporting' | 'divider' }
+  | { type: 'object'; object: string; label?: string }
+  | { type: 'view'; object: string; view_id: number; label?: string }
+  | { type: 'section'; label: string; items: NavItem[] };
+
+async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
+  if (!Array.isArray(items) || items.length > 100) throw badRequest('items must be an array of at most 100 menu items');
+  const out: NavItem[] = [];
+  for (const raw of items) {
+    const it = raw as Record<string, unknown>;
+    const label = it.label === undefined ? undefined : String(it.label);
+    if (label !== undefined && (label.length < 1 || label.length > 63)) throw badRequest('menu labels must be 1 to 63 characters');
+    switch (it.type) {
+      case 'home':
+      case 'reporting':
+      case 'divider':
+        out.push({ type: it.type });
+        break;
+      case 'object': {
+        const obj = await getObject(String(it.object));
+        out.push({ type: 'object', object: obj.api_name, ...(label ? { label } : {}) });
+        break;
+      }
+      case 'view': {
+        const obj = await getObject(String(it.object));
+        const { rows } = await pool.query('select 1 from ui.views where id = $1 and object_type_id = $2', [it.view_id, obj.object_type_id]);
+        if (rows.length === 0) throw badRequest(`view ${it.view_id} does not exist on ${obj.api_name}`);
+        out.push({ type: 'view', object: obj.api_name, view_id: Number(it.view_id), ...(label ? { label } : {}) });
+        break;
+      }
+      case 'section':
+        if (depth > 0) throw badRequest('sections cannot be nested');
+        if (!label) throw badRequest('sections need a label');
+        out.push({ type: 'section', label, items: await validateNav(it.items ?? [], depth + 1) });
+        break;
+      default:
+        throw badRequest(`unknown menu item type "${String(it.type)}"`);
+    }
+  }
+  return out;
+}
+
+// ---- views -------------------------------------------------------------------
+
+type Column = { type: 'property'; property: string } | { type: 'association'; object: string; label_id: string | null };
+
+async function validateColumns(obj: ObjectDef, columns: unknown): Promise<Column[]> {
+  if (!Array.isArray(columns) || columns.length > 50) throw badRequest('columns must be an array of at most 50 columns');
+  const out: Column[] = [];
+  for (const raw of columns) {
+    const c = raw as Record<string, unknown>;
+    if (c.type === 'property') {
+      const prop = getProperty(obj, String(c.property));
+      if (!prop) throw badRequest(`unknown property "${String(c.property)}" on ${obj.api_name}`);
+      out.push({ type: 'property', property: prop.api_name });
+    } else if (c.type === 'association') {
+      const other = await getObject(String(c.object));
+      const labelId = c.label_id === undefined || c.label_id === null ? null : String(c.label_id);
+      if (labelId) {
+        const { rows } = await pool.query(
+          `select 1 from meta.pc_0004 where pc_0004_id = $1
+           and ((from_object_type = $2 and to_object_type = $3) or (from_object_type = $3 and to_object_type = $2))`,
+          [labelId, obj.object_type_id, other.object_type_id]
+        );
+        if (rows.length === 0) throw badRequest(`label ${labelId} does not connect ${obj.api_name} and ${other.api_name}`);
+      }
+      out.push({ type: 'association', object: other.api_name, label_id: labelId });
+    } else {
+      throw badRequest('column type must be property or association');
+    }
+  }
+  return out;
+}
+
+function validateSorts(obj: ObjectDef, sorts: unknown): { property: string; direction: 'asc' | 'desc' }[] {
+  if (!Array.isArray(sorts) || sorts.length > 3) throw badRequest('sorts must be an array of at most 3');
+  return sorts.map((s) => {
+    const prop = getProperty(obj, String(s?.property));
+    if (!prop) throw badRequest(`unknown sort property "${String(s?.property)}"`);
+    return { property: prop.api_name, direction: s.direction === 'asc' ? 'asc' : 'desc' };
+  });
+}
+
+// Default view: name plus the first few native properties, newest first.
+function defaultColumns(obj: ObjectDef): Column[] {
+  const native = obj.properties
+    .filter((p) => !p.is_base && p.row_status === 'active' && p.type !== 'file' && !/body|description|definition|values/.test(p.api_name))
+    .slice(0, 5);
+  return [
+    { type: 'property', property: 'name' },
+    ...native.map((p) => ({ type: 'property' as const, property: p.api_name })),
+    { type: 'property', property: 'created_at' }
+  ];
+}
+
+async function loadView(id: string) {
+  const { rows } = await pool.query('select * from ui.views where id = $1', [id]);
+  if (rows.length === 0) throw notFound('view not found');
+  return rows[0];
+}
+
+function canEditView(p: Principal, view: { owner: string | null }): boolean {
+  return view.owner === null ? isAdmin(p) : view.owner === p.actor || isAdmin(p);
+}
+
+const viewOut = (v: Record<string, unknown>, p: Principal) => ({ ...v, shared: v.owner === null, editable: canEditView(p, v as { owner: string | null }) });
+
+export async function uiRoutes(app: FastifyInstance) {
+  app.get('/v1/me', async (req) => {
+    const p = req.principal!;
+    const reg = await getRegistry();
+    let user = null;
+    if (p.userId) {
+      const { rows } = await pool.query(
+        'select pc_0000_id as id, name, first_name, last_name, email from crm.pc_0000 where pc_0000_id = $1',
+        [p.userId]
+      );
+      user = rows[0] ?? null;
+    }
+    return {
+      actor: p.actor,
+      key_name: p.name,
+      scopes: [...p.scopes],
+      is_admin: isAdmin(p),
+      user,
+      readable_objects: reg.objects.filter((o) => o.row_status === 'active' && canRead(p, o)).map((o) => o.api_name)
+    };
+  });
+
+  // theme and other portal settings
+  app.get('/v1/ui/settings', async (req) => {
+    requireScope(req.principal!, 'read');
+    const { rows } = await pool.query('select key, value from ui.settings');
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  });
+
+  app.put<{ Params: { key: string }; Body: unknown }>('/v1/ui/settings/:key', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    if (req.params.key !== 'theme') throw badRequest('unknown setting (supported: theme)');
+    const value = validateTheme(req.body);
+    await pool.query(
+      `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)
+       on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
+      [req.params.key, JSON.stringify(value), p.actor]
+    );
+    return value;
+  });
+
+  // the caller's sidebar: their own menu if an admin set one, else the default
+  app.get('/v1/ui/nav', async (req) => {
+    const p = req.principal!;
+    const { rows } = await pool.query(
+      `select scope, items from ui.nav_menus where (scope = 'user' and user_id = $1) or scope = 'default'
+       order by (scope = 'user') desc limit 1`,
+      [p.userId]
+    );
+    return { source: rows[0]?.scope ?? 'default', items: rows[0]?.items ?? [] };
+  });
+
+  app.get('/v1/ui/nav/menus', async (req) => {
+    requireAdmin(req.principal!);
+    const { rows } = await pool.query(
+      `select m.scope, m.user_id, u.name as user_name, m.items, m.updated_at, m.updated_by
+       from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
+    );
+    return { results: rows };
+  });
+
+  app.put<{ Body: { items: unknown } }>('/v1/ui/nav/default', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const items = await validateNav(req.body?.items);
+    await pool.query(
+      `update ui.nav_menus set items = $1, updated_at = now(), updated_by = $2 where scope = 'default'`,
+      [JSON.stringify(items), p.actor]
+    );
+    return { source: 'default', items };
+  });
+
+  app.put<{ Params: { userId: string }; Body: { items: unknown } }>('/v1/ui/nav/users/:userId', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and row_status = 'active'", [req.params.userId]);
+    if (users.length === 0) throw notFound('user not found');
+    const items = await validateNav(req.body?.items);
+    await pool.query(
+      `insert into ui.nav_menus (scope, user_id, items, updated_by) values ('user', $1, $2, $3)
+       on conflict (user_id) where scope = 'user' do update set items = excluded.items, updated_at = now(), updated_by = excluded.updated_by`,
+      [req.params.userId, JSON.stringify(items), p.actor]
+    );
+    return { source: 'user', items };
+  });
+
+  // back to the default menu
+  app.delete<{ Params: { userId: string } }>('/v1/ui/nav/users/:userId', async (req, reply) => {
+    requireAdmin(req.principal!);
+    await pool.query("delete from ui.nav_menus where scope = 'user' and user_id = $1", [req.params.userId]);
+    reply.code(204);
+  });
+
+  // views: shared ones plus the caller's own; a default shared view is created on first use
+  app.get<{ Querystring: { object?: string } }>('/v1/ui/views', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    if (!req.query.object) throw badRequest('object is required');
+    const obj = await getObject(req.query.object);
+    const list = () =>
+      pool.query('select * from ui.views where object_type_id = $1 and (owner is null or owner = $2) order by position, id', [obj.object_type_id, p.actor]);
+    let { rows } = await list();
+    if (!rows.some((v) => v.owner === null)) {
+      await pool.query(
+        `insert into ui.views (object_type_id, name, owner, columns, sorts, created_by)
+         select $1, $2, null, $3, $4, 'system' where not exists (select 1 from ui.views where object_type_id = $1 and owner is null)`,
+        [obj.object_type_id, `All ${obj.label_plural.toLowerCase()}`, JSON.stringify(defaultColumns(obj)), JSON.stringify([{ property: 'created_at', direction: 'desc' }])]
+      );
+      ({ rows } = await list());
+    }
+    return { results: rows.map((v) => viewOut(v, p)) };
+  });
+
+  app.post<{ Body: { object: string; name: string; columns?: unknown; sorts?: unknown; shared?: boolean } }>('/v1/ui/views', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const b = req.body ?? ({} as never);
+    const obj = await getObject(b.object);
+    if (b.shared) requireAdmin(p);
+    if (!b.name || b.name.length > 63) throw badRequest('name must be 1 to 63 characters');
+    const columns = b.columns === undefined ? defaultColumns(obj) : await validateColumns(obj, b.columns);
+    const sorts = b.sorts === undefined ? [{ property: 'created_at', direction: 'desc' }] : validateSorts(obj, b.sorts);
+    const { rows } = await pool.query(
+      `insert into ui.views (object_type_id, name, owner, columns, sorts, position, created_by)
+       values ($1, $2, $3, $4, $5, (select coalesce(max(position), 0) + 1 from ui.views where object_type_id = $1), $6) returning *`,
+      [obj.object_type_id, b.name, b.shared ? null : p.actor, JSON.stringify(columns), JSON.stringify(sorts), p.actor]
+    );
+    reply.code(201);
+    return viewOut(rows[0], p);
+  });
+
+  app.patch<{ Params: { id: string }; Body: { name?: string; columns?: unknown; sorts?: unknown; position?: number } }>('/v1/ui/views/:id', async (req) => {
+    const p = req.principal!;
+    const view = await loadView(req.params.id);
+    if (!canEditView(p, view)) throw forbidden('you cannot change this view');
+    const obj = await getObject(view.object_type_id);
+    const b = req.body ?? {};
+    if (b.name !== undefined && (!b.name || b.name.length > 63)) throw badRequest('name must be 1 to 63 characters');
+    const columns = b.columns === undefined ? null : JSON.stringify(await validateColumns(obj, b.columns));
+    const sorts = b.sorts === undefined ? null : JSON.stringify(validateSorts(obj, b.sorts));
+    const { rows } = await pool.query(
+      `update ui.views set name = coalesce($2, name), columns = coalesce($3, columns), sorts = coalesce($4, sorts),
+         position = coalesce($5, position), updated_at = now() where id = $1 returning *`,
+      [req.params.id, b.name ?? null, columns, sorts, b.position ?? null]
+    );
+    return viewOut(rows[0], p);
+  });
+
+  app.delete<{ Params: { id: string } }>('/v1/ui/views/:id', async (req, reply) => {
+    const p = req.principal!;
+    const view = await loadView(req.params.id);
+    if (!canEditView(p, view)) throw forbidden('you cannot delete this view');
+    await pool.query('delete from ui.views where id = $1', [req.params.id]);
+    reply.code(204);
+  });
+}
