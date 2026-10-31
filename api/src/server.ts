@@ -42,10 +42,12 @@ export async function buildApp() {
     maxAge: 600
   });
 
-  app.addHook('onRequest', async (req) => {
+  app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS') return;
     const path = req.url.split('?')[0];
     if (path === '/health') return;
+    // A visitor opening the bare domain in a browser lands on the docs
+    if (path === '/' && !req.headers.authorization) return reply.redirect('/docs', 302);
     if (docsPublic && (path === '/v1/openapi.json' || path.startsWith('/docs'))) return;
     req.principal = await authenticate(req);
   });
