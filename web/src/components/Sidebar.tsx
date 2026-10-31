@@ -16,9 +16,13 @@ function readExpanded(): boolean {
   }
 }
 
-export function Sidebar() {
+// 'rail' is the desktop sidebar; 'drawer' is the same menu, always expanded,
+// inside the phone hamburger drawer (More opens inline there).
+export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   const { me, nav, objectByName, objects } = useApp();
-  const [expanded, setExpanded] = useState(readExpanded);
+  const drawer = variant === 'drawer';
+  const [expandedPref, setExpanded] = useState(readExpanded);
+  const expanded = drawer || expandedPref;
   const [searchOpen, setSearchOpen] = useState(false);
   const [moreTop, setMoreTop] = useState<number | null>(null);
   const moreOpen = moreTop !== null;
@@ -28,14 +32,15 @@ export function Sidebar() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(EXPANDED_KEY, expanded ? '1' : '0');
+      localStorage.setItem(EXPANDED_KEY, expandedPref ? '1' : '0');
     } catch {
       // per-viewer convenience only
     }
-  }, [expanded]);
+  }, [expandedPref]);
 
   // Cmd/Ctrl+K opens search
   useEffect(() => {
+    if (drawer) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -44,7 +49,7 @@ export function Sidebar() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [drawer]);
 
   const userName = me.user?.name || [me.user?.first_name, me.user?.last_name].filter(Boolean).join(' ') || me.key_name;
   const params = new URLSearchParams(location.search);
@@ -107,7 +112,7 @@ export function Sidebar() {
 
   return (
     <>
-      <nav className={`sidebar${expanded ? ' expanded' : ''}`}>
+      <nav className={`sidebar${expanded ? ' expanded' : ''}${drawer ? ' drawer-menu' : ''}`}>
         <div className="sidebar-top">
           <Link to="/" className="logo" title="ProfitPad CRM">P</Link>
           <button className="nav-item" onClick={() => setSearchOpen(true)} title={expanded ? undefined : 'Search (⌘K)'}>
@@ -125,10 +130,11 @@ export function Sidebar() {
             {expanded && (
               <>
                 <span>More</span>
-                <ChevronRight size={16} className="push-right" />
+                {drawer && moreOpen ? <ChevronDown size={16} className="push-right" /> : <ChevronRight size={16} className="push-right" />}
               </>
             )}
           </button>
+          {drawer && moreOpen && <InlineMore objects={objects.map((o) => o.api_name)} />}
         </div>
         <div className="sidebar-bottom">
           {me.is_admin && (
@@ -137,17 +143,19 @@ export function Sidebar() {
               {expanded && <span>Edit menu</span>}
             </Link>
           )}
-          <button className="nav-item" onClick={() => setExpanded((v) => !v)} title={expanded ? 'Collapse' : 'Expand'}>
-            {expanded ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
-            {expanded && <span>Collapse</span>}
-          </button>
+          {!drawer && (
+            <button className="nav-item" onClick={() => setExpanded((v) => !v)} title={expanded ? 'Collapse' : 'Expand'}>
+              {expanded ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
+              {expanded && <span>Collapse</span>}
+            </button>
+          )}
           <button className="avatar-btn" onClick={() => navigate('/settings')} title={`${userName} · Settings`}>
             <span className="avatar">{initials(userName)}</span>
             {expanded && <span className="avatar-name">{userName}</span>}
           </button>
         </div>
       </nav>
-      {moreTop !== null && <MoreMenu objects={objects.map((o) => o.api_name)} anchorTop={moreTop} onClose={() => setMoreTop(null)} />}
+      {!drawer && moreTop !== null && <MoreMenu objects={objects.map((o) => o.api_name)} anchorTop={moreTop} onClose={() => setMoreTop(null)} />}
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
     </>
   );
@@ -157,14 +165,41 @@ export function Sidebar() {
 // doesn't jump when hovering between groups of different lengths.
 const MORE_MENU_HEIGHT = 580;
 
-function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTop: number; onClose: () => void }) {
-  const { objectByName } = useApp();
-  const ref = useRef<HTMLDivElement>(null);
+function moreGroups(objects: string[]) {
   const grouped = new Set(MORE_GROUPS.flatMap((g) => g.objects));
-  const groups = [
+  return [
     ...MORE_GROUPS.map((g) => ({ ...g, objects: g.objects.filter((o) => objects.includes(o)) })),
     { label: 'Custom objects', objects: objects.filter((o) => !grouped.has(o)) }
   ].filter((g) => g.objects.length > 0);
+}
+
+// Drawer version of More: every group listed in place, no flyout.
+function InlineMore({ objects }: { objects: string[] }) {
+  const { objectByName } = useApp();
+  return (
+    <div className="nav-section">
+      {moreGroups(objects).map((g) => (
+        <div key={g.label} className="nav-section">
+          <div className="nav-section-head">{g.label}</div>
+          {g.objects.map((o) => {
+            const Icon = objectIcon(o);
+            return (
+              <Link key={o} to={`/objects/${o}`} className="nav-item">
+                <Icon size={20} strokeWidth={1.75} />
+                <span>{objectByName.get(o)?.label_plural ?? o}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTop: number; onClose: () => void }) {
+  const { objectByName } = useApp();
+  const ref = useRef<HTMLDivElement>(null);
+  const groups = moreGroups(objects);
   const [group, setGroup] = useState(groups[0]?.label);
 
   useEffect(() => {

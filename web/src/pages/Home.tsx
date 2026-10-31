@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { objectIcon } from '../lib/display';
+import { useIsMobile } from '../lib/use-mobile';
+import { MobileHeader } from '../components/MobileNav';
 
 // Placeholder home: record counts for the objects in the user's menu.
 export function Home() {
@@ -20,21 +22,25 @@ export function Home() {
   }, [objects.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const first = me.user?.first_name || me.user?.name?.split(' ')[0];
+  const mobile = useIsMobile();
   return (
-    <div className="page">
-      <h1 className="page-title">{first ? `Welcome back, ${first}` : 'Welcome'}</h1>
-      <div className="tiles">
-        {objects.map((o) => {
-          const Icon = objectIcon(o);
-          return (
-            <Link key={o} to={`/objects/${o}`} className="tile">
-              <Icon size={20} strokeWidth={1.75} />
-              <div className="tile-count">{counts[o]?.toLocaleString() ?? '…'}</div>
-              <div className="muted">{objectByName.get(o)?.label_plural}</div>
-            </Link>
-          );
-        })}
+    <>
+      {mobile && <MobileHeader />}
+      <div className="page">
+        <h1 className="page-title">{first ? `Welcome back, ${first}` : 'Welcome'}</h1>
+        <div className="tiles">
+          {objects.map((o) => {
+            const Icon = objectIcon(o);
+            return (
+              <Link key={o} to={`/objects/${o}`} className="tile">
+                <Icon size={20} strokeWidth={1.75} />
+                <div className="tile-count">{counts[o]?.toLocaleString() ?? '…'}</div>
+                <div className="muted">{objectByName.get(o)?.label_plural}</div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

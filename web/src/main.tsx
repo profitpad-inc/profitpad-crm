@@ -10,6 +10,8 @@ import './styles.css';
 import { api, getApiKey, type Me } from './lib/api';
 import { AppProvider } from './lib/app-context';
 import { Sidebar } from './components/Sidebar';
+import { BottomBar } from './components/MobileNav';
+import { useIsMobile } from './lib/use-mobile';
 import { Login } from './pages/Login';
 import { Home } from './pages/Home';
 import { ObjectTable } from './pages/ObjectTable';
@@ -17,13 +19,17 @@ import { RecordPage } from './pages/RecordPage';
 import { Settings } from './pages/Settings';
 import { Reporting } from './pages/Reporting';
 
+// Desktop: sidebar rail on the left. Phone: bottom bar, with the full menu
+// in a hamburger drawer on the home page.
 function Layout() {
+  const mobile = useIsMobile();
   return (
-    <div className="app">
-      <Sidebar />
+    <div className={`app${mobile ? ' mobile' : ''}`}>
+      {!mobile && <Sidebar />}
       <main className="main">
         <Outlet />
       </main>
+      {mobile && <BottomBar />}
     </div>
   );
 }

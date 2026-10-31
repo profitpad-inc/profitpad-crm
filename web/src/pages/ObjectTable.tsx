@@ -14,8 +14,14 @@ import { Menu, Modal } from '../components/ui';
 
 const PAGE = 50;
 
+// Keyed by object so switching tables starts fresh instead of sending one
+// search with the previous object's schema, columns and sorts.
 export function ObjectTable() {
   const { object = '' } = useParams();
+  return <ObjectTableFor key={object} object={object} />;
+}
+
+function ObjectTableFor({ object }: { object: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { objectByName } = useApp();
@@ -26,6 +32,7 @@ export function ObjectTable() {
   const [otherSchemas, setOtherSchemas] = useState<Record<string, ObjectDef>>({});
   const [columns, setColumns] = useState<Column[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
+  const [appliedViewId, setAppliedViewId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState(searchParams.get('q') ?? '');
   const [debounced, setDebounced] = useState(query);
@@ -38,6 +45,7 @@ export function ObjectTable() {
 
   const viewId = searchParams.get('view');
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
+  const activeViewId = activeView?.id;
 
   // schema, views and labels for this object
   useEffect(() => {
@@ -68,6 +76,7 @@ export function ObjectTable() {
     if (!activeView) return;
     setColumns(activeView.columns);
     setSorts(activeView.sorts);
+    setAppliedViewId(activeView.id);
     setDirty(false);
   }, [activeView?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -92,6 +101,7 @@ export function ObjectTable() {
   const fetchPage = useCallback(
     async (after?: string) => {
       if (!schema) return;
+      if (activeViewId !== undefined && appliedViewId !== activeViewId) return; // view's columns not applied yet
       if (assocObjects.some((o) => !otherSchemas[o])) return;
       setLoading(true);
       setError(null);
@@ -111,7 +121,7 @@ export function ObjectTable() {
         setLoading(false);
       }
     },
-    [schema, object, debounced, sorts, propertyColumns, assocObjects, otherSchemas]
+    [schema, activeViewId, appliedViewId, object, debounced, sorts, propertyColumns, assocObjects, otherSchemas]
   );
 
   useEffect(() => {

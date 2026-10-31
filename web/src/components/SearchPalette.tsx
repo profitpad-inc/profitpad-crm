@@ -69,6 +69,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         <div className="palette-input">
           <Search size={18} />
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search records" />
+          <button className="palette-cancel" onClick={onClose}>Cancel</button>
         </div>
         <div className="palette-results">
           {q.trim().length < 2 && <div className="muted pad">Type at least 2 characters.</div>}

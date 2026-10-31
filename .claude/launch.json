@@ -12,6 +12,12 @@
       "runtimeExecutable": "env",
       "runtimeArgs": ["API_URL=http://127.0.0.1:3001", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5174", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "web-local-copy-2",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["API_URL=http://127.0.0.1:3001", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5175", "--strictPort"],
+      "port": 5175
     }
   ]
 }
