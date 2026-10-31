@@ -14,7 +14,7 @@
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-title: 'Montserrat', 'Inter', system-ui, sans-serif;
   --sidebar-collapsed: 64px;
-  --sidebar-expanded: 240px;
+  --sidebar-expanded: 200px;
 }
 
 * { box-sizing: border-box; }
