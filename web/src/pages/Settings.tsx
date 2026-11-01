@@ -45,11 +45,11 @@ function Account() {
         <span className="record-avatar">{initials(name)}</span>
         <div>
           <h2>{name}</h2>
-          <div className="muted">{me.user?.email ?? 'API key not linked to a user'}</div>
+          <div className="muted">{me.user?.email ?? ''}</div>
         </div>
       </div>
       <dl className="facts">
-        <dt>Signed in with</dt><dd>{me.key_name === 'session' ? 'Google' : `API key "${me.key_name}"`}</dd>
+        <dt>Signed in with</dt><dd>Google</dd>
         <dt>Access</dt><dd>{me.is_admin ? 'Admin' : me.scopes.join(', ')}</dd>
       </dl>
       <button className="btn" onClick={signOut}>Sign out</button>

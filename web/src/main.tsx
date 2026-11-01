@@ -39,7 +39,7 @@ function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
 
-  // signed in through an API key or a session cookie; 401 shows the login page
+  // signed in through a session cookie; 401 shows the login page
   const load = useCallback(async () => {
     try {
       setMe(await api<Me>('GET', '/v1/me'));

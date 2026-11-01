@@ -1,12 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { API_BASE, api, setApiKey, type Me } from '../lib/api';
+import { useEffect, useState } from 'react';
+import { API_BASE, api, type Me } from '../lib/api';
 
 // Set by the API's Google callback as ?auth_error=...
 const AUTH_ERRORS: Record<string, string> = {
-  no_user: 'No active CRM user has this Google account’s email. Ask an admin to add you.',
+  no_user: 'No active CRM user has this Google account\u2019s email. Ask an admin to add you.',
   user_deactivated: 'Your CRM user is deactivated. Ask an admin if you need access again.',
-  domain_not_allowed: 'This Google account’s domain is not allowed to sign in.',
-  email_not_verified: 'This Google account’s email is not verified.',
+  domain_not_allowed: 'This Google account\u2019s domain is not allowed to sign in.',
+  email_not_verified: 'This Google account\u2019s email is not verified.',
   google_cancelled: 'Google sign-in was cancelled.',
   google_not_configured: 'Google sign-in is not set up on this server.',
   google_failed: 'Google sign-in failed. Please try again.'
@@ -33,59 +33,37 @@ function GoogleMark() {
 }
 
 export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
-  const [key, setKey] = useState('');
   const [error, setError] = useState<string | null>(takeAuthError);
-  const [busy, setBusy] = useState(false);
   const [google, setGoogle] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     api<{ google: boolean }>('GET', '/v1/auth/config', undefined, null)
       .then((c) => setGoogle(c.google))
-      .catch(() => setGoogle(false));
+      .catch(() => setGoogle(false))
+      .finally(() => setChecking(false));
   }, []);
 
   const returnTo = window.location.pathname + window.location.search;
   const googleHref = `${API_BASE}/v1/auth/google/start?return_to=${encodeURIComponent(returnTo)}`;
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const me = await api<Me>('GET', '/v1/me', undefined, key.trim());
-      setApiKey(key.trim());
-      onSignedIn(me);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  if (checking) return <div className="splash">Loading…</div>;
 
   return (
     <div className="login">
-      <form className="login-card" onSubmit={submit}>
+      <div className="login-card">
         <div className="login-mark">P</div>
         <h1>ProfitPad CRM</h1>
-        {google && (
-          <>
-            <a className="btn google-btn" href={googleHref}>
-              <GoogleMark />
-              Continue with Google
-            </a>
-            <div className="login-divider muted">or use an API key</div>
-          </>
+        {google ? (
+          <a className="btn primary google-btn" href={googleHref}>
+            <GoogleMark />
+            Continue with Google
+          </a>
+        ) : (
+          <p className="muted">Google sign-in is not configured. Contact an administrator.</p>
         )}
-        {!google && <p className="muted">Sign in with your API key.</p>}
-        <label className="field">
-          <span>API key</span>
-          <input type="password" autoFocus={!google} value={key} onChange={(e) => setKey(e.target.value)} placeholder="pcrm_…" />
-        </label>
         {error && <div className="error">{error}</div>}
-        <button className={`btn${google ? '' : ' primary'}`} disabled={busy || !key.trim()}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }

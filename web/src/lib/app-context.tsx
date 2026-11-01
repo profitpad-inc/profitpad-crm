@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
-import { api, setApiKey, type Me, type NavItem, type ObjectSummary } from './api';
+import { api, type Me, type NavItem, type ObjectSummary } from './api';
 import { applyTheme, type Theme } from './theme';
 
 interface AppState {
@@ -70,7 +70,6 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
 
   const setTheme = useCallback((t: Partial<Theme>) => setThemeState(applyTheme(t)), []);
   const signOut = useCallback(() => {
-    setApiKey(null);
     api('POST', '/v1/auth/logout').catch(() => undefined).finally(onSignOut);
   }, [onSignOut]);
 
