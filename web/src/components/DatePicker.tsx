@@ -6,6 +6,8 @@ import type { Instance } from 'flatpickr/dist/types/instance';
 // camo-cpq): the native date popup is browser chrome CSS can't restyle.
 // Values use the native inputs' formats, "2026-10-31" and "2026-10-31T12:24"
 // (local time), so it drops in where <input type="date|datetime-local"> was.
+// The visible box shows "2026-10-31" or "2026-10-31 12:24" (24-hour) so a
+// typed edit has an unambiguous format.
 // The calendar is rendered on <body> so flatpickr can keep it inside the
 // window (it opens upward or right-aligned when there's no room); editors that
 // close on outside clicks must treat clicks in `.flatpickr-calendar` as
@@ -24,6 +26,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
   useEffect(() => {
     const host = hostRef.current!;
     const input = document.createElement('input');
+    input.placeholder = withTime ? 'YYYY-MM-DD HH:MM' : 'YYYY-MM-DD'; // copied to the visible box
     host.appendChild(input);
     // flatpickr places the calendar against the page, so follow scrolling containers
     const follow = (e: Event) => {
@@ -32,9 +35,10 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
     const instance = flatpickr(input, {
       dateFormat: withTime ? 'Y-m-d\\TH:i' : 'Y-m-d',
       altInput: true,
-      altFormat: withTime ? 'M j, Y, h:i K' : 'M j, Y',
+      altFormat: withTime ? 'Y-m-d H:i' : 'Y-m-d',
       allowInput: true,
       enableTime: withTime,
+      time_24hr: true,
       minuteIncrement: 1,
       disableMobile: true,
       defaultDate: value || undefined,
