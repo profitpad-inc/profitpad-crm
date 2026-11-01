@@ -131,8 +131,9 @@ export async function adminRoutes(app: FastifyInstance) {
     requireScope(req.principal!, 'admin');
     const status = req.query.status;
     let where = '';
-    if (status === 'active') where = ' where revoked_at is null and (expires_at is null or expires_at > now())';
+    if (status === 'all') where = '';
     else if (status === 'inactive') where = ' where revoked_at is not null or (expires_at is not null and expires_at <= now())';
+    else where = ' where revoked_at is null and (expires_at is null or expires_at > now())';
     const { rows } = await pool.query(
       `select id, name, key_prefix, user_id, scopes, created_at, created_by, last_used_at, expires_at, revoked_at
        from auth.api_keys${where} order by id`
