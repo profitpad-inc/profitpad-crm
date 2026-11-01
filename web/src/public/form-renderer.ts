@@ -283,30 +283,6 @@ export function renderForm(container: HTMLElement, opts: {
   };
   let regionList: PhoneRegion[] = [];
   const regionOf = (name: string) => regionList.find((r) => r.region === pickers.get(name)?.value);
-  if (phoneFields.length) {
-    loadPhoneRegions(opts.apiBase).then(({ regions, default: fallback }) => {
-      regionList = regions;
-      for (const f of phoneFields) {
-        const input = controlsNamed(form, f.name).find((c): c is HTMLInputElement => c instanceof HTMLInputElement);
-        if (!input || pickers.has(f.name)) continue;
-        const select = el('select', { class: 'pcrm-phone-country', 'aria-label': `${f.label} country` },
-          ...regions.map((r) => el('option', { value: r.region }, regionLabel(r))));
-        const face = el('span', { class: 'pcrm-country-face', 'aria-hidden': 'true' });
-        const box = el('div', { class: 'pcrm-phone' });
-        input.before(box);
-        box.append(el('div', { class: 'pcrm-country' }, face, select), input);
-        pickers.set(f.name, select);
-        faces.set(f.name, face);
-        setRegion(f.name, regionForNumber(input.value, regions, fallback) ?? fallback);
-        select.addEventListener('change', () => {
-          setRegion(f.name, select.value);
-          errors.get(f.name)!.textContent = '';
-          setInvalid(f.name, false);
-          void checkPhoneField(f, input);
-        });
-      }
-    }).catch(() => undefined);
-  }
   const answerOf = (f: FormField) => {
     const v = readValue(form, f);
     return f.format === 'phone' && typeof v === 'string' ? composePhone(v, regionOf(f.name)) : v;
@@ -352,11 +328,47 @@ export function renderForm(container: HTMLElement, opts: {
       const picker = pickers.get(f.name);
       if (picker && result.region && regionList.some((r) => r.region === result.region)) setRegion(f.name, result.region);
       phones.set(f.name, { input: result.display, result });
+      errors.get(f.name)!.textContent = '';
+      setInvalid(f.name, false);
+      update();
     } else {
       phones.set(f.name, { input, result });
       errors.get(f.name)!.textContent = phoneError(f, result);
       setInvalid(f.name, true);
     }
+  }
+
+  if (phoneFields.length) {
+    loadPhoneRegions(opts.apiBase).then(({ regions, default: fallback }) => {
+      regionList = regions;
+      for (const f of phoneFields) {
+        const input = controlsNamed(form, f.name).find((c): c is HTMLInputElement => c instanceof HTMLInputElement);
+        if (!input || pickers.has(f.name)) continue;
+        const select = el('select', { class: 'pcrm-phone-country', 'aria-label': `${f.label} country` },
+          ...regions.map((r) => el('option', { value: r.region }, regionLabel(r))));
+        const face = el('span', { class: 'pcrm-country-face', 'aria-hidden': 'true' });
+        const box = el('div', { class: 'pcrm-phone' });
+        input.before(box);
+        box.append(el('div', { class: 'pcrm-country' }, face, select), input);
+        pickers.set(f.name, select);
+        faces.set(f.name, face);
+        setRegion(f.name, regionForNumber(input.value, regions, fallback) ?? fallback);
+        select.addEventListener('change', () => {
+          setRegion(f.name, select.value);
+          errors.get(f.name)!.textContent = '';
+          setInvalid(f.name, false);
+          void checkPhoneField(f, input);
+        });
+        if (input.value.trim()) {
+          void checkPhoneField(f, input);
+        }
+      }
+    }).catch(() => {
+      for (const f of phoneFields) {
+        const input = controlsNamed(form, f.name).find((c): c is HTMLInputElement => c instanceof HTMLInputElement);
+        if (input?.value.trim()) void checkPhoneField(f, input);
+      }
+    });
   }
   const checkFormat = (f: FormField, addErrors: boolean) => {
     const v = readValue(form, f);

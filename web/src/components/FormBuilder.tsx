@@ -4,6 +4,7 @@ import { API_BASE, api, getSchema, type CrmRecord, type ObjectDef, type Property
 import { useApp } from '../lib/app-context';
 import { OPERATORS, type Condition, type FieldType } from '../public/conditions';
 import { formHtml, injectFormCss, renderForm } from '../public/form-renderer';
+import { parseQueryParams } from '../public/public-api';
 
 // Form builder on a form's record page. Edits the form's definition (see
 // api/src/forms.ts for the format and the rules the API enforces on save):
@@ -680,7 +681,7 @@ function Preview({ def, html, name, primary }: { def: Definition; html: string |
     if (!ref.current) return;
     injectFormCss();
     renderForm(ref.current, {
-      apiBase: API_BASE, key: 'preview', form, preview: true, params: new URLSearchParams(query.replace(/^\?/, '')),
+      apiBase: API_BASE, key: 'preview', form, preview: true, params: parseQueryParams(query),
       // the preview has no public key in use; check phones with the signed-in API
       checkPhone: (number) => api<{ valid: boolean; display: string | null; reason: string | null }>('POST', '/v1/phone/validate', { number })
     });

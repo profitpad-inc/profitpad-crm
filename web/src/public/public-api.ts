@@ -97,14 +97,22 @@ export function keyFromHash(): string {
   return decodeURIComponent(rawKey).trim();
 }
 
+// Parses a query string (?a=b&c=d or a=b&c=d) while preserving literal '+'
+// characters (such as in email addresses or phone numbers) and decoding '%20'
+// into spaces.
+export function parseQueryParams(query: string): URLSearchParams {
+  const clean = query.replace(/^[?#]/, '').replace(/\+/g, '%2B');
+  return new URLSearchParams(clean);
+}
+
 // Reads query parameters from window.location.search and from any query
 // string placed after the hash fragment (e.g. #key?foo=bar).
 export function queryParamsFromLocation(): URLSearchParams {
-  const searchParams = new URLSearchParams(window.location.search);
+  const searchParams = parseQueryParams(window.location.search);
   const hash = window.location.hash.replace(/^#/, '');
   const qIndex = hash.indexOf('?');
   if (qIndex === -1) return searchParams;
-  const hashParams = new URLSearchParams(hash.slice(qIndex + 1));
+  const hashParams = parseQueryParams(hash.slice(qIndex + 1));
   const combined = new URLSearchParams();
   for (const [k, v] of searchParams) combined.append(k, v);
   for (const [k, v] of hashParams) {
