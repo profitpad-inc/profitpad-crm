@@ -677,7 +677,11 @@ function Preview({ def, html, name, primary }: { def: Definition; html: string |
   useEffect(() => {
     if (!ref.current) return;
     injectFormCss();
-    renderForm(ref.current, { apiBase: '', key: 'preview', form, preview: true, params: new URLSearchParams(query.replace(/^\?/, '')) });
+    renderForm(ref.current, {
+      apiBase: '', key: 'preview', form, preview: true, params: new URLSearchParams(query.replace(/^\?/, '')),
+      // the preview has no public key in use; check phones with the signed-in API
+      checkPhone: (number) => api<{ valid: boolean; display: string | null; reason: string | null }>('POST', '/v1/phone/validate', { number })
+    });
   }, [form, run, query]);
   return (
     <div className="fb-preview">

@@ -16,7 +16,9 @@ function objectOut(o: ObjectDef) {
     kind: o.kind,
     description: o.description,
     search_properties: o.search_properties,
-    id_property: o.id_column
+    id_property: o.id_column,
+    links_to: o.links_to,
+    system_links: o.system_links
   };
 }
 

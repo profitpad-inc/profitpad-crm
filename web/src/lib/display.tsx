@@ -87,8 +87,22 @@ export function optionLabel(p: Property, value: string): string {
   return p.dropdown_options?.find((o) => o.api_value === value)?.label ?? value;
 }
 
+// Phone properties store +16132220328ext4 (the API checks them with Google's
+// libphonenumber). Shown as +1 613-222-0328 ext4; other countries keep the
+// stored digits, since grouping them needs the library's metadata.
+export function displayPhone(v: string): string {
+  const m = /^\+(\d+?)(?:ext(\d+))?$/.exec(v);
+  if (!m) return v;
+  const [, digits, ext] = m;
+  const main = digits.length === 11 && digits.startsWith('1')
+    ? `+1 ${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`
+    : `+${digits}`;
+  return ext ? `${main} ext${ext}` : main;
+}
+
 export function formatValue(p: Property, value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
+  if (p.type === 'text' && p.options.display === 'phone' && typeof value === 'string') return displayPhone(value);
   const t = valueType(p);
   if (p.type === 'dropdown') {
     const values = Array.isArray(value) ? value : [value];

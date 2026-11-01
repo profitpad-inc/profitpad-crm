@@ -68,6 +68,9 @@ export interface ObjectSummary {
   description: string | null;
   search_properties: string[];
   id_property: string;
+  // objects this one may be linked to; system_links are linked only by the system
+  links_to: string[];
+  system_links: string[];
 }
 
 export interface DropdownOption {

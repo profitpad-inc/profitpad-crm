@@ -42,6 +42,13 @@ export interface PublicForm {
   theme: Record<string, string>;
 }
 
+export interface PhoneResult {
+  valid: boolean;
+  // e.g. +1 613-222-0328 ext4
+  display: string | null;
+  reason: string | null;
+}
+
 export class PublicApiError extends Error {
   constructor(public status: number, message: string, public field?: string) {
     super(message);
@@ -72,6 +79,9 @@ export function publicApi(base: string) {
     respond: (key: string, action: 'accept' | 'decline', body: { name: string; email: string; reason?: string }) =>
       call<{ quote: PublicQuote }>('POST', `/quotes/${encodeURIComponent(key)}/${action}`, body),
     form: (key: string) => call<PublicForm>('GET', `/forms/${encodeURIComponent(key)}`),
+    // phone answers are checked by the API (Google's libphonenumber)
+    phone: (key: string, number: string) =>
+      call<PhoneResult>('POST', `/forms/${encodeURIComponent(key)}/phone`, { number }),
     submit: (key: string, body: { values: Record<string, unknown>; page_url: string; _hp: string; _elapsed: number }) =>
       call<{ ok: true; message: string }>('POST', `/forms/${encodeURIComponent(key)}/submissions`, body)
   };

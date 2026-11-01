@@ -14,6 +14,7 @@ import { adminRoutes } from './routes/admin.js';
 import { uiRoutes } from './routes/ui.js';
 import { userRoutes } from './routes/users.js';
 import { allowedOrigins, publicRoutes } from './routes/public.js';
+import { phoneRoutes } from './routes/phone.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -130,6 +131,7 @@ export async function buildApp() {
   await app.register(ssoRoutes);
   await app.register(userRoutes);
   await app.register(publicRoutes);
+  await app.register(phoneRoutes);
   return app;
 }
 

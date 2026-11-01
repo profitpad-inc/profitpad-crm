@@ -3,7 +3,7 @@ import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { requireObjectPermission, requireScope } from '../auth.js';
 import {
-  assertAccessible, batchReadRecords, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite, parseAssociationQuery,
+  assertAccessible, assertUserLinkable, batchReadRecords, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite, parseAssociationQuery,
   searchRecords, updateRecord, type AssociationSpec
 } from '../records.js';
 import type { SearchRequest } from '../search.js';
@@ -59,6 +59,7 @@ export async function recordRoutes(app: FastifyInstance) {
       const p = req.principal!;
       requireScope(p, 'write');
       const obj = await objectForWrite(req.params.object);
+      for (const a of req.body?.associations ?? []) await assertUserLinkable(obj, a.object);
       const id = await withTx({ actor: p.actor }, (c) => createRecord(c, obj, p, req.body?.properties ?? {}, req.body?.associations ?? []));
       await drainCalcQueue();
       reply.code(201);
@@ -200,6 +201,7 @@ export async function recordRoutes(app: FastifyInstance) {
       requireScope(p, 'write');
       const obj = await objectForWrite(req.params.object);
       const to = await objectForWrite(req.params.toObject);
+      await assertUserLinkable(obj, to.api_name);
       requireObjectPermission(p, obj, 'edit');
       await assertAccessible(pool, obj, p, [req.params.id], 'edit');
       await assertAccessible(pool, to, p, [req.params.toId]);
@@ -221,6 +223,7 @@ export async function recordRoutes(app: FastifyInstance) {
       requireScope(p, 'write');
       const obj = await objectForWrite(req.params.object);
       const to = await objectForWrite(req.params.toObject);
+      await assertUserLinkable(obj, to.api_name);
       requireObjectPermission(p, obj, 'edit');
       await assertAccessible(pool, obj, p, [req.params.id], 'edit');
       const removed = await withTx({ actor: p.actor }, async (c) => {

@@ -318,5 +318,33 @@ begin
   perform meta._test_check((select value ? 'allowed_origins' from ui.settings where key = 'forms'), 'forms setting seeded');
 end $t$;
 
+-- 15. Association rules: blocked pairs get no label and no link
+do $t$
+declare
+  v_note text;
+  v_task text;
+  v_quote text;
+  v_user text;
+  v_team text;
+  v_tpl text;
+begin
+  insert into crm.pc_0032 (name) values ('Note') returning pc_0032_id into v_note;
+  insert into crm.pc_0033 (name) values ('Task') returning pc_0033_id into v_task;
+  insert into crm.pc_0022 (name) values ('Quote') returning pc_0022_id into v_quote;
+  insert into crm.pc_0000 (name) values ('Rules user') returning pc_0000_id into v_user;
+  insert into crm.pc_0006 (name) values ('Rules team') returning pc_0006_id into v_team;
+  insert into crm.pc_0051 (name) values ('Template') returning pc_0051_id into v_tpl;
+  perform meta._test_expect_error(format($$select meta.associate('notes', %L, 'quotes', %L)$$, v_note, v_quote), 'cannot be associated');
+  perform meta._test_expect_error(format($$select meta.associate('notes', %L, 'tasks', %L)$$, v_note, v_task), 'cannot be associated');
+  perform meta._test_expect_error(format($$select meta.associate('users', %L, 'contacts', '0000000001')$$, v_user), 'cannot be associated');
+  perform meta._test_expect_error(format($$select meta.associate('email_templates', %L, 'contacts', '0000000001')$$, v_tpl), 'cannot be associated');
+  perform meta._test_expect_error($$select meta.create_association_label('emails', 'invoices', 'Billed')$$, 'cannot be associated');
+  perform meta._test_check(not exists (select 1 from meta.pc_0004 where '{pc_0032,pc_0022}' @> array[from_object_type, to_object_type]), 'no default label for a blocked pair');
+  perform meta.associate('users', v_user, 'teams', v_team);
+  perform meta.associate('notes', v_note, 'contacts', '0000000001');
+  perform meta._test_check(meta.association_allowed('pc_0022', 'pc_0010') and not meta.association_allowed('pc_0010', 'pc_0051'), 'association_allowed');
+  perform meta._test_check(meta.association_system_only('pc_0053', 'pc_0052') and not meta.association_system_only('pc_0053', 'pc_0010'), 'association_system_only');
+end $t$;
+
 rollback;
 \echo all core tests passed

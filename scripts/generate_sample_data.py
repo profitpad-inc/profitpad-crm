@@ -333,8 +333,9 @@ class Generator:
                          "submitted_at": iso(past(90)), "page_url": "https://example.com/contact",
                          "submission_values": json.dumps({"first_name": f, "last_name": l, "email": "%s@example.org" % f.lower()})})
         self.create("form_submissions", subs)
+        # only the system links submissions to their forms (on a real submission),
+        # so these keep just their form_id
         for sid in self.ids["form_submissions"]:
-            self.link("form_submissions", sid, "forms", random.choice(self.ids["forms"]))
             self.link("form_submissions", sid, "contacts", random.choice(self.ids["contacts"]))
 
         events = []

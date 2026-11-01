@@ -1,3 +1,4 @@
+import { checkPhone } from './phone.js';
 import { badRequest } from './errors.js';
 import { isSingleValue, type PropertyDef } from './registry.js';
 
@@ -27,6 +28,12 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
 
   if (type === 'text') {
     if (typeof input !== 'string') throw fail('expected a string');
+    // phone properties: any format in, only valid numbers stored (+16132220328ext4)
+    if (prop.options.display === 'phone') {
+      const phone = checkPhone(input);
+      if (!phone.valid) throw badRequest(`${prop.label}: "${input}" is not a valid phone number (${phone.reason})`);
+      return { value: phone.value, newOptions: [] };
+    }
     return { value: input, newOptions: [] };
   }
   if (type === 'number') {

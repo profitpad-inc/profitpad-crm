@@ -4,6 +4,7 @@ import type { Principal } from './auth.js';
 import { getObject, type ObjectDef, type PropertyDef } from './registry.js';
 import { createRecord, findIdByUnique, onWrite, updateRecord } from './records.js';
 import sanitizeHtml from 'sanitize-html';
+import { checkPhone } from './phone.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
 
 // Forms (crm.pc_0052): the `definition` property holds the form as JSON.
@@ -70,7 +71,7 @@ const OPERATORS: Record<string, ConditionOperator[]> = {
 const NAME_RE = /^[a-z][a-z0-9_]{0,62}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^\+?[0-9 ().-]{7,25}$/;
+
 const URL_RE = /^https?:\/\/[^\s]+$/;
 // custom patterns match the whole answer, like the HTML pattern attribute
 export const patternRegExp = (pattern: string) => new RegExp(`^(?:${pattern})$`);
@@ -357,7 +358,12 @@ function cleanValue(f: FormField, v: unknown): unknown {
       if (s.length > max) throw new Error(`must be at most ${max} characters`);
       if (f.type !== 'textarea' && /[\r\n]/.test(s)) throw new Error('must be a single line');
       if (f.format === 'email' && !EMAIL_RE.test(s)) throw new Error('must be an email address');
-      if (f.format === 'phone' && !(PHONE_RE.test(s) && s.replace(/\D/g, '').length >= 7)) throw new Error('must be a phone number');
+      if (f.format === 'phone') {
+        // stored as +16132220328ext4 (see phone.ts)
+        const phone = checkPhone(s);
+        if (!phone.valid) throw new Error(`must be a valid phone number (${phone.reason})`);
+        return phone.value;
+      }
       if (f.format === 'url' && !URL_RE.test(s)) throw new Error('must be a web address starting with http:// or https://');
       if (f.format === 'regex' && f.pattern && !patternRegExp(f.pattern).test(s)) {
         // a custom message is shown as written, not after the label

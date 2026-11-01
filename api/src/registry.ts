@@ -10,6 +10,10 @@ export interface ObjectDef {
   description: string | null;
   row_status: string;
   search_properties: string[];
+  // objects this one may be linked to (meta.association_allowed), and those
+  // among them that only the system links (meta.association_system_only)
+  links_to: string[];
+  system_links: string[];
   id_column: string;
   properties: PropertyDef[];
   byName: Map<string, PropertyDef>;
@@ -56,8 +60,12 @@ export async function getRegistry(): Promise<Registry> {
   if (cached && cached.version === version) return cached;
 
   const [objects, properties, options] = await Promise.all([
-    pool.query(`select object_type_id, api_name, label_singular, label_plural, kind, description, row_status, search_properties
-                from meta.pc_0001 where schema_name = 'crm' and object_type_id <> 'pc_0005' order by object_type_id`),
+    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.row_status, o.search_properties,
+                       array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
+                               and meta.association_allowed(o.object_type_id, x.object_type_id) order by x.object_type_id) as links_to,
+                       array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
+                               and meta.association_system_only(o.object_type_id, x.object_type_id) order by x.object_type_id) as system_links
+                from meta.pc_0001 o where o.schema_name = 'crm' and o.object_type_id <> 'pc_0005' order by o.object_type_id`),
     pool.query(`select pc_0002_id, object_type_id, api_name, label, description, type, options, calc_sql, calc_output_type,
                        calc_last_error, is_base, is_native, read_only, row_status
                 from meta.pc_0002 order by object_type_id, is_base desc, pc_0002_id`),

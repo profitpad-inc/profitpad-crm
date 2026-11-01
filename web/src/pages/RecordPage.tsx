@@ -109,7 +109,8 @@ export function RecordPage() {
   if (!schema || !record) return <div className="page muted">Loading…</div>;
   const name = recordName(record);
   const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
-  const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o)), ...associated.map((a) => a.object)])]
+  const linksTo = objectByName.get(object)?.links_to ?? [];
+  const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...associated.map((a) => a.object)])]
     // a form lists its submissions as a card; elsewhere they are activities
     .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions'));
   const isUser = object === 'users';
@@ -291,7 +292,8 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
     }
   }
 
-  const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o)), 'changes'];
+  const linksTo = objectByName.get(object)?.links_to ?? [];
+  const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
 
   return (
     <div className="activity">
@@ -303,7 +305,7 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
         ))}
       </div>
       {error && <div className="error">{error}</div>}
-      {(tab === 'activity' || tab === 'notes') && objectByName.has('notes') && (
+      {(tab === 'activity' || tab === 'notes') && objectByName.has('notes') && linksTo.includes('notes') && (
         <div className="composer">
           <textarea rows={3} placeholder="Write a note…" value={note} onChange={(e) => setNote(e.target.value)} />
           <button className="btn primary" onClick={addNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
@@ -590,14 +592,18 @@ function AssociationCard({ self, selfId, other, items, onChanged }: {
 
   if (!meta) return null;
   const Icon = objectIcon(other);
+  // links the system makes (a form and its submissions) cannot be added or removed here
+  const editable = !(objectByName.get(self)?.system_links ?? []).includes(other);
   return (
     <div className="card">
       <div className="card-head">
         <Icon size={16} strokeWidth={1.75} />
         <h3>{meta.label_plural} <span className="muted">({items.length})</span></h3>
-        <button className="icon-btn push-right" onClick={() => setAdding((v) => !v)} aria-label={`Add ${meta.label_singular}`}>
-          {adding ? <X size={16} /> : <Plus size={16} />}
-        </button>
+        {editable && (
+          <button className="icon-btn push-right" onClick={() => setAdding((v) => !v)} aria-label={`Add ${meta.label_singular}`}>
+            {adding ? <X size={16} /> : <Plus size={16} />}
+          </button>
+        )}
       </div>
       {adding && (
         <div className="card-add">
@@ -616,9 +622,11 @@ function AssociationCard({ self, selfId, other, items, onChanged }: {
             {labels.some(Boolean) && <div className="small muted">{labels.filter(Boolean).join(', ')}</div>}
           </div>
           {other === 'lines' && <LineFigures record={record} schema={otherSchema} />}
-          <button className="icon-btn push-right faint-btn" onClick={() => unlink(record.id)} aria-label="Remove association">
-            <X size={14} />
-          </button>
+          {editable && (
+            <button className="icon-btn push-right faint-btn" onClick={() => unlink(record.id)} aria-label="Remove association">
+              <X size={14} />
+            </button>
+          )}
         </div>
       ))}
     </div>

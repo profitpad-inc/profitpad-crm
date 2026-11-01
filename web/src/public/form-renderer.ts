@@ -1,4 +1,4 @@
-import { el, publicApi, PublicApiError, type FormField, type PublicForm } from './public-api';
+import { el, publicApi, PublicApiError, type FormField, type PhoneResult, type PublicForm } from './public-api';
 import { visibleFields } from './conditions';
 
 // Renders a published form into a container and submits it. Shared by the
@@ -171,11 +171,11 @@ function prefill(form: HTMLFormElement, f: FormField, value: unknown): void {
 
 const isEmpty = (v: unknown) => v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0);
 
+
 // Same checks as the API (api/src/forms.ts cleanValue), for quicker feedback.
 function formatProblem(f: FormField, v: unknown): string | null {
   if (typeof v !== 'string' || !v) return null;
   if (f.format === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return `${f.label} must be an email address.`;
-  if (f.format === 'phone' && !(/^\+?[0-9 ().-]{7,25}$/.test(v) && v.replace(/\D/g, '').length >= 7)) return `${f.label} must be a phone number.`;
   if (f.format === 'url' && !/^https?:\/\/\S+$/.test(v)) return `${f.label} must be a web address starting with http:// or https://.`;
   if (f.format === 'regex' && f.pattern) {
     try {
@@ -191,7 +191,12 @@ let counter = 0;
 
 // preview: the builder's preview; checks answers but sends nothing.
 // params: query parameters to use instead of the page's (the preview).
-export function renderForm(container: HTMLElement, opts: { apiBase: string; key: string; form: PublicForm; preview?: boolean; params?: URLSearchParams }): void {
+// checkPhone: how phone answers are checked (default: the form's public
+// endpoint; the builder's preview uses the signed-in API).
+export function renderForm(container: HTMLElement, opts: {
+  apiBase: string; key: string; form: PublicForm; preview?: boolean; params?: URLSearchParams;
+  checkPhone?: (number: string) => Promise<PhoneResult>;
+}): void {
   const definition = { ...opts.form.definition, fields: normalize(opts.form.definition.fields) };
   const asked = definition.fields.filter((f) => !f.from_url);
   const fromUrl = definition.fields.filter((f) => f.from_url);
@@ -267,6 +272,65 @@ export function renderForm(container: HTMLElement, opts: { apiBase: string; key:
   form.addEventListener('change', update);
   update();
 
+  // Formats are checked when the visitor leaves a field; while an error
+  // shows, it clears as soon as the answer becomes valid. Phone answers are
+  // checked by the API and, when valid, rewritten as +1 613-222-0328 ext4.
+  const fieldOf = (target: EventTarget | null) => {
+    const name = (target as HTMLInputElement | null)?.name;
+    return name ? asked.find((f) => f.name === name && f.format) : undefined;
+  };
+  const checkPhone = opts.checkPhone ?? ((number: string) => api.phone(opts.key, number));
+  // last answer per phone field: the text it was given for, and the result
+  const phones = new Map<string, { input: string; result: PhoneResult }>();
+  const phoneError = (f: FormField, r: PhoneResult) => `${f.label} must be a valid phone number${r.reason ? ` (${r.reason})` : ''}.`;
+  async function checkPhoneField(f: FormField, c: HTMLInputElement) {
+    const input = c.value.trim();
+    if (!input) return;
+    let result: PhoneResult;
+    try {
+      result = await checkPhone(input);
+    } catch {
+      return; // offline or refused: the API checks again on submit
+    }
+    if (c.value.trim() !== input) return; // changed while we asked
+    if (result.valid && result.display) {
+      c.value = result.display;
+      phones.set(f.name, { input: result.display, result });
+    } else {
+      phones.set(f.name, { input, result });
+      errors.get(f.name)!.textContent = phoneError(f, result);
+      setInvalid(f.name, true);
+    }
+  }
+  const checkFormat = (f: FormField, addErrors: boolean) => {
+    const v = readValue(form, f);
+    const problem = formatProblem(f, v);
+    const error = errors.get(f.name)!;
+    if (problem && addErrors) {
+      error.textContent = problem;
+      setInvalid(f.name, true);
+    } else if (!problem && error.textContent) {
+      error.textContent = '';
+      setInvalid(f.name, false);
+    }
+    return problem;
+  };
+  form.addEventListener('focusout', (e) => {
+    const f = fieldOf(e.target);
+    if (!f) return;
+    if (f.format === 'phone') void checkPhoneField(f, e.target as HTMLInputElement);
+    else checkFormat(f, true);
+  });
+  form.addEventListener('input', (e) => {
+    const f = fieldOf(e.target);
+    if (!f) return;
+    if (f.format === 'phone') {
+      // being corrected: the error goes, the API checks again on leaving
+      errors.get(f.name)!.textContent = '';
+      setInvalid(f.name, false);
+    } else checkFormat(f, false);
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     formError!.textContent = '';
@@ -290,7 +354,8 @@ export function renderForm(container: HTMLElement, opts: { apiBase: string; key:
         if (f.required) bad(f, `${f.label} is required.`);
         continue;
       }
-      const problem = formatProblem(f, v);
+      const known = f.format === 'phone' ? phones.get(f.name) : undefined;
+      const problem = known && known.input === v && !known.result.valid ? phoneError(f, known.result) : formatProblem(f, v);
       if (problem) bad(f, problem);
       else values[f.name] = v;
     }

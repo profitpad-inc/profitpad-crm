@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { pool, quoteIdent, type Db } from './db.js';
 import { badRequest, notFound } from './errors.js';
 import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode, type Principal } from './auth.js';
-import { activeProperties, getProperty, getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
+import { activeProperties, getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
 import { fromDb, isWritable, toDb } from './values.js';
 
@@ -376,6 +376,15 @@ export async function drainCalcQueue(maxRounds = 1): Promise<number> {
     if (rows[0].n === 0) break;
   }
   return total;
+}
+
+// Callers may not add or remove links the system manages (a form and its
+// submissions). Pairs that cannot be linked at all are refused by the database.
+export async function assertUserLinkable(from: ObjectDef, toKey: string): Promise<void> {
+  const to = await getObject(toKey);
+  if (from.system_links.includes(to.api_name)) {
+    throw badRequest(`links between ${from.api_name} and ${to.api_name} are made by the system and cannot be changed`);
+  }
 }
 
 export async function objectForWrite(key: string): Promise<ObjectDef> {

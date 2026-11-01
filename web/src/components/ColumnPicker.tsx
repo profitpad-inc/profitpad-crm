@@ -44,6 +44,7 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
       .map((p) => ({ column: { type: 'property', property: p.api_name } as Column, label: p.label, group: 'Properties' }));
     const assoc: { column: Column; label: string; group: string }[] = [];
     for (const other of objects) {
+      if (!schema.links_to.includes(other.api_name)) continue;
       assoc.push({ column: { type: 'association', object: other.api_name, label_id: null }, label: `${other.label_plural} (all)`, group: 'Associations' });
       for (const l of labels) {
         if (l.is_default) continue;

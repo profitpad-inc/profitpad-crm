@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { Property } from '../lib/api';
-import { valueType } from '../lib/display';
+import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 
 export function Modal({ title, onClose, children, footer, wide }: {
@@ -86,6 +86,7 @@ export function toInput(p: Property, v: unknown): string {
     return local.toISOString().slice(0, 16);
   }
   if (Array.isArray(v)) return v.join(';');
+  if (p.type === 'text' && p.options.display === 'phone' && typeof v === 'string') return displayPhone(v);
   return String(v);
 }
 

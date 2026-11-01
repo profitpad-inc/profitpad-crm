@@ -5,6 +5,7 @@ import { ApiError, badRequest, notFound } from '../errors.js';
 import { browserOrigins, requireScope, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
 import { updateRecord } from '../records.js';
+import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
 
@@ -294,6 +295,26 @@ export async function publicRoutes(app: FastifyInstance) {
       );
       reply.code(201);
       return { ok: true, message: form.definition.success_message };
+    }
+  );
+
+  // The form page checks phone answers here when the visitor leaves the box
+  // (Google's libphonenumber only runs in the API). Same origin rule as
+  // submissions; only says whether it is valid and how to show it.
+  app.post<{ Params: { key: string }; Body: { number?: unknown } }>(
+    '/v1/public/forms/:key/phone',
+    { bodyLimit: 4 * 1024 },
+    async (req, reply) => {
+      const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+      if (!origin || !(await allowedOrigins()).has(origin)) {
+        throw new ApiError(403, 'this website is not allowed to use this form', 'origin_not_allowed');
+      }
+      rateLimit(req, 'form-phone', 60);
+      await loadPublishedForm(req.params.key);
+      if (typeof req.body?.number !== 'string') throw badRequest('number must be a string');
+      const phone = checkPhone(req.body.number);
+      reply.header('cache-control', 'no-store');
+      return { valid: phone.valid, display: phone.display, reason: phone.reason };
     }
   );
 
