@@ -1,17 +1,68 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { api } from '../lib/api';
 
 export function Reporting() {
-  // Simple state for the two dashboards
+  // Tabs and filter state
   const [activeTab, setActiveTab] = useState<'dash1' | 'dash2'>('dash1');
-  // Simple filter state (could be expanded with real API calls)
   const [activeFilter, setActiveFilter] = useState<string>('All');
 
+  // KPI state
+  const [contactsCount, setContactsCount] = useState<number | null>(null);
+  const [openDealsCount, setOpenDealsCount] = useState<number | null>(null);
+  const [newLeadsCount, setNewLeadsCount] = useState<number | null>(null);
+  const [revenue, setRevenue] = useState<number | null>(null);
+
+  const [ticketsOpen, setTicketsOpen] = useState<number | null>(null);
+  const [avgResolution, setAvgResolution] = useState<string | null>(null);
+  const [slaBreaches, setSlaBreaches] = useState<number | null>(null);
+  const [customerNps, setCustomerNps] = useState<string | null>(null);
+
   const tabs = [
-    { id: 'dash1', label: 'Dashboard 1' },
-    { id: 'dash2', label: 'Dashboard 2' },
+    { id: 'dash1', label: 'Dashboard 1' },
+    { id: 'dash2', label: 'Dashboard 2' },
   ];
 
-  const filters = ['All', 'Last 7 days', 'Last 30 days', 'Year to‑date'];
+  const filters = ['All', 'Last 7 days', 'Last 30 days', 'Year to‑date'];
+
+  // Helper to fetch total count for an object
+  async function fetchTotal(object: string, extraQuery: any = {}): Promise<number> {
+    const resp = await api<{ total: number }>('POST', `/v1/objects/${object}/search`, {
+      limit: 0,
+      ...extraQuery,
+    });
+    return resp.total;
+  }
+
+  // Load KPI data (simplified – real dashboards would aggregate more precisely)
+  useEffect(() => {
+    // contacts
+    fetchTotal('contacts')
+      .then(setContactsCount)
+      .catch(() => setContactsCount(null));
+    // open deals – we consider any deal not in closed_won/closed_lost
+    fetchTotal('deals', { filter: { stage: { $nin: ['closed_won', 'closed_lost'] } } })
+      .then(setOpenDealsCount)
+      .catch(() => setOpenDealsCount(null));
+    // new leads – contacts with lifecycle_stage = 'lead'
+    fetchTotal('contacts', { filter: { lifecycle_stage: 'lead' } })
+      .then(setNewLeadsCount)
+      .catch(() => setNewLeadsCount(null));
+    // revenue – placeholder using count * avg amount
+    fetchTotal('deals', { filter: { stage: 'closed_won' } })
+      .then(cnt => setRevenue(cnt * 15000))
+      .catch(() => setRevenue(null));
+    // tickets open – count of tickets with status not closed
+    fetchTotal('tickets', { filter: { status: { $ne: 'closed' } } })
+      .then(setTicketsOpen)
+      .catch(() => setTicketsOpen(null));
+    // static placeholders for other KPIs
+    setAvgResolution('3.2 d');
+    setSlaBreaches(1);
+    setCustomerNps('+42');
+  }, [activeFilter]);
+
+  const formatNumber = (n: number | null) => (n === null ? '…' : n.toLocaleString());
+  const formatCurrency = (n: number | null) => (n === null ? '…' : `$${n.toLocaleString()}`);
 
   return (
     <div className="page reporting-container">
@@ -37,7 +88,7 @@ export function Reporting() {
         </div>
       </div>
 
-      {/* Nav tabs for the two dashboards */}
+      {/* Nav tabs */}
       <div className="reporting-nav-tabs">
         {tabs.map((t) => (
           <button
@@ -50,35 +101,34 @@ export function Reporting() {
         ))}
       </div>
 
-      {/* Content area – placeholder cards */}
+      {/* Dashboard 1 */}
       {activeTab === 'dash1' && (
         <div>
           <div className="reporting-kpis-grid">
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">Total Contacts</div>
-              <div className="reporting-kpi-num">1 234</div>
+              <div className="reporting-kpi-num">{formatNumber(contactsCount)}</div>
               <div className="reporting-kpi-caption">as of today</div>
             </div>
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">Open Deals</div>
-              <div className="reporting-kpi-num">57</div>
-              <div className="reporting-kpi-caption">value ≈ $123 k</div>
+              <div className="reporting-kpi-num">{formatNumber(openDealsCount)}</div>
+              <div className="reporting-kpi-caption">value ≈ {formatCurrency(revenue)}</div>
             </div>
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">New Leads</div>
-              <div className="reporting-kpi-num">84</div>
+              <div className="reporting-kpi-num">{formatNumber(newLeadsCount)}</div>
               <div className="reporting-kpi-caption">this week</div>
             </div>
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">Revenue</div>
-              <div className="reporting-kpi-num">$987 k</div>
+              <div className="reporting-kpi-num">{formatCurrency(revenue)}</div>
               <div className="reporting-kpi-caption">YTD</div>
             </div>
           </div>
           <div className="reporting-panel-card" style={{ marginTop: '24px' }}>
             <div className="reporting-panel-title">Top Companies</div>
             <div className="reporting-panel-desc">Based on deal value in the selected period.</div>
-            {/* Placeholder table */}
             <div className="reporting-table-wrap">
               <table className="reporting-table">
                 <thead>
@@ -115,27 +165,28 @@ export function Reporting() {
         </div>
       )}
 
+      {/* Dashboard 2 */}
       {activeTab === 'dash2' && (
         <div>
           <div className="reporting-kpis-grid">
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">Tickets Open</div>
-              <div className="reporting-kpi-num">12</div>
+              <div className="reporting-kpi-num">{formatNumber(ticketsOpen)}</div>
               <div className="reporting-kpi-caption">support backlog</div>
             </div>
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">Avg. Resolution</div>
-              <div className="reporting-kpi-num">3.2 d</div>
+              <div className="reporting-kpi-num">{avgResolution ?? '…'}</div>
               <div className="reporting-kpi-caption">last 30 d</div>
             </div>
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">SLA Breaches</div>
-              <div className="reporting-kpi-num">1</div>
+              <div className="reporting-kpi-num">{formatNumber(slaBreaches)}</div>
               <div className="reporting-kpi-caption">this month</div>
             </div>
             <div className="reporting-kpi-card">
               <div className="reporting-kpi-title">Customer NPS</div>
-              <div className="reporting-kpi-num">+42</div>
+              <div className="reporting-kpi-num">{customerNps ?? '…'}</div>
               <div className="reporting-kpi-caption">quarterly</div>
             </div>
           </div>
@@ -180,4 +231,3 @@ export function Reporting() {
     </div>
   );
 }
-
