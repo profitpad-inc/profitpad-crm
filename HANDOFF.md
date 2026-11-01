@@ -28,7 +28,7 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
 
 ## Where we're at (2026-10-31)
 
-- 2026-11-01 (form URL query parsing & phone validation on load): Query parameters in form URLs and the Form Builder preview now preserve `+` as literal `+` (e.g. for email tags like `user+tag@gmail.com` and phone numbers like `+1613...`) while converting `%20` to space (`parseQueryParams` in `public-api.ts`). Phone inputs prefilled via query parameters are now validated on load (`form-renderer.ts` calls `checkPhoneField` upon region initialization, updating canonical formatting, country flag, or error messages). Web build passes; not checked in a browser, not committed.
+- 2026-11-01 (form URL query parsing & phone validation on load): Query parameters in form URLs and the Form Builder preview now preserve `+` as literal `+` (e.g. for email tags like `user+tag@gmail.com` and phone numbers like `+1613...`) while converting `%20` to space (`parseQueryParams` in `public-api.ts`). Phone inputs prefilled via query parameters are now validated on load (`form-renderer.ts` calls `checkPhoneField` upon region initialization, updating canonical formatting, country flag, or error messages). Web build passes; not checked in a browser. Committed and pushed (`05f3da8`).
 
 - 2026-11-01 (UI polish & hash params): Textareas set to resize only vertically (`styles.css`); bottom-center toast notification on field saves in `RecordPage`, `ObjectTable`, and `FormBuilder`; public quote and form pages support query parameters placed after `#key?` (`public-api.ts`, `form-renderer.ts`). Web build passes; not checked in a browser. Committed and pushed (`83f130b`).
 
