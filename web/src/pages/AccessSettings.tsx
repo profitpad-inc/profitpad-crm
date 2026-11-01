@@ -16,14 +16,15 @@ interface ObjectPermission {
   can_delete: boolean;
 }
 
+// ids are bigints, which the API sends as strings
 interface Role {
-  id: number;
+  id: string;
   name: string;
   description: string | null;
   is_admin: boolean;
   record_access: 'own' | 'team' | 'all';
   object_permissions: ObjectPermission[];
-  assignments: { id: number; user_id: string | null; team_id: string | null }[];
+  assignments: { id: string; user_id: string | null; team_id: string | null }[];
 }
 
 interface UserRow {
@@ -154,19 +155,20 @@ export function UserSettings() {
 export function RoleSettings() {
   const { objects } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles } = useAccessData();
-  const [selected, setSelected] = useState<number | 'new' | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ name: string; description: string; is_admin: boolean; record_access: Role['record_access'] }>({
     name: '', description: '', is_admin: false, record_access: 'all'
   });
   const [message, setMessage] = useState<string | null>(null);
 
-  const role = typeof selected === 'number' ? roles.find((r) => r.id === selected) ?? null : null;
+  const role = selected && selected !== 'new' ? roles.find((r) => r.id === selected) ?? null : null;
 
-  function pick(id: number | 'new', list = roles) {
+  // id is a role id or 'new'
+  function pick(id: string, list = roles) {
     setSelected(id);
     setMessage(null);
     setError(null);
-    const r = typeof id === 'number' ? list.find((x) => x.id === id) : null;
+    const r = list.find((x) => x.id === id);
     setDraft(r
       ? { name: r.name, description: r.description ?? '', is_admin: r.is_admin, record_access: r.record_access }
       : { name: '', description: '', is_admin: false, record_access: 'all' });
@@ -239,7 +241,7 @@ export function RoleSettings() {
       <div className="actions">
         <label className="field inline">
           <span>Role</span>
-          <select value={selected ?? ''} onChange={(e) => pick(e.target.value === 'new' ? 'new' : Number(e.target.value))}>
+          <select value={selected ?? ''} onChange={(e) => pick(e.target.value)}>
             {roles.map((r) => <option key={r.id} value={r.id}>{r.name}{r.is_admin ? ' (admin)' : ''}</option>)}
             {selected === 'new' && <option value="new">New role</option>}
           </select>
@@ -286,6 +288,9 @@ export function RoleSettings() {
           <p className={members.length ? '' : 'muted'}>{members.length ? members.join(', ') : 'Nobody has this role yet.'}</p>
 
           <h3>Object access</h3>
+          {!role.is_admin && !role.object_permissions.some((p) => p.can_read) && (
+            <div className="error">This role cannot read any object yet, so its users see nothing. Tick Read for the objects they should use.</div>
+          )}
           {role.is_admin ? (
             <p className="muted">Admin roles can use every object.</p>
           ) : (

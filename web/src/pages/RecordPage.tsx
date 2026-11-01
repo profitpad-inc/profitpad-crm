@@ -339,9 +339,10 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
 
 // ---- users ----------------------------------------------------------------
 
+// ids are bigints, which the API sends as strings
 interface UserRole {
-  assignment_id: number;
-  role_id: number;
+  assignment_id: string;
+  role_id: string;
   name: string;
   is_admin: boolean;
   // set when the role comes from one of the user's teams
@@ -351,7 +352,7 @@ interface UserRole {
 function UserRoles({ userId }: { userId: string }) {
   const { me } = useApp();
   const [roles, setRoles] = useState<UserRole[] | null>(null);
-  const [allRoles, setAllRoles] = useState<{ id: number; name: string }[]>([]);
+  const [allRoles, setAllRoles] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -361,7 +362,7 @@ function UserRoles({ userId }: { userId: string }) {
 
   useEffect(() => {
     load().catch((e) => setError((e as Error).message));
-    if (me.is_admin) api<{ results: { id: number; name: string }[] }>('GET', '/v1/roles').then((r) => setAllRoles(r.results)).catch(() => undefined);
+    if (me.is_admin) api<{ results: { id: string; name: string }[] }>('GET', '/v1/roles').then((r) => setAllRoles(r.results)).catch(() => undefined);
   }, [load, me.is_admin]);
 
   async function run(fn: () => Promise<unknown>) {
@@ -409,7 +410,7 @@ function UserRoles({ userId }: { userId: string }) {
 
 interface SignIns {
   identities: { provider: string; email: string | null; created_at: string; last_login_at: string | null }[];
-  sessions: { id: number; created_at: string; expires_at: string; revoked_at: string | null; ip: string | null; user_agent: string | null; status: 'active' | 'signed_out' | 'expired' }[];
+  sessions: { id: string; created_at: string; expires_at: string; revoked_at: string | null; ip: string | null; user_agent: string | null; status: 'active' | 'signed_out' | 'expired' }[];
 }
 
 const PROVIDERS: Record<string, string> = { google: 'Google', microsoft: 'Microsoft', magic_link: 'Email link', passkey: 'Passkey' };
