@@ -38,10 +38,12 @@ export async function recordRoutes(app: FastifyInstance) {
   // {"ids": [...], "properties": [...], "associations": [{"object": "companies", "properties": ["name"], "limit": 100}]}
   app.post<{ Params: ObjParams; Body: { ids?: string[]; properties?: string[]; associations?: AssociationSpec[] } }>(
     '/v1/objects/:object/batch/read',
-    async (req) => {
+    async (req, reply) => {
       requireScope(req.principal!, 'read');
       const obj = await objectForWrite(req.params.object);
-      return batchReadRecords(pool, obj, req.principal!, req.body ?? {});
+      const result = await batchReadRecords(pool, obj, req.principal!, req.body ?? {});
+      if (result.not_found.length > 0) reply.code(207);
+      return result;
     }
   );
 
