@@ -178,7 +178,11 @@ export function RecordPage() {
 function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // false when the editor reopens after a refused save: it shows the text
+  // without taking focus back from wherever the user went
+  const [focusEditor, setFocusEditor] = useState(true);
+  // a refused save, shown under that property; failed: the value refused
+  const [error, setError] = useState<{ property: string; message: string; failed: string } | null>(null);
   const shown = schema.properties.filter((p) => p.row_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   const main = shown.filter((p) => !p.is_base || p.api_name === 'name');
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
@@ -186,20 +190,40 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   function start(p: Property) {
     if (!isEditable(p)) return;
     setEditing(p.api_name);
-    setDraft(toInput(p, record.properties[p.api_name]));
-    setError(null);
+    setFocusEditor(true);
+    // after a refused save, carry on from the refused text
+    setDraft(error?.property === p.api_name ? error.failed : toInput(p, record.properties[p.api_name]));
+    if (error?.property !== p.api_name) setError(null);
   }
 
+  // A refused value stays in the box with the reason under it; it is not
+  // saved, and leaving it unchanged does not try again.
   async function commit(p: Property, final?: string) {
     if (editing !== p.api_name) return;
-    const value = fromInput(p, final ?? draft);
+    const text = final ?? draft;
+    const value = fromInput(p, text);
     const before = JSON.stringify(record.properties[p.api_name] ?? null);
     setEditing(null);
-    if (JSON.stringify(value) === before) return;
+    if (JSON.stringify(value) === before) {
+      setError(null);
+      return;
+    }
+    if (error?.property === p.api_name && error.failed === text) {
+      setEditing(p.api_name);
+      setFocusEditor(false);
+      return;
+    }
     try {
       onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties: { [p.api_name]: value } }));
+      setError(null);
     } catch (err) {
-      setError(`${p.label}: ${(err as Error).message}`);
+      // the message names the property; under the field that is redundant
+      const raw = (err as Error).message;
+      const message = raw.startsWith(`${p.label}: `) ? raw.slice(p.label.length + 2) : raw;
+      setError({ property: p.api_name, message, failed: text });
+      setDraft(text);
+      setEditing(p.api_name);
+      setFocusEditor(false);
     }
   }
 
@@ -208,7 +232,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
       <div className="prop-label">{p.label}</div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
-          <PropertyInput property={p} value={draft} onChange={setDraft} autoFocus onCommit={(v) => commit(p, v)} />
+          <PropertyInput property={p} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} />
           {p.type === 'dropdown' && p.options.single_value !== true && (
             <button className="btn small" onClick={() => commit(p)}>Save</button>
           )}
@@ -216,13 +240,13 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
       ) : (
         <div className="prop-value">{formatValue(p, record.properties[p.api_name]) || <span className="faint">{isEditable(p) ? 'Add' : '—'}</span>}</div>
       )}
+      {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
     </div>
   );
 
   return (
     <div className="props">
       <h3>About this {schema.label_singular.toLowerCase()}</h3>
-      {error && <div className="error">{error}</div>}
       {main.map(row)}
       <h3 className="sub">System</h3>
       {system.map(row)}

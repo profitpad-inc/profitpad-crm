@@ -314,7 +314,7 @@ export async function publicRoutes(app: FastifyInstance) {
       if (typeof req.body?.number !== 'string') throw badRequest('number must be a string');
       const phone = checkPhone(req.body.number);
       reply.header('cache-control', 'no-store');
-      return { valid: phone.valid, display: phone.display, reason: phone.reason };
+      return { valid: phone.valid, display: phone.display, region: phone.region, reason: phone.reason };
     }
   );
 

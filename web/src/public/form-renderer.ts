@@ -1,5 +1,6 @@
 import { el, publicApi, PublicApiError, type FormField, type PhoneResult, type PublicForm } from './public-api';
 import { visibleFields } from './conditions';
+import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, type PhoneRegion } from './phone-regions';
 
 // Renders a published form into a container and submits it. Shared by the
 // hosted page (/p/form/), embed.js and the builder's preview, so it uses plain
@@ -30,6 +31,9 @@ export const FORM_CSS = `
 .pcrm-form select, .pcrm-form textarea { width: 100%; font: inherit; color: inherit; background: #fff;
   border: 1px solid var(--pcrm-border); border-radius: 8px; padding: 9px 11px; margin: 0; }
 .pcrm-form textarea { min-height: 110px; resize: vertical; }
+.pcrm-form .pcrm-phone { display: flex; gap: 6px; }
+.pcrm-form .pcrm-phone select { width: 8.5em; flex: none; padding-left: 8px; padding-right: 4px; }
+.pcrm-form .pcrm-phone input { flex: 1; min-width: 0; }
 .pcrm-form input:focus, .pcrm-form select:focus, .pcrm-form textarea:focus { outline: 2px solid var(--pcrm-primary); outline-offset: 0; border-color: var(--pcrm-primary); }
 .pcrm-form .pcrm-check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 15px; }
 .pcrm-form .pcrm-check input { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--pcrm-primary); }
@@ -259,7 +263,38 @@ export function renderForm(container: HTMLElement, opts: {
   }
   const urlValues = Object.fromEntries(fromUrl.map((f) => [f.name, fromParams(params, f)]).filter(([, v]) => !isEmpty(v)));
 
-  const answers = (): Record<string, unknown> => ({ ...urlValues, ...Object.fromEntries(asked.map((f) => [f.name, readValue(form, f)])) });
+  // Country pickers in front of phone inputs (added once the region list
+  // arrives; until then numbers without + are read as the API's default).
+  const phoneFields = asked.filter((f) => f.format === 'phone');
+  const pickers = new Map<string, HTMLSelectElement>();
+  let regionList: PhoneRegion[] = [];
+  const regionOf = (name: string) => regionList.find((r) => r.region === pickers.get(name)?.value);
+  if (phoneFields.length) {
+    loadPhoneRegions(opts.apiBase).then(({ regions, default: fallback }) => {
+      regionList = regions;
+      for (const f of phoneFields) {
+        const input = controlsNamed(form, f.name).find((c): c is HTMLInputElement => c instanceof HTMLInputElement);
+        if (!input || pickers.has(f.name)) continue;
+        const select = el('select', { class: 'pcrm-phone-country', 'aria-label': `${f.label} country` },
+          ...regions.map((r) => el('option', { value: r.region }, regionLabel(r))));
+        select.value = regionForNumber(input.value, regions, fallback) ?? fallback;
+        const box = el('div', { class: 'pcrm-phone' });
+        input.before(box);
+        box.append(select, input);
+        pickers.set(f.name, select);
+        select.addEventListener('change', () => {
+          errors.get(f.name)!.textContent = '';
+          setInvalid(f.name, false);
+          void checkPhoneField(f, input);
+        });
+      }
+    }).catch(() => undefined);
+  }
+  const answerOf = (f: FormField) => {
+    const v = readValue(form, f);
+    return f.format === 'phone' && typeof v === 'string' ? composePhone(v, regionOf(f.name)) : v;
+  };
+  const answers = (): Record<string, unknown> => ({ ...urlValues, ...Object.fromEntries(asked.map((f) => [f.name, answerOf(f)])) });
   const setInvalid = (name: string, on: boolean) => {
     for (const w of wrappers.get(name) ?? []) w.classList.toggle('pcrm-invalid', on);
   };
@@ -283,8 +318,10 @@ export function renderForm(container: HTMLElement, opts: {
   // last answer per phone field: the text it was given for, and the result
   const phones = new Map<string, { input: string; result: PhoneResult }>();
   const phoneError = (f: FormField, r: PhoneResult) => `${f.label} must be a valid phone number${r.reason ? ` (${r.reason})` : ''}.`;
+  // The number stays as typed when it is not valid; it is just not sent.
   async function checkPhoneField(f: FormField, c: HTMLInputElement) {
-    const input = c.value.trim();
+    const typed = c.value.trim();
+    const input = composePhone(typed, regionOf(f.name));
     if (!input) return;
     let result: PhoneResult;
     try {
@@ -292,9 +329,11 @@ export function renderForm(container: HTMLElement, opts: {
     } catch {
       return; // offline or refused: the API checks again on submit
     }
-    if (c.value.trim() !== input) return; // changed while we asked
+    if (c.value.trim() !== typed) return; // changed while we asked
     if (result.valid && result.display) {
       c.value = result.display;
+      const picker = pickers.get(f.name);
+      if (picker && result.region && regionList.some((r) => r.region === result.region)) picker.value = result.region;
       phones.set(f.name, { input: result.display, result });
     } else {
       phones.set(f.name, { input, result });

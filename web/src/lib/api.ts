@@ -22,7 +22,8 @@ export function setApiKey(key: string | null): void {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) {
+  // details.property: the property a write failed on (shown under that field)
+  constructor(public status: number, message: string, public code?: string, public details?: { property?: string; field?: string } & Record<string, unknown>) {
     super(message);
   }
 }
@@ -44,7 +45,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const data = text && res.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text;
-  if (!res.ok) throw new ApiError(res.status, data?.message ?? res.statusText, data?.error);
+  if (!res.ok) throw new ApiError(res.status, data?.message ?? res.statusText, data?.error, data?.details);
   return data as T;
 }
 

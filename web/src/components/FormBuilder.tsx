@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Code, Eye, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { api, getSchema, type CrmRecord, type ObjectDef, type Property } from '../lib/api';
+import { API_BASE, api, getSchema, type CrmRecord, type ObjectDef, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { OPERATORS, type Condition, type FieldType } from '../public/conditions';
 import { formHtml, injectFormCss, renderForm } from '../public/form-renderer';
@@ -678,7 +678,7 @@ function Preview({ def, html, name, primary }: { def: Definition; html: string |
     if (!ref.current) return;
     injectFormCss();
     renderForm(ref.current, {
-      apiBase: '', key: 'preview', form, preview: true, params: new URLSearchParams(query.replace(/^\?/, '')),
+      apiBase: API_BASE, key: 'preview', form, preview: true, params: new URLSearchParams(query.replace(/^\?/, '')),
       // the preview has no public key in use; check phones with the signed-in API
       checkPhone: (number) => api<{ valid: boolean; display: string | null; reason: string | null }>('POST', '/v1/phone/validate', { number })
     });

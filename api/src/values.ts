@@ -22,7 +22,8 @@ export function isWritable(prop: PropertyDef): boolean {
 // stored value (for updates), so archived dropdown options already on the
 // record are still accepted.
 export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coerced {
-  const fail = (why: string) => badRequest(`"${prop.api_name}": ${why}`);
+  // details.property lets the UI show the error under that property
+  const fail = (why: string) => badRequest(`"${prop.api_name}": ${why}`, { property: prop.api_name });
   if (input === null || input === undefined || input === '') return { value: null, newOptions: [] };
   const type = prop.type;
 
@@ -31,7 +32,7 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
     // phone properties: any format in, only valid numbers stored (+16132220328ext4)
     if (prop.options.display === 'phone') {
       const phone = checkPhone(input);
-      if (!phone.valid) throw badRequest(`${prop.label}: "${input}" is not a valid phone number (${phone.reason})`);
+      if (!phone.valid) throw badRequest(`${prop.label}: "${input}" is not a valid phone number (${phone.reason})`, { property: prop.api_name });
       return { value: phone.value, newOptions: [] };
     }
     return { value: input, newOptions: [] };

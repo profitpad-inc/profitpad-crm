@@ -46,6 +46,8 @@ export interface PhoneResult {
   valid: boolean;
   // e.g. +1 613-222-0328 ext4
   display: string | null;
+  // e.g. CA, for the country picker
+  region?: string | null;
   reason: string | null;
 }
 

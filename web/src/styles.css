@@ -565,3 +565,9 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .fb-ok { color: #05603a; font-size: 12px; white-space: nowrap; }
 .fb-bad { color: #b42318; font-size: 12px; white-space: nowrap; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Phone properties: country picker + number */
+.phone-input { display: flex; gap: 6px; min-width: 0; }
+.phone-input select { width: 8.5em; flex: none; }
+.phone-input input { flex: 1; min-width: 0; }
+.prop-error { margin: 4px 0 0; }

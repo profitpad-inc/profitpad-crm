@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import type { Property } from '../lib/api';
+import { API_BASE, type Property } from '../lib/api';
+import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, type PhoneRegions } from '../public/phone-regions';
 import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 
@@ -141,6 +142,9 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
       </div>
     );
   }
+  if (property.type === 'text' && property.options.display === 'phone') {
+    return <PhoneInput value={value} onChange={onChange} autoFocus={autoFocus} onCommit={onCommit} />;
+  }
   if (t === 'number') return <input type="number" step="any" value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
   if (t === 'date' || t === 'datetime') {
     return <DatePicker value={value} onChange={onChange} withTime={t === 'datetime'} autoFocus={autoFocus} onCommit={onCommit} />;
@@ -155,4 +159,65 @@ export function isEditable(p: Property): boolean {
   if (p.row_status !== 'active' || p.type === 'calculation' || p.type === 'file') return false;
   if (p.is_base) return p.api_name === 'name' || p.api_name === 'created_at';
   return !p.read_only;
+}
+
+// Phone properties: a country picker and the number. A number typed without
+// + gets the picked country's code in front (composePhone); the API checks
+// it with Google's libphonenumber and stores +16132220328ext4. Commits when
+// focus leaves both controls, not when moving between them.
+export function PhoneInput({ value, onChange, autoFocus, onCommit }: {
+  value: string; onChange: (v: string) => void; autoFocus?: boolean; onCommit?: (value?: string) => void;
+}) {
+  const [regions, setRegions] = useState<PhoneRegions | null>(null);
+  const [region, setRegion] = useState<string>('');
+  const [text, setText] = useState(value);
+
+  useEffect(() => {
+    loadPhoneRegions(API_BASE).then((r) => {
+      setRegions(r);
+      setRegion((cur) => cur || (regionForNumber(value, r.regions, r.default) ?? r.default));
+    }).catch(() => undefined);
+    // only the starting value picks the region
+  }, []);
+
+  const picked = regions?.regions.find((r) => r.region === region);
+  const emit = (t: string, r = picked) => {
+    const composed = composePhone(t, r);
+    onChange(composed);
+    return composed;
+  };
+  return (
+    <div
+      className="phone-input"
+      onBlur={(e) => {
+        if (onCommit && !e.currentTarget.contains(e.relatedTarget as Node | null)) onCommit(composePhone(text, picked));
+      }}
+    >
+      {regions && (
+        <select
+          value={region}
+          aria-label="Country"
+          onChange={(e) => {
+            setRegion(e.target.value);
+            emit(text, regions.regions.find((r) => r.region === e.target.value));
+          }}
+        >
+          {regions.regions.map((r) => <option key={r.region} value={r.region}>{regionLabel(r)}</option>)}
+        </select>
+      )}
+      <input
+        type="tel"
+        value={text}
+        autoFocus={autoFocus}
+        placeholder="613-222-0328 ext4"
+        onChange={(e) => {
+          setText(e.target.value);
+          emit(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onCommit) onCommit(composePhone(text, picked));
+        }}
+      />
+    </div>
+  );
 }

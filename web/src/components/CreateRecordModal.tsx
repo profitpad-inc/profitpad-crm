@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, type CrmRecord, type ObjectDef } from '../lib/api';
+import { api, ApiError, type CrmRecord, type ObjectDef } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable } from './ui';
 
@@ -32,7 +32,8 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
     if (owner && me.user && owner.dropdown_options?.some((o) => o.api_value === me.user!.id)) defaults.owner = me.user.id;
     return defaults;
   });
-  const [error, setError] = useState<string | null>(null);
+  // property: shown under that field when the API says which one failed
+  const [error, setError] = useState<{ message: string; property?: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -50,7 +51,8 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
       const created = await api<CrmRecord>('POST', `/v1/objects/${object.api_name}`, { properties });
       onCreated(created);
     } catch (err) {
-      setError((err as Error).message);
+      const property = err instanceof ApiError ? err.details?.property : undefined;
+      setError({ message: (err as Error).message, property: fields.some((p) => p.api_name === property) ? property : undefined });
       setBusy(false);
     }
   }
@@ -71,9 +73,10 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
           <label key={p.api_name} className="field">
             <span>{p.label}</span>
             <PropertyInput property={p} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))} />
+            {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}
-        {error && <div className="error">{error}</div>}
+        {error && !error.property && <div className="error">{error.message}</div>}
       </div>
     </Modal>
   );

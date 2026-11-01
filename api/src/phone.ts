@@ -66,3 +66,13 @@ export function checkPhone(input: string, region: string = DEFAULT_REGION): Phon
 
 // Region codes the library knows (for validating the optional region).
 export const isRegion = (r: string) => (util.getSupportedRegions() as string[]).includes(r);
+
+// Every region the library knows, with its calling code, for country pickers
+// (the browser adds names with Intl.DisplayNames).
+// main: the region a +code number is read as when nothing else says (GB for +44).
+export function phoneRegions(): { region: string; code: number; main: boolean }[] {
+  return (util.getSupportedRegions() as string[]).map((region) => {
+    const code = util.getCountryCodeForRegion(region);
+    return { region, code, main: util.getRegionCodeForCountryCode(code) === region };
+  });
+}
