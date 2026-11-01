@@ -24,7 +24,13 @@ interface Associated {
 const ACTIVITY_OBJECTS = ['calls', 'emails', 'notes', 'tasks', 'form_submissions'] as const;
 const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 // objects whose pages show other cards by default
-const DEFAULT_CARDS_FOR: Record<string, string[]> = { forms: ['form_submissions'] };
+const DEFAULT_CARDS_FOR: Record<string, string[]> = {
+  forms: ['form_submissions'],
+  invoices: [...DEFAULT_CARDS, 'lines'],
+  carts: [...DEFAULT_CARDS, 'lines'],
+  quotes: [...DEFAULT_CARDS, 'lines'],
+  orders: [...DEFAULT_CARDS, 'lines']
+};
 const ACTIVITY_PROPS: Record<string, string[]> = {
   calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at'],
   emails: ['name', 'subject', 'body', 'direction', 'from_address', 'to_addresses', 'sent_at', 'created_at'],

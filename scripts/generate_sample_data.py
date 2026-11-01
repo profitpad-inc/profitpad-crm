@@ -263,7 +263,7 @@ class Generator:
                           "unit_price": money(5, 900), "discount": random.choice([0, 0, 0, money(5, 100)])})
         self.create("lines", lines)
         product_label = label("lines", "products", "Product")
-        parents = ["deals", "quotes", "invoices", "orders"]
+        parents = ["deals", "quotes", "invoices", "orders", "carts"]
         for lid in self.ids["lines"]:
             self.link("lines", lid, "products", random.choice(self.ids["products"]), product_label)
             parent = random.choice(parents)
