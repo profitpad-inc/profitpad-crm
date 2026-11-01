@@ -56,9 +56,10 @@ function safeReturnTo(value: unknown): string {
   return typeof value === 'string' && /^\/(?![/\\])/.test(value) ? value : '/';
 }
 
-function toUi(req: FastifyRequest, reply: FastifyReply, path: string, error?: string) {
+function toUi(req: FastifyRequest, reply: FastifyReply, path: string, error?: string, errorDetail?: string) {
   const url = new URL((uiUrl || origin(req)) + path);
   if (error) url.searchParams.set('auth_error', error);
+  if (errorDetail) url.searchParams.set('auth_detail', errorDetail.slice(0, 300));
   return reply.redirect(url.toString(), 302);
 }
 
@@ -212,7 +213,7 @@ export async function ssoRoutes(app: FastifyInstance) {
     return reply.redirect(url.toString(), 302);
   });
 
-  app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(MS_CALLBACK_PATH, async (req, reply) => {
+  app.get<{ Querystring: { code?: string; state?: string; error?: string; error_description?: string } }>(MS_CALLBACK_PATH, async (req, reply) => {
     const clearFlow = cookie(req, MS_FLOW_COOKIE, '', MS_CALLBACK_PATH, 0);
     let flow: Flow | null = null;
     try {
@@ -221,8 +222,23 @@ export async function ssoRoutes(app: FastifyInstance) {
       flow = null;
     }
     reply.header('set-cookie', clearFlow);
-    if (req.query.error) return toUi(req, reply, flow?.returnTo ?? '/', 'microsoft_cancelled');
-    if (!flow || !req.query.code || req.query.state !== flow.state) return toUi(req, reply, '/', 'microsoft_failed');
+    if (req.query.error) {
+      req.log.warn({ error: req.query.error, description: req.query.error_description }, 'microsoft auth callback returned error');
+      const code = req.query.error === 'access_denied' ? 'microsoft_cancelled' : 'microsoft_failed';
+      return toUi(req, reply, flow?.returnTo ?? '/', code, req.query.error_description ?? req.query.error);
+    }
+    if (!flow) {
+      req.log.warn('microsoft callback missing flow cookie');
+      return toUi(req, reply, '/', 'microsoft_failed', 'Missing flow cookie (session expired or cookie blocked)');
+    }
+    if (!req.query.code) {
+      req.log.warn('microsoft callback missing authorization code');
+      return toUi(req, reply, '/', 'microsoft_failed', 'Missing authorization code');
+    }
+    if (req.query.state !== flow.state) {
+      req.log.warn({ queryState: req.query.state, flowState: flow.state }, 'microsoft state mismatch');
+      return toUi(req, reply, '/', 'microsoft_failed', 'State mismatch (CSRF check failed)');
+    }
 
     let claims: Record<string, unknown>;
     try {
@@ -239,11 +255,14 @@ export async function ssoRoutes(app: FastifyInstance) {
         })
       });
       const body = (await res.json()) as { id_token?: string; error?: string; error_description?: string };
-      if (!res.ok || !body.id_token) throw new Error(`token exchange failed: ${res.status} ${body.error ?? ''} ${body.error_description ?? ''}`);
+      if (!res.ok || !body.id_token) {
+        req.log.warn({ status: res.status, error: body.error, description: body.error_description }, 'microsoft token exchange failed');
+        return toUi(req, reply, '/', 'microsoft_failed', body.error_description || body.error || `HTTP ${res.status}`);
+      }
       claims = idTokenClaims(body.id_token);
     } catch (err) {
       req.log.warn({ err }, 'microsoft sign-in failed');
-      return toUi(req, reply, '/', 'microsoft_failed');
+      return toUi(req, reply, '/', 'microsoft_failed', (err as Error).message);
     }
 
     const issValid = typeof claims.iss === 'string' && (
@@ -251,11 +270,12 @@ export async function ssoRoutes(app: FastifyInstance) {
       claims.iss.startsWith('https://sts.windows.net/')
     );
     const sub = typeof claims.sub === 'string' ? claims.sub : typeof claims.oid === 'string' ? claims.oid : null;
-    const email = typeof claims.email === 'string' && claims.email
-      ? claims.email.toLowerCase().trim()
-      : typeof claims.preferred_username === 'string' && claims.preferred_username
-        ? claims.preferred_username.toLowerCase().trim()
-        : null;
+    const email = (
+      (typeof claims.email === 'string' && claims.email) ||
+      (typeof claims.preferred_username === 'string' && claims.preferred_username) ||
+      (typeof claims.upn === 'string' && claims.upn) ||
+      ''
+    ).toLowerCase().trim() || null;
 
     const valid =
       issValid &&
@@ -267,7 +287,7 @@ export async function ssoRoutes(app: FastifyInstance) {
 
     if (!valid || !sub || !email) {
       req.log.warn({ iss: claims.iss, aud: claims.aud, sub, email }, 'microsoft id_token rejected');
-      return toUi(req, reply, '/', 'microsoft_failed');
+      return toUi(req, reply, '/', 'microsoft_failed', `id_token invalid (iss=${claims.iss}, aud=${claims.aud}, email=${email})`);
     }
 
     if (msAllowedDomains.length) {

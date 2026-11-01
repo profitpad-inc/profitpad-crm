@@ -18,10 +18,13 @@ const AUTH_ERRORS: Record<string, string> = {
 function takeAuthError(): string | null {
   const url = new URL(window.location.href);
   const code = url.searchParams.get('auth_error');
-  if (!code) return null;
+  const detail = url.searchParams.get('auth_detail');
+  if (!code && !detail) return null;
   url.searchParams.delete('auth_error');
+  url.searchParams.delete('auth_detail');
   window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-  return AUTH_ERRORS[code] ?? (code.startsWith('microsoft_') ? AUTH_ERRORS.microsoft_failed : AUTH_ERRORS.google_failed);
+  const base = code ? (AUTH_ERRORS[code] ?? (code.startsWith('microsoft_') ? AUTH_ERRORS.microsoft_failed : AUTH_ERRORS.google_failed)) : 'Sign-in failed.';
+  return detail ? `${base} (${detail})` : base;
 }
 
 function GoogleMark() {
