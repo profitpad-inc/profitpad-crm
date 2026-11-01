@@ -28,6 +28,7 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
 
 ## Where we're at (2026-10-31)
 
+- 2026-11-01: `README.md` added. User record page reworked (properties and roles left; Sign-in history and Changes tabs right; no associations or activities), backed by `GET /v1/users/{id}/roles` and `/sign-ins`. API-tested locally, not checked in a browser, not deployed.
 - Migration `0011_keep_an_admin.sql` (2026-11-01: trigger refusing to deactivate/archive/delete the last admin user, plus `meta.has_active_admin()`) passes the SQL suite and is applied to the local copy, but NOT yet to the server DB (agent permission was denied; the user runs `./db/migrate.sh`). It must be applied before deploying the current API, which calls `meta.has_active_admin()`.
 - Server DB (`test_crm`) has migrations 0001 to 0010 applied. 26 record objects, 129 native properties, 4 native association labels, Admin role, USD currency, default sidebar menu. No records yet; one admin API key (id 1, not linked to a user).
 - `claude_admin` has `CREATE` on the database plus membership in `test_crm_api` and `test_crm_reader`. It does not have TEMP (not needed: the calculation probe view lives in `meta`). The user offered to grant TEMP if ever needed.

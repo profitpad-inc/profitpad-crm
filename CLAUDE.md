@@ -25,5 +25,6 @@ psql -h localhost -p 5433 -U claude_admin -d test_crm -v ON_ERROR_STOP=1 -f path
 Rules:
 
 - Before any destructive change (DROP, TRUNCATE, mass DELETE/UPDATE, migrations that alter existing data), ask the user first and take a backup:
-  `pg_dump -h localhost -p 5433 -U claude_admin -d test_crm -Fc -f backups/test_crm_$(date +%Y%m%d_%H%M%S).dump`
+  `/opt/homebrew/opt/libpq/bin/pg_dump -h localhost -p 5433 -U claude_admin -d test_crm -Fc -f backups/test_crm_$(date +%Y%m%d_%H%M%S).dump`
+  (the server runs Postgres 15; the plain `pg_dump` on PATH is Homebrew postgresql@14 and refuses to dump a newer server. The libpq one is 18.x. Keep postgresql@14 for `db/test-local.sh`.)
 - `claude_admin` is not a superuser and does not own the database (owner is `n8n`). It can create objects in the `public` schema.

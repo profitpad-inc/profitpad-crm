@@ -12,6 +12,7 @@ import { recordRoutes } from './routes/records.js';
 import { schemaRoutes } from './routes/schema.js';
 import { adminRoutes } from './routes/admin.js';
 import { uiRoutes } from './routes/ui.js';
+import { userRoutes } from './routes/users.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -107,6 +108,7 @@ export async function buildApp() {
   await app.register(adminRoutes);
   await app.register(uiRoutes);
   await app.register(ssoRoutes);
+  await app.register(userRoutes);
   return app;
 }
 

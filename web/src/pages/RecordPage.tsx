@@ -78,7 +78,8 @@ export function RecordPage() {
         if (r.id !== id) navigate(`/objects/${object}/${r.id}`, { replace: true }); // merged id
       })
       .catch((err) => !cancelled && setError((err as Error).message));
-    loadAssociations().catch(() => undefined);
+    // users have no association cards or activity stream
+    if (object !== 'users') loadAssociations().catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -96,9 +97,10 @@ export function RecordPage() {
   const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
   const cards = [...new Set([...DEFAULT_CARDS.filter((o) => o !== object && objectByName.has(o)), ...associated.map((a) => a.object)])]
     .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o));
+  const isUser = object === 'users';
 
   return (
-    <div className="record-page">
+    <div className={`record-page${isUser ? ' two-col' : ''}`}>
       <aside className="record-left">
         <Link to={`/objects/${object}`} className="back">
           <ChevronLeft size={16} /> {schema.label_plural}
@@ -125,18 +127,27 @@ export function RecordPage() {
             )}
           </Menu>
         </div>
+        {isUser && <UserRoles userId={record.id} />}
         <PropertyList schema={schema} record={record} onSaved={setRecord} />
       </aside>
 
-      <section className="record-middle">
-        <ActivityStream object={object} id={id} associated={associated} onChanged={loadAssociations} schema={schema} />
-      </section>
+      {isUser ? (
+        <section className="record-middle">
+          <UserHistory object={object} id={record.id} schema={schema} />
+        </section>
+      ) : (
+        <>
+          <section className="record-middle">
+            <ActivityStream object={object} id={id} associated={associated} onChanged={loadAssociations} schema={schema} />
+          </section>
 
-      <aside className="record-right">
-        {cards.map((o) => (
-          <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />
-        ))}
-      </aside>
+          <aside className="record-right">
+            {cards.map((o) => (
+              <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />
+            ))}
+          </aside>
+        </>
+      )}
     </div>
   );
 }
@@ -224,13 +235,7 @@ function ActivityStream({ object, id, associated, onChanged, schema }: { object:
   const [tab, setTab] = useState<Tab>('activity');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (tab !== 'changes') return;
-    api<{ results: HistoryRow[] }>('GET', `/v1/objects/${object}/${id}/history?limit=200`).then((r) => setHistory(r.results)).catch((e) => setError((e as Error).message));
-  }, [tab, object, id]);
 
   const items = associated
     .filter((a) => (ACTIVITY_OBJECTS as readonly string[]).includes(a.object) && (tab === 'activity' || tab === a.object))
@@ -252,7 +257,6 @@ function ActivityStream({ object, id, associated, onChanged, schema }: { object:
     }
   }
 
-  const propLabel = (name: string) => schema.properties.find((p) => p.api_name === name)?.label ?? name;
   const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o)), 'changes'];
 
   return (
@@ -272,21 +276,7 @@ function ActivityStream({ object, id, associated, onChanged, schema }: { object:
         </div>
       )}
       {tab === 'changes' ? (
-        <div className="timeline">
-          {history === null && <div className="muted">Loading…</div>}
-          {history?.length === 0 && <div className="muted">No changes recorded.</div>}
-          {history?.map((h, i) => (
-            <div key={i} className="change">
-              <div className="change-head">
-                <strong>{h.property === 'association' ? 'Association' : propLabel(h.property)}</strong>
-                <span className="muted small">{new Date(h.changed_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {h.changed_by} · {h.source}</span>
-              </div>
-              <div className="small">
-                <span className="faint">{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span> → {h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}
-              </div>
-            </div>
-          ))}
-        </div>
+        <ChangeHistory object={object} id={id} schema={schema} />
       ) : (
         <div className="timeline">
           {items.length === 0 && <div className="muted">No activity yet.</div>}
@@ -311,6 +301,187 @@ function ActivityStream({ object, id, associated, onChanged, schema }: { object:
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+function ChangeHistory({ object, id, schema }: { object: string; id: string; schema: ObjectDef }) {
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHistory(null);
+    api<{ results: HistoryRow[] }>('GET', `/v1/objects/${object}/${id}/history?limit=200`).then((r) => setHistory(r.results)).catch((e) => setError((e as Error).message));
+  }, [object, id]);
+
+  const propLabel = (name: string) => schema.properties.find((p) => p.api_name === name)?.label ?? name;
+  return (
+    <div className="timeline">
+      {error && <div className="error">{error}</div>}
+      {history === null && !error && <div className="muted">Loading…</div>}
+      {history?.length === 0 && <div className="muted">No changes recorded.</div>}
+      {history?.map((h, i) => (
+        <div key={i} className="change">
+          <div className="change-head">
+            <strong>{h.property === 'association' ? 'Association' : propLabel(h.property)}</strong>
+            <span className="muted small">{when(h.changed_at)} · {h.changed_by} · {h.source}</span>
+          </div>
+          <div className="small">
+            <span className="faint">{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span> → {h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- users ----------------------------------------------------------------
+
+interface UserRole {
+  assignment_id: number;
+  role_id: number;
+  name: string;
+  is_admin: boolean;
+  // set when the role comes from one of the user's teams
+  team_id: string | null;
+}
+
+function UserRoles({ userId }: { userId: string }) {
+  const { me } = useApp();
+  const [roles, setRoles] = useState<UserRole[] | null>(null);
+  const [allRoles, setAllRoles] = useState<{ id: number; name: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const r = await api<{ results: UserRole[] }>('GET', `/v1/users/${userId}/roles`);
+    setRoles(r.results);
+  }, [userId]);
+
+  useEffect(() => {
+    load().catch((e) => setError((e as Error).message));
+    if (me.is_admin) api<{ results: { id: number; name: string }[] }>('GET', '/v1/roles').then((r) => setAllRoles(r.results)).catch(() => undefined);
+  }, [load, me.is_admin]);
+
+  async function run(fn: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await fn();
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  const available = allRoles.filter((r) => !roles?.some((x) => x.role_id === r.id && !x.team_id));
+  return (
+    <div className="props user-roles">
+      <h3>
+        Roles
+        {me.is_admin && <Link to="/settings/roles" className="small push-right">Manage roles</Link>}
+      </h3>
+      {error && <div className="error">{error}</div>}
+      <div className="role-chips">
+        {roles?.length === 0 && <span className="muted small">No role: this user can sign in but sees nothing.</span>}
+        {roles?.map((r) => (
+          <span key={`${r.assignment_id}`} className={`role-chip${r.is_admin ? ' admin' : ''}${r.team_id ? ' via-team' : ''}`}>
+            {r.name}
+            {r.team_id ? (
+              <Link to={`/objects/teams/${r.team_id}`} className="muted">&nbsp;via team</Link>
+            ) : me.is_admin ? (
+              <button className="icon-btn" aria-label={`Remove ${r.name}`} onClick={() => run(() => api('DELETE', `/v1/roles/${r.role_id}/assignments/${r.assignment_id}`))}>
+                <X size={12} />
+              </button>
+            ) : null}
+          </span>
+        ))}
+        {me.is_admin && available.length > 0 && (
+          <select className="role-add" value="" aria-label="Add a role" onChange={(e) => run(() => api('POST', `/v1/roles/${e.target.value}/assignments`, { user_id: userId }))}>
+            <option value="">Add role…</option>
+            {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface SignIns {
+  identities: { provider: string; email: string | null; created_at: string; last_login_at: string | null }[];
+  sessions: { id: number; created_at: string; expires_at: string; revoked_at: string | null; ip: string | null; user_agent: string | null; status: 'active' | 'signed_out' | 'expired' }[];
+}
+
+const PROVIDERS: Record<string, string> = { google: 'Google', microsoft: 'Microsoft', magic_link: 'Email link', passkey: 'Passkey' };
+const SESSION_STATUS: Record<SignIns['sessions'][number]['status'], string> = { active: 'Signed in', signed_out: 'Signed out', expired: 'Expired' };
+
+// "Chrome on macOS" from a user agent string
+function device(ua: string | null): string {
+  if (!ua) return 'Unknown device';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const os = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Mac OS X/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : null;
+  return os ? `${browser} on ${os}` : browser;
+}
+
+function SignInHistory({ id }: { id: string }) {
+  const [data, setData] = useState<SignIns | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    api<SignIns>('GET', `/v1/users/${id}/sign-ins`).then(setData).catch((e) => setError((e as Error).message));
+  }, [id]);
+
+  if (error) return <div className="muted">{error}</div>;
+  if (!data) return <div className="muted">Loading…</div>;
+  return (
+    <div className="timeline">
+      {data.identities.length === 0 ? (
+        <div className="muted">No sign-in method linked yet. The user is linked the first time they sign in.</div>
+      ) : (
+        data.identities.map((i) => (
+          <div key={`${i.provider}-${i.created_at}`} className="change">
+            <div className="change-head">
+              <strong>{PROVIDERS[i.provider] ?? i.provider} account{i.email ? `: ${i.email}` : ''}</strong>
+              <span className="muted small">linked {when(i.created_at)}</span>
+            </div>
+            <div className="small muted">{i.last_login_at ? `Last sign-in ${when(i.last_login_at)}` : 'Never signed in'}</div>
+          </div>
+        ))
+      )}
+      {data.sessions.length === 0 && data.identities.length > 0 && <div className="muted">No sessions recorded.</div>}
+      {data.sessions.map((s) => (
+        <div key={s.id} className="change">
+          <div className="change-head">
+            <strong>{device(s.user_agent)}</strong>
+            <span className="muted small">{when(s.created_at)}{s.ip ? ` · ${s.ip}` : ''}</span>
+          </div>
+          <div className="small">
+            <span className={`session-status ${s.status}`}>{SESSION_STATUS[s.status]}</span>
+            <span className="muted">
+              {s.status === 'active' && ` · until ${when(s.expires_at)}`}
+              {s.status === 'signed_out' && s.revoked_at && ` · ${when(s.revoked_at)}`}
+              {s.status === 'expired' && ` · ${when(s.expires_at)}`}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UserHistory({ object, id, schema }: { object: string; id: string; schema: ObjectDef }) {
+  const [tab, setTab] = useState<'sign-ins' | 'changes'>('sign-ins');
+  return (
+    <div className="activity">
+      <div className="tabs">
+        {(['sign-ins', 'changes'] as const).map((t) => (
+          <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
+            <button onClick={() => setTab(t)}>{t === 'sign-ins' ? 'Sign-in history' : 'Changes'}</button>
+          </div>
+        ))}
+      </div>
+      {tab === 'sign-ins' ? <SignInHistory id={id} /> : <ChangeHistory object={object} id={id} schema={schema} />}
     </div>
   );
 }
