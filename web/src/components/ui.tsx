@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { API_BASE, type Property } from '../lib/api';
-import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, type PhoneRegions } from '../public/phone-regions';
+import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegions } from '../public/phone-regions';
 import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 
@@ -194,16 +194,20 @@ export function PhoneInput({ value, onChange, autoFocus, onCommit }: {
       }}
     >
       {regions && (
-        <select
-          value={region}
-          aria-label="Country"
-          onChange={(e) => {
-            setRegion(e.target.value);
-            emit(text, regions.regions.find((r) => r.region === e.target.value));
-          }}
-        >
-          {regions.regions.map((r) => <option key={r.region} value={r.region}>{regionLabel(r)}</option>)}
-        </select>
+        // shows the flag; the invisible select on top opens the named list
+        <div className="phone-country">
+          <span className="phone-country-face" aria-hidden="true">{regionShort(picked)}</span>
+          <select
+            value={region}
+            aria-label="Country"
+            onChange={(e) => {
+              setRegion(e.target.value);
+              emit(text, regions.regions.find((r) => r.region === e.target.value));
+            }}
+          >
+            {regions.regions.map((r) => <option key={r.region} value={r.region}>{regionLabel(r)}</option>)}
+          </select>
+        </div>
       )}
       <input
         type="tel"

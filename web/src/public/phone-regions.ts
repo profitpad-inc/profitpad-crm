@@ -46,7 +46,14 @@ export function loadPhoneRegions(apiBase: string): Promise<PhoneRegions> {
   return p;
 }
 
-export const regionLabel = (r: PhoneRegion) => `${r.flag} +${r.code} ${r.name}`.trim();
+// In the open list: "🇨🇦 Canada +1". On the closed picker: the flag only
+// (the region code where the system has no flag emoji for it).
+export const regionLabel = (r: PhoneRegion) => `${r.flag} ${r.name} +${r.code}`.trim();
+export const regionShort = (r: PhoneRegion | undefined) => (r ? r.flag || r.region : '');
+
+// The SVG chevron drawn on selects in forms' FORM_CSS (the browser's own
+// cannot be moved in from the edge). styles.css draws the same one for the app.
+export const CARET = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`;
 
 // The number as sent to the API: unchanged when it already starts with + (or
 // is empty), else with the picked country's calling code in front.

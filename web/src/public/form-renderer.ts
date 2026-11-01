@@ -1,6 +1,6 @@
 import { el, publicApi, PublicApiError, type FormField, type PhoneResult, type PublicForm } from './public-api';
 import { visibleFields } from './conditions';
-import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, type PhoneRegion } from './phone-regions';
+import { CARET, composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegion } from './phone-regions';
 
 // Renders a published form into a container and submits it. Shared by the
 // hosted page (/p/form/), embed.js and the builder's preview, so it uses plain
@@ -16,6 +16,8 @@ import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, type Phon
 //   shows that field's error and [data-error=_form] the form's.
 
 export const FORM_CSS = `
+.pcrm-form select:not([multiple]) { -webkit-appearance: none; appearance: none; padding-right: 36px;
+  background-image: ${CARET}; background-repeat: no-repeat; background-position: right 14px center; background-size: 12px; }
 .pcrm-form { --pcrm-primary: #1f7a74; --pcrm-text: #1f2328; --pcrm-muted: #6b7280; --pcrm-border: #d5d8dd;
   font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.45;
   color: var(--pcrm-text); max-width: 560px; box-sizing: border-box; }
@@ -32,8 +34,12 @@ export const FORM_CSS = `
   border: 1px solid var(--pcrm-border); border-radius: 8px; padding: 9px 11px; margin: 0; }
 .pcrm-form textarea { min-height: 110px; resize: vertical; }
 .pcrm-form .pcrm-phone { display: flex; gap: 6px; }
-.pcrm-form .pcrm-phone select { width: 8.5em; flex: none; padding-left: 8px; padding-right: 4px; }
 .pcrm-form .pcrm-phone input { flex: 1; min-width: 0; }
+.pcrm-form .pcrm-country { position: relative; flex: none; }
+.pcrm-form .pcrm-country-face { display: flex; align-items: center; height: 100%; white-space: nowrap; background: #fff; border: 1px solid var(--pcrm-border);
+  border-radius: 8px; padding: 9px 36px 9px 11px; background-image: ${CARET}; background-repeat: no-repeat; background-position: right 14px center; background-size: 12px; }
+.pcrm-form .pcrm-country select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.pcrm-form .pcrm-country:focus-within .pcrm-country-face { outline: 2px solid var(--pcrm-primary); border-color: var(--pcrm-primary); }
 .pcrm-form input:focus, .pcrm-form select:focus, .pcrm-form textarea:focus { outline: 2px solid var(--pcrm-primary); outline-offset: 0; border-color: var(--pcrm-primary); }
 .pcrm-form .pcrm-check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 15px; }
 .pcrm-form .pcrm-check input { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--pcrm-primary); }
@@ -267,6 +273,14 @@ export function renderForm(container: HTMLElement, opts: {
   // arrives; until then numbers without + are read as the API's default).
   const phoneFields = asked.filter((f) => f.format === 'phone');
   const pickers = new Map<string, HTMLSelectElement>();
+  // the closed picker shows the flag; the open list has the names
+  const faces = new Map<string, HTMLElement>();
+  const setRegion = (name: string, region: string) => {
+    const select = pickers.get(name);
+    if (!select) return;
+    select.value = region;
+    faces.get(name)!.textContent = regionShort(regionList.find((r) => r.region === region));
+  };
   let regionList: PhoneRegion[] = [];
   const regionOf = (name: string) => regionList.find((r) => r.region === pickers.get(name)?.value);
   if (phoneFields.length) {
@@ -277,12 +291,15 @@ export function renderForm(container: HTMLElement, opts: {
         if (!input || pickers.has(f.name)) continue;
         const select = el('select', { class: 'pcrm-phone-country', 'aria-label': `${f.label} country` },
           ...regions.map((r) => el('option', { value: r.region }, regionLabel(r))));
-        select.value = regionForNumber(input.value, regions, fallback) ?? fallback;
+        const face = el('span', { class: 'pcrm-country-face', 'aria-hidden': 'true' });
         const box = el('div', { class: 'pcrm-phone' });
         input.before(box);
-        box.append(select, input);
+        box.append(el('div', { class: 'pcrm-country' }, face, select), input);
         pickers.set(f.name, select);
+        faces.set(f.name, face);
+        setRegion(f.name, regionForNumber(input.value, regions, fallback) ?? fallback);
         select.addEventListener('change', () => {
+          setRegion(f.name, select.value);
           errors.get(f.name)!.textContent = '';
           setInvalid(f.name, false);
           void checkPhoneField(f, input);
@@ -333,7 +350,7 @@ export function renderForm(container: HTMLElement, opts: {
     if (result.valid && result.display) {
       c.value = result.display;
       const picker = pickers.get(f.name);
-      if (picker && result.region && regionList.some((r) => r.region === result.region)) picker.value = result.region;
+      if (picker && result.region && regionList.some((r) => r.region === result.region)) setRegion(f.name, result.region);
       phones.set(f.name, { input: result.display, result });
     } else {
       phones.set(f.name, { input, result });
