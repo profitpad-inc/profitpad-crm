@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { displayName, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { PublicLinkCard } from '../components/PublicLinkCard';
+import { FormBuilder } from '../components/FormBuilder';
 
 interface Link_ {
   association_id: string;
@@ -20,13 +21,25 @@ interface Associated {
   records: { record: CrmRecord; labels: (string | null)[] }[];
 }
 
-const ACTIVITY_OBJECTS = ['calls', 'emails', 'notes', 'tasks'] as const;
+const ACTIVITY_OBJECTS = ['calls', 'emails', 'notes', 'tasks', 'form_submissions'] as const;
 const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
+// objects whose pages show other cards by default
+const DEFAULT_CARDS_FOR: Record<string, string[]> = { forms: ['form_submissions'] };
 const ACTIVITY_PROPS: Record<string, string[]> = {
   calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at'],
   emails: ['name', 'subject', 'body', 'direction', 'from_address', 'to_addresses', 'sent_at', 'created_at'],
   notes: ['name', 'body', 'created_at'],
-  tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'body', 'created_at']
+  tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'body', 'created_at'],
+  form_submissions: ['name', 'submitted_at', 'summary', 'submission_values', 'created_at'],
+  // not activities, but read along: quote responses show in the stream, lines in their card
+  quotes: ['status', 'responded_at', 'responder_name', 'responder_email', 'decline_reason'],
+  lines: ['quantity', 'amount']
+};
+// Shown elsewhere on the page (builder, answers, link card) rather than as raw values
+const HIDDEN_PROPS: Record<string, string[]> = {
+  forms: ['definition', 'public_key'],
+  quotes: ['public_key'],
+  form_submissions: ['summary', 'submission_values']
 };
 
 export function RecordPage() {
@@ -96,8 +109,9 @@ export function RecordPage() {
   if (!schema || !record) return <div className="page muted">Loading…</div>;
   const name = recordName(record);
   const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
-  const cards = [...new Set([...DEFAULT_CARDS.filter((o) => o !== object && objectByName.has(o)), ...associated.map((a) => a.object)])]
-    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o));
+  const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o)), ...associated.map((a) => a.object)])]
+    // a form lists its submissions as a card; elsewhere they are activities
+    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions'));
   const isUser = object === 'users';
 
   return (
@@ -139,7 +153,13 @@ export function RecordPage() {
       ) : (
         <>
           <section className="record-middle">
-            <ActivityStream object={object} id={id} associated={associated} onChanged={loadAssociations} schema={schema} />
+            {object === 'forms' ? (
+              <FormBuilder record={record} onSaved={setRecord} />
+            ) : object === 'form_submissions' ? (
+              <SubmissionAnswers record={record} />
+            ) : (
+              <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
+            )}
           </section>
 
           <aside className="record-right">
@@ -158,7 +178,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const shown = schema.properties.filter((p) => p.row_status === 'active' && !['object_type_id', 'merged_ids'].includes(p.api_name));
+  const shown = schema.properties.filter((p) => p.row_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   const main = shown.filter((p) => !p.is_base || p.api_name === 'name');
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
 
@@ -222,7 +242,7 @@ interface HistoryRow {
 
 function activityTime(object: string, r: CrmRecord): string {
   const p = r.properties;
-  const t = object === 'calls' ? p.started_at : object === 'emails' ? p.sent_at : object === 'tasks' ? p.due_at : null;
+  const t = object === 'calls' ? p.started_at : object === 'emails' ? p.sent_at : object === 'tasks' ? p.due_at : object === 'form_submissions' ? p.submitted_at : null;
   return String(t ?? p.created_at ?? '');
 }
 
@@ -232,17 +252,29 @@ function plain(text: unknown): string {
   return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function ActivityStream({ object, id, associated, onChanged, schema }: { object: string; id: string; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef }) {
+function ActivityStream({ object, id, record, associated, onChanged, schema }: { object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef }) {
   const { objectByName } = useApp();
   const [tab, setTab] = useState<Tab>('activity');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const items = associated
-    .filter((a) => (ACTIVITY_OBJECTS as readonly string[]).includes(a.object) && (tab === 'activity' || tab === a.object))
-    .flatMap((a) => a.records.map((r) => ({ object: a.object, record: r.record, at: activityTime(a.object, r.record) })))
-    .sort((x, y) => y.at.localeCompare(x.at));
+  // A customer accepting or declining a quote (on the quote's page and on
+  // the pages of records linked to it), taken from the quote's responded_* values.
+  const quotes = [
+    ...(object === 'quotes' ? [record] : []),
+    ...(associated.find((a) => a.object === 'quotes')?.records.map((r) => r.record) ?? [])
+  ];
+  const quoteEvents = tab !== 'activity' ? [] : quotes
+    .filter((q) => typeof q.properties.responded_at === 'string' && ['accepted', 'rejected'].includes(String(q.properties.status)))
+    .map((q) => ({ object: 'quotes', record: q, at: String(q.properties.responded_at), quoteResponse: true }));
+
+  const items = [
+    ...associated
+      .filter((a) => (ACTIVITY_OBJECTS as readonly string[]).includes(a.object) && (tab === 'activity' || tab === a.object))
+      .flatMap((a) => a.records.map((r) => ({ object: a.object, record: r.record, at: activityTime(a.object, r.record), quoteResponse: false }))),
+    ...quoteEvents
+  ].sort((x, y) => y.at.localeCompare(x.at));
 
   async function addNote() {
     if (!note.trim()) return;
@@ -282,9 +314,28 @@ function ActivityStream({ object, id, associated, onChanged, schema }: { object:
       ) : (
         <div className="timeline">
           {items.length === 0 && <div className="muted">No activity yet.</div>}
-          {items.map(({ object: o, record: r, at }) => {
+          {items.map(({ object: o, record: r, at, quoteResponse }) => {
             const Icon = objectIcon(o);
             const p = r.properties;
+            if (quoteResponse) {
+              const accepted = p.status === 'accepted';
+              return (
+                <Link key={`quote-response-${r.id}`} to={`/objects/quotes/${r.id}`} className="activity-item">
+                  <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={16} strokeWidth={1.75} /></span>
+                  <div className="activity-body">
+                    <div className="activity-head">
+                      <strong>Quote {accepted ? 'accepted' : 'declined'}</strong>
+                      <span className="muted small">Quote · {when(at)}</span>
+                    </div>
+                    <div className="activity-text">
+                      {recordName(r)} {accepted ? 'accepted' : 'declined'} by {String(p.responder_name ?? 'the customer')}
+                      {p.responder_email ? ` (${String(p.responder_email)})` : ''}
+                    </div>
+                    {!accepted && p.decline_reason ? <div className="small muted">Reason: {String(p.decline_reason)}</div> : null}
+                  </div>
+                </Link>
+              );
+            }
             const title = o === 'emails' ? (p.subject as string) || 'Email' : o === 'notes' ? 'Note' : displayName(p, r.id);
             const body = plain(o === 'tasks' ? p.body : p.body);
             return (
@@ -297,6 +348,7 @@ function ActivityStream({ object, id, associated, onChanged, schema }: { object:
                   </div>
                   {o === 'tasks' && p.status ? <div className="small muted">Status: {String(p.status).replace(/_/g, ' ')}</div> : null}
                   {body && <div className="activity-text">{body.length > 400 ? `${body.slice(0, 400)}…` : body}</div>}
+                  {o === 'form_submissions' && <Answers record={r} limit={6} />}
                 </div>
               </Link>
             );
@@ -498,6 +550,11 @@ function AssociationCard({ self, selfId, other, items, onChanged }: {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CrmRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [otherSchema, setOtherSchema] = useState<ObjectDef | null>(null);
+
+  useEffect(() => {
+    if (other === 'lines') getSchema(other).then(setOtherSchema).catch(() => undefined);
+  }, [other]);
 
   useEffect(() => {
     if (!adding) return;
@@ -554,15 +611,107 @@ function AssociationCard({ self, selfId, other, items, onChanged }: {
       {items.length === 0 && !adding && <div className="muted small">No {meta.label_plural.toLowerCase()} yet.</div>}
       {items.map(({ record, labels }) => (
         <div key={record.id} className="card-row">
-          <div>
+          <div className="card-row-main">
             <Link to={`/objects/${other}/${record.id}`}>{recordName(record)}</Link>
             {labels.some(Boolean) && <div className="small muted">{labels.filter(Boolean).join(', ')}</div>}
           </div>
+          {other === 'lines' && <LineFigures record={record} schema={otherSchema} />}
           <button className="icon-btn push-right faint-btn" onClick={() => unlink(record.id)} aria-label="Remove association">
             <X size={14} />
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- form submissions -------------------------------------------------------------
+
+interface Answer {
+  name: string;
+  label: string;
+  value: string;
+  property?: string;
+  hidden?: boolean;
+}
+
+// A submission's answers: the summary saved with it (labels as asked), or for
+// older submissions the raw values with their keys.
+function answersOf(record: CrmRecord): Answer[] {
+  const p = record.properties;
+  try {
+    if (typeof p.summary === 'string') return JSON.parse(p.summary) as Answer[];
+    if (typeof p.submission_values === 'string') {
+      const values = JSON.parse(p.submission_values) as Record<string, unknown>;
+      return Object.entries(values).map(([name, v]) => ({
+        name,
+        label: name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()),
+        value: v === true ? 'Yes' : v === false ? 'No' : Array.isArray(v) ? v.join(', ') : String(v)
+      }));
+    }
+  } catch {
+    // not JSON: nothing to show
+  }
+  return [];
+}
+
+function Answers({ record, limit }: { record: CrmRecord; limit?: number }) {
+  const all = answersOf(record).filter((a) => !a.hidden);
+  const shown = limit ? all.slice(0, limit) : all;
+  if (shown.length === 0) return null;
+  return (
+    <dl className="answers compact">
+      {shown.map((a) => (
+        <div key={a.name}><dt>{a.label}</dt><dd>{a.value}</dd></div>
+      ))}
+      {limit && all.length > limit && <div className="muted small">and {all.length - limit} more</div>}
+    </dl>
+  );
+}
+
+function SubmissionAnswers({ record }: { record: CrmRecord }) {
+  const answers = answersOf(record);
+  const p = record.properties;
+  const page = typeof p.page_url === 'string' ? p.page_url : null;
+  return (
+    <div className="submission">
+      <h2>Answers</h2>
+      <div className="muted small">
+        {typeof p.submitted_at === 'string' && when(p.submitted_at)}
+        {page && <> · from <a href={page} target="_blank" rel="noreferrer">{page.replace(/^https?:\/\//, '')}</a></>}
+      </div>
+      {answers.length === 0 ? <div className="muted">No answers recorded.</div> : (
+        <dl className="answers">
+          {answers.map((a) => (
+            <div key={a.name}>
+              <dt>
+                {a.label}
+                {a.property && <span className="fb-tag">{a.property.startsWith('contacts.') ? 'Contact' : 'Ticket'} property</span>}
+                {a.hidden && <span className="fb-tag">Set by the form</span>}
+              </dt>
+              <dd>{a.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+// Quantity and extended amount on a line item card row: "x2   $24.68".
+function LineFigures({ record, schema }: { record: CrmRecord; schema: ObjectDef | null }) {
+  const qty = record.properties.quantity;
+  const amount = record.properties.amount;
+  const amountProp = schema?.properties.find((p) => p.api_name === 'amount');
+  const amountText = amount === null || amount === undefined || amount === ''
+    ? ''
+    : amountProp
+      ? formatValue(amountProp, amount)
+      : Number(amount).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  return (
+    <div className="line-figures">
+      {qty !== null && qty !== undefined && qty !== '' && <span className="muted">x{Number(qty).toLocaleString()}</span>}
+      {amountText && <span>{amountText}</span>}
     </div>
   );
 }

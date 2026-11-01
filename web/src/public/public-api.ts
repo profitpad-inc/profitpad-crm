@@ -1,3 +1,5 @@
+import type { Condition, FieldType } from './conditions';
+
 // Fetch helper for the public pages (/p/quote/, /p/form/, embed.js). Never
 // sends cookies or an API key: these pages are opened by customers.
 
@@ -18,10 +20,12 @@ export interface PublicQuote {
 export interface FormField {
   name: string;
   label: string;
-  type: 'text' | 'email' | 'phone' | 'textarea' | 'number' | 'select' | 'checkbox';
+  type: FieldType;
   required: boolean;
-  options?: string[];
+  options?: { value: string; label: string }[];
   placeholder?: string;
+  help?: string;
+  conditions?: Condition[];
 }
 
 export interface PublicForm {

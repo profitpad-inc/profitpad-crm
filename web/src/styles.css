@@ -500,3 +500,59 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .origin-list { display: flex; flex-direction: column; gap: 6px; max-width: 520px; margin: 12px 0; }
 .origin-list li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; list-style: none; }
 .origin-list ul { padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+
+/* Form builder (forms record page) */
+.form-builder { display: flex; flex-direction: column; gap: 10px; }
+.fb-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fb-toolbar h2 { margin: 0; }
+.fb-modes { display: flex; gap: 4px; }
+.fb-modes .btn.active { background: var(--surface); border-color: var(--primary); color: var(--primary); }
+.fb-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.fb-add select { flex: 1; min-width: 160px; }
+.fb-empty { padding: 24px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+.fb-fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fb-field { border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); }
+.fb-field.open { border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); }
+.fb-field > .error { margin: 0 10px 8px; }
+.fb-field-head { display: flex; align-items: center; gap: 2px; padding: 4px 6px; }
+.fb-field-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border: 0; background: none; padding: 6px 4px; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.fb-label { font-weight: 600; }
+.fb-kind { color: var(--muted-text); font-size: 12px; }
+.fb-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--muted-text); margin-left: 6px; font-weight: 500; }
+.fb-editor { display: flex; flex-direction: column; gap: 10px; padding: 4px 14px 14px 32px; }
+.fb-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fb-check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.fb-check input { width: auto; }
+.fb-hidden, .fb-conditions { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.fb-hidden > input, .fb-hidden > select { max-width: 320px; }
+.fb-conditions > .btn { align-self: flex-start; }
+.fb-condition { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 6px; background: var(--surface); }
+.fb-condition-line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fb-condition-line select, .fb-condition-line input { width: auto; min-width: 0; max-width: 220px; }
+.fb-options { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.fb-settings { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.fb-preview { display: flex; flex-direction: column; gap: 8px; }
+.fb-preview-note { display: flex; align-items: center; gap: 10px; }
+.fb-preview .card { padding: 20px; }
+.fb-preview-title { margin: 0 0 14px; }
+
+/* Form submission answers (submission page and activity stream) */
+.submission h2 { margin: 0 0 4px; }
+.answers { margin: 14px 0 0; display: flex; flex-direction: column; gap: 0; }
+.answers > div { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.answers dt { color: var(--muted-text); }
+.answers dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.answers.compact { margin-top: 6px; }
+.answers.compact > div { padding: 3px 0; border: 0; grid-template-columns: minmax(90px, 30%) 1fr; font-size: 13px; }
+@media (max-width: 767px) {
+  .fb-row, .fb-settings { grid-template-columns: 1fr; }
+  .fb-editor { padding-left: 14px; }
+  .answers > div { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* Line item figures on association cards, quote responses in the activity stream */
+.card-row-main { min-width: 0; }
+.line-figures { margin-left: auto; display: flex; gap: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.line-figures + .push-right { margin-left: 0; }
+.activity-icon.good { color: #05603a; }
+.activity-icon.bad { color: #b42318; }

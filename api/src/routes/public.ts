@@ -4,7 +4,8 @@ import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
 import { browserOrigins, requireScope, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
-import { createRecord, updateRecord } from '../records.js';
+import { updateRecord } from '../records.js';
+import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
 
 // Public pages: customers open quotes (/p/quote/#key) and fill in forms
@@ -22,7 +23,10 @@ const PUBLIC_PRINCIPAL: Principal = {
   permissions: {
     objects: new Map([
       ['pc_0022', { read: true, create: false, edit: true, delete: false }],
-      ['pc_0053', { read: false, create: true, edit: false, delete: false }]
+      ['pc_0053', { read: false, create: true, edit: false, delete: false }],
+      // forms upsert contacts by email and create tickets
+      ['pc_0010', { read: true, create: true, edit: true, delete: false }],
+      ['pc_0013', { read: false, create: true, edit: false, delete: false }]
     ]),
     propertyAccess: new Map(),
     recordAccess: 'all',
@@ -179,65 +183,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---- forms -------------------------------------------------------------------
 
-export type FieldType = 'text' | 'email' | 'phone' | 'textarea' | 'number' | 'select' | 'checkbox';
-export interface FormField {
-  name: string;
-  label: string;
-  type: FieldType;
-  required: boolean;
-  options?: string[];
-  placeholder?: string;
-}
-export interface FormDefinition {
-  fields: FormField[];
-  submit_label: string;
-  success_message: string;
-}
-
-const FIELD_TYPES: FieldType[] = ['text', 'email', 'phone', 'textarea', 'number', 'select', 'checkbox'];
-const FIELD_MAX: Record<FieldType, number> = { text: 500, email: 254, phone: 50, textarea: 5000, number: 50, select: 200, checkbox: 5 };
-
-// The forms object's `definition` property (JSON):
-//   {"fields": [{"name": "email", "label": "Email", "type": "email", "required": true},
-//               {"name": "topic", "label": "Topic", "type": "select", "options": ["Sales", "Support"]}],
-//    "submit_label": "Send", "success_message": "Thanks, we'll be in touch."}
-export function parseDefinition(raw: string | null): FormDefinition {
-  const bad = (why: string) => new ApiError(409, `this form is not set up correctly: ${why}`, 'form_misconfigured');
-  let def: Record<string, unknown>;
-  try {
-    def = JSON.parse(raw ?? '');
-  } catch {
-    throw bad('definition is not JSON');
-  }
-  if (!def || typeof def !== 'object' || !Array.isArray(def.fields) || def.fields.length === 0 || def.fields.length > 50) {
-    throw bad('definition needs 1 to 50 fields');
-  }
-  const seen = new Set<string>();
-  const fields = def.fields.map((f: Record<string, unknown>, i: number): FormField => {
-    const name = String(f?.name ?? '');
-    if (!/^[a-z][a-z0-9_]{0,62}$/.test(name) || name.startsWith('_')) throw bad(`field ${i + 1} needs a name like "first_name"`);
-    if (seen.has(name)) throw bad(`field "${name}" is listed twice`);
-    seen.add(name);
-    const type = (f.type ?? 'text') as FieldType;
-    if (!FIELD_TYPES.includes(type)) throw bad(`field "${name}" has unknown type "${String(f.type)}"`);
-    const options = type === 'select' ? (Array.isArray(f.options) ? f.options.map(String) : []) : undefined;
-    if (type === 'select' && (!options || options.length === 0)) throw bad(`select field "${name}" needs options`);
-    return {
-      name,
-      label: typeof f.label === 'string' && f.label ? f.label : name,
-      type,
-      required: f.required === true,
-      ...(options ? { options } : {}),
-      ...(typeof f.placeholder === 'string' ? { placeholder: f.placeholder } : {})
-    };
-  });
-  return {
-    fields,
-    submit_label: typeof def.submit_label === 'string' && def.submit_label ? def.submit_label : 'Submit',
-    success_message: typeof def.success_message === 'string' && def.success_message ? def.success_message : 'Thanks, your answers were sent.'
-  };
-}
-
 async function loadPublishedForm(key: string): Promise<{ id: string; name: string | null; description: string | null; definition: FormDefinition }> {
   const { rows } = await pool.query(
     `select pc_0052_id as id, name, description, definition from crm.pc_0052
@@ -245,45 +190,7 @@ async function loadPublishedForm(key: string): Promise<{ id: string; name: strin
     [checkKey(key)]
   );
   if (!rows[0]) throw notFound('form not found');
-  return { id: rows[0].id, name: rows[0].name, description: rows[0].description, definition: parseDefinition(rows[0].definition) };
-}
-
-// Checks submitted values against the definition: only known fields, required
-// fields present, values the right shape.
-export function validateValues(def: FormDefinition, values: unknown): Record<string, string | number | boolean> {
-  if (!values || typeof values !== 'object' || Array.isArray(values)) throw badRequest('values must be an object');
-  const input = values as Record<string, unknown>;
-  const known = new Set(def.fields.map((f) => f.name));
-  const unknown = Object.keys(input).filter((k) => !known.has(k));
-  if (unknown.length) throw badRequest(`unknown fields: ${unknown.join(', ')}`);
-  const out: Record<string, string | number | boolean> = {};
-  for (const f of def.fields) {
-    const v = input[f.name];
-    const empty = v === undefined || v === null || v === '' || (f.type === 'checkbox' && v === false);
-    if (empty) {
-      if (f.required) throw badRequest(`${f.label} is required`, { field: f.name });
-      continue;
-    }
-    if (f.type === 'checkbox') {
-      if (v !== true) throw badRequest(`${f.label} must be true or false`, { field: f.name });
-      out[f.name] = true;
-      continue;
-    }
-    if (f.type === 'number') {
-      const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
-      if (!Number.isFinite(n)) throw badRequest(`${f.label} must be a number`, { field: f.name });
-      out[f.name] = n;
-      continue;
-    }
-    if (typeof v !== 'string') throw badRequest(`${f.label} must be text`, { field: f.name });
-    const s = v.trim();
-    if (s.length > FIELD_MAX[f.type]) throw badRequest(`${f.label} must be at most ${FIELD_MAX[f.type]} characters`, { field: f.name });
-    if (f.type === 'email' && !EMAIL_RE.test(s)) throw badRequest(`${f.label} must be an email address`, { field: f.name });
-    if (f.type === 'select' && !f.options!.includes(s)) throw badRequest(`${f.label} must be one of the listed options`, { field: f.name });
-    if (f.type !== 'textarea' && /[\r\n]/.test(s)) throw badRequest(`${f.label} must be a single line`, { field: f.name });
-    if (s) out[f.name] = s;
-  }
-  return out;
+  return { id: rows[0].id, name: rows[0].name, description: rows[0].description, definition: await readDefinition(rows[0].definition ?? '', false) };
 }
 
 // Submissions faster than this are treated as bots.
@@ -350,7 +257,7 @@ export async function publicRoutes(app: FastifyInstance) {
     rateLimit(req, 'form-read', 120);
     const form = await loadPublishedForm(req.params.key);
     reply.header('cache-control', 'no-store');
-    return { name: form.name, description: form.description, definition: form.definition, theme: await theme() };
+    return { name: form.name, description: form.description, definition: publicDefinition(form.definition), theme: await theme() };
   });
 
   app.post<{ Params: { key: string }; Body: { values?: unknown; page_url?: unknown; _hp?: unknown; _elapsed?: unknown } }>(
@@ -374,20 +281,15 @@ export async function publicRoutes(app: FastifyInstance) {
         reply.code(201);
         return { ok: true, message: form.definition.success_message };
       }
-      const values = validateValues(form.definition, b.values);
+      const values = cleanAnswers(form.definition, b.values);
       const pageUrl = typeof b.page_url === 'string' && /^https?:\/\//.test(b.page_url) ? b.page_url.slice(0, 2000) : null;
-      const email = form.definition.fields.find((f) => f.type === 'email' && typeof values[f.name] === 'string');
-      const obj = await getObject('form_submissions');
       await withTx({ actor: PUBLIC_PRINCIPAL.actor, source: 'public_form' }, (client) =>
-        createRecord(client, obj, PUBLIC_PRINCIPAL, {
-          name: `${form.name ?? 'Form'}: ${email ? values[email.name] : new Date().toISOString().slice(0, 10)}`.slice(0, 200),
-          form_id: form.id,
-          submitted_at: new Date().toISOString(),
-          page_url: pageUrl,
-          submission_values: JSON.stringify(values),
+        applySubmission(client, PUBLIC_PRINCIPAL, form.definition, values, {
+          form: { id: form.id, name: form.name },
+          pageUrl,
           origin,
-          ip_address: req.ip,
-          user_agent: (req.headers['user-agent'] ?? '').slice(0, 500) || null
+          ip: req.ip,
+          userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null
         })
       );
       reply.code(201);
@@ -407,4 +309,15 @@ export async function publicRoutes(app: FastifyInstance) {
       return { public_key: key };
     });
   }
+
+  // Staff: save a form's definition from the builder. Checked strictly
+  // (readDefinition), then stored on the form record.
+  app.put<{ Params: { id: string }; Body: unknown }>('/v1/objects/forms/:id/definition', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    const definition = await readDefinition(req.body, true);
+    const obj = await getObject('forms');
+    await withTx({ actor: p.actor }, (client) => updateRecord(client, obj, p, req.params.id, { definition: JSON.stringify(definition) }));
+    return definition;
+  });
 }
