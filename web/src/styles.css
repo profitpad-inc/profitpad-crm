@@ -298,6 +298,29 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .role-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .role-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; }
 .role-chip.admin { border-color: var(--primary); }
+.rule-card { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.rule-card p { margin: 0; }
+.rule-card.editing { border-color: var(--primary); }
+.rule-head { display: flex; align-items: center; gap: 4px; }
+.rule-head strong { flex: 1; font-weight: 500; }
+.rule-sentence { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rule-sentence select { width: auto; }
+.rule-subhead { font-weight: 500; font-size: 13px; }
+.rule-links { display: flex; flex-direction: column; gap: 4px; }
+.rule-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
+.rule-link label { display: flex; align-items: center; gap: 6px; }
+.rule-link select { width: auto; }
+.rule-summary { display: flex; flex-direction: column; gap: 4px; background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: 6px; padding: 10px 12px; }
+.filter-builder { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.filter-builder > div { align-self: stretch; }
+.filter-group { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; border-left: 2px solid var(--border); padding-left: 12px; }
+.filter-group > div { align-self: stretch; }
+.filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.filter-row > select { width: auto; }
+.filter-row > input { flex: 1; min-width: 140px; width: auto; }
+.filter-values { flex: 1; }
+.filter-or, .filter-and { font-size: 12px; color: var(--muted-text); margin: 2px 0; }
+.filter-or { font-weight: 500; }
 .role-chip .icon-btn { padding: 2px; }
 .role-add { width: auto; font-size: 12px; padding: 2px 6px; }
 .role-form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }

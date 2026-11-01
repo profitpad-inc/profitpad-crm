@@ -10,8 +10,12 @@ export interface Filter {
   values?: unknown[];
 }
 
+export interface FilterGroup {
+  filters: Filter[];
+}
+
 export interface SearchRequest {
-  filter_groups?: { filters: Filter[] }[];
+  filter_groups?: FilterGroup[];
   query?: string;
   sorts?: { property: string; direction?: 'asc' | 'desc' }[];
   properties?: string[];
@@ -47,11 +51,11 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => '\\' + c);
 }
 
-function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean): string {
+function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't'): string {
   const prop = getProperty(obj, f.property);
   if (!prop || prop.row_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
   if (!(OPERATORS as readonly string[]).includes(f.operator)) throw badRequest(`unknown operator "${f.operator}"`);
-  const col = `t.${quoteIdent(prop.api_name)}`;
+  const col = `${alias}.${quoteIdent(prop.api_name)}`;
   const t = valueType(prop);
   const isArray = t === 'dropdown' || t === 'file' || prop.type === 'id_list';
   const cast = CAST[t] ?? 'text';
@@ -121,6 +125,20 @@ function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (
   throw badRequest(`unsupported operator "${f.operator}"`);
 }
 
+// filter_groups -> "((a and b) or (c))" on the given table alias, or null
+// when there are no groups. Also used by sharing rules (auth.ts).
+export function compileFilterGroups(
+  obj: ObjectDef, groups: FilterGroup[], params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't'
+): string | null {
+  if (!Array.isArray(groups)) throw badRequest('filter_groups must be an array');
+  if (groups.length > 5) throw badRequest('at most 5 filter groups');
+  const ors = groups.map((g) => {
+    if (!Array.isArray(g?.filters) || g.filters.length === 0 || g.filters.length > 10) throw badRequest('each filter group needs 1 to 10 filters');
+    return '(' + g.filters.map((f) => compileFilter(obj, f, params, isHidden, alias)).join(' and ') + ')';
+  });
+  return ors.length > 0 ? '(' + ors.join(' or ') + ')' : null;
+}
+
 export interface CompiledSearch {
   where: string;
   orderBy: string;
@@ -147,13 +165,8 @@ export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknow
     }
     clauses.push('(' + (cols.length ? cols.join(' or ') : `t.name ilike $${n}`) + ')');
   }
-  const groups = req.filter_groups ?? [];
-  if (groups.length > 5) throw badRequest('at most 5 filter groups');
-  const ors = groups.map((g) => {
-    if (!Array.isArray(g.filters) || g.filters.length === 0 || g.filters.length > 10) throw badRequest('each filter group needs 1 to 10 filters');
-    return '(' + g.filters.map((f) => compileFilter(obj, f, params, isHidden)).join(' and ') + ')';
-  });
-  if (ors.length > 0) clauses.push('(' + ors.join(' or ') + ')');
+  const groups = compileFilterGroups(obj, req.filter_groups ?? [], params, isHidden);
+  if (groups) clauses.push(groups);
 
   const orders = (req.sorts ?? []).map((s) => {
     const prop = getProperty(obj, s.property);

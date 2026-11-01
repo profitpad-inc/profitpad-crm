@@ -4,6 +4,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName } from '../lib/display';
+import { SharingRules } from '../components/SharingRules';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -35,9 +36,9 @@ interface UserRow {
 }
 
 const RECORD_ACCESS: { value: Role['record_access']; label: string }[] = [
-  { value: 'all', label: 'All records' },
-  { value: 'team', label: 'Records owned by their teams' },
-  { value: 'own', label: 'Only records they own' }
+  { value: 'own', label: 'Only records they own' },
+  { value: 'team', label: "Their team's records" },
+  { value: 'all', label: 'All records' }
 ];
 
 function useAccessData() {
@@ -267,10 +268,11 @@ export function RoleSettings() {
           </div>
           {!draft.is_admin && (
             <label className="field">
-              <span>Records they see</span>
+              <span>Which records can people with this role see?</span>
               <select value={draft.record_access} onChange={(e) => setDraft({ ...draft, record_access: e.target.value as Role['record_access'] })}>
                 {RECORD_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
             </label>
           )}
           <div className="actions">
@@ -322,6 +324,8 @@ export function RoleSettings() {
               </table>
             </div>
           )}
+
+          {!role.is_admin && <SharingRules roleId={role.id} recordAccess={role.record_access} />}
         </>
       )}
     </section>

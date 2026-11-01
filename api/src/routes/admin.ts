@@ -4,10 +4,10 @@ import { stringify as toCsv } from 'csv-stringify/sync';
 import type pg from 'pg';
 import { pool, quoteIdent, withTx, type Db } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
-import { generateKey, hashKey, requireObjectPermission, requireScope, type Scope } from '../auth.js';
+import { generateKey, hashKey, noneHidden, requireObjectPermission, requireScope, sharingClauses, type Scope, type SharingRule } from '../auth.js';
 import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord } from '../records.js';
-import { getObject, getProperty } from '../registry.js';
-import type { SearchRequest } from '../search.js';
+import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
+import { compileFilterGroups, type FilterGroup, type SearchRequest } from '../search.js';
 
 const SCOPES: Scope[] = ['read', 'write', 'schema', 'admin'];
 
@@ -27,6 +27,102 @@ async function keepingAnAdmin<T>(actor: string, fn: (client: pg.PoolClient) => P
     if (before && !(await hasActiveAdmin(client))) throw badRequest('this would leave no active user with an admin role');
     return result;
   });
+}
+
+interface SharingRuleBody {
+  name?: string;
+  object?: string;
+  filter_groups?: FilterGroup[];
+  access?: 'read' | 'edit';
+  associations?: { object?: string; label_id?: string | null; access?: 'read' | 'edit' }[];
+}
+
+const RULE_ACCESS = ['read', 'edit'];
+
+// Checks a sharing rule against the registry: the filter must compile on the
+// object, and each linked object needs an association label to it.
+async function validateSharingRule(db: Db, b: SharingRuleBody): Promise<SharingRule> {
+  if (typeof b.name !== 'string' || b.name.trim() === '') throw badRequest('name is required');
+  if (!b.object) throw badRequest('object is required');
+  const anchor = await getObject(b.object);
+  const access = b.access ?? 'read';
+  if (!RULE_ACCESS.includes(access)) throw badRequest('access must be read or edit');
+  if (!Array.isArray(b.filter_groups) || b.filter_groups.length === 0) throw badRequest('filter_groups needs at least one group');
+  compileFilterGroups(anchor, b.filter_groups, [], noneHidden);
+  const associations: SharingRule['associations'] = [];
+  for (const [i, link] of (b.associations ?? []).entries()) {
+    if (!link?.object) throw badRequest(`associations[${i}].object is required`);
+    const other = await getObject(link.object);
+    const linkAccess = link.access ?? 'read';
+    if (!RULE_ACCESS.includes(linkAccess)) throw badRequest(`associations[${i}].access must be read or edit`);
+    const labelId = link.label_id ?? null;
+    const { rows } = await db.query(
+      `select 1 from meta.pc_0004 where row_status = 'active' and ($3::text is null or pc_0004_id = $3)
+         and ((from_object_type = $1 and to_object_type = $2) or (from_object_type = $2 and to_object_type = $1)) limit 1`,
+      [anchor.object_type_id, other.object_type_id, labelId]
+    );
+    if (rows.length === 0) {
+      throw badRequest(labelId ? `association label ${labelId} does not link ${anchor.api_name} and ${other.api_name}` : `${other.api_name} cannot be linked to ${anchor.api_name}`);
+    }
+    if (associations.some((a) => a.object_type_id === other.object_type_id && a.label_id === labelId)) {
+      throw badRequest(`${other.api_name} is listed twice`);
+    }
+    associations.push({ object_type_id: other.object_type_id, label_id: labelId, access: linkAccess });
+  }
+  return { id: 0, name: b.name.trim(), anchor, filterGroups: b.filter_groups, access, associations };
+}
+
+async function saveSharingAssociations(client: pg.PoolClient, ruleId: number, rule: SharingRule): Promise<void> {
+  await client.query('delete from auth.role_sharing_rule_associations where rule_id = $1', [ruleId]);
+  for (const a of rule.associations) {
+    await client.query('insert into auth.role_sharing_rule_associations (rule_id, object_type_id, label_id, access) values ($1, $2, $3, $4)', [
+      ruleId, a.object_type_id, a.label_id, a.access
+    ]);
+  }
+}
+
+// Rules as the API returns them; `problem` says why a rule currently grants
+// nothing (for example its property was archived).
+async function listSharingRules(db: Db, roleId: string, ruleId?: string) {
+  const { rows } = await db.query(
+    `select r.id, r.role_id, r.name, r.object_type_id, r.filter_groups, r.access, r.created_at, r.created_by, r.updated_at,
+            coalesce(json_agg(json_build_object('object_type_id', a.object_type_id, 'label_id', a.label_id, 'access', a.access) order by a.id)
+                     filter (where a.id is not null), '[]') as associations
+     from auth.role_sharing_rules r left join auth.role_sharing_rule_associations a on a.rule_id = r.id
+     where r.role_id = $1 and ($2::bigint is null or r.id = $2) group by r.id order by r.id`,
+    [roleId, ruleId ?? null]
+  );
+  const registry = await getRegistry();
+  const name = (id: string) => registry.byKey.get(id)?.api_name ?? id;
+  return rows.map((r) => {
+    const anchor = registry.byKey.get(r.object_type_id);
+    let problem: string | null = null;
+    if (!anchor || anchor.row_status !== 'active') problem = `${r.object_type_id} is no longer active`;
+    else {
+      try {
+        compileFilterGroups(anchor, r.filter_groups, [], noneHidden);
+      } catch (err) {
+        problem = (err as Error).message;
+      }
+    }
+    return {
+      ...r,
+      object: name(r.object_type_id),
+      associations: r.associations.map((a: { object_type_id: string }) => ({ ...a, object: name(a.object_type_id) })),
+      problem
+    };
+  });
+}
+
+async function countShared(rule: SharingRule, obj: ObjectDef): Promise<number> {
+  const params: unknown[] = [];
+  const clauses = sharingClauses([rule], obj, params, 't', 'read');
+  if (clauses.length === 0) return 0;
+  const { rows } = await pool.query(
+    `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} t where t.row_status = 'active' and (${clauses.join(' or ')})`,
+    params
+  );
+  return rows[0].n;
 }
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -146,6 +242,63 @@ export async function adminRoutes(app: FastifyInstance) {
       return { role_id: Number(req.params.id), property: prop.api_name, access };
     }
   );
+
+  // ---- Sharing rules (migration 0012) -------------------------------------
+  app.get<{ Params: { id: string } }>('/v1/roles/:id/sharing-rules', async (req) => {
+    requireScope(req.principal!, 'admin');
+    return { results: await listSharingRules(pool, req.params.id) };
+  });
+
+  app.post<{ Params: { id: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'admin');
+    const rule = await validateSharingRule(pool, req.body ?? {});
+    const id = await withTx({ actor: p.actor }, async (c) => {
+      const { rows } = await c.query(
+        `insert into auth.role_sharing_rules (role_id, name, object_type_id, filter_groups, access, created_by)
+         values ($1, $2, $3, $4, $5, $6) returning id`,
+        [req.params.id, rule.name, rule.anchor.object_type_id, JSON.stringify(rule.filterGroups), rule.access, p.actor]
+      );
+      await saveSharingAssociations(c, rows[0].id, rule);
+      return rows[0].id as string;
+    });
+    reply.code(201);
+    return (await listSharingRules(pool, req.params.id, id))[0];
+  });
+
+  app.put<{ Params: { id: string; ruleId: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules/:ruleId', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'admin');
+    const rule = await validateSharingRule(pool, req.body ?? {});
+    await withTx({ actor: p.actor }, async (c) => {
+      const { rowCount } = await c.query(
+        `update auth.role_sharing_rules set name = $3, object_type_id = $4, filter_groups = $5, access = $6, updated_at = now()
+         where role_id = $1 and id = $2`,
+        [req.params.id, req.params.ruleId, rule.name, rule.anchor.object_type_id, JSON.stringify(rule.filterGroups), rule.access]
+      );
+      if (!rowCount) throw notFound('sharing rule not found');
+      await saveSharingAssociations(c, Number(req.params.ruleId), rule);
+    });
+    return (await listSharingRules(pool, req.params.id, req.params.ruleId))[0];
+  });
+
+  app.delete<{ Params: { id: string; ruleId: string } }>('/v1/roles/:id/sharing-rules/:ruleId', async (req, reply) => {
+    requireScope(req.principal!, 'admin');
+    const { rowCount } = await pool.query('delete from auth.role_sharing_rules where role_id = $1 and id = $2', [req.params.id, req.params.ruleId]);
+    if (!rowCount) throw notFound('sharing rule not found');
+    reply.code(204);
+  });
+
+  // How many active records a (saved or unsaved) rule would share right now.
+  app.post<{ Params: { id: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules/preview', async (req) => {
+    requireScope(req.principal!, 'admin');
+    const rule = await validateSharingRule(pool, req.body ?? {});
+    const registry = await getRegistry();
+    const objects = [rule.anchor, ...new Set(rule.associations.map((a) => registry.byKey.get(a.object_type_id)!))];
+    const counts = [];
+    for (const obj of new Set(objects)) counts.push({ object: obj.api_name, object_type_id: obj.object_type_id, count: await countShared(rule, obj) });
+    return { counts };
+  });
 
   app.post<{ Params: { id: string }; Body: { user_id?: string; team_id?: string } }>('/v1/roles/:id/assignments', async (req, reply) => {
     requireScope(req.principal!, 'admin');

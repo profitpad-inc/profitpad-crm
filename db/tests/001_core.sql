@@ -283,5 +283,28 @@ begin
   perform meta._test_check(meta.has_active_admin(), 'archiving one of two admins is allowed');
 end $t$;
 
+-- 13. Sharing rules
+set local role test_crm_api;
+do $t$
+declare
+  v_role bigint;
+  v_rule bigint;
+  v_label text := (select pc_0004_id from meta.pc_0004 where from_object_type = 'pc_0010' and to_object_type = 'pc_0011' limit 1);
+begin
+  insert into auth.roles (name, record_access) values ('Sharing test', 'own') returning id into v_role;
+  insert into auth.role_sharing_rules (role_id, name, object_type_id, filter_groups, access)
+    values (v_role, 'Acme accounts', 'pc_0011', '[{"filters":[{"property":"name","operator":"contains","value":"ACME"}]}]', 'edit')
+    returning id into v_rule;
+  insert into auth.role_sharing_rule_associations (rule_id, object_type_id) values (v_rule, 'pc_0010');
+  insert into auth.role_sharing_rule_associations (rule_id, object_type_id, label_id, access) values (v_rule, 'pc_0010', v_label, 'edit');
+  perform meta._test_expect_error(format($$insert into auth.role_sharing_rule_associations (rule_id, object_type_id) values (%s, 'pc_0010')$$, v_rule), 'duplicate key');
+  perform meta._test_expect_error(format($$insert into auth.role_sharing_rules (role_id, name, object_type_id, filter_groups) values (%s, 'x', 'pc_0011', '{}')$$, v_role), 'check constraint');
+  perform meta._test_expect_error(format($$insert into auth.role_sharing_rules (role_id, name, object_type_id, filter_groups) values (%s, 'x', 'pc_0011', '[]')$$, v_role), 'check constraint');
+  perform meta._test_expect_error(format($$update auth.role_sharing_rules set access = 'delete' where id = %s$$, v_rule), 'check constraint');
+  delete from auth.roles where id = v_role;
+  perform meta._test_check(not exists (select 1 from auth.role_sharing_rule_associations where rule_id = v_rule), 'deleting a role removes its sharing rules');
+end $t$;
+reset role;
+
 rollback;
 \echo all core tests passed

@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
-import { pool, type Db } from './db.js';
+import { pool, quoteIdent, type Db } from './db.js';
 import { ApiError, forbidden } from './errors.js';
-import type { ObjectDef, PropertyDef } from './registry.js';
+import { getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
+import { compileFilterGroups, type FilterGroup } from './search.js';
 
 export type Scope = 'read' | 'write' | 'schema' | 'admin';
 
@@ -13,11 +14,23 @@ export interface ObjectPermission {
   delete: boolean;
 }
 
+// A role's sharing rule (migration 0012): records of `anchor` matching
+// filterGroups, plus records of other objects linked to them.
+export interface SharingRule {
+  id: number;
+  name: string;
+  anchor: ObjectDef;
+  filterGroups: FilterGroup[];
+  access: 'read' | 'edit';
+  associations: { object_type_id: string; label_id: string | null; access: 'read' | 'edit' }[];
+}
+
 export interface Permissions {
   objects: Map<string, ObjectPermission>;
   propertyAccess: Map<string, 'hidden' | 'read_only'>;
   recordAccess: 'own' | 'team' | 'all';
   teamUserIds: string[];
+  sharingRules: SharingRule[];
 }
 
 export interface Principal {
@@ -181,7 +194,29 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
     );
     teamUserIds = [userId, ...rows.map((r) => r.user_id)];
   }
-  return { objects, propertyAccess, recordAccess, teamUserIds };
+  const sharingRules = recordAccess === 'all' ? [] : await loadSharingRules(db, roleIds);
+  return { objects, propertyAccess, recordAccess, teamUserIds, sharingRules };
+}
+
+async function loadSharingRules(db: Db, roleIds: unknown[]): Promise<SharingRule[]> {
+  if (roleIds.length === 0) return [];
+  const { rows } = await db.query(
+    `select r.id, r.name, r.object_type_id, r.filter_groups, r.access,
+            coalesce(json_agg(json_build_object('object_type_id', a.object_type_id, 'label_id', a.label_id, 'access', a.access))
+                     filter (where a.id is not null), '[]') as associations
+     from auth.role_sharing_rules r left join auth.role_sharing_rule_associations a on a.rule_id = r.id
+     where r.role_id = any ($1) group by r.id order by r.id`,
+    [roleIds]
+  );
+  if (rows.length === 0) return [];
+  const registry = await getRegistry();
+  const rules: SharingRule[] = [];
+  for (const r of rows) {
+    const anchor = registry.byKey.get(r.object_type_id);
+    if (!anchor || anchor.row_status !== 'active') continue;
+    rules.push({ id: Number(r.id), name: r.name, anchor, filterGroups: r.filter_groups, access: r.access, associations: r.associations });
+  }
+  return rules;
 }
 
 export function requireScope(p: Principal, scope: Scope): void {
@@ -200,16 +235,74 @@ export function propertyAccess(p: Principal, prop: PropertyDef): 'full' | 'read_
   return p.permissions.propertyAccess.get(prop.pc_0002_id) ?? 'full';
 }
 
-// Extra WHERE clause for record-level access ("own" / "team"), using $n params
-// appended to params.
-export function recordFilter(p: Principal, obj: ObjectDef, params: unknown[], alias = 't'): string {
+// What the caller is about to do with the records. Sharing rules widen "read"
+// (read rules and edit rules) and "edit" (edit rules only); "delete" (archive,
+// restore, merge) is limited to own/team records.
+export type AccessMode = 'read' | 'edit' | 'delete';
+
+// Extra WHERE clause for record-level access ("own" / "team", plus the
+// role's sharing rules), using $n params appended to params.
+export function recordFilter(p: Principal, obj: ObjectDef, params: unknown[], alias = 't', mode: AccessMode = 'read'): string {
   if (!p.permissions || p.permissions.recordAccess === 'all' || !p.userId) return 'true';
   const owner = obj.byName.get('owner');
   const ids = p.permissions.recordAccess === 'own' ? [p.userId] : p.permissions.teamUserIds;
+  let base: string;
   if (owner && owner.type === 'dropdown') {
     params.push(ids);
-    return `${alias}."owner" && $${params.length}::text[]`;
+    base = `${alias}."owner" && $${params.length}::text[]`;
+  } else {
+    params.push(ids.map((id) => `user:${id}`));
+    base = `${alias}.created_by = any ($${params.length}::text[])`;
   }
-  params.push(ids.map((id) => `user:${id}`));
-  return `${alias}.created_by = any ($${params.length}::text[])`;
+  if (mode === 'delete') return base;
+  const shared = sharingClauses(p.permissions.sharingRules, obj, params, alias, mode);
+  return shared.length === 0 ? base : `(${[base, ...shared].join(' or ')})`;
+}
+
+export const noneHidden = () => false;
+
+export function sharingClauses(rules: SharingRule[], obj: ObjectDef, params: unknown[], alias: string, mode: AccessMode): string[] {
+  const out: string[] = [];
+  const allowed = (access: 'read' | 'edit') => mode === 'read' || access === 'edit';
+  for (const rule of rules) {
+    if (rule.anchor.object_type_id === obj.object_type_id && allowed(rule.access)) {
+      const clause = compileRule(rule, params, alias);
+      if (clause) out.push(clause);
+    }
+    for (const link of rule.associations) {
+      if (link.object_type_id !== obj.object_type_id || !allowed(link.access)) continue;
+      const s = `sr${rule.id}`;
+      const sa = `sa${rule.id}`;
+      const clause = compileRule(rule, params, s);
+      if (!clause) continue;
+      let label = '';
+      if (link.label_id) {
+        params.push(link.label_id);
+        label = ` and ${sa}.label_id = $${params.length}`;
+      }
+      const a = rule.anchor;
+      params.push(obj.object_type_id, a.object_type_id);
+      const n = params.length;
+      out.push(
+        `exists (select 1 from crm.associations_both ${sa} join crm.${quoteIdent(a.object_type_id)} ${s} on ${s}.${quoteIdent(a.id_column)} = ${sa}.other_record_id
+         where ${sa}.object_type_id = $${n - 1} and ${sa}.record_id = ${alias}.${quoteIdent(obj.id_column)}
+           and ${sa}.other_object_type_id = $${n}${label} and ${s}.row_status = 'active' and ${clause})`
+      );
+    }
+  }
+  return out;
+}
+
+// A rule whose filter no longer compiles (say its property was archived)
+// grants nothing; params is left untouched in that case.
+function compileRule(rule: SharingRule, params: unknown[], alias: string): string | null {
+  const local = params.slice();
+  try {
+    const clause = compileFilterGroups(rule.anchor, rule.filterGroups, local, noneHidden, alias);
+    if (!clause) return null;
+    params.push(...local.slice(params.length));
+    return clause;
+  } catch {
+    return null;
+  }
 }

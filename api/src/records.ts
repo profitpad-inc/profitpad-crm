@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { pool, quoteIdent, type Db } from './db.js';
 import { badRequest, notFound } from './errors.js';
-import { propertyAccess, recordFilter, requireObjectPermission, type Principal } from './auth.js';
+import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode, type Principal } from './auth.js';
 import { activeProperties, getProperty, getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
 import { fromDb, isWritable, toDb } from './values.js';
@@ -310,7 +310,7 @@ export async function updateRecord(
 ): Promise<void> {
   requireObjectPermission(principal, obj, 'edit');
   const params: unknown[] = [id];
-  const access = recordFilter(principal, obj, params);
+  const access = recordFilter(principal, obj, params, 't', 'edit');
   const { rows } = await client.query(
     `select * from crm.${quoteIdent(obj.object_type_id)} t
      where t.${quoteIdent(obj.id_column)} = $1 and t.row_status in ('active', 'archived') and ${access} for update`,
@@ -323,10 +323,11 @@ export async function updateRecord(
   await client.query(`update crm.${quoteIdent(obj.object_type_id)} set ${sets} where ${quoteIdent(obj.id_column)} = $1`, [id, ...plan.values]);
 }
 
-// Ensures the caller may touch every listed record (record-level access).
-export async function assertAccessible(db: Db, obj: ObjectDef, principal: Principal, ids: string[]): Promise<void> {
+// Ensures the caller may read, edit or delete every listed record
+// (record-level access, see AccessMode).
+export async function assertAccessible(db: Db, obj: ObjectDef, principal: Principal, ids: string[], mode: AccessMode = 'read'): Promise<void> {
   const params: unknown[] = [ids];
-  const access = recordFilter(principal, obj, params);
+  const access = recordFilter(principal, obj, params, 't', mode);
   const { rows } = await db.query(
     `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} t
      where t.${quoteIdent(obj.id_column)} = any ($1) and t.row_status <> 'deleted' and ${access}`,

@@ -81,7 +81,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'delete');
-    await assertAccessible(pool, obj, p, [req.params.id]);
+    await assertAccessible(pool, obj, p, [req.params.id], 'delete');
     const n = await withTx({ actor: p.actor }, async (c) => {
       const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, [req.params.id], 'archived']);
       return rows[0].n as number;
@@ -95,7 +95,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'delete');
-    await assertAccessible(pool, obj, p, [req.params.id]);
+    await assertAccessible(pool, obj, p, [req.params.id], 'delete');
     await withTx({ actor: p.actor }, (c) => c.query('select meta.set_record_status($1, $2, $3)', [obj.object_type_id, [req.params.id], 'active']));
     return getRecord(pool, obj, p, req.params.id);
   });
@@ -116,7 +116,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireObjectPermission(p, obj, 'edit');
     const { winner_id, loser_id } = req.body ?? ({} as { winner_id: string; loser_id: string });
     if (!winner_id || !loser_id) throw badRequest('winner_id and loser_id are required');
-    await assertAccessible(pool, obj, p, [winner_id, loser_id]);
+    await assertAccessible(pool, obj, p, [winner_id, loser_id], 'delete');
     await withTx({ actor: p.actor, source: 'merge' }, (c) => c.query('select meta.merge_records($1, $2, $3)', [obj.object_type_id, winner_id, loser_id]));
     await drainCalcQueue();
     return getRecord(pool, obj, p, winner_id);
@@ -201,7 +201,7 @@ export async function recordRoutes(app: FastifyInstance) {
       const obj = await objectForWrite(req.params.object);
       const to = await objectForWrite(req.params.toObject);
       requireObjectPermission(p, obj, 'edit');
-      await assertAccessible(pool, obj, p, [req.params.id]);
+      await assertAccessible(pool, obj, p, [req.params.id], 'edit');
       await assertAccessible(pool, to, p, [req.params.toId]);
       const id = await withTx({ actor: p.actor }, async (c) => {
         const { rows } = await c.query('select meta.associate($1, $2, $3, $4, $5) as id', [
@@ -222,7 +222,7 @@ export async function recordRoutes(app: FastifyInstance) {
       const obj = await objectForWrite(req.params.object);
       const to = await objectForWrite(req.params.toObject);
       requireObjectPermission(p, obj, 'edit');
-      await assertAccessible(pool, obj, p, [req.params.id]);
+      await assertAccessible(pool, obj, p, [req.params.id], 'edit');
       const removed = await withTx({ actor: p.actor }, async (c) => {
         const { rows } = await c.query('select meta.dissociate($1, $2, $3, $4, $5) as n', [
           obj.object_type_id, req.params.id, to.object_type_id, req.params.toId, req.query.label_id ?? null

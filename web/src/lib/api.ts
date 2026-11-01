@@ -111,6 +111,18 @@ export interface CrmRecord {
   associations?: Record<string, AssociatedRecord[]>;
 }
 
+// search filters: groups are OR'ed, filters inside a group AND'ed
+export interface Filter {
+  property: string;
+  operator: string;
+  value?: unknown;
+  values?: unknown[];
+}
+
+export interface FilterGroup {
+  filters: Filter[];
+}
+
 export interface SearchResult {
   total: number;
   results: CrmRecord[];
