@@ -3,7 +3,8 @@ import cors from '@fastify/cors';
 import scalar from '@scalar/fastify-api-reference';
 import { pool } from './db.js';
 import { ApiError, fromPg } from './errors.js';
-import { authenticate } from './auth.js';
+import { authenticate, browserOrigins } from './auth.js';
+import { ssoRoutes } from './sso.js';
 import { buildOpenApi } from './openapi.js';
 import { docsCss } from './docs-theme.js';
 import { drainCalcQueue } from './records.js';
@@ -15,9 +16,6 @@ import { uiRoutes } from './routes/ui.js';
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
 const docsPublic = process.env.DOCS_PUBLIC === 'true';
-// Browser origins allowed to call the API, e.g. the GitHub Pages site:
-// CORS_ORIGINS=https://test-crm.demo.profitpad.com,http://localhost:5173
-const corsOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 export async function buildApp() {
   // trustProxy: behind nginx, so req.protocol reflects https (used in the OpenAPI server URL)
@@ -36,7 +34,9 @@ export async function buildApp() {
 
   // Registered before the auth hook so preflight requests are answered without a key.
   await app.register(cors, {
-    origin: corsOrigins.length ? corsOrigins : false,
+    origin: browserOrigins.length ? browserOrigins : false,
+    // the UI sends its session cookie
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['authorization', 'content-type'],
     maxAge: 600
@@ -46,6 +46,8 @@ export async function buildApp() {
     if (req.method === 'OPTIONS') return;
     const path = req.url.split('?')[0];
     if (path === '/health') return;
+    // sign-in routes handle their own cookies
+    if (path.startsWith('/v1/auth/')) return;
     // A visitor opening the bare domain in a browser lands on the docs
     if (path === '/' && !req.headers.authorization) return reply.redirect('/docs', 302);
     if (docsPublic && (path === '/v1/openapi.json' || path.startsWith('/docs'))) return;
@@ -104,6 +106,7 @@ export async function buildApp() {
   await app.register(recordRoutes);
   await app.register(adminRoutes);
   await app.register(uiRoutes);
+  await app.register(ssoRoutes);
   return app;
 }
 

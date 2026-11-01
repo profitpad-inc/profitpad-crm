@@ -291,6 +291,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .login { display: grid; place-items: center; height: 100%; background: var(--surface); }
 .login-card { width: min(400px, calc(100vw - 32px)); background: var(--page-background); border: 1px solid var(--border); border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 14px; }
 .login-mark { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--primary); color: #fff; font-family: var(--font-title); font-weight: 700; font-size: 22px; }
+.google-btn { justify-content: center; gap: 10px; padding: 10px 12px; color: var(--text); text-decoration: none; }
+.login-divider { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.login-divider::before, .login-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 
 @media (max-width: 1100px) {
   .record-page { grid-template-columns: 300px minmax(0, 1fr); }

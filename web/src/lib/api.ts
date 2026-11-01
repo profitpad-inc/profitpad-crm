@@ -1,5 +1,6 @@
-// Thin client for the CRM API. Until SSO exists the UI signs in with an API
-// key, kept in localStorage.
+// Thin client for the CRM API. Signing in with Google leaves an HttpOnly
+// session cookie on the API's domain (sent with credentials: 'include'); the
+// API-key sign-in keeps the key in localStorage instead.
 
 const KEY_STORAGE = 'pcrm.apiKey';
 
@@ -33,6 +34,7 @@ export const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 export async function api<T = unknown>(method: string, path: string, body?: unknown, key = getApiKey()): Promise<T> {
   const res = await fetch(API_BASE + path, {
     method,
+    credentials: 'include',
     headers: {
       ...(key ? { authorization: `Bearer ${key}` } : {}),
       ...(body !== undefined ? { 'content-type': 'application/json' } : {})

@@ -24,7 +24,7 @@ Hostnames use hyphens: underscores are not valid in hostnames for TLS certificat
 
 The API runs as the `test-crm-api` container (`deploy/docker-compose.yml`), on the same `n8n_net` Docker network as the `postgres` container, published only on `127.0.0.1:3100`. nginx on the host terminates TLS (certbot, auto-renewing) and forwards to it.
 
-Already done on the server (2026-10-31): code in `/srv/test_crm` (copied, not yet a git checkout), image `profitpad-crm-api` built, nginx site `/etc/nginx/sites-enabled/api.test-crm.profitpad.com`, Let's Encrypt certificate, HTTP→HTTPS redirect.
+Already done on the server (2026-10-31): code in `/srv/test_crm` (a git checkout of `main` since 2026-11-01; the earlier copy is backed up in `~/test_crm_srv_backup_20261101_132912.tgz` on the server), image `profitpad-crm-api` built, nginx site `/etc/nginx/sites-enabled/api.test-crm.profitpad.com`, Let's Encrypt certificate, HTTP→HTTPS redirect.
 
 Done since: the login below exists (see `db/bootstrap/001_api_login.sql`, which also grants CONNECT) and the container is running. For reference: Recommended: a dedicated login that can only become the API role (as the `n8n` superuser, in `test_crm`):
 
@@ -42,9 +42,32 @@ docker compose up -d
 curl -s https://api.test-crm.profitpad.com/health
 ```
 
-Updating the API later (from a checkout on the server): `git pull && cd deploy && docker compose up -d --build`. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec test-crm-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
+Updating the API later: `/srv/test_crm` is a git checkout of `main` (public repo, cloned over HTTPS, so no key is needed; `pull.ff only`). It deploys what is on GitHub, not local uncommitted work. From the Mac:
+
+```bash
+ssh -o ClearAllForwardings=yes profitpad_claude_test_crm "cd /srv/test_crm && git pull && cd deploy && docker compose up -d --build"
+```
+
+`ClearAllForwardings` skips the alias's database tunnel. `deploy/.env` is gitignored, so pulls never touch it. The server has no rsync. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec test-crm-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
+
+## 4. Google sign-in
+
+1. In Google Cloud (a project owned by the profitpad.com Workspace): set up the OAuth consent screen (Internal limits sign-in to profitpad.com accounts; External is needed once client users sign in; scopes are only `openid`, `email`, `profile`).
+2. Create an OAuth client ID of type **Web application** with these authorized redirect URIs:
+   - `https://api.test-crm.profitpad.com/v1/auth/google/callback`
+   - `http://localhost:5173/v1/auth/google/callback` (local dev, through the Vite proxy)
+3. On the server, add to `deploy/.env` and restart the container (`docker compose up -d`):
+   ```
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   PUBLIC_API_URL=https://api.test-crm.profitpad.com
+   UI_URL=https://test-crm.profitpad.com
+   # optional: GOOGLE_ALLOWED_DOMAINS=profitpad.com
+   ```
+   `CORS_ORIGINS` must list `https://test-crm.profitpad.com` (it already does for the API-key sign-in).
+4. Each person needs an active user record whose email is their Google email, and a role (an admin role for full access).
 
 ## Notes
 
-- The UI signs in with an API key sent as a bearer header (no cookies), so cross-origin calls only need `CORS_ORIGINS` to list the Pages URL.
+- The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.
 - `DOCS_PUBLIC=false` in production: `/docs` and `/v1/openapi.json` then need an API key.

@@ -52,7 +52,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const setTheme = useCallback((t: Partial<Theme>) => setThemeState(applyTheme(t)), []);
   const signOut = useCallback(() => {
     setApiKey(null);
-    onSignOut();
+    api('POST', '/v1/auth/logout').catch(() => undefined).finally(onSignOut);
   }, [onSignOut]);
 
   if (!ready) return <div className="splash">Loading…</div>;

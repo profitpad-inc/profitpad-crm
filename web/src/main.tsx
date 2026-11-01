@@ -7,7 +7,7 @@ import '@fontsource/inter/600.css';
 import '@fontsource/montserrat/600.css';
 import '@fontsource/montserrat/700.css';
 import './styles.css';
-import { api, getApiKey, type Me } from './lib/api';
+import { api, type Me } from './lib/api';
 import { AppProvider } from './lib/app-context';
 import { Sidebar } from './components/Sidebar';
 import { BottomBar } from './components/MobileNav';
@@ -38,12 +38,8 @@ function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
 
+  // signed in through an API key or a session cookie; 401 shows the login page
   const load = useCallback(async () => {
-    if (!getApiKey()) {
-      setMe(null);
-      setChecking(false);
-      return;
-    }
     try {
       setMe(await api<Me>('GET', '/v1/me'));
     } catch {

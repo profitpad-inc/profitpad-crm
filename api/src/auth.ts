@@ -21,7 +21,8 @@ export interface Permissions {
 }
 
 export interface Principal {
-  keyId: number;
+  // null for a browser session (signed in with Google)
+  keyId: number | null;
   name: string;
   scopes: Set<Scope>;
   userId: string | null;
@@ -45,9 +46,29 @@ export function generateKey(): { key: string; prefix: string } {
   return { key: `pcrm_${prefix}_${randomBytes(32).toString('base64url')}`, prefix };
 }
 
+// Browser origins allowed to call the API, e.g. the GitHub Pages site:
+// CORS_ORIGINS=https://test-crm.profitpad.com,http://localhost:5173
+export const browserOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+export const SESSION_COOKIE = 'pcrm_session';
+
+export function readCookie(req: FastifyRequest, name: string): string | null {
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
+
+// Callers send an API key (Authorization: Bearer) or, from the UI, the
+// HttpOnly session cookie set after Google sign-in.
 export async function authenticate(req: FastifyRequest): Promise<Principal> {
-  const header = req.headers.authorization ?? '';
-  const match = /^Bearer\s+(pcrm_[0-9a-f]{8}_[A-Za-z0-9_-]{43})$/.exec(header);
+  const header = req.headers.authorization;
+  if (!header) {
+    const session = readCookie(req, SESSION_COOKIE);
+    if (session) return authenticateSession(req, session);
+  }
+  const match = /^Bearer\s+(pcrm_[0-9a-f]{8}_[A-Za-z0-9_-]{43})$/.exec(header ?? '');
   if (!match) throw new ApiError(401, 'missing or malformed API key (Authorization: Bearer pcrm_...)', 'unauthorized');
   const { rows } = await pool.query(
     `update auth.api_keys set last_used_at = now()
@@ -65,6 +86,37 @@ export async function authenticate(req: FastifyRequest): Promise<Principal> {
     scopes,
     userId: row.user_id,
     actor: row.user_id ? `user:${row.user_id}` : `api:${row.key_prefix}`,
+    permissions
+  };
+}
+
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+// A session acts as its user: users with an admin role get the admin scope,
+// everyone else read and write, limited by their roles.
+async function authenticateSession(req: FastifyRequest, token: string): Promise<Principal> {
+  // Cookies ride along on requests from any profitpad.com subdomain, so writes
+  // must come from the UI itself (CSRF).
+  if (UNSAFE_METHODS.has(req.method)) {
+    const origin = req.headers.origin;
+    if (!origin || !(browserOrigins.includes(origin) || origin === `${req.protocol}://${req.headers.host}`)) {
+      throw forbidden('requests signed in with a session cookie must come from the CRM web app');
+    }
+  }
+  const { rows } = await pool.query(
+    `select s.user_id from auth.sessions s join crm.pc_0000 u on u.pc_0000_id = s.user_id
+     where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and u.row_status = 'active'`,
+    [hashKey(token)]
+  );
+  if (rows.length === 0) throw new ApiError(401, 'session expired or signed out', 'unauthorized');
+  const userId: string = rows[0].user_id;
+  const permissions = await loadPermissions(pool, userId);
+  return {
+    keyId: null,
+    name: 'session',
+    scopes: new Set<Scope>(permissions === null ? ['admin'] : ['read', 'write']),
+    userId,
+    actor: `user:${userId}`,
     permissions
   };
 }

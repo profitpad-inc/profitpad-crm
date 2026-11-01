@@ -70,7 +70,7 @@ UI routes: `GET /v1/me`, `GET /v1/ui/settings`, `PUT /v1/ui/settings/theme`, `GE
 
 ## Web app (`web/`)
 
-React 19 + Vite + react-router, lucide icons, fonts bundled with @fontsource. `src/lib/api.ts` (client and types, API key in localStorage until real login exists), `src/lib/theme.ts` (theme to CSS variables), `src/components/Sidebar.tsx`, `src/pages/ObjectTable.tsx`, `src/pages/RecordPage.tsx`, `src/pages/Settings.tsx`.
+React 19 + Vite + react-router, lucide icons, fonts bundled with @fontsource. `src/lib/api.ts` (client and types; sends the session cookie with `credentials: 'include'`, or an API key kept in localStorage), `src/pages/Login.tsx` (Google button when the API reports it configured, plus API-key sign-in), `src/lib/theme.ts` (theme to CSS variables), `src/components/Sidebar.tsx`, `src/pages/ObjectTable.tsx`, `src/pages/RecordPage.tsx`, `src/pages/Settings.tsx`.
 
 ## API (`api/`)
 
@@ -81,7 +81,8 @@ TypeScript, Fastify 5, `pg`. Started with `npm run dev` (watch) or `npm start`, 
 | `src/server.ts` | app setup, auth hook, error mapping, calculation worker (every 2s) |
 | `src/db.ts` | pool (`role=test_crm_api`), `withTx` (sets `crm.actor` / `crm.source`) |
 | `src/registry.ts` | cached registry, reloaded when `meta.schema_changes` grows |
-| `src/auth.ts` | API keys (`Bearer pcrm_<prefix>_<secret>`, sha256 stored), scopes, role permissions, record-level filters |
+| `src/auth.ts` | API keys (`Bearer pcrm_<prefix>_<secret>`, sha256 stored), session cookies, scopes, role permissions, record-level filters |
+| `src/sso.ts` | Google sign-in (`/v1/auth/*`, see below) |
 | `src/values.ts` | API value <-> column value conversion and validation |
 | `src/search.ts` | filter DSL -> parameterized SQL |
 | `src/records.ts` | record read/write service |
@@ -97,5 +98,17 @@ Route layout (`{object}` is an api_name like `contacts` or a code like `pc_0010`
 - `/v1/association-labels`, `/v1/schema-changes`, `/v1/api-keys`, `/v1/roles`, `/v1/currencies`, `/v1/integrations`, `/v1/imports/{id}`
 
 Scopes: `read`, `write` (records, associations, imports), `schema` (objects, properties, options, labels, integration tables), `admin` (everything, plus keys, roles, permanent deletes). Keys linked to a user are further limited by that user's roles (direct or through teams; most permissive role wins; `is_admin` roles are unrestricted). Record access `own`/`team` filters by the `owner` dropdown, or by `created_by` on objects without one.
+
+### Google sign-in (`src/sso.ts`)
+
+OpenID Connect authorization code flow with PKCE, no extra dependencies:
+1. The UI links to `GET /v1/auth/google/start?return_to=/path`. The API puts state, PKCE verifier, nonce and return path in a 10-minute HttpOnly cookie (`pcrm_google`, path limited to the callback) and redirects to Google.
+2. Google redirects to `GET /v1/auth/google/callback`. The API checks the state against the cookie, exchanges the code (with the client secret and verifier), and checks the ID token's `iss`, `aud`, `exp`, `nonce` and `email_verified` (and `hd` when `GOOGLE_ALLOWED_DOMAINS` is set). The token comes straight from Google over TLS, so its signature is not checked (OpenID Connect Core 3.1.3.7).
+3. The user is found by `auth.identities` (provider `google`, the Google `sub`) or, the first time, by an active user record whose email matches (case-insensitive); that link is then saved. No match means no sign-in (no self sign-up).
+4. A random session token goes in `auth.sessions` (sha256 stored, 30 days) and in the `pcrm_session` cookie (HttpOnly, SameSite=Lax, Secure over https), and the browser is sent back to the UI. Errors come back as `?auth_error=<code>`.
+
+Session principals act as their user: an admin role gives the `admin` scope, anyone else gets `read` and `write`, limited by their roles. Because cookies are sent from any `*.profitpad.com` page, POST/PUT/PATCH/DELETE with a cookie must carry an `Origin` that is in `CORS_ORIGINS` or is the API's own origin. `POST /v1/auth/logout` revokes the session. `GET /v1/auth/config` tells the UI whether Google is configured. An `Authorization` header always wins over the cookie.
+
+Settings (API env): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, optional `GOOGLE_ALLOWED_DOMAINS` (comma list), `PUBLIC_API_URL` (the API's address as browsers see it; the redirect URI is `<PUBLIC_API_URL>/v1/auth/google/callback`) and `UI_URL`. Both URLs default to the request's own origin, which fits local dev behind the Vite proxy (`http://localhost:5173`). `GOOGLE_TOKEN_URL` only exists for tests.
 
 Docs: `GET /v1/openapi.json` and `GET /docs` (Scalar, restyled ReadMe-like via `src/docs-theme.ts`, which only overrides Scalar's CSS variables). Public only when `DOCS_PUBLIC=true`.
