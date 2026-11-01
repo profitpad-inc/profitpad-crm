@@ -556,3 +556,12 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .line-figures + .push-right { margin-left: 0; }
 .activity-icon.good { color: #05603a; }
 .activity-icon.bad { color: #b42318; }
+
+/* HTML properties (a form's custom HTML): shown and edited as code */
+.prop-row.code .prop-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; background: var(--surface); border-radius: 6px; padding: 6px 8px; }
+.prop-row.code .prop-edit textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; min-height: 320px; }
+.fb-html { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-radius: 6px; background: var(--surface); }
+.fb-format { display: flex; flex-direction: column; gap: 8px; }
+.fb-ok { color: #05603a; font-size: 12px; white-space: nowrap; }
+.fb-bad { color: #b42318; font-size: 12px; white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

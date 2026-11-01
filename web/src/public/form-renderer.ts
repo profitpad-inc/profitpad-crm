@@ -5,6 +5,14 @@ import { visibleFields } from './conditions';
 // hosted page (/p/form/), embed.js and the builder's preview, so it uses plain
 // DOM and styles scoped to .pcrm-form (FORM_CSS) that cannot clash with the
 // host website. Fields with conditions show and hide as answers change.
+//
+// - Any field whose key is a query parameter of the page URL starts with that
+//   value (?topic=Sales). Fields marked from_url are never shown: their value
+//   comes only from the URL (?utm_source=newsletter).
+// - When the form has custom HTML, that markup is used instead of generated
+//   fields. Controls are found by name (the field key); [data-field=key] is
+//   the element shown or hidden by conditions, [data-error=key] (optional)
+//   shows that field's error and [data-error=_form] the form's.
 
 export const FORM_CSS = `
 .pcrm-form { --pcrm-primary: #1f7a74; --pcrm-text: #1f2328; --pcrm-muted: #6b7280; --pcrm-border: #d5d8dd;
@@ -13,11 +21,11 @@ export const FORM_CSS = `
 .pcrm-form *, .pcrm-form *::before, .pcrm-form *::after { box-sizing: border-box; }
 .pcrm-form form { display: flex; flex-direction: column; gap: 14px; margin: 0; }
 .pcrm-form .pcrm-field { display: flex; flex-direction: column; gap: 5px; border: 0; padding: 0; margin: 0; min-width: 0; }
-.pcrm-form .pcrm-field[hidden] { display: none; }
+.pcrm-form [hidden] { display: none !important; }
 .pcrm-form .pcrm-label { font-weight: 600; font-size: 14px; padding: 0; }
 .pcrm-form .pcrm-help { color: var(--pcrm-muted); font-size: 13px; }
 .pcrm-form .pcrm-req { color: #b42318; margin-left: 2px; }
-.pcrm-form input[type=text], .pcrm-form input[type=email], .pcrm-form input[type=tel], .pcrm-form input[type=number],
+.pcrm-form input[type=text], .pcrm-form input[type=email], .pcrm-form input[type=tel], .pcrm-form input[type=url], .pcrm-form input[type=number],
 .pcrm-form input[type=date], .pcrm-form input[type=datetime-local],
 .pcrm-form select, .pcrm-form textarea { width: 100%; font: inherit; color: inherit; background: #fff;
   border: 1px solid var(--pcrm-border); border-radius: 8px; padding: 9px 11px; margin: 0; }
@@ -26,7 +34,8 @@ export const FORM_CSS = `
 .pcrm-form .pcrm-check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 15px; }
 .pcrm-form .pcrm-check input { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--pcrm-primary); }
 .pcrm-form .pcrm-choices { display: flex; flex-direction: column; gap: 6px; }
-.pcrm-form .pcrm-invalid input, .pcrm-form .pcrm-invalid select, .pcrm-form .pcrm-invalid textarea { border-color: #b42318; }
+.pcrm-form .pcrm-invalid input, .pcrm-form .pcrm-invalid select, .pcrm-form .pcrm-invalid textarea,
+.pcrm-form input.pcrm-invalid, .pcrm-form select.pcrm-invalid, .pcrm-form textarea.pcrm-invalid { border-color: #b42318; }
 .pcrm-form .pcrm-error { color: #b42318; font-size: 13px; }
 .pcrm-form .pcrm-error:empty { display: none; }
 .pcrm-form button { align-self: flex-start; font: inherit; font-weight: 600; color: #fff; background: var(--pcrm-primary);
@@ -42,6 +51,22 @@ export function injectFormCss(doc: Document = document): void {
   doc.head.append(el('style', { id: 'pcrm-form-css' }, FORM_CSS));
 }
 
+// Older APIs send options as plain strings and email/phone as field types.
+function normalize(fields: FormField[]): FormField[] {
+  return fields.map((f) => {
+    const out: FormField = { ...f };
+    if (f.options) out.options = (f.options as ({ value: string; label: string } | string)[]).map((o) => (typeof o === 'string' ? { value: o, label: o } : o));
+    const t = f.type as string;
+    if (t === 'email' || t === 'phone') {
+      out.type = 'text';
+      out.format ??= t;
+    }
+    return out;
+  });
+}
+
+const INPUT_TYPE: Record<string, string> = { email: 'email', phone: 'tel', url: 'url' };
+
 function control(f: FormField, id: string): HTMLElement {
   const common = { id, name: f.name, required: f.required, placeholder: f.placeholder };
   switch (f.type) {
@@ -54,10 +79,6 @@ function control(f: FormField, id: string): HTMLElement {
         el('label', { class: 'pcrm-check', for: `${id}-${i}` }, el('input', { type: 'checkbox', id: `${id}-${i}`, name: f.name, value: o.value }), el('span', {}, o.label))));
     case 'checkbox':
       return el('input', { ...common, type: 'checkbox', value: 'true' });
-    case 'email':
-      return el('input', { ...common, type: 'email', autocomplete: 'email', maxlength: '254' });
-    case 'phone':
-      return el('input', { ...common, type: 'tel', autocomplete: 'tel', maxlength: '50' });
     case 'number':
       return el('input', { ...common, type: 'number', step: 'any' });
     case 'date':
@@ -65,38 +86,116 @@ function control(f: FormField, id: string): HTMLElement {
     case 'datetime':
       return el('input', { ...common, type: 'datetime-local' });
     default:
-      return el('input', { ...common, type: 'text', maxlength: '500' });
+      return el('input', {
+        ...common,
+        type: INPUT_TYPE[f.format ?? ''] ?? 'text',
+        autocomplete: f.format === 'email' ? 'email' : f.format === 'phone' ? 'tel' : undefined,
+        maxlength: '500'
+      });
   }
 }
 
-// The answer to one field as the API wants it.
+// Generated markup for the fields the form asks. The builder's "Customize
+// HTML" starts from the same structure (see formHtml).
+function generatedField(f: FormField, id: string): HTMLElement {
+  const input = control(f, id);
+  const error = el('div', { class: 'pcrm-error', role: 'alert', 'data-error': f.name });
+  const req = f.required ? el('span', { class: 'pcrm-req', 'aria-hidden': 'true' }, '*') : null;
+  const help = f.help ? el('div', { class: 'pcrm-help' }, f.help) : null;
+  if (f.type === 'checkbox') {
+    return el('div', { class: 'pcrm-field', 'data-field': f.name }, el('label', { class: 'pcrm-check', for: id }, input, el('span', {}, f.label, req)), help, error);
+  }
+  if (f.type === 'multiselect') {
+    return el('fieldset', { class: 'pcrm-field', 'data-field': f.name }, el('legend', { class: 'pcrm-label' }, f.label, req), help, input, error);
+  }
+  return el('div', { class: 'pcrm-field', 'data-field': f.name }, el('label', { class: 'pcrm-label', for: id }, f.label, req), help, input, error);
+}
+
+// The same structure as an HTML string, for the builder's "Customize HTML".
+export function formHtml(def: PublicForm['definition']): string {
+  const box = document.createElement('div');
+  const form = el('form', {}, ...normalize(def.fields).filter((f) => !f.from_url).map((f) => generatedField(f, `f-${f.name}`)),
+    el('div', { class: 'pcrm-error', 'data-error': '_form' }), el('button', { type: 'submit' }, def.submit_label));
+  box.append(form);
+  return box.innerHTML.replace(/></g, '>\n<');
+}
+
+const controlsNamed = (form: HTMLFormElement, name: string) =>
+  [...form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')].filter((c) => c.name === name);
+
+// The answer to one asked field as the API wants it.
 function readValue(form: HTMLFormElement, f: FormField): unknown {
-  const data = new FormData(form);
+  const controls = controlsNamed(form, f.name);
+  const checked = (c: HTMLElement) => (c as HTMLInputElement).checked;
   switch (f.type) {
-    case 'checkbox': return data.get(f.name) === 'true';
-    case 'multiselect': return data.getAll(f.name).map(String);
+    case 'checkbox':
+      return controls.some((c) => c instanceof HTMLInputElement && checked(c));
+    case 'multiselect':
+      return controls.flatMap((c) => (c instanceof HTMLSelectElement ? [...c.selectedOptions].map((o) => o.value) : checked(c) ? [c.value] : []));
+    case 'select': {
+      const radios = controls.filter((c) => c instanceof HTMLInputElement && c.type === 'radio');
+      return radios.length ? (radios.find(checked)?.value ?? '') : (controls[0]?.value ?? '');
+    }
     case 'datetime': {
-      const v = String(data.get(f.name) ?? '');
+      const v = controls[0]?.value ?? '';
       // datetime-local is the visitor's local time; send an exact instant
       return v ? new Date(v).toISOString() : '';
     }
-    default: return String(data.get(f.name) ?? '').trim();
+    default:
+      return (controls[0]?.value ?? '').trim();
   }
 }
 
-const isEmpty = (v: unknown) => v === '' || v === false || v === undefined || (Array.isArray(v) && v.length === 0);
+const TRUE = ['true', '1', 'yes', 'on'];
+
+// A from_url field's value, or a prefill for an asked field.
+function fromParams(params: URLSearchParams, f: FormField): unknown {
+  if (!params.has(f.name)) return undefined;
+  const all = params.getAll(f.name);
+  if (f.type === 'multiselect') return all.flatMap((v) => v.split(',')).map((v) => v.trim()).filter(Boolean);
+  if (f.type === 'checkbox') return TRUE.includes((all[0] ?? '').toLowerCase());
+  return (all[0] ?? '').trim();
+}
+
+function prefill(form: HTMLFormElement, f: FormField, value: unknown): void {
+  for (const c of controlsNamed(form, f.name)) {
+    if (c instanceof HTMLInputElement && (c.type === 'checkbox' || c.type === 'radio')) {
+      c.checked = f.type === 'checkbox' ? value === true : Array.isArray(value) ? value.includes(c.value) : c.value === value;
+    } else if (c instanceof HTMLSelectElement && c.multiple) {
+      for (const o of c.options) o.selected = Array.isArray(value) && value.includes(o.value);
+    } else if (typeof value === 'string') {
+      c.value = f.type === 'datetime' ? value.slice(0, 16) : value;
+    }
+  }
+}
+
+const isEmpty = (v: unknown) => v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0);
+
+// Same checks as the API (api/src/forms.ts cleanValue), for quicker feedback.
+function formatProblem(f: FormField, v: unknown): string | null {
+  if (typeof v !== 'string' || !v) return null;
+  if (f.format === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return `${f.label} must be an email address.`;
+  if (f.format === 'phone' && !(/^\+?[0-9 ().-]{7,25}$/.test(v) && v.replace(/\D/g, '').length >= 7)) return `${f.label} must be a phone number.`;
+  if (f.format === 'url' && !/^https?:\/\/\S+$/.test(v)) return `${f.label} must be a web address starting with http:// or https://.`;
+  if (f.format === 'regex' && f.pattern) {
+    try {
+      if (!new RegExp(`^(?:${f.pattern})$`).test(v)) return f.pattern_message ?? `${f.label} is not in the expected format.`;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 let counter = 0;
 
 // preview: the builder's preview; checks answers but sends nothing.
-export function renderForm(container: HTMLElement, opts: { apiBase: string; key: string; form: PublicForm; preview?: boolean }): void {
-  // options may arrive as plain strings from an API older than the form builder
-  const definition = {
-    ...opts.form.definition,
-    fields: opts.form.definition.fields.map((f) => (f.options
-      ? { ...f, options: (f.options as ({ value: string; label: string } | string)[]).map((o) => (typeof o === 'string' ? { value: o, label: o } : o)) }
-      : f))
-  };
+// params: query parameters to use instead of the page's (the preview).
+export function renderForm(container: HTMLElement, opts: { apiBase: string; key: string; form: PublicForm; preview?: boolean; params?: URLSearchParams }): void {
+  const definition = { ...opts.form.definition, fields: normalize(opts.form.definition.fields) };
+  const asked = definition.fields.filter((f) => !f.from_url);
+  const fromUrl = definition.fields.filter((f) => f.from_url);
+  const params = opts.params ?? new URLSearchParams(window.location.search);
   const api = publicApi(opts.apiBase);
   const shownAt = Date.now();
   const prefix = `pcrm-${++counter}`;
@@ -104,37 +203,64 @@ export function renderForm(container: HTMLElement, opts: { apiBase: string; key:
   if (opts.form.theme.primary) container.style.setProperty('--pcrm-primary', opts.form.theme.primary);
   container.replaceChildren();
 
-  const wrappers = new Map<string, HTMLElement>();
-  const errors = new Map<string, HTMLElement>();
-  const nodes = definition.fields.map((f) => {
-    const id = `${prefix}-${f.name}`;
-    const input = control(f, id);
-    const error = el('div', { class: 'pcrm-error', role: 'alert' });
-    errors.set(f.name, error);
-    const req = f.required ? el('span', { class: 'pcrm-req', 'aria-hidden': 'true' }, '*') : null;
-    const help = f.help ? el('div', { class: 'pcrm-help' }, f.help) : null;
-    let wrapper: HTMLElement;
-    if (f.type === 'checkbox') {
-      wrapper = el('div', { class: 'pcrm-field' }, el('label', { class: 'pcrm-check', for: id }, input, el('span', {}, f.label, req)), help, error);
-    } else if (f.type === 'multiselect') {
-      wrapper = el('fieldset', { class: 'pcrm-field' }, el('legend', { class: 'pcrm-label' }, f.label, req), help, input, error);
-    } else {
-      wrapper = el('div', { class: 'pcrm-field' }, el('label', { class: 'pcrm-label', for: id }, f.label, req), help, input, error);
+  let form: HTMLFormElement;
+  if (opts.form.html) {
+    container.innerHTML = opts.form.html; // cleaned by the API (no scripts or handlers)
+    const found = container.querySelector('form');
+    if (!found) {
+      container.replaceChildren(el('p', { class: 'pcrm-muted' }, 'This form is not set up correctly.'));
+      return;
     }
-    wrappers.set(f.name, wrapper);
-    return wrapper;
-  });
+    form = found;
+  } else {
+    form = el('form', {}, ...asked.map((f) => generatedField(f, `${prefix}-${f.name}`)),
+      el('div', { class: 'pcrm-error', role: 'alert', 'data-error': '_form' }),
+      el('button', { type: 'submit' }, definition.submit_label));
+    container.append(form);
+  }
+  form.noValidate = true;
+  form.removeAttribute('action');
+
+  // where each field shows, hides and reports errors
+  const wrappers = new Map<string, HTMLElement[]>();
+  const errors = new Map<string, HTMLElement>();
+  for (const f of asked) {
+    const controls = controlsNamed(form, f.name);
+    const wrapper = form.querySelector<HTMLElement>(`[data-field="${f.name}"]`) ?? controls[0]?.closest<HTMLElement>('.pcrm-field');
+    const parts = wrapper ? [wrapper] : [...controls, ...controls.flatMap((c) => (c.id ? [...form.querySelectorAll<HTMLElement>(`label[for="${c.id}"]`)] : []))];
+    wrappers.set(f.name, parts);
+    let error = form.querySelector<HTMLElement>(`[data-error="${f.name}"]`);
+    if (!error) {
+      error = el('div', { class: 'pcrm-error', role: 'alert' });
+      if (wrapper) wrapper.append(error);
+      else controls[controls.length - 1]?.after(error);
+    }
+    errors.set(f.name, error);
+  }
+  let formError = form.querySelector<HTMLElement>('[data-error="_form"]');
+  if (!formError) {
+    formError = el('div', { class: 'pcrm-error', role: 'alert' });
+    const submit = form.querySelector('button[type=submit], button:not([type]), input[type=submit]');
+    if (submit) submit.before(formError);
+    else form.append(formError);
+  }
   // honeypot: hidden from people, filled by bots
   const hp = el('input', { type: 'text', name: '_hp', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
-  const formError = el('div', { class: 'pcrm-error', role: 'alert' });
-  const button = el('button', { type: 'submit' }, definition.submit_label);
-  const form = el('form', { novalidate: true }, ...nodes, el('div', { class: 'pcrm-hp' }, hp), formError, button);
-  container.append(form);
+  form.append(el('div', { class: 'pcrm-hp' }, hp));
 
-  const answers = () => Object.fromEntries(definition.fields.map((f) => [f.name, readValue(form, f)]));
+  for (const f of asked) {
+    const v = fromParams(params, f);
+    if (v !== undefined) prefill(form, f, v);
+  }
+  const urlValues = Object.fromEntries(fromUrl.map((f) => [f.name, fromParams(params, f)]).filter(([, v]) => !isEmpty(v)));
+
+  const answers = (): Record<string, unknown> => ({ ...urlValues, ...Object.fromEntries(asked.map((f) => [f.name, readValue(form, f)])) });
+  const setInvalid = (name: string, on: boolean) => {
+    for (const w of wrappers.get(name) ?? []) w.classList.toggle('pcrm-invalid', on);
+  };
   const update = () => {
     const shown = visibleFields(definition.fields, answers());
-    for (const [name, w] of wrappers) w.hidden = !shown.has(name);
+    for (const [name, parts] of wrappers) for (const p of parts) p.hidden = !shown.has(name);
     return shown;
   };
   form.addEventListener('input', update);
@@ -143,37 +269,41 @@ export function renderForm(container: HTMLElement, opts: { apiBase: string; key:
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    formError.textContent = '';
-    for (const node of errors.values()) {
+    formError!.textContent = '';
+    for (const [name, node] of errors) {
       node.textContent = '';
-      node.parentElement?.classList.remove('pcrm-invalid');
+      setInvalid(name, false);
     }
     const all = answers();
     const shown = update();
-    const values: Record<string, unknown> = {};
+    const values: Record<string, unknown> = { ...urlValues };
     let firstBad: string | null = null;
-    for (const f of definition.fields) {
+    const bad = (f: FormField, message: string) => {
+      errors.get(f.name)!.textContent = message;
+      setInvalid(f.name, true);
+      firstBad ??= f.name;
+    };
+    for (const f of asked) {
       if (!shown.has(f.name)) continue;
       const v = all[f.name];
       if (isEmpty(v)) {
-        if (f.required) {
-          errors.get(f.name)!.textContent = `${f.label} is required.`;
-          wrappers.get(f.name)!.classList.add('pcrm-invalid');
-          firstBad ??= f.name;
-        }
+        if (f.required) bad(f, `${f.label} is required.`);
         continue;
       }
-      values[f.name] = v;
+      const problem = formatProblem(f, v);
+      if (problem) bad(f, problem);
+      else values[f.name] = v;
     }
     if (firstBad) {
-      wrappers.get(firstBad)!.querySelector<HTMLElement>('input, select, textarea')?.focus();
+      controlsNamed(form, firstBad)[0]?.focus();
       return;
     }
     if (opts.preview) {
       container.replaceChildren(el('div', { class: 'pcrm-done', role: 'status' }, definition.success_message));
       return;
     }
-    button.disabled = true;
+    const submit = form.querySelector<HTMLButtonElement | HTMLInputElement>('button[type=submit], button:not([type]), input[type=submit]');
+    if (submit) submit.disabled = true;
     try {
       const res = await api.submit(opts.key, {
         values,
@@ -186,11 +316,11 @@ export function renderForm(container: HTMLElement, opts: { apiBase: string; key:
       const e2 = err as PublicApiError;
       if (e2.field && errors.has(e2.field)) {
         errors.get(e2.field)!.textContent = e2.message;
-        wrappers.get(e2.field)!.classList.add('pcrm-invalid');
+        setInvalid(e2.field, true);
       } else {
-        formError.textContent = e2.status === 403 ? 'This form cannot be sent from this website.' : e2.message;
+        formError!.textContent = e2.status === 403 ? 'This form cannot be sent from this website.' : e2.message;
       }
-      button.disabled = false;
+      if (submit) submit.disabled = false;
     }
   });
 }

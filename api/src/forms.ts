@@ -2,7 +2,9 @@ import type pg from 'pg';
 import { ApiError, badRequest } from './errors.js';
 import type { Principal } from './auth.js';
 import { getObject, type ObjectDef, type PropertyDef } from './registry.js';
-import { createRecord, findIdByUnique, updateRecord } from './records.js';
+import { createRecord, findIdByUnique, onWrite, updateRecord } from './records.js';
+import sanitizeHtml from 'sanitize-html';
+import { DomUtils, parseDocument } from 'htmlparser2';
 
 // Forms (crm.pc_0052): the `definition` property holds the form as JSON.
 //
@@ -12,9 +14,14 @@ import { createRecord, findIdByUnique, updateRecord } from './records.js';
 // (`property`). On submit, contact properties upsert a contact by email and
 // ticket properties always create a new ticket. Fields can be shown only when
 // earlier answers match (`conditions`), and property fields can be hidden with
-// a fixed value (`hidden` + `value`), e.g. a ticket's pipeline.
+// a fixed value (`hidden` + `value`), e.g. a ticket's pipeline. A field with
+// `from_url` is never shown: its value comes only from the page's query
+// parameter of the same key (any field is also prefilled that way). Text
+// fields can check a `format`: email, phone, url, or `regex` with `pattern`.
 
+// 'email' and 'phone' are read as text with that format (older definitions)
 export type FieldType = 'text' | 'email' | 'phone' | 'textarea' | 'number' | 'select' | 'multiselect' | 'checkbox' | 'date' | 'datetime';
+export type TextFormat = 'email' | 'phone' | 'url' | 'regex';
 export type FormObject = 'contacts' | 'tickets';
 export type ConditionOperator =
   | 'is_any_of' | 'is_none_of' | 'is_checked' | 'is_not_checked' | 'is_before' | 'is_after' | 'is_on' | 'is_empty' | 'is_not_empty';
@@ -33,9 +40,13 @@ export interface FormField {
   placeholder?: string;
   help?: string;
   options?: { value: string; label: string }[];
+  format?: TextFormat;
+  pattern?: string;
+  pattern_message?: string;
   property?: { object: FormObject; name: string };
   hidden?: boolean;
   value?: unknown;
+  from_url?: boolean;
   conditions?: Condition[];
 }
 
@@ -47,8 +58,8 @@ export interface FormDefinition {
 
 export const FORM_OBJECTS: FormObject[] = ['contacts', 'tickets'];
 const FIELD_TYPES: FieldType[] = ['text', 'email', 'phone', 'textarea', 'number', 'select', 'multiselect', 'checkbox', 'date', 'datetime'];
-const TEXT_TYPES: FieldType[] = ['text', 'email', 'phone', 'textarea'];
-const FIELD_MAX: Partial<Record<FieldType, number>> = { text: 500, email: 254, phone: 50, textarea: 5000 };
+const TEXT_FORMATS: TextFormat[] = ['email', 'phone', 'url', 'regex'];
+const FIELD_MAX: Partial<Record<FieldType, number>> = { text: 500, textarea: 5000 };
 const OPERATORS: Record<string, ConditionOperator[]> = {
   select: ['is_any_of', 'is_none_of', 'is_empty', 'is_not_empty'],
   multiselect: ['is_any_of', 'is_none_of', 'is_empty', 'is_not_empty'],
@@ -59,6 +70,10 @@ const OPERATORS: Record<string, ConditionOperator[]> = {
 const NAME_RE = /^[a-z][a-z0-9_]{0,62}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?[0-9 ().-]{7,25}$/;
+const URL_RE = /^https?:\/\/[^\s]+$/;
+// custom patterns match the whole answer, like the HTML pattern attribute
+export const patternRegExp = (pattern: string) => new RegExp(`^(?:${pattern})$`);
 
 // Properties a form may fill: plain typed values the visitor can give.
 export function formProperty(obj: ObjectDef, name: string): PropertyDef | null {
@@ -70,21 +85,16 @@ export function formProperty(obj: ObjectDef, name: string): PropertyDef | null {
   return p;
 }
 
-// The field type a property is asked with. Text properties may pick a text
-// type; single-line text cannot be a textarea.
+// The field type a property is asked with. Text properties are a single line
+// or a multi-line box; single-line text cannot be multi-line.
 function typeFor(p: PropertyDef, wanted?: FieldType): FieldType {
   switch (p.type) {
     case 'number': return 'number';
     case 'date': return 'date';
     case 'datetime': return 'datetime';
     case 'dropdown': return p.options.single_value === true ? 'select' : 'multiselect';
-    default: {
-      const single = p.options.single_line === true;
-      if (wanted && TEXT_TYPES.includes(wanted) && !(single && wanted === 'textarea')) return wanted;
-      if (/email/.test(p.api_name)) return 'email';
-      if (/phone/.test(p.api_name)) return 'phone';
-      return single ? 'text' : 'textarea';
-    }
+    default:
+      return wanted === 'textarea' && p.options.single_line !== true ? 'textarea' : 'text';
   }
 }
 
@@ -137,8 +147,29 @@ export async function readDefinition(raw: unknown, strict: boolean): Promise<For
     if (names.has(name)) throw fail(`${where}: key "${name}" is used twice`);
     if (!prop && /^(contact|ticket)_/.test(name) && strict) throw fail(`${where}: keys starting with contact_ or ticket_ are kept for property fields`);
 
-    const type = prop ? typeFor(prop, f.type as FieldType) : ((f.type ?? 'text') as FieldType);
-    if (!FIELD_TYPES.includes(type)) throw fail(`${where} has unknown type "${String(f.type)}"`);
+    const given = (f.type ?? 'text') as FieldType;
+    if (!FIELD_TYPES.includes(given)) throw fail(`${where} has unknown type "${String(f.type)}"`);
+    const type = prop ? typeFor(prop, given) : given === 'email' || given === 'phone' ? 'text' : given;
+
+    // format: what a text answer must look like
+    let format: TextFormat | undefined;
+    const rawFormat = f.format ?? (given === 'email' || given === 'phone' ? given : undefined);
+    if (rawFormat !== undefined && rawFormat !== null && rawFormat !== '') {
+      if (!TEXT_FORMATS.includes(rawFormat as TextFormat)) throw fail(`${where} has unknown format "${String(rawFormat)}"`);
+      if (type !== 'text' && type !== 'textarea') throw fail(`${where}: only text fields can check a format`);
+      format = rawFormat as TextFormat;
+    }
+    if (property?.object === 'contacts' && property.name === 'email') format = 'email';
+    let pattern: string | undefined;
+    if (format === 'regex') {
+      pattern = typeof f.pattern === 'string' ? f.pattern : '';
+      if (!pattern || pattern.length > 500) throw fail(`${where}: the custom format needs a regular expression (up to 500 characters)`);
+      try {
+        patternRegExp(pattern);
+      } catch {
+        throw fail(`${where}: "${pattern}" is not a valid regular expression`);
+      }
+    }
 
     let options: FormField['options'];
     if (prop?.type === 'dropdown') {
@@ -163,8 +194,20 @@ export async function readDefinition(raw: unknown, strict: boolean): Promise<For
       ...(str(f.placeholder, 200) ? { placeholder: str(f.placeholder, 200) } : {}),
       ...(str(f.help, 1000) ? { help: str(f.help, 1000) } : {}),
       ...(options ? { options } : {}),
+      ...(format ? { format } : {}),
+      ...(pattern ? { pattern } : {}),
+      ...(pattern && str(f.pattern_message, 200) ? { pattern_message: str(f.pattern_message, 200) } : {}),
       ...(property ? { property } : {})
     };
+
+    if (f.from_url === true) {
+      if (f.hidden === true) throw fail(`${where}: a field is either filled from the URL or set to a fixed value, not both`);
+      if (property?.object === 'contacts' && property.name === 'email') throw fail(`${where}: the contact email must be asked on the form`);
+      field.from_url = true;
+      field.required = false;
+      delete field.placeholder;
+      delete field.help;
+    }
 
     if (f.hidden === true) {
       if (!property) throw fail(`${where}: only contact and ticket property fields can be hidden`);
@@ -179,7 +222,7 @@ export async function readDefinition(raw: unknown, strict: boolean): Promise<For
     }
 
     if (Array.isArray(f.conditions) && f.conditions.length) {
-      if (field.hidden) throw fail(`${where}: hidden fields cannot have conditions`);
+      if (field.hidden || field.from_url) throw fail(`${where}: hidden fields cannot have conditions`);
       const conditions: Condition[] = [];
       for (const c of f.conditions as Record<string, unknown>[]) {
         const source = fields.find((x) => x.name === c?.field);
@@ -218,11 +261,11 @@ export async function readDefinition(raw: unknown, strict: boolean): Promise<For
   const contactFields = fields.filter((f) => f.property?.object === 'contacts');
   if (contactFields.length) {
     const email = contactFields.find((f) => f.property!.name === 'email');
-    if (!email || email.hidden || email.conditions || !email.required) {
+    if (!email || email.hidden || email.from_url || email.conditions || !email.required) {
       throw fail('a form with contact properties needs the contact Email field, required and always shown (contacts are matched by email)');
     }
   }
-  if (strict && !fields.some((f) => !f.hidden)) throw fail('the form needs at least one visible field');
+  if (strict && !fields.some((f) => !f.hidden && !f.from_url)) throw fail('the form needs at least one field it asks');
   return {
     fields,
     submit_label: str(def.submit_label, 100) ?? 'Submit',
@@ -313,7 +356,13 @@ function cleanValue(f: FormField, v: unknown): unknown {
       const max = FIELD_MAX[f.type] ?? 500;
       if (s.length > max) throw new Error(`must be at most ${max} characters`);
       if (f.type !== 'textarea' && /[\r\n]/.test(s)) throw new Error('must be a single line');
-      if (f.type === 'email' && !EMAIL_RE.test(s)) throw new Error('must be an email address');
+      if (f.format === 'email' && !EMAIL_RE.test(s)) throw new Error('must be an email address');
+      if (f.format === 'phone' && !(PHONE_RE.test(s) && s.replace(/\D/g, '').length >= 7)) throw new Error('must be a phone number');
+      if (f.format === 'url' && !URL_RE.test(s)) throw new Error('must be a web address starting with http:// or https://');
+      if (f.format === 'regex' && f.pattern && !patternRegExp(f.pattern).test(s)) {
+        // a custom message is shown as written, not after the label
+        throw f.pattern_message ? Object.assign(new Error(f.pattern_message), { whole: true }) : new Error('is not in the expected format');
+      }
       return s;
     }
   }
@@ -339,11 +388,13 @@ export function cleanAnswers(def: FormDefinition, input: unknown): Record<string
     }
     if (!(f.conditions ?? []).every((c) => conditionMet(c, shown.has(c.field) ? out[c.field] : undefined))) continue;
     shown.add(f.name);
+    // from_url fields: whatever the page's URL carried, checked like any answer
     let v: unknown;
     try {
       v = cleanValue(f, given[f.name]);
     } catch (err) {
-      throw badRequest(`${f.label} ${(err as Error).message}`, { field: f.name });
+      const e = err as Error & { whole?: boolean };
+      throw badRequest(e.whole ? e.message : `${f.label} ${e.message}`, { field: f.name });
     }
     if (v === undefined) {
       if (f.required) throw badRequest(`${f.label} is required`, { field: f.name });
@@ -433,3 +484,103 @@ export async function applySubmission(
   ]);
   return { submission, contact, ticket };
 }
+
+// ---- custom HTML -----------------------------------------------------------------
+
+// What custom form HTML may contain: layout, text, images, form controls and
+// <style>. No scripts, frames, event handlers or javascript: links. Forms lose
+// action/method (the page posts to the API itself).
+const HTML_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'form', 'fieldset', 'legend', 'label', 'input', 'select', 'option', 'optgroup', 'textarea', 'button',
+    'div', 'span', 'p', 'br', 'hr', 'section', 'header', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li', 'strong', 'b', 'em', 'i', 'u', 'small', 'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'style'
+  ],
+  allowedAttributes: {
+    '*': ['class', 'id', 'style', 'title', 'hidden', 'role', 'data-*', 'aria-*'],
+    form: ['novalidate'],
+    label: ['for'],
+    input: ['name', 'type', 'value', 'placeholder', 'required', 'checked', 'min', 'max', 'step', 'minlength', 'maxlength', 'pattern', 'autocomplete', 'size'],
+    select: ['name', 'required', 'multiple', 'size'],
+    option: ['value', 'selected', 'disabled'],
+    textarea: ['name', 'rows', 'cols', 'placeholder', 'required', 'minlength', 'maxlength'],
+    button: ['type'],
+    a: ['href', 'target', 'rel'],
+    img: ['src', 'alt', 'width', 'height'],
+    th: ['colspan', 'rowspan'],
+    td: ['colspan', 'rowspan']
+  },
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+  // <style> is wanted (styling is the point); scripts stay out
+  allowVulnerableTags: true,
+  disallowedTagsMode: 'discard'
+};
+
+const MAX_HTML = 200_000;
+
+type El = { name: string; attribs: Record<string, string> };
+
+// Cleans the HTML and checks it against the form: a <form>, a control named
+// after every field the form asks (of a kind that fits the field), a
+// data-field wrapper for every field with conditions, a submit button, and no
+// controls for unknown keys. Returns the cleaned HTML and what is wrong.
+export function checkFormHtml(raw: string, def: FormDefinition): { html: string; problems: string[] } {
+  const problems: string[] = [];
+  if (raw.length > MAX_HTML) return { html: raw, problems: [`the HTML is longer than ${MAX_HTML} characters`] };
+  const html = sanitizeHtml(raw, HTML_OPTIONS);
+  const doc = parseDocument(html);
+  const els = DomUtils.findAll(() => true, doc.children) as unknown as El[];
+  const forms = els.filter((e) => e.name === 'form');
+  if (forms.length !== 1) problems.push(forms.length ? 'use one <form> element, not several' : 'the HTML needs a <form> element');
+  const inForm = forms.length ? (DomUtils.findAll(() => true, (forms[0] as unknown as { children: never[] }).children) as unknown as El[]) : els;
+
+  const controls = inForm.filter((e) => ['input', 'select', 'textarea'].includes(e.name) && e.attribs.name);
+  const byName = new Map<string, El[]>();
+  for (const c of controls) byName.set(c.attribs.name, [...(byName.get(c.attribs.name) ?? []), c]);
+  const type = (e: El) => (e.attribs.type ?? 'text').toLowerCase();
+
+  const known = new Set(def.fields.filter((f) => !f.hidden).map((f) => f.name));
+  const unknown = [...byName.keys()].filter((n) => !known.has(n));
+  if (unknown.length) problems.push(`controls with names that are not form fields: ${unknown.join(', ')}`);
+
+  const missing: string[] = [];
+  for (const f of def.fields) {
+    if (f.hidden || f.from_url) continue;
+    const found = byName.get(f.name) ?? [];
+    if (found.length === 0) {
+      missing.push(f.name);
+      continue;
+    }
+    const fits =
+      f.type === 'select' ? found.some((e) => e.name === 'select' || type(e) === 'radio')
+      : f.type === 'multiselect' ? found.some((e) => (e.name === 'select' && 'multiple' in e.attribs) || type(e) === 'checkbox')
+      : f.type === 'checkbox' ? found.some((e) => type(e) === 'checkbox')
+      : f.type === 'textarea' ? found.some((e) => e.name === 'textarea' || e.name === 'input')
+      : found.some((e) => e.name === 'input' || e.name === 'textarea');
+    if (!fits) problems.push(`"${f.name}" (${f.label}) needs a ${f.type === 'select' ? '<select> or radio buttons' : f.type === 'multiselect' ? 'set of checkboxes or a <select multiple>' : f.type === 'checkbox' ? 'checkbox' : '<input> or <textarea>'}`);
+    if (f.conditions?.length && !inForm.some((e) => e.attribs['data-field'] === f.name)) {
+      problems.push(`"${f.name}" shows only under conditions, so wrap it in an element with data-field="${f.name}"`);
+    }
+  }
+  if (missing.length) problems.push(`no control for these fields: ${missing.join(', ')}`);
+  const submit = inForm.some((e) => (e.name === 'button' && (e.attribs.type ?? 'submit').toLowerCase() === 'submit') || (e.name === 'input' && type(e) === 'submit'));
+  if (!submit) problems.push('the form needs a submit button');
+  return { html, problems };
+}
+
+// Every write to a form: when the HTML or the definition changes and the form
+// has custom HTML, the HTML must still fit the definition. Stored cleaned.
+onWrite('forms', async (_client, properties, existing) => {
+  if (!('html' in properties) && !('definition' in properties)) return properties;
+  const html = 'html' in properties ? properties.html : existing?.html;
+  if (typeof html !== 'string' || !html.trim()) return 'html' in properties ? { ...properties, html: null } : properties;
+  const rawDef = 'definition' in properties ? properties.definition : existing?.definition;
+  if (typeof rawDef !== 'string' || !rawDef.trim()) throw badRequest('add the form fields in the builder before giving the form custom HTML');
+  const def = await readDefinition(rawDef, false);
+  const checked = checkFormHtml(html, def);
+  if (checked.problems.length) {
+    const what = 'html' in properties ? 'The HTML does not fit the form' : 'The form\'s custom HTML would no longer fit these fields';
+    throw badRequest(`${what}: ${checked.problems.join('; ')}.`, { problems: checked.problems });
+  }
+  return 'html' in properties ? { ...properties, html: checked.html } : properties;
+});

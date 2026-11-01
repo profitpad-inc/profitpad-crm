@@ -10,7 +10,13 @@ const PREFERRED: Record<string, string[]> = {
   companies: ['name', 'domain', 'industry', 'phone', 'owner'],
   deals: ['name', 'amount', 'currency', 'pipeline', 'stage', 'close_date', 'owner'],
   tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'owner'],
-  users: ['first_name', 'last_name', 'email', 'status']
+  users: ['first_name', 'last_name', 'email', 'status'],
+  // the builder, the link card and Status on the record page do the rest
+  forms: ['name', 'description']
+};
+// Values every new record of the object starts with, not asked.
+const STARTS_WITH: Record<string, Record<string, unknown>> = {
+  forms: { status: 'draft' }
 };
 
 export function CreateRecordModal({ object, onClose, onCreated }: { object: ObjectDef; onClose: () => void; onCreated: (r: CrmRecord) => void }) {
@@ -32,7 +38,7 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
   async function save() {
     setBusy(true);
     setError(null);
-    const properties: Record<string, unknown> = {};
+    const properties: Record<string, unknown> = { ...STARTS_WITH[object.api_name] };
     for (const p of fields) {
       const v = values[p.api_name];
       if (v !== undefined && v !== '') properties[p.api_name] = fromInput(p, v);

@@ -183,14 +183,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---- forms -------------------------------------------------------------------
 
-async function loadPublishedForm(key: string): Promise<{ id: string; name: string | null; description: string | null; definition: FormDefinition }> {
+async function loadPublishedForm(key: string): Promise<{ id: string; name: string | null; description: string | null; html: string | null; definition: FormDefinition }> {
   const { rows } = await pool.query(
-    `select pc_0052_id as id, name, description, definition from crm.pc_0052
+    `select pc_0052_id as id, name, description, html, definition from crm.pc_0052
      where public_key = $1 and row_status = 'active' and status @> '{published}'`,
     [checkKey(key)]
   );
   if (!rows[0]) throw notFound('form not found');
-  return { id: rows[0].id, name: rows[0].name, description: rows[0].description, definition: await readDefinition(rows[0].definition ?? '', false) };
+  return { id: rows[0].id, name: rows[0].name, description: rows[0].description, html: rows[0].html, definition: await readDefinition(rows[0].definition ?? '', false) };
 }
 
 // Submissions faster than this are treated as bots.
@@ -257,7 +257,7 @@ export async function publicRoutes(app: FastifyInstance) {
     rateLimit(req, 'form-read', 120);
     const form = await loadPublishedForm(req.params.key);
     reply.header('cache-control', 'no-store');
-    return { name: form.name, description: form.description, definition: publicDefinition(form.definition), theme: await theme() };
+    return { name: form.name, description: form.description, html: form.html || null, definition: publicDefinition(form.definition), theme: await theme() };
   });
 
   app.post<{ Params: { key: string }; Body: { values?: unknown; page_url?: unknown; _hp?: unknown; _elapsed?: unknown } }>(

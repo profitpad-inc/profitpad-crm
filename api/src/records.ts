@@ -277,6 +277,16 @@ async function planWrite(
   return plan;
 }
 
+// Object-specific checks run before a create or update is planned, whatever
+// route the write comes from (forms check their custom HTML, see forms.ts).
+// A hook gets the incoming properties and the current row (null on create)
+// and returns the properties to write, or throws.
+type WriteHook = (client: pg.PoolClient, properties: Record<string, unknown>, existing: Record<string, unknown> | null) => Promise<Record<string, unknown>>;
+const writeHooks = new Map<string, WriteHook>();
+export function onWrite(objectApiName: string, hook: WriteHook): void {
+  writeHooks.set(objectApiName, hook);
+}
+
 export async function createRecord(
   client: pg.PoolClient,
   obj: ObjectDef,
@@ -285,6 +295,8 @@ export async function createRecord(
   associations: { object: string; id: string; label_id?: string }[] = []
 ): Promise<string> {
   requireObjectPermission(principal, obj, 'create');
+  const hook = writeHooks.get(obj.api_name);
+  if (hook) properties = await hook(client, properties ?? {}, null);
   const plan = await planWrite(client, obj, principal, properties ?? {});
   const cols = plan.columns.map(quoteIdent).join(', ');
   const vals = plan.values.map((_, i) => `$${i + 1}`).join(', ');
@@ -317,6 +329,8 @@ export async function updateRecord(
     params
   );
   if (rows.length === 0) throw notFound(`${obj.api_name} record ${id} not found`);
+  const hook = writeHooks.get(obj.api_name);
+  if (hook) properties = await hook(client, properties, rows[0]);
   const plan = await planWrite(client, obj, principal, properties, rows[0]);
   if (plan.columns.length === 0) return;
   const sets = plan.columns.map((c, i) => `${quoteIdent(c)} = $${i + 2}`).join(', ');

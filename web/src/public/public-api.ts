@@ -25,12 +25,19 @@ export interface FormField {
   options?: { value: string; label: string }[];
   placeholder?: string;
   help?: string;
+  format?: 'email' | 'phone' | 'url' | 'regex';
+  pattern?: string;
+  pattern_message?: string;
+  // never shown: the value comes from the page URL's query parameter of the same key
+  from_url?: boolean;
   conditions?: Condition[];
 }
 
 export interface PublicForm {
   name: string | null;
   description: string | null;
+  // custom markup from the form's HTML property, already cleaned by the API
+  html?: string | null;
   definition: { fields: FormField[]; submit_label: string; success_message: string };
   theme: Record<string, string>;
 }

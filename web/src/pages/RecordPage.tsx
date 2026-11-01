@@ -203,7 +203,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   }
 
   const row = (p: Property) => (
-    <div key={p.api_name} className={`prop-row${isEditable(p) ? ' editable' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
+    <div key={p.api_name} className={`prop-row${isEditable(p) ? ' editable' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
       <div className="prop-label">{p.label}</div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
