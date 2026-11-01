@@ -107,7 +107,7 @@ export function RecordPage() {
         </Link>
         <div className="record-identity">
           <span className="record-avatar">{initials(name)}</span>
-          <div>
+          <div className="record-title">
             <h1>{name}</h1>
             {subtitle && <div className="muted">{subtitle}</div>}
           </div>
@@ -167,9 +167,9 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
     setError(null);
   }
 
-  async function commit(p: Property) {
+  async function commit(p: Property, final?: string) {
     if (editing !== p.api_name) return;
-    const value = fromInput(p, draft);
+    const value = fromInput(p, final ?? draft);
     const before = JSON.stringify(record.properties[p.api_name] ?? null);
     setEditing(null);
     if (JSON.stringify(value) === before) return;
@@ -185,7 +185,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
       <div className="prop-label">{p.label}</div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
-          <PropertyInput property={p} value={draft} onChange={setDraft} autoFocus onCommit={() => commit(p)} />
+          <PropertyInput property={p} value={draft} onChange={setDraft} autoFocus onCommit={(v) => commit(p, v)} />
           {p.type === 'dropdown' && p.options.single_value !== true && (
             <button className="btn small" onClick={() => commit(p)}>Save</button>
           )}

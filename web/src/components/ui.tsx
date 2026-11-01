@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { Property } from '../lib/api';
 import { valueType } from '../lib/display';
+import { DatePicker } from './DatePicker';
 
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean;
@@ -98,18 +99,19 @@ export function fromInput(p: Property, s: string): unknown {
 }
 
 export function PropertyInput({ property, value, onChange, autoFocus, onCommit }: {
-  property: Property; value: string; onChange: (v: string) => void; autoFocus?: boolean; onCommit?: () => void;
+  property: Property; value: string; onChange: (v: string) => void; autoFocus?: boolean; onCommit?: (value?: string) => void;
 }) {
   const t = valueType(property);
   const selectAll = autoFocus ? (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => e.currentTarget.select() : undefined;
   const keyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && onCommit) onCommit();
   };
+  const blur = () => onCommit?.();
   if (property.type === 'dropdown') {
     const options = (property.dropdown_options ?? []).filter((o) => o.row_status === 'active' || value.split(';').includes(o.api_value));
     if (property.options.single_value === true) {
       return (
-        <select value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={onCommit}>
+        <select value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur}>
           <option value="">None</option>
           {options.map((o) => (
             <option key={o.api_value} value={o.api_value}>{o.label}</option>
@@ -138,13 +140,14 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
       </div>
     );
   }
-  if (t === 'number') return <input type="number" step="any" value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={onCommit} />;
-  if (t === 'date') return <input type="date" value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={onCommit} />;
-  if (t === 'datetime') return <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={onCommit} />;
-  if (property.options.single_line === true || property.is_base) {
-    return <input value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={onCommit} />;
+  if (t === 'number') return <input type="number" step="any" value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
+  if (t === 'date' || t === 'datetime') {
+    return <DatePicker value={value} onChange={onChange} withTime={t === 'datetime'} autoFocus={autoFocus} onCommit={onCommit} />;
   }
-  return <textarea rows={3} value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={onCommit} />;
+  if (property.options.single_line === true || property.is_base) {
+    return <input value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
+  }
+  return <textarea rows={3} value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur} />;
 }
 
 export function isEditable(p: Property): boolean {

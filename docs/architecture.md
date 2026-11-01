@@ -62,7 +62,7 @@ Base columns other than `name` and `created_at`, and calculation columns, have n
 |---|---|
 | `ui.settings` | portal settings; `theme` holds the colors (keys in `api/src/routes/ui.ts` `THEME_KEYS`) |
 | `ui.nav_menus` | sidebar menus: one `default`, plus optional per-user menus. Items: home, reporting, divider, object, view, section (one level). Only admins change them |
-| `ui.views` | saved table views per object: columns (properties or association columns with an optional label), sorts. `owner` null = shared (admins edit), else personal |
+| `ui.views` | saved table views per object: columns (properties or association columns with an optional label, each with an optional `width` in pixels), sorts. `owner` null = shared (admins edit), else personal |
 
 `meta.pc_0001.search_properties` lists the text properties the search box matches (contacts: name, first/last name, email, phone; also "first last"). Change with `meta.set_search_properties` / `PUT /v1/schema/{object}/search-properties`.
 

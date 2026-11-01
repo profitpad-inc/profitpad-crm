@@ -79,17 +79,22 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
 
 // ---- views -------------------------------------------------------------------
 
-type Column = { type: 'property'; property: string } | { type: 'association'; object: string; label_id: string | null };
+// width: optional column width in pixels, set by resizing the column in the UI
+type Column = ({ type: 'property'; property: string } | { type: 'association'; object: string; label_id: string | null }) & { width?: number };
 
 async function validateColumns(obj: ObjectDef, columns: unknown): Promise<Column[]> {
   if (!Array.isArray(columns) || columns.length > 50) throw badRequest('columns must be an array of at most 50 columns');
   const out: Column[] = [];
   for (const raw of columns) {
     const c = raw as Record<string, unknown>;
+    if (c.width !== undefined && c.width !== null && !(Number.isInteger(c.width) && (c.width as number) >= 40 && (c.width as number) <= 1000)) {
+      throw badRequest('column width must be a whole number of pixels between 40 and 1000');
+    }
+    const width = typeof c.width === 'number' ? { width: c.width } : {};
     if (c.type === 'property') {
       const prop = getProperty(obj, String(c.property));
       if (!prop) throw badRequest(`unknown property "${String(c.property)}" on ${obj.api_name}`);
-      out.push({ type: 'property', property: prop.api_name });
+      out.push({ type: 'property', property: prop.api_name, ...width });
     } else if (c.type === 'association') {
       const other = await getObject(String(c.object));
       const labelId = c.label_id === undefined || c.label_id === null ? null : String(c.label_id);
@@ -101,7 +106,7 @@ async function validateColumns(obj: ObjectDef, columns: unknown): Promise<Column
         );
         if (rows.length === 0) throw badRequest(`label ${labelId} does not connect ${obj.api_name} and ${other.api_name}`);
       }
-      out.push({ type: 'association', object: other.api_name, label_id: labelId });
+      out.push({ type: 'association', object: other.api_name, label_id: labelId, ...width });
     } else {
       throw badRequest('column type must be property or association');
     }

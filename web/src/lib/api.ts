@@ -139,9 +139,10 @@ export interface AssociationLabel {
   is_symmetric: boolean;
 }
 
-export type Column =
+export type Column = (
   | { type: 'property'; property: string }
-  | { type: 'association'; object: string; label_id: string | null };
+  | { type: 'association'; object: string; label_id: string | null }
+) & { width?: number };
 
 export interface Sort {
   property: string;

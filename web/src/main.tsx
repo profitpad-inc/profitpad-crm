@@ -6,6 +6,7 @@ import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/montserrat/600.css';
 import '@fontsource/montserrat/700.css';
+import 'flatpickr/dist/flatpickr.min.css'; // before styles.css, which overrides it
 import './styles.css';
 import { api, type Me } from './lib/api';
 import { AppProvider } from './lib/app-context';

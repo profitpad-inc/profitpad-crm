@@ -1,6 +1,7 @@
 import { Plus, X } from 'lucide-react';
 import type { Filter, FilterGroup, ObjectDef, Property } from '../lib/api';
 import { optionLabel, valueType } from '../lib/display';
+import { DatePicker } from './DatePicker';
 
 // Conditions on an object's properties in the API's filter format: groups are
 // OR'ed, filters inside a group AND'ed. Used by sharing rules (Settings →
@@ -151,9 +152,11 @@ function FilterRow({ schema, filter, onChange, onRemove }: { schema: ObjectDef; 
       <select value={filter.operator} aria-label="Condition" onChange={(e) => setOperator(e.target.value)}>
         {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      {op?.input === 'single' && prop && (
+      {op?.input === 'single' && prop && (inputType(prop) === 'date' || inputType(prop) === 'datetime-local' ? (
+        <DatePicker key={inputType(prop)} value={shownValue} onChange={setValue} withTime={inputType(prop) === 'datetime-local'} ariaLabel="Value" />
+      ) : (
         <input type={inputType(prop)} aria-label="Value" value={shownValue} onChange={(e) => setValue(e.target.value)} />
-      )}
+      ))}
       {op?.input === 'list' && prop && (
         <div className="role-chips filter-values">
           {values.map((v) => (

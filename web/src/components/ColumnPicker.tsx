@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { ArrowDownToLine, ArrowUpToLine, GripVertical, X } from 'lucide-react';
 import type { AssociationLabel, Column, ObjectDef, ObjectSummary } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Modal } from './ui';
@@ -18,6 +18,15 @@ export function associationColumnLabel(
   return (l.from_object_type === selfCode ? l.label : l.inverse_label ?? l.label) ?? other.label_plural;
 }
 
+// Moves the item at `from` so it lands before the item now at `to`
+// (to = list.length puts it last).
+export function moveTo<T>(list: T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to > from ? to - 1 : to, 0, item);
+  return next;
+}
+
 const key = (c: Column) => (c.type === 'property' ? `p:${c.property}` : `a:${c.object}:${c.label_id ?? ''}`);
 
 export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
@@ -26,6 +35,8 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
   const { objects, objectByName } = useApp();
   const [selected, setSelected] = useState<Column[]>(columns);
   const [filter, setFilter] = useState('');
+  const dragFrom = useRef<number | null>(null);
+  const [dropAt, setDropAt] = useState<number | null>(null);
 
   const available = useMemo(() => {
     const props: { column: Column; label: string; group: string }[] = schema.properties
@@ -53,14 +64,11 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
   function toggle(c: Column) {
     setSelected((s) => (chosen.has(key(c)) ? s.filter((x) => key(x) !== key(c)) : [...s, c]));
   }
-  function move(i: number, d: -1 | 1) {
-    setSelected((s) => {
-      const next = [...s];
-      const j = i + d;
-      if (j < 0 || j >= next.length) return s;
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
+  function drop() {
+    const from = dragFrom.current;
+    if (from !== null && dropAt !== null) setSelected((s) => moveTo(s, from, dropAt));
+    dragFrom.current = null;
+    setDropAt(null);
   }
 
   return (
@@ -93,10 +101,33 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
         <div className="picker-selected">
           <div className="picker-group">Selected columns ({selected.length})</div>
           {selected.map((c, i) => (
-            <div key={key(c)} className="picker-chip">
-              <span>{labelOf(c)}</span>
-              <button className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp size={14} /></button>
-              <button className="icon-btn" onClick={() => move(i, 1)} disabled={i === selected.length - 1} aria-label="Move down"><ArrowDown size={14} /></button>
+            <div
+              key={key(c)}
+              className={`picker-chip${dropAt === i ? ' drop-before' : ''}${dropAt === selected.length && i === selected.length - 1 ? ' drop-after' : ''}`}
+              onDragOver={(e) => {
+                if (dragFrom.current === null) return;
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                setDropAt(e.clientY < r.top + r.height / 2 ? i : i + 1);
+              }}
+              onDrop={(e) => { e.preventDefault(); drop(); }}
+            >
+              <span
+                className="grip"
+                draggable
+                title="Drag to reorder"
+                onDragStart={(e) => {
+                  dragFrom.current = i;
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setDragImage(e.currentTarget.parentElement!, 12, 12);
+                }}
+                onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
+              >
+                <GripVertical size={14} />
+              </span>
+              <span className="picker-chip-label">{labelOf(c)}</span>
+              <button className="icon-btn" onClick={() => setSelected((s) => moveTo(s, i, 0))} disabled={i === 0} aria-label="Move to top" title="Move to top"><ArrowUpToLine size={14} /></button>
+              <button className="icon-btn" onClick={() => setSelected((s) => moveTo(s, i, s.length))} disabled={i === selected.length - 1} aria-label="Move to bottom" title="Move to bottom"><ArrowDownToLine size={14} /></button>
               <button className="icon-btn" onClick={() => toggle(c)} aria-label="Remove"><X size={14} /></button>
             </div>
           ))}

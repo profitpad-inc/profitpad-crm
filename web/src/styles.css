@@ -199,6 +199,38 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .th-menu { border: 0; background: none; padding: 2px; margin-left: auto; color: var(--muted-text); visibility: hidden; border-radius: 4px; }
 .grid th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .th .menu-anchor { margin-left: auto; }
+.th-text { overflow: hidden; text-overflow: ellipsis; }
+.th-label { min-width: 0; overflow: hidden; }
+.grid th { overflow: visible; }
+.grid th > .th { overflow: hidden; }
+.th-grip { position: absolute; left: 0; top: 50%; transform: translateY(-50%); visibility: hidden; padding: 2px 0; }
+.grid th:hover .th-grip { visibility: visible; }
+.grid th.drop-before { box-shadow: inset 3px 0 0 var(--primary); }
+.grid th.drop-after { box-shadow: inset -3px 0 0 var(--primary); }
+.col-resize { position: absolute; top: 0; right: -4px; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
+.col-resize::after { content: ''; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: 1px; background: transparent; }
+.col-resize:hover::after, body.col-resizing .col-resize:hover::after { background: var(--primary); }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
+.grid tbody td { position: relative; cursor: cell; }
+.grid tbody td a { cursor: pointer; }
+.grid tbody td.selected { background: color-mix(in srgb, var(--primary) 10%, var(--page-background)); }
+.grid tbody td.sel-anchor { box-shadow: inset 0 0 0 2px var(--primary); }
+.grid tbody td.editing { box-shadow: inset 0 0 0 2px var(--primary); }
+.cell-edit {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: inline-grid; place-items: center;
+  border: 1px solid var(--border); background: var(--page-background); color: var(--muted-text);
+  padding: 3px; border-radius: 5px; visibility: hidden; cursor: pointer;
+}
+.cell-edit:hover { color: var(--primary); border-color: var(--primary); }
+.grid td:hover > .cell-edit, .cell-edit:focus-visible { visibility: visible; }
+.cell-editor {
+  position: fixed; z-index: 46; display: flex; flex-direction: column; gap: 6px;
+  background: var(--page-background); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); padding: 6px;
+}
+.cell-editor .checks { max-height: 220px; overflow: auto; }
+.cell-editor-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.cell-editor-foot .error-text { margin-right: auto; color: var(--danger); font-size: 12px; }
 .empty { padding: 32px; text-align: center; color: var(--muted-text); }
 .load-more { display: flex; justify-content: center; padding: 12px; }
 .assoc-many { position: relative; color: var(--primary); cursor: default; border-bottom: 1px dotted var(--primary); }
@@ -214,8 +246,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .picker-selected { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow: auto; }
 .picker-group { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-text); margin: 10px 0 4px; }
 .picker-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-.picker-chip { display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px 4px 10px; }
-.picker-chip span { flex: 1; }
+.picker-chip { display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px 4px 4px; background: var(--page-background); }
+.picker-chip-label { flex: 1; }
+.picker-chip.drop-before { box-shadow: 0 -3px 0 var(--primary); }
+.picker-chip.drop-after { box-shadow: 0 3px 0 var(--primary); }
+.grip { display: inline-grid; place-items: center; color: var(--muted-text); cursor: grab; padding: 2px; border-radius: 4px; }
+.grip:hover { background: var(--surface); color: var(--text); }
+.picker-chip .grip { visibility: hidden; }
+.picker-chip:hover .grip { visibility: visible; }
 
 /* record page */
 .record-page { display: grid; grid-template-columns: 340px minmax(0, 1fr) 320px; height: 100%; }
@@ -230,9 +268,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .record-right { border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
 .record-middle { overflow-y: auto; padding: 16px 24px; background: var(--surface); }
 .back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; margin-bottom: 14px; }
-.record-identity { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
-.record-identity > div { flex: 1; min-width: 0; }
-.record-identity h1 { font-size: 20px; overflow-wrap: anywhere; }
+.record-identity { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.record-identity > .record-title { flex: 1; min-width: 0; }
+.record-identity h1 { font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+.record-identity .menu-anchor { align-self: flex-start; }
 .record-avatar { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; background: var(--primary); color: #fff; font-weight: 600; font-family: var(--font-title); }
 .props h3 { margin: 4px 0 8px; }
 .props h3.sub { margin-top: 20px; color: var(--muted-text); }
@@ -341,6 +380,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 /* touch screens have no hover, so hover-only controls stay visible */
 @media (hover: none) {
   .th-menu { visibility: visible; }
+  .grid tbody tr:hover .cell-edit { visibility: visible; }
   .faint-btn { opacity: 1; }
 }
 
@@ -413,3 +453,40 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
   .palette-results { max-height: none; flex: 1; }
   .palette-cancel { display: block; }
 }
+
+/* flatpickr calendar (DatePicker), on-theme overrides ported from camo-cpq.
+   main.tsx imports flatpickr.min.css before styles.css, so equal specificity
+   wins. */
+.date-picker { display: block; width: 100%; }
+.date-picker input[type='hidden'] { display: none; }
+.flatpickr-calendar {
+  font-family: var(--font-body); background: var(--page-background); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); padding: 12px 0;
+}
+.flatpickr-calendar.arrowTop::before, .flatpickr-calendar.arrowTop::after,
+.flatpickr-calendar.arrowBottom::before, .flatpickr-calendar.arrowBottom::after { display: none; }
+.flatpickr-months, .flatpickr-weekdays, .dayContainer { padding: 0 12px; box-sizing: border-box; }
+.flatpickr-months .flatpickr-month, .flatpickr-current-month .flatpickr-monthDropdown-months, .flatpickr-current-month input.cur-year {
+  color: var(--text); fill: var(--text); font-weight: 600; font-size: 15px;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months { background: var(--page-background); }
+.flatpickr-monthDropdown-months:hover, .numInputWrapper:hover { background: var(--surface); }
+.flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { color: var(--muted-text); fill: var(--muted-text); top: 12px; }
+.flatpickr-months .flatpickr-prev-month:hover svg, .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--primary); }
+span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background: transparent; }
+.flatpickr-day { color: var(--text); border-radius: 9999px; }
+.flatpickr-day.nextMonthDay, .flatpickr-day.prevMonthDay { color: color-mix(in srgb, var(--muted-text) 55%, transparent); }
+.flatpickr-day:hover, .flatpickr-day:focus,
+.flatpickr-day.nextMonthDay:hover, .flatpickr-day.prevMonthDay:hover { background: var(--surface); border-color: var(--surface); }
+.flatpickr-day.today { border-color: var(--primary); color: var(--primary); }
+.flatpickr-day.today:hover, .flatpickr-day.today:focus { background: var(--primary); border-color: var(--primary); color: #fff; }
+.flatpickr-day.selected, .flatpickr-day.selected:hover, .flatpickr-day.selected:focus,
+.flatpickr-day.selected.prevMonthDay, .flatpickr-day.selected.nextMonthDay {
+  background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: none;
+}
+.numInputWrapper span.arrowUp::after { border-bottom-color: var(--primary); }
+.numInputWrapper span.arrowDown::after { border-top-color: var(--primary); }
+.flatpickr-calendar.hasTime .flatpickr-time { border-top: 1px solid var(--border); margin-top: 8px; }
+.flatpickr-time input, .flatpickr-time .flatpickr-am-pm, .flatpickr-time .flatpickr-time-separator { color: var(--text); border: 0; }
+.flatpickr-time input:hover, .flatpickr-time .flatpickr-am-pm:hover,
+.flatpickr-time input:focus, .flatpickr-time .flatpickr-am-pm:focus { background: var(--surface); outline: none; }
