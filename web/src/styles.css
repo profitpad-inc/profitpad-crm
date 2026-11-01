@@ -490,3 +490,14 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .flatpickr-time input, .flatpickr-time .flatpickr-am-pm, .flatpickr-time .flatpickr-time-separator { color: var(--text); border: 0; }
 .flatpickr-time input:hover, .flatpickr-time .flatpickr-am-pm:hover,
 .flatpickr-time input:focus, .flatpickr-time .flatpickr-am-pm:focus { background: var(--surface); outline: none; }
+
+/* Public link card (quotes and forms) */
+.public-link { display: flex; flex-direction: column; gap: 8px; }
+.public-link .card-head { margin-bottom: 0; }
+.public-link-row { display: flex; align-items: center; gap: 4px; }
+.public-link-row input { flex: 1; min-width: 0; font-size: 12px; }
+.public-link-snippet { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; resize: none; }
+.public-link-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.origin-list { display: flex; flex-direction: column; gap: 6px; max-width: 520px; margin: 12px 0; }
+.origin-list li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; list-style: none; }
+.origin-list ul { padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }

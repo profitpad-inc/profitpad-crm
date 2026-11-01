@@ -19,6 +19,7 @@ export function Settings() {
           {me.is_admin && <NavLink to="/settings/navigation">Navigation menus</NavLink>}
           {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
           {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
+          {me.is_admin && <NavLink to="/settings/forms">Forms</NavLink>}
         </nav>
         <div className="settings-body">
           <Routes>
@@ -27,6 +28,7 @@ export function Settings() {
             <Route path="navigation" element={me.is_admin ? <NavSettings /> : <Navigate to="/settings" />} />
             <Route path="users" element={me.is_admin ? <UserSettings /> : <Navigate to="/settings" />} />
             <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
+            <Route path="forms" element={me.is_admin ? <FormsSettings /> : <Navigate to="/settings" />} />
           </Routes>
         </div>
       </div>
@@ -96,6 +98,75 @@ function ThemeSettings() {
         <button className="btn primary" onClick={save}>Save theme</button>
         {saved && <span className="muted small">{saved}</span>}
       </div>
+    </section>
+  );
+}
+
+// Websites allowed to send forms (embed.js). The CRM's own address is always
+// allowed, for the hosted /p/form/ page.
+function FormsSettings() {
+  const [origins, setOrigins] = useState<string[] | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<{ forms?: { allowed_origins?: string[] } }>('GET', '/v1/ui/settings')
+      .then((s) => setOrigins(s.forms?.allowed_origins ?? []))
+      .catch((err) => setError((err as Error).message));
+  }, []);
+
+  async function save(next: string[]) {
+    setError(null);
+    setSaved(null);
+    try {
+      const res = await api<{ allowed_origins: string[] }>('PUT', '/v1/ui/settings/forms', { allowed_origins: next });
+      setOrigins(res.allowed_origins);
+      setDraft('');
+      setSaved('Saved.');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  function add() {
+    const v = draft.trim();
+    if (!v || !origins) return;
+    save([...origins, /^https?:\/\//i.test(v) ? v : `https://${v}`]);
+  }
+
+  return (
+    <section>
+      <h2>Forms</h2>
+      <p className="muted">
+        Websites allowed to send forms embedded with the snippet from a form's record page. Enter each address
+        separately: <code>https://example.com</code> and <code>https://www.example.com</code> are different websites.
+        This stops other websites from posting your forms; spam is handled by rate limits and hidden bot checks.
+      </p>
+      {origins && (
+        <div className="origin-list">
+          {origins.length === 0 ? <div className="muted small">No websites yet. Forms can only be sent from their hosted page.</div> : (
+            <ul>
+              {origins.map((o) => (
+                <li key={o}>
+                  <span>{o}</span>
+                  <button className="icon-btn push-right faint-btn" onClick={() => save(origins.filter((x) => x !== o))} aria-label={`Remove ${o}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form className="field inline" onSubmit={(e) => { e.preventDefault(); add(); }}>
+            <input placeholder="https://www.example.com" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Website address" />
+            <button className="btn primary" type="submit" disabled={!draft.trim()}>
+              <Plus size={14} /> Add
+            </button>
+          </form>
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
+      {saved && <div className="muted small">{saved}</div>}
     </section>
   );
 }

@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
 import { requireScope, type Principal } from '../auth.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
+import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
 
 // Admins: keys with the admin scope, or user keys whose roles include an admin role.
 export function isAdmin(p: Principal): boolean {
@@ -30,6 +31,22 @@ function validateTheme(value: unknown): Record<string, string> {
     if (typeof v !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v)) throw badRequest(`theme color "${k}" must look like #1a2b3c`);
   }
   return value as Record<string, string>;
+}
+
+// ---- forms -------------------------------------------------------------------
+
+// Websites allowed to post public forms. Stored as origins; full URLs are
+// cut down to scheme://host[:port].
+function validateFormsSettings(value: unknown): { allowed_origins: string[] } {
+  const raw = (value as { allowed_origins?: unknown } | null)?.allowed_origins;
+  if (!Array.isArray(raw) || raw.length > 100) throw badRequest('allowed_origins must be a list of at most 100 websites');
+  const origins = new Set<string>();
+  for (const r of raw) {
+    const o = typeof r === 'string' ? normalizeOrigin(r) : null;
+    if (!o) throw badRequest(`"${String(r)}" is not a website address like https://www.example.com`);
+    origins.add(o);
+  }
+  return { allowed_origins: [...origins] };
 }
 
 // ---- sidebar menus -----------------------------------------------------------
@@ -179,13 +196,16 @@ export async function uiRoutes(app: FastifyInstance) {
   app.put<{ Params: { key: string }; Body: unknown }>('/v1/ui/settings/:key', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
-    if (req.params.key !== 'theme') throw badRequest('unknown setting (supported: theme)');
-    const value = validateTheme(req.body);
+    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, forms: validateFormsSettings };
+    const validate = validators[req.params.key];
+    if (!validate) throw badRequest('unknown setting (supported: theme, forms)');
+    const value = validate(req.body);
     await pool.query(
       `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)
        on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
       [req.params.key, JSON.stringify(value), p.actor]
     );
+    if (req.params.key === 'forms') clearAllowedOriginsCache();
     return value;
   });
 

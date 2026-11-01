@@ -1,0 +1,66 @@
+/* Hosted public pages (/p/quote/, /p/form/). Colors come from the theme
+   (applyTheme in src/lib/theme.ts sets the CSS variables). */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--surface);
+}
+h1 { font-family: Montserrat, Inter, sans-serif; font-weight: 700; font-size: 26px; margin: 0; line-height: 1.2; }
+h2 { font-family: Montserrat, Inter, sans-serif; font-weight: 700; font-size: 17px; margin: 0 0 12px; }
+.pp-page { max-width: 820px; margin: 0 auto; padding: 32px 16px 48px; }
+.pp-card { background: var(--page-background); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+.pp-card + .pp-card { margin-top: 16px; }
+.pp-muted { color: var(--muted-text); }
+.pp-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.pp-meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin-top: 16px; }
+.pp-meta dt { color: var(--muted-text); }
+.pp-meta dd { margin: 0; }
+.pp-pill { display: inline-block; font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); white-space: nowrap; }
+.pp-pill.accepted { background: #ecfdf3; border-color: #abefc6; color: #05603a; }
+.pp-pill.rejected, .pp-pill.expired { background: #fef3f2; border-color: #fecdca; color: #912018; }
+
+table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.pp-lines th { text-align: left; font-size: 13px; font-weight: 600; color: var(--muted-text); border-bottom: 2px solid var(--primary); padding: 8px; }
+.pp-lines td { border-bottom: 1px solid var(--border); padding: 10px 8px; vertical-align: top; }
+.pp-lines .num { text-align: right; white-space: nowrap; }
+.pp-sku { font-size: 13px; color: var(--muted-text); }
+.pp-total { display: flex; justify-content: flex-end; gap: 16px; font-size: 18px; font-weight: 700; margin-top: 16px; }
+
+.pp-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; }
+.pp-btn { font: inherit; font-weight: 600; border-radius: 8px; padding: 10px 18px; cursor: pointer; border: 1px solid var(--border); background: var(--page-background); color: var(--text); text-decoration: none; display: inline-block; }
+.pp-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.pp-btn:disabled { opacity: .6; cursor: default; }
+
+.pp-respond { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; max-width: 460px; }
+.pp-respond label { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14px; }
+.pp-respond input, .pp-respond textarea { font: inherit; font-weight: 400; color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
+.pp-respond textarea { min-height: 90px; resize: vertical; }
+.pp-respond input:focus, .pp-respond textarea:focus { outline: 2px solid var(--primary); border-color: var(--primary); }
+.pp-error { color: #b42318; font-size: 14px; }
+.pp-note { margin-top: 20px; padding: 14px 16px; border-radius: 8px; background: var(--surface); }
+.pp-center { text-align: center; padding: 48px 28px; }
+
+@media (max-width: 600px) {
+  .pp-page { padding: 16px 12px 32px; }
+  .pp-card { padding: 20px 16px; }
+  h1 { font-size: 22px; }
+  /* lines as stacked cards */
+  .pp-lines thead { display: none; }
+  .pp-lines, .pp-lines tbody, .pp-lines tr, .pp-lines td { display: block; width: 100%; }
+  .pp-lines tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  .pp-lines td { border: 0; padding: 2px 0; text-align: left; }
+  .pp-lines td.num { text-align: left; }
+  .pp-lines td[data-label]::before { content: attr(data-label) ': '; color: var(--muted-text); }
+  .pp-btn { flex: 1; text-align: center; }
+}
+
+@media print {
+  body { background: #fff; }
+  .pp-actions, .pp-respond { display: none; }
+  .pp-card { border: 0; padding: 0; }
+}

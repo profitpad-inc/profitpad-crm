@@ -5,6 +5,7 @@ import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type Sea
 import { useApp } from '../lib/app-context';
 import { displayName, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
+import { PublicLinkCard } from '../components/PublicLinkCard';
 
 interface Link_ {
   association_id: string;
@@ -142,6 +143,7 @@ export function RecordPage() {
           </section>
 
           <aside className="record-right">
+            {(object === 'quotes' || object === 'forms') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
             {cards.map((o) => (
               <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />
             ))}

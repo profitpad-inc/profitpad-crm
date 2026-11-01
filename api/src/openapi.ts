@@ -257,6 +257,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
   };
   for (const o of objects) Object.assign(schemas, objectSchemas(o));
 
+  const publicKeyParam = { name: 'key', in: 'path', required: true, schema: { type: 'string' } };
   const paths: Record<string, Schema> = {
     '/v1/schema': {
       get: { tags: ['Schema'], summary: 'List objects', operationId: 'list_objects', responses: { 200: json({ type: 'object' }), ...errors } },
@@ -298,6 +299,14 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     '/v1/integrations': { get: { tags: ['Integrations'], summary: 'List integration tables', operationId: 'list_integrations', responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/users/{id}/roles': { get: { tags: ['Admin'], summary: 'Roles of a user (direct and through teams)', operationId: 'user_roles', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/users/{id}/sign-ins': { get: { tags: ['Admin'], summary: 'Sign-in history of a user (admins, or the user themself)', operationId: 'user_sign_ins', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/objects/quotes/{id}/public-link': { post: { tags: ['Public pages'], summary: 'Create or regenerate a quote\'s customer link', description: 'Sets a new random public_key; the customer page is <UI>/p/quote/#<public_key>. Regenerating revokes the old link. Needs edit access to the quote.', operationId: 'quote_public_link', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object', properties: { public_key: { type: 'string' } } }), ...errors } } },
+    '/v1/objects/forms/{id}/public-link': { post: { tags: ['Public pages'], summary: 'Create or regenerate a form\'s public key', description: 'The hosted page is <UI>/p/form/#<public_key>; the embed snippet uses the same key. Regenerating breaks existing embeds.', operationId: 'form_public_link', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object', properties: { public_key: { type: 'string' } } }), ...errors } } },
+    '/v1/public/quotes/{key}': { get: { tags: ['Public pages'], security: [], summary: 'Quote as the customer sees it', description: 'No authentication. Only sent, accepted, rejected and expired quotes; a sent quote past its expiration date shows as expired.', operationId: 'public_get_quote', parameters: [publicKeyParam], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/public/quotes/{key}/pdf': { get: { tags: ['Public pages'], security: [], summary: 'Quote as a PDF', operationId: 'public_quote_pdf', parameters: [publicKeyParam], responses: { 200: { description: 'PDF', content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } } }, ...errors } } },
+    '/v1/public/quotes/{key}/accept': { post: { tags: ['Public pages'], security: [], summary: 'Accept a quote', description: 'Body {name, email}. Only while the quote is sent and not expired (409 otherwise).', operationId: 'public_accept_quote', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['name', 'email'], properties: { name: { type: 'string' }, email: { type: 'string' } } }), responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/public/quotes/{key}/decline': { post: { tags: ['Public pages'], security: [], summary: 'Decline a quote', description: 'Body {name, email, reason?}. Only while the quote is sent and not expired (409 otherwise).', operationId: 'public_decline_quote', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['name', 'email'], properties: { name: { type: 'string' }, email: { type: 'string' }, reason: { type: 'string' } } }), responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/public/forms/{key}': { get: { tags: ['Public pages'], security: [], summary: 'Published form definition', operationId: 'public_get_form', parameters: [publicKeyParam], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/public/forms/{key}/submissions': { post: { tags: ['Public pages'], security: [], summary: 'Submit a form', description: 'No authentication. The browser\'s Origin must be the UI or a website in Settings → Forms (403 otherwise). Body {values, page_url?, _hp, _elapsed}: values are checked against the form definition; _hp is a hidden field that must stay empty and _elapsed the milliseconds since the form was shown. Limited to 10 per minute per IP and 32 KB.', operationId: 'public_submit_form', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['values'], properties: { values: { type: 'object' }, page_url: { type: 'string' }, _hp: { type: 'string' }, _elapsed: { type: 'number' } } }), responses: { 201: json({ type: 'object' }), ...errors } } },
     '/v1/integrations/{table}': { get: { tags: ['Integrations'], summary: 'Read an integration table', operationId: 'read_integration', parameters: [{ name: 'table', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
   for (const o of objects) Object.assign(paths, recordPaths(o));
@@ -314,7 +323,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     servers: [{ url: serverUrl }],
     security: [{ bearer: [] }],
     tags: [
-      { name: 'Schema' }, { name: 'Admin' }, { name: 'Integrations' },
+      { name: 'Schema' }, { name: 'Admin' }, { name: 'Integrations' }, { name: 'Public pages', description: 'Customer-facing quote and form pages. The /v1/public routes need no API key.' },
       ...objects.map((o) => ({ name: o.label_plural, description: `${o.object_type_id}${o.description ? ': ' + o.description : ''}` }))
     ],
     paths,

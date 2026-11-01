@@ -306,5 +306,17 @@ begin
 end $t$;
 reset role;
 
+-- 14. Public keys on quotes and forms: unguessable format, unique
+do $t$
+declare
+  v_key text := 'abcdefghijklmnopqrstuvwxyz012345_-AB';
+begin
+  insert into crm.pc_0022 (name, public_key) values ('Quote A', v_key);
+  perform meta._test_expect_error($$insert into crm.pc_0022 (name, public_key) values ('Quote B', 'abcdefghijklmnopqrstuvwxyz012345_-AB')$$, 'duplicate key');
+  perform meta._test_expect_error($$insert into crm.pc_0022 (name, public_key) values ('Quote C', 'short')$$, 'check constraint');
+  perform meta._test_expect_error($$insert into crm.pc_0052 (name, public_key) values ('Form', 'has spaces in it, not base64url!')$$, 'check constraint');
+  perform meta._test_check((select value ? 'allowed_origins' from ui.settings where key = 'forms'), 'forms setting seeded');
+end $t$;
+
 rollback;
 \echo all core tests passed

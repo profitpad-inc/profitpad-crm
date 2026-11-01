@@ -67,6 +67,30 @@ Apply any new migrations (`./db/migrate.sh`, through the tunnel) before this, si
    `CORS_ORIGINS` must list `https://test-crm.profitpad.com` (it already does for the API-key sign-in).
 4. Each person needs an active user record whose email is their Google email, and a role (an admin role for full access).
 
+## 5. Public quote and form pages
+
+Migration `0013_public_pages.sql` must be applied (`./db/migrate.sh`) before deploying an API that serves `/v1/public/`. The pages themselves ship with the UI (`/p/quote/`, `/p/form/`, `/p/embed.js` on GitHub Pages); nothing new in DNS.
+
+- `TRUST_PROXY=true` in `deploy/.env`, so rate limits and stored submission IPs see the visitor, not nginx.
+- Websites that embed forms are listed in Settings → Forms, not in `CORS_ORIGINS`.
+- Rate limit the public routes in nginx too (not done yet on the server). In the `http` context, for example `/etc/nginx/conf.d/pcrm-public-limit.conf`:
+
+  ```nginx
+  limit_req_zone $binary_remote_addr zone=pcrm_public:10m rate=30r/m;
+  ```
+
+  and in the `api.test-crm.profitpad.com` server block, a location that copies the `proxy_*` lines of the existing `location /`:
+
+  ```nginx
+  location /v1/public/ {
+    limit_req zone=pcrm_public burst=20 nodelay;
+    limit_req_status 429;
+    # same proxy_pass and proxy_set_header lines as location /
+  }
+  ```
+
+  Then `sudo nginx -t && sudo systemctl reload nginx`.
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

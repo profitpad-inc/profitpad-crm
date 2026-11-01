@@ -13,6 +13,7 @@ import { schemaRoutes } from './routes/schema.js';
 import { adminRoutes } from './routes/admin.js';
 import { uiRoutes } from './routes/ui.js';
 import { userRoutes } from './routes/users.js';
+import { allowedOrigins, publicRoutes } from './routes/public.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -34,13 +35,30 @@ export async function buildApp() {
   });
 
   // Registered before the auth hook so preflight requests are answered without a key.
-  await app.register(cors, {
+  const appCors = {
     origin: browserOrigins.length ? browserOrigins : false,
     // the UI sends its session cookie
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['authorization', 'content-type'],
     maxAge: 600
+  };
+  await app.register(cors, {
+    // Public pages (/v1/public/) are also called from the websites in the
+    // forms allowlist, never with cookies.
+    delegator: (req, callback) => {
+      if (!req.url?.startsWith('/v1/public/')) return callback(null, appCors);
+      allowedOrigins().then(
+        (allowed) => callback(null, {
+          origin: typeof req.headers.origin === 'string' && allowed.has(req.headers.origin) ? req.headers.origin : false,
+          credentials: false,
+          methods: ['GET', 'POST'],
+          allowedHeaders: ['content-type'],
+          maxAge: 600
+        }),
+        (err) => callback(err)
+      );
+    }
   });
 
   app.addHook('onRequest', async (req, reply) => {
@@ -49,6 +67,8 @@ export async function buildApp() {
     if (path === '/health') return;
     // sign-in routes handle their own cookies
     if (path.startsWith('/v1/auth/')) return;
+    // customer-facing quote and form pages find records by their public key
+    if (path.startsWith('/v1/public/')) return;
     // A visitor opening the bare domain in a browser lands on the docs
     if (path === '/' && !req.headers.authorization) return reply.redirect('/docs', 302);
     if (docsPublic && (path === '/v1/openapi.json' || path.startsWith('/docs'))) return;
@@ -109,6 +129,7 @@ export async function buildApp() {
   await app.register(uiRoutes);
   await app.register(ssoRoutes);
   await app.register(userRoutes);
+  await app.register(publicRoutes);
   return app;
 }
 
