@@ -79,13 +79,13 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
             {config.google && (
               <a className="btn primary sso-btn google-btn" href={googleHref}>
                 <GoogleMark />
-                Continue with Google
+                Log in with Google
               </a>
             )}
             {config.microsoft && (
               <a className="btn primary sso-btn ms-btn" href={msHref}>
                 <MicrosoftMark />
-                Continue with Microsoft
+                Log in with Microsoft
               </a>
             )}
           </div>
