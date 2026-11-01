@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { API_BASE, api, type Me } from '../lib/api';
 
-// Set by the API's Google callback as ?auth_error=...
+// Set by the API's callback as ?auth_error=...
 const AUTH_ERRORS: Record<string, string> = {
-  no_user: 'No active CRM user has this Google account\u2019s email. Ask an admin to add you.',
+  no_user: 'No active CRM user has this account\u2019s email. Ask an admin to add you.',
   user_deactivated: 'Your CRM user is deactivated. Ask an admin if you need access again.',
-  domain_not_allowed: 'This Google account\u2019s domain is not allowed to sign in.',
-  email_not_verified: 'This Google account\u2019s email is not verified.',
+  domain_not_allowed: 'This account\u2019s domain is not allowed to sign in.',
+  email_not_verified: 'This account\u2019s email is not verified.',
   google_cancelled: 'Google sign-in was cancelled.',
   google_not_configured: 'Google sign-in is not set up on this server.',
-  google_failed: 'Google sign-in failed. Please try again.'
+  google_failed: 'Google sign-in failed. Please try again.',
+  microsoft_cancelled: 'Microsoft sign-in was cancelled.',
+  microsoft_not_configured: 'Microsoft sign-in is not set up on this server.',
+  microsoft_failed: 'Microsoft sign-in failed. Please try again.'
 };
 
 function takeAuthError(): string | null {
@@ -18,7 +21,7 @@ function takeAuthError(): string | null {
   if (!code) return null;
   url.searchParams.delete('auth_error');
   window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-  return AUTH_ERRORS[code] ?? AUTH_ERRORS.google_failed;
+  return AUTH_ERRORS[code] ?? (code.startsWith('microsoft_') ? AUTH_ERRORS.microsoft_failed : AUTH_ERRORS.google_failed);
 }
 
 function GoogleMark() {
@@ -32,35 +35,59 @@ function GoogleMark() {
   );
 }
 
+function MicrosoftMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
+}
+
 export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
   const [error, setError] = useState<string | null>(takeAuthError);
-  const [google, setGoogle] = useState(false);
+  const [config, setConfig] = useState<{ google: boolean; microsoft: boolean }>({ google: false, microsoft: false });
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    api<{ google: boolean }>('GET', '/v1/auth/config', undefined, null)
-      .then((c) => setGoogle(c.google))
-      .catch(() => setGoogle(false))
+    api<{ google?: boolean; microsoft?: boolean }>('GET', '/v1/auth/config', undefined, null)
+      .then((c) => setConfig({ google: Boolean(c.google), microsoft: Boolean(c.microsoft) }))
+      .catch(() => setConfig({ google: false, microsoft: false }))
       .finally(() => setChecking(false));
   }, []);
 
   const returnTo = window.location.pathname + window.location.search;
   const googleHref = `${API_BASE}/v1/auth/google/start?return_to=${encodeURIComponent(returnTo)}`;
+  const msHref = `${API_BASE}/v1/auth/microsoft/start?return_to=${encodeURIComponent(returnTo)}`;
 
   if (checking) return <div className="splash">Loading…</div>;
+
+  const hasAny = config.google || config.microsoft;
 
   return (
     <div className="login">
       <div className="login-card">
         <div className="login-mark">P</div>
         <h1>ProfitPad CRM</h1>
-        {google ? (
-          <a className="btn primary google-btn" href={googleHref}>
-            <GoogleMark />
-            Continue with Google
-          </a>
+        {hasAny ? (
+          <div className="login-actions">
+            {config.google && (
+              <a className="btn primary sso-btn google-btn" href={googleHref}>
+                <GoogleMark />
+                Continue with Google
+              </a>
+            )}
+            {config.microsoft && (
+              <a className="btn primary sso-btn ms-btn" href={msHref}>
+                <MicrosoftMark />
+                Continue with Microsoft
+              </a>
+            )}
+          </div>
         ) : (
-          <p className="muted">Google sign-in is not configured. Contact an administrator.</p>
+          <p className="muted">Sign-in is not configured. Contact an administrator.</p>
         )}
         {error && <div className="error">{error}</div>}
       </div>

@@ -144,6 +144,7 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
         }),
         responses: {
           200: json({ type: 'object', properties: { results: { type: 'array', items: rec }, not_found: { type: 'array', items: { type: 'string' } } } }),
+          207: json({ type: 'object', description: 'Partial success — some ids were not found; see not_found array.', properties: { results: { type: 'array', items: rec }, not_found: { type: 'array', items: { type: 'string' } } } }),
           ...errors
         }
       }

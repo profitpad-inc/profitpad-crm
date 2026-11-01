@@ -3,18 +3,26 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pool } from './db.js';
 import { hashKey, readCookie, SESSION_COOKIE, USER_CAN_SIGN_IN } from './auth.js';
 
-// Google sign-in: OpenID Connect authorization code flow with PKCE. The UI
-// sends the browser to /v1/auth/google/start, Google sends it back to the
-// callback, and the API sets an HttpOnly session cookie (auth.sessions) and
-// redirects to the UI. There is no self sign-up: the Google account's verified
-// email must belong to an active, not deactivated user record, and the link is
-// remembered in auth.identities.
+// Google & Microsoft sign-in: OpenID Connect authorization code flow with PKCE.
+// The UI sends the browser to /v1/auth/{google|microsoft}/start, the provider
+// sends it back to the callback, and the API sets an HttpOnly session cookie
+// (auth.sessions) and redirects to the UI. There is no self sign-up: the
+// verified email must belong to an active, not deactivated user record, and the
+// link is remembered in auth.identities.
 
 const clientId = process.env.GOOGLE_CLIENT_ID ?? '';
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? '';
 // optional: only accept Google Workspace accounts from these domains
 const allowedDomains = (process.env.GOOGLE_ALLOWED_DOMAINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-// The API as the browser reaches it (Google redirects back here) and the UI.
+
+const msClientId = process.env.MICROSOFT_CLIENT_ID ?? '';
+const msClientSecret = process.env.MICROSOFT_CLIENT_SECRET ?? '';
+const msTenant = process.env.MICROSOFT_TENANT ?? 'common';
+const msAllowedDomains = (process.env.MICROSOFT_ALLOWED_DOMAINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const msAuthUrl = `https://login.microsoftonline.com/${msTenant}/oauth2/v2.0/authorize`;
+const msTokenUrl = process.env.MICROSOFT_TOKEN_URL ?? `https://login.microsoftonline.com/${msTenant}/oauth2/v2.0/token`;
+
+// The API as the browser reaches it (providers redirect back here) and the UI.
 // Both default to the request's own origin, which fits dev behind the Vite proxy.
 const publicApiUrl = (process.env.PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const uiUrl = (process.env.UI_URL ?? '').replace(/\/$/, '');
@@ -24,6 +32,9 @@ const tokenUrl = process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/
 const SESSION_DAYS = 30;
 const FLOW_COOKIE = 'pcrm_google';
 const CALLBACK_PATH = '/v1/auth/google/callback';
+
+const MS_FLOW_COOKIE = 'pcrm_ms';
+const MS_CALLBACK_PATH = '/v1/auth/microsoft/callback';
 
 interface Flow {
   state: string;
@@ -60,11 +71,11 @@ function idTokenClaims(idToken: string): Record<string, unknown> {
 }
 
 // The user id, or the auth_error code to show
-async function findUser(sub: string, email: string): Promise<{ userId: string } | { error: string }> {
+async function findUser(provider: 'google' | 'microsoft', sub: string, email: string): Promise<{ userId: string } | { error: string }> {
   const { rows: linked } = await pool.query(
     `select i.user_id, ${USER_CAN_SIGN_IN('u')} as ok from auth.identities i join crm.pc_0000 u on u.pc_0000_id = i.user_id
-     where i.provider = 'google' and i.provider_subject = $1`,
-    [sub]
+     where i.provider = $1 and i.provider_subject = $2`,
+    [provider, sub]
   );
   if (linked.length) return linked[0].ok ? { userId: linked[0].user_id } : { error: 'user_deactivated' };
   const { rows: users } = await pool.query(
@@ -74,16 +85,19 @@ async function findUser(sub: string, email: string): Promise<{ userId: string } 
   if (users.length !== 1) return { error: 'no_user' };
   if (!users[0].ok) return { error: 'user_deactivated' };
   await pool.query(
-    `insert into auth.identities (user_id, provider, provider_subject, email) values ($1, 'google', $2, $3)
+    `insert into auth.identities (user_id, provider, provider_subject, email) values ($1, $2, $3, $4)
      on conflict (provider, provider_subject) do nothing`,
-    [users[0].id, sub, email]
+    [users[0].id, provider, sub, email]
   );
   return { userId: users[0].id };
 }
 
 export async function ssoRoutes(app: FastifyInstance) {
   // public: which sign-in buttons the UI shows
-  app.get('/v1/auth/config', async () => ({ google: Boolean(clientId && clientSecret) }));
+  app.get('/v1/auth/config', async () => ({
+    google: Boolean(clientId && clientSecret),
+    microsoft: Boolean(msClientId && msClientSecret)
+  }));
 
   app.get<{ Querystring: { return_to?: string } }>('/v1/auth/google/start', async (req, reply) => {
     if (!clientId || !clientSecret) return toUi(req, reply, '/', 'google_not_configured');
@@ -156,8 +170,8 @@ export async function ssoRoutes(app: FastifyInstance) {
       return toUi(req, reply, '/', 'domain_not_allowed');
     }
 
-    const email = claims.email as string;
-    const found = await findUser(claims.sub as string, email);
+    const email = (claims.email as string).toLowerCase().trim();
+    const found = await findUser('google', claims.sub as string, email);
     if ('error' in found) {
       req.log.info({ email, reason: found.error }, 'google sign-in refused');
       return toUi(req, reply, '/', found.error);
@@ -173,6 +187,112 @@ export async function ssoRoutes(app: FastifyInstance) {
     await pool.query(
       `update auth.identities set last_login_at = now(), email = $3 where provider = 'google' and provider_subject = $1 and user_id = $2`,
       [claims.sub, userId, email]
+    );
+    reply.header('set-cookie', [clearFlow, cookie(req, SESSION_COOKIE, token, '/', SESSION_DAYS * 86400)]);
+    return toUi(req, reply, flow.returnTo);
+  });
+
+  app.get<{ Querystring: { return_to?: string } }>('/v1/auth/microsoft/start', async (req, reply) => {
+    if (!msClientId || !msClientSecret) return toUi(req, reply, '/', 'microsoft_not_configured');
+    const flow: Flow = { state: random(), verifier: random(), nonce: random(), returnTo: safeReturnTo(req.query.return_to) };
+    const url = new URL(msAuthUrl);
+    url.search = new URLSearchParams({
+      client_id: msClientId,
+      redirect_uri: (publicApiUrl || origin(req)) + MS_CALLBACK_PATH,
+      response_type: 'code',
+      response_mode: 'query',
+      scope: 'openid email profile',
+      state: flow.state,
+      nonce: flow.nonce,
+      code_challenge: createHash('sha256').update(flow.verifier).digest('base64url'),
+      code_challenge_method: 'S256',
+      prompt: 'select_account'
+    }).toString();
+    reply.header('set-cookie', cookie(req, MS_FLOW_COOKIE, Buffer.from(JSON.stringify(flow)).toString('base64url'), MS_CALLBACK_PATH, 600));
+    return reply.redirect(url.toString(), 302);
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(MS_CALLBACK_PATH, async (req, reply) => {
+    const clearFlow = cookie(req, MS_FLOW_COOKIE, '', MS_CALLBACK_PATH, 0);
+    let flow: Flow | null = null;
+    try {
+      flow = JSON.parse(Buffer.from(readCookie(req, MS_FLOW_COOKIE) ?? '', 'base64url').toString('utf8'));
+    } catch {
+      flow = null;
+    }
+    reply.header('set-cookie', clearFlow);
+    if (req.query.error) return toUi(req, reply, flow?.returnTo ?? '/', 'microsoft_cancelled');
+    if (!flow || !req.query.code || req.query.state !== flow.state) return toUi(req, reply, '/', 'microsoft_failed');
+
+    let claims: Record<string, unknown>;
+    try {
+      const res = await fetch(msTokenUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: req.query.code,
+          client_id: msClientId,
+          client_secret: msClientSecret,
+          redirect_uri: (publicApiUrl || origin(req)) + MS_CALLBACK_PATH,
+          grant_type: 'authorization_code',
+          code_verifier: flow.verifier
+        })
+      });
+      const body = (await res.json()) as { id_token?: string; error?: string; error_description?: string };
+      if (!res.ok || !body.id_token) throw new Error(`token exchange failed: ${res.status} ${body.error ?? ''} ${body.error_description ?? ''}`);
+      claims = idTokenClaims(body.id_token);
+    } catch (err) {
+      req.log.warn({ err }, 'microsoft sign-in failed');
+      return toUi(req, reply, '/', 'microsoft_failed');
+    }
+
+    const issValid = typeof claims.iss === 'string' && (
+      (claims.iss.startsWith('https://login.microsoftonline.com/') && claims.iss.endsWith('/v2.0')) ||
+      claims.iss.startsWith('https://sts.windows.net/')
+    );
+    const sub = typeof claims.sub === 'string' ? claims.sub : typeof claims.oid === 'string' ? claims.oid : null;
+    const email = typeof claims.email === 'string' && claims.email
+      ? claims.email.toLowerCase().trim()
+      : typeof claims.preferred_username === 'string' && claims.preferred_username
+        ? claims.preferred_username.toLowerCase().trim()
+        : null;
+
+    const valid =
+      issValid &&
+      claims.aud === msClientId &&
+      typeof claims.exp === 'number' && claims.exp * 1000 > Date.now() &&
+      claims.nonce === flow.nonce &&
+      Boolean(sub) &&
+      Boolean(email);
+
+    if (!valid || !sub || !email) {
+      req.log.warn({ iss: claims.iss, aud: claims.aud, sub, email }, 'microsoft id_token rejected');
+      return toUi(req, reply, '/', 'microsoft_failed');
+    }
+
+    if (msAllowedDomains.length) {
+      const domain = email.split('@')[1] ?? '';
+      if (!msAllowedDomains.includes(domain)) {
+        return toUi(req, reply, '/', 'domain_not_allowed');
+      }
+    }
+
+    const found = await findUser('microsoft', sub, email);
+    if ('error' in found) {
+      req.log.info({ email, reason: found.error }, 'microsoft sign-in refused');
+      return toUi(req, reply, '/', found.error);
+    }
+    const { userId } = found;
+
+    const token = random();
+    await pool.query(
+      `insert into auth.sessions (user_id, token_hash, expires_at, ip, user_agent)
+       values ($1, $2, now() + make_interval(days => $3), $4, $5)`,
+      [userId, hashKey(token), SESSION_DAYS, req.ip, req.headers['user-agent'] ?? null]
+    );
+    await pool.query(
+      `update auth.identities set last_login_at = now(), email = $3 where provider = 'microsoft' and provider_subject = $1 and user_id = $2`,
+      [sub, userId, email]
     );
     reply.header('set-cookie', [clearFlow, cookie(req, SESSION_COOKIE, token, '/', SESSION_DAYS * 86400)]);
     return toUi(req, reply, flow.returnTo);

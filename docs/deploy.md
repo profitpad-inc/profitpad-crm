@@ -50,22 +50,39 @@ ssh -o ClearAllForwardings=yes profitpad_claude_test_crm "cd /srv/test_crm && gi
 
 Apply any new migrations (`./db/migrate.sh`, through the tunnel) before this, since new API code may call new database functions. `ClearAllForwardings` skips the alias's database tunnel. `deploy/.env` is gitignored, so pulls never touch it. The server has no rsync. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec test-crm-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
 
-## 4. Google sign-in
+## 4. Google & Microsoft sign-in
 
+### Google
 1. In Google Cloud (a project owned by the profitpad.com Workspace): set up the OAuth consent screen (Internal limits sign-in to profitpad.com accounts; External is needed once client users sign in; scopes are only `openid`, `email`, `profile`).
 2. Create an OAuth client ID of type **Web application** with these authorized redirect URIs:
    - `https://api.test-crm.profitpad.com/v1/auth/google/callback`
    - `http://localhost:5173/v1/auth/google/callback` (local dev, through the Vite proxy)
-3. On the server, add to `deploy/.env` and restart the container (`docker compose up -d`):
-   ```
-   GOOGLE_CLIENT_ID=...
-   GOOGLE_CLIENT_SECRET=...
-   PUBLIC_API_URL=https://api.test-crm.profitpad.com
-   UI_URL=https://test-crm.profitpad.com
-   # optional: GOOGLE_ALLOWED_DOMAINS=profitpad.com
-   ```
-   `CORS_ORIGINS` must list `https://test-crm.profitpad.com` (it already does for the API-key sign-in).
-4. Each person needs an active user record whose email is their Google email, and a role (an admin role for full access).
+
+### Microsoft
+1. In Microsoft Entra admin center (`entra.microsoft.com`): App registrations → New registration.
+   - Name: `ProfitPad CRM`
+   - Supported account types: "Accounts in any organizational directory and personal Microsoft accounts" (or multitenant)
+   - Redirect URI (Web):
+     - `https://api.test-crm.profitpad.com/v1/auth/microsoft/callback`
+     - `http://localhost:5173/v1/auth/microsoft/callback` (local dev)
+2. Under Certificates & secrets, generate a Client Secret.
+
+### Environment variables
+On the server, add to `deploy/.env` and restart the container (`docker compose up -d`):
+```
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+# optional: MICROSOFT_TENANT=common (default)
+# optional: MICROSOFT_ALLOWED_DOMAINS=profitpad.com,profitpad.onmicrosoft.com
+
+PUBLIC_API_URL=https://api.test-crm.profitpad.com
+UI_URL=https://test-crm.profitpad.com
+```
+`CORS_ORIGINS` must list `https://test-crm.profitpad.com` (it already does for the API-key sign-in).
+Each person needs an active user record whose email matches their Google or Microsoft email, and a role (an admin role for full access).
 
 ## 5. Public quote and form pages
 
