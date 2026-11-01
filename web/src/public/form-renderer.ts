@@ -1,4 +1,4 @@
-import { el, publicApi, PublicApiError, type FormField, type PhoneResult, type PublicForm } from './public-api';
+import { el, publicApi, PublicApiError, queryParamsFromLocation, type FormField, type PhoneResult, type PublicForm } from './public-api';
 import { visibleFields } from './conditions';
 import { CARET, composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegion } from './phone-regions';
 
@@ -210,7 +210,7 @@ export function renderForm(container: HTMLElement, opts: {
   const definition = { ...opts.form.definition, fields: normalize(opts.form.definition.fields) };
   const asked = definition.fields.filter((f) => !f.from_url);
   const fromUrl = definition.fields.filter((f) => f.from_url);
-  const params = opts.params ?? new URLSearchParams(window.location.search);
+  const params = opts.params ?? queryParamsFromLocation();
   const api = publicApi(opts.apiBase);
   const shownAt = Date.now();
   const prefix = `pcrm-${++counter}`;
@@ -426,9 +426,12 @@ export function renderForm(container: HTMLElement, opts: {
     const submit = form.querySelector<HTMLButtonElement | HTMLInputElement>('button[type=submit], button:not([type]), input[type=submit]');
     if (submit) submit.disabled = true;
     try {
+      const query = params.toString();
+      const baseUrl = window.location.href.split('#')[0].split('?')[0];
+      const pageUrl = query ? `${baseUrl}?${query}` : baseUrl;
       const res = await api.submit(opts.key, {
         values,
-        page_url: window.location.href.split('#')[0],
+        page_url: pageUrl,
         _hp: hp.value,
         _elapsed: Date.now() - shownAt
       });

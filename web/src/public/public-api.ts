@@ -90,8 +90,27 @@ export function publicApi(base: string) {
 }
 
 // The key sits in the URL fragment (/p/quote/#key) so it never reaches a server log.
+// Accepts #key, #key?param=value, or #/key.
 export function keyFromHash(): string {
-  return decodeURIComponent(window.location.hash.replace(/^#/, '')).trim();
+  const hash = window.location.hash.replace(/^#\/?/, '').trim();
+  const rawKey = hash.split('?')[0];
+  return decodeURIComponent(rawKey).trim();
+}
+
+// Reads query parameters from window.location.search and from any query
+// string placed after the hash fragment (e.g. #key?foo=bar).
+export function queryParamsFromLocation(): URLSearchParams {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.replace(/^#/, '');
+  const qIndex = hash.indexOf('?');
+  if (qIndex === -1) return searchParams;
+  const hashParams = new URLSearchParams(hash.slice(qIndex + 1));
+  const combined = new URLSearchParams();
+  for (const [k, v] of searchParams) combined.append(k, v);
+  for (const [k, v] of hashParams) {
+    if (!combined.has(k)) combined.append(k, v);
+  }
+  return combined;
 }
 
 // Small DOM helper: el('div', {class: 'x'}, 'text', child). Text is always set

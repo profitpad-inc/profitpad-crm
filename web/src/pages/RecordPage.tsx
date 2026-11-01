@@ -176,6 +176,7 @@ export function RecordPage() {
 }
 
 function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
+  const { toast } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // false when the editor reopens after a refused save: it shows the text
@@ -216,6 +217,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
     try {
       onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties: { [p.api_name]: value } }));
       setError(null);
+      toast('Saved');
     } catch (err) {
       // the message names the property; under the field that is redundant
       const raw = (err as Error).message;

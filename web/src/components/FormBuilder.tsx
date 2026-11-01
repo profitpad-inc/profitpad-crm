@@ -104,7 +104,7 @@ const visibilityOf = (f: Field): Visibility => (f.hidden ? 'fixed' : f.from_url 
 const isContactEmail = (f: Field) => f.property?.object === 'contacts' && f.property.name === 'email';
 
 export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
-  const { theme } = useApp();
+  const { theme, toast } = useApp();
   const [schemas, setSchemas] = useState<Partial<Record<FormObject, ObjectDef>>>({});
   const [def, setDef] = useState<Definition>(() => parse(record.properties.definition));
   const [open, setOpen] = useState<string | null>(null);
@@ -218,6 +218,7 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
       setDirty(false);
       setSaved('Saved. The live form uses it right away.');
       onSaved({ ...record, properties: { ...record.properties, definition: JSON.stringify(out) } });
+      toast('Saved');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -230,6 +231,7 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
     setError(null);
     try {
       onSaved(await api<CrmRecord>('PATCH', `/v1/objects/forms/${record.id}`, { properties: { html: next } }));
+      toast('Saved');
       setSaved(next ? 'Custom HTML saved. Edit it in the HTML property on the left.' : 'Custom HTML removed; the form is generated from its fields again.');
     } catch (err) {
       setError((err as Error).message);

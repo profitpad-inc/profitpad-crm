@@ -577,6 +577,7 @@ function widthStyle(c: Column): React.CSSProperties | undefined {
 function CellEditor({ object, record, property, rect, onClose, onSaved }: {
   object: string; record: CrmRecord; property: Property; rect: DOMRect; onClose: () => void; onSaved: (r: CrmRecord) => void;
 }) {
+  const { toast } = useApp();
   const [draft, setDraft] = useState(() => toInput(property, record.properties[property.api_name]));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -603,6 +604,7 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
     try {
       onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${object}/${record.id}`, { properties: { [property.api_name]: value } }));
       onClose();
+      toast('Saved');
     } catch (err) {
       done.current = false;
       setSaving(false);
