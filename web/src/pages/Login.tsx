@@ -4,6 +4,7 @@ import { API_BASE, api, setApiKey, type Me } from '../lib/api';
 // Set by the API's Google callback as ?auth_error=...
 const AUTH_ERRORS: Record<string, string> = {
   no_user: 'No active CRM user has this Google account’s email. Ask an admin to add you.',
+  user_deactivated: 'Your CRM user is deactivated. Ask an admin if you need access again.',
   domain_not_allowed: 'This Google account’s domain is not allowed to sign in.',
   email_not_verified: 'This Google account’s email is not verified.',
   google_cancelled: 'Google sign-in was cancelled.',

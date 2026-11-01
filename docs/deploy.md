@@ -48,7 +48,7 @@ Updating the API later: `/srv/test_crm` is a git checkout of `main` (public repo
 ssh -o ClearAllForwardings=yes profitpad_claude_test_crm "cd /srv/test_crm && git pull && cd deploy && docker compose up -d --build"
 ```
 
-`ClearAllForwardings` skips the alias's database tunnel. `deploy/.env` is gitignored, so pulls never touch it. The server has no rsync. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec test-crm-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
+Apply any new migrations (`./db/migrate.sh`, through the tunnel) before this, since new API code may call new database functions. `ClearAllForwardings` skips the alias's database tunnel. `deploy/.env` is gitignored, so pulls never touch it. The server has no rsync. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec test-crm-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
 
 ## 4. Google sign-in
 

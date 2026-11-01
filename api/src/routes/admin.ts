@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { stringify as toCsv } from 'csv-stringify/sync';
-import { pool, quoteIdent, withTx } from '../db.js';
+import type pg from 'pg';
+import { pool, quoteIdent, withTx, type Db } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { generateKey, hashKey, requireObjectPermission, requireScope, type Scope } from '../auth.js';
 import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord } from '../records.js';
@@ -9,6 +10,24 @@ import { getObject, getProperty } from '../registry.js';
 import type { SearchRequest } from '../search.js';
 
 const SCOPES: Scope[] = ['read', 'write', 'schema', 'admin'];
+
+async function hasActiveAdmin(db: Db): Promise<boolean> {
+  const { rows } = await db.query('select meta.has_active_admin() as ok');
+  return rows[0].ok;
+}
+
+// Runs a role change, refusing it if it would take away the last active user
+// with an admin role (directly or through a team), so nobody locks the portal
+// out of its own settings. API keys with the admin scope are not counted.
+// Deactivating or archiving that user is refused by a trigger (migration 0011).
+async function keepingAnAdmin<T>(actor: string, fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  return withTx({ actor }, async (client) => {
+    const before = await hasActiveAdmin(client);
+    const result = await fn(client);
+    if (before && !(await hasActiveAdmin(client))) throw badRequest('this would leave no active user with an admin role');
+    return result;
+  });
+}
 
 export async function adminRoutes(app: FastifyInstance) {
   // ---- API keys -----------------------------------------------------------
@@ -74,18 +93,18 @@ export async function adminRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; is_admin?: boolean; record_access?: string } }>('/v1/roles/:id', async (req) => {
     requireScope(req.principal!, 'admin');
     const b = req.body ?? {};
-    const { rows } = await pool.query(
+    const { rows } = await keepingAnAdmin(req.principal!.actor, (client) => client.query(
       `update auth.roles set name = coalesce($2, name), description = coalesce($3, description),
          is_admin = coalesce($4, is_admin), record_access = coalesce($5, record_access) where id = $1 returning *`,
       [req.params.id, b.name ?? null, b.description ?? null, b.is_admin ?? null, b.record_access ?? null]
-    );
+    ));
     if (rows.length === 0) throw notFound('role not found');
     return rows[0];
   });
 
   app.delete<{ Params: { id: string } }>('/v1/roles/:id', async (req, reply) => {
     requireScope(req.principal!, 'admin');
-    await pool.query('delete from auth.roles where id = $1', [req.params.id]);
+    await keepingAnAdmin(req.principal!.actor, (client) => client.query('delete from auth.roles where id = $1', [req.params.id]));
     reply.code(204);
   });
 
@@ -140,7 +159,9 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { id: string; assignmentId: string } }>('/v1/roles/:id/assignments/:assignmentId', async (req, reply) => {
     requireScope(req.principal!, 'admin');
-    await pool.query('delete from auth.role_assignments where role_id = $1 and id = $2', [req.params.id, req.params.assignmentId]);
+    await keepingAnAdmin(req.principal!.actor, (client) =>
+      client.query('delete from auth.role_assignments where role_id = $1 and id = $2', [req.params.id, req.params.assignmentId])
+    );
     reply.code(204);
   });
 

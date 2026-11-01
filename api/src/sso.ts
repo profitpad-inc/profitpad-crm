@@ -1,14 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pool } from './db.js';
-import { hashKey, readCookie, SESSION_COOKIE } from './auth.js';
+import { hashKey, readCookie, SESSION_COOKIE, USER_CAN_SIGN_IN } from './auth.js';
 
 // Google sign-in: OpenID Connect authorization code flow with PKCE. The UI
 // sends the browser to /v1/auth/google/start, Google sends it back to the
 // callback, and the API sets an HttpOnly session cookie (auth.sessions) and
 // redirects to the UI. There is no self sign-up: the Google account's verified
-// email must belong to an active user record, and the link is remembered in
-// auth.identities.
+// email must belong to an active, not deactivated user record, and the link is
+// remembered in auth.identities.
 
 const clientId = process.env.GOOGLE_CLIENT_ID ?? '';
 const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -59,24 +59,26 @@ function idTokenClaims(idToken: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
 }
 
-async function findUser(sub: string, email: string): Promise<string | null> {
+// The user id, or the auth_error code to show
+async function findUser(sub: string, email: string): Promise<{ userId: string } | { error: string }> {
   const { rows: linked } = await pool.query(
-    `select i.user_id, u.row_status from auth.identities i join crm.pc_0000 u on u.pc_0000_id = i.user_id
+    `select i.user_id, ${USER_CAN_SIGN_IN('u')} as ok from auth.identities i join crm.pc_0000 u on u.pc_0000_id = i.user_id
      where i.provider = 'google' and i.provider_subject = $1`,
     [sub]
   );
-  if (linked.length) return linked[0].row_status === 'active' ? linked[0].user_id : null;
+  if (linked.length) return linked[0].ok ? { userId: linked[0].user_id } : { error: 'user_deactivated' };
   const { rows: users } = await pool.query(
-    `select pc_0000_id as id from crm.pc_0000 where lower(email) = lower($1) and row_status = 'active'`,
+    `select pc_0000_id as id, ${USER_CAN_SIGN_IN('u')} as ok from crm.pc_0000 u where lower(email) = lower($1) and row_status = 'active'`,
     [email]
   );
-  if (users.length !== 1) return null;
+  if (users.length !== 1) return { error: 'no_user' };
+  if (!users[0].ok) return { error: 'user_deactivated' };
   await pool.query(
     `insert into auth.identities (user_id, provider, provider_subject, email) values ($1, 'google', $2, $3)
      on conflict (provider, provider_subject) do nothing`,
     [users[0].id, sub, email]
   );
-  return users[0].id;
+  return { userId: users[0].id };
 }
 
 export async function ssoRoutes(app: FastifyInstance) {
@@ -155,11 +157,12 @@ export async function ssoRoutes(app: FastifyInstance) {
     }
 
     const email = claims.email as string;
-    const userId = await findUser(claims.sub as string, email);
-    if (!userId) {
-      req.log.info({ email }, 'google sign-in: no active user with this email');
-      return toUi(req, reply, '/', 'no_user');
+    const found = await findUser(claims.sub as string, email);
+    if ('error' in found) {
+      req.log.info({ email, reason: found.error }, 'google sign-in refused');
+      return toUi(req, reply, '/', found.error);
     }
+    const { userId } = found;
 
     const token = random();
     await pool.query(

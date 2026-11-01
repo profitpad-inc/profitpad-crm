@@ -28,6 +28,9 @@ export function Home() {
       {mobile && <MobileHeader />}
       <div className="page">
         <h1 className="page-title">{first ? `Welcome back, ${first}` : 'Welcome'}</h1>
+        {!me.is_admin && me.readable_objects.length === 0 && (
+          <p className="muted">You don’t have access to anything yet. Ask an admin to give you a role.</p>
+        )}
         <div className="tiles">
           {objects.map((o) => {
             const Icon = objectIcon(o);

@@ -250,5 +250,38 @@ reset role;
 -- 11. Schema changes are logged
 select meta._test_check((select count(*) from meta.schema_changes where action = 'create_property' and changed_by = 'test') >= 5, 'schema changes logged with actor');
 
+-- 12. The last active admin user cannot be deactivated, archived or deleted
+do $t$
+declare
+  v_a text;
+  v_b text;
+  v_plain text;
+  v_role bigint := (select id from auth.roles where name = 'Admin');
+begin
+  delete from auth.role_assignments;
+  insert into crm.pc_0000 (name, email) values ('Keep Admin A', 'keep.admin.a@test.example') returning pc_0000_id into v_a;
+  insert into crm.pc_0000 (name, email) values ('Keep Admin B', 'keep.admin.b@test.example') returning pc_0000_id into v_b;
+  insert into crm.pc_0000 (name, email) values ('Not An Admin', 'not.an.admin@test.example') returning pc_0000_id into v_plain;
+  perform meta._test_check(not meta.has_active_admin(), 'no admin user yet');
+  -- with no admin user at all, nothing is blocked
+  update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_a;
+  update crm.pc_0000 set status = '{active}' where pc_0000_id = v_a;
+  insert into auth.role_assignments (role_id, user_id) values (v_role, v_a), (v_role, v_b);
+  perform meta._test_check(meta.has_active_admin(), 'admin users exist');
+
+  update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_a;
+  perform meta._test_check(meta.has_active_admin(), 'deactivating one of two admins is allowed');
+  perform meta._test_expect_error(format($$update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
+  perform meta._test_expect_error(format($$update crm.pc_0000 set row_status = 'archived' where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
+  perform meta._test_expect_error(format($$delete from crm.pc_0000 where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
+  update crm.pc_0000 set name = 'Keep Admin B renamed' where pc_0000_id = v_b;
+  update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_plain;
+
+  update crm.pc_0000 set status = null where pc_0000_id = v_a;
+  perform meta._test_expect_error(format($$update crm.pc_0000 set status = '{deactivated}' where pc_0000_id in (%L, %L)$$, v_a, v_b), 'last active user with an admin role');
+  update crm.pc_0000 set row_status = 'archived' where pc_0000_id = v_b;
+  perform meta._test_check(meta.has_active_admin(), 'archiving one of two admins is allowed');
+end $t$;
+
 rollback;
 \echo all core tests passed

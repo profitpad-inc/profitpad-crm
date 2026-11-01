@@ -5,6 +5,7 @@ import { api, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { DEFAULT_THEME, THEME_FIELDS, type Theme } from '../lib/theme';
 import { displayName, initials } from '../lib/display';
+import { RoleSettings, UserSettings } from './AccessSettings';
 
 export function Settings() {
   const { me } = useApp();
@@ -16,12 +17,16 @@ export function Settings() {
           <NavLink to="/settings" end>Account</NavLink>
           {me.is_admin && <NavLink to="/settings/theme">Theme</NavLink>}
           {me.is_admin && <NavLink to="/settings/navigation">Navigation menus</NavLink>}
+          {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
+          {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
         </nav>
         <div className="settings-body">
           <Routes>
             <Route index element={<Account />} />
             <Route path="theme" element={me.is_admin ? <ThemeSettings /> : <Navigate to="/settings" />} />
             <Route path="navigation" element={me.is_admin ? <NavSettings /> : <Navigate to="/settings" />} />
+            <Route path="users" element={me.is_admin ? <UserSettings /> : <Navigate to="/settings" />} />
+            <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
           </Routes>
         </div>
       </div>
@@ -42,7 +47,7 @@ function Account() {
         </div>
       </div>
       <dl className="facts">
-        <dt>Signed in with</dt><dd>API key "{me.key_name}"</dd>
+        <dt>Signed in with</dt><dd>{me.key_name === 'session' ? 'Google' : `API key "${me.key_name}"`}</dd>
         <dt>Access</dt><dd>{me.is_admin ? 'Admin' : me.scopes.join(', ')}</dd>
       </dl>
       <button className="btn" onClick={signOut}>Sign out</button>

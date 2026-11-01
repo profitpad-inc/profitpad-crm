@@ -52,6 +52,11 @@ export const browserOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((s
 
 export const SESSION_COOKIE = 'pcrm_session';
 
+// A user may sign in and act only while their record is active (not archived,
+// merged or deleted) and their Status is not "deactivated". `u` is crm.pc_0000.
+// meta.has_active_admin() (migration 0011) repeats this rule in SQL.
+export const USER_CAN_SIGN_IN = (u: string) => `${u}.row_status = 'active' and not coalesce(${u}.status, '{}') @> '{deactivated}'`;
+
 export function readCookie(req: FastifyRequest, name: string): string | null {
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const i = part.indexOf('=');
@@ -71,12 +76,13 @@ export async function authenticate(req: FastifyRequest): Promise<Principal> {
   const match = /^Bearer\s+(pcrm_[0-9a-f]{8}_[A-Za-z0-9_-]{43})$/.exec(header ?? '');
   if (!match) throw new ApiError(401, 'missing or malformed API key (Authorization: Bearer pcrm_...)', 'unauthorized');
   const { rows } = await pool.query(
-    `update auth.api_keys set last_used_at = now()
+    `update auth.api_keys k set last_used_at = now()
      where key_hash = $1 and revoked_at is null and (expires_at is null or expires_at > now())
+       and (user_id is null or exists (select 1 from crm.pc_0000 u where u.pc_0000_id = k.user_id and ${USER_CAN_SIGN_IN('u')}))
      returning id, name, key_prefix, scopes, user_id`,
     [hashKey(match[1])]
   );
-  if (rows.length === 0) throw new ApiError(401, 'invalid, revoked or expired API key', 'unauthorized');
+  if (rows.length === 0) throw new ApiError(401, 'invalid, revoked or expired API key, or its user is deactivated', 'unauthorized');
   const row = rows[0];
   const scopes = new Set<Scope>(row.scopes);
   const permissions = row.user_id && !scopes.has('admin') ? await loadPermissions(pool, row.user_id) : null;
@@ -105,10 +111,10 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
   }
   const { rows } = await pool.query(
     `select s.user_id from auth.sessions s join crm.pc_0000 u on u.pc_0000_id = s.user_id
-     where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and u.row_status = 'active'`,
+     where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and ${USER_CAN_SIGN_IN('u')}`,
     [hashKey(token)]
   );
-  if (rows.length === 0) throw new ApiError(401, 'session expired or signed out', 'unauthorized');
+  if (rows.length === 0) throw new ApiError(401, 'session expired, signed out, or user deactivated', 'unauthorized');
   const userId: string = rows[0].user_id;
   const permissions = await loadPermissions(pool, userId);
   return {
