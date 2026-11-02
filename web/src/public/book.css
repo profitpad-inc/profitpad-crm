@@ -9,7 +9,7 @@
 button.bk-step-pill { cursor: pointer; }
 button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary); }
 .bk-step-sep { color: var(--muted-text); }
-.bk-picker { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; align-items: start; }
+.bk-picker { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; align-items: start; }
 .bk-month-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .bk-month-head strong { font-size: 16px; }
 .bk-nav { font: inherit; border: 1px solid var(--border); background: var(--page-background); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; }
@@ -25,15 +25,16 @@ button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary);
 .bk-times { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
 .bk-time { font: inherit; font-weight: 600; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--primary); color: var(--primary); background: var(--page-background); cursor: pointer; }
 .bk-time:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
-.bk-tz { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted-text); margin-top: 14px; max-width: 320px; }
-.bk-tz select { font: inherit; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; background: var(--page-background); }
+.bk-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.bk-tz { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted-text); }
+.bk-tz select { width: 100%; font: inherit; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; background: var(--page-background); }
 .bk-chosen { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-radius: 8px; background: var(--surface); margin-bottom: 16px; }
 .bk-link { font: inherit; background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; text-decoration: underline; }
 .bk-done { display: flex; flex-direction: column; gap: 10px; }
 .bk-done .pp-meta { margin-top: 4px; }
 .bk-message { white-space: pre-line; }
 
-.bk-lengths { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.bk-lengths { display: flex; flex-wrap: wrap; gap: 8px; }
 .bk-length { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--page-background); color: var(--text); cursor: pointer; }
 .bk-length:hover { border-color: var(--primary); }
 .bk-length.on { background: var(--primary); border-color: var(--primary); color: #fff; }

@@ -267,13 +267,12 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
         return b;
       })) : null;
 
+    // right column: time zone, then length, then the day's times
     shell('time',
-      lengths,
       slotError ? el('p', { class: 'pp-error', role: 'alert' }, slotError) : null,
       el('div', { class: 'bk-picker' },
         el('div', {}, el('div', { class: 'bk-month-head' }, back, el('strong', {}, title), next), el('div', { class: 'bk-grid' }, ...cells)),
-        timeList),
-      el('label', { class: 'bk-tz' }, 'Times are shown in', zoneSelect),
+        el('div', { class: 'bk-side' }, el('label', { class: 'bk-tz' }, 'Times are shown in', zoneSelect), lengths, timeList)),
       page.form_before ? backLink('Change your details', showBefore) : null);
   }
 
