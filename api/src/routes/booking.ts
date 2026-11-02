@@ -1,16 +1,16 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { pool, withTx, type Db } from '../db.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
-import type { Principal } from '../auth.js';
+import { browserOrigins, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
-import { assertAccessible, createRecord, onWrite } from '../records.js';
+import { assertAccessible, createRecord, onWrite, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, summarize, type FormDefinition } from '../forms.js';
 import { allowedOrigins, MIN_FILL_MS, rateLimit, theme } from './public.js';
 import {
-  busyTimes, CalendarAuthError, CONNECTION_COLUMNS, createEvent, deleteEvent, type Connection, type Interval
+  busyTimes, CalendarAuthError, cancelEvent, CONNECTION_COLUMNS, createEvent, deleteEvent, moveEvent, type Connection, type Interval
 } from '../calendar/providers.js';
 import { computeSlots, isTimeZone, localDate, readAvailability, type SlotRules } from '../calendar/slots.js';
 
@@ -32,7 +32,8 @@ const BOOKING_PRINCIPAL: Principal = {
   permissions: {
     objects: new Map([
       ['pc_0054', { read: true, create: false, edit: false, delete: false }],
-      ['pc_0030', { read: false, create: true, edit: false, delete: false }],
+      // meetings: created on booking, moved or cancelled through the manage link
+      ['pc_0030', { read: true, create: true, edit: true, delete: false }],
       ['pc_0053', { read: false, create: true, edit: false, delete: false }],
       // forms upsert contacts by email and create tickets
       ['pc_0010', { read: true, create: true, edit: true, delete: false }],
@@ -194,6 +195,7 @@ onWrite('booking_pages', async (client, properties, existing) => {
   if (typeof out.slug === 'string') {
     const slug = out.slug.trim().toLowerCase();
     out.slug = slug;
+    if (slug === 'manage') throw badRequest('"manage" is used by the cancel and reschedule links; pick another address.', { property: 'slug' });
     if (slug && !SLUG_RE.test(slug)) {
       throw badRequest('The page address can have lowercase letters, digits and dashes (3 to 60, not starting or ending with a dash).', { property: 'slug' });
     }
@@ -261,14 +263,15 @@ function forgetBusy(host: string): void {
 }
 
 // Meetings already booked through the page, per local date (daily limit).
-async function bookedPerDay(db: Db, page: BookingPage, from: Date, to: Date): Promise<Map<string, number>> {
+async function bookedPerDay(db: Db, page: BookingPage, from: Date, to: Date, excludeCall = ''): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (!page.rules?.dailyLimit) return out;
   const { rows } = await db.query(
     `select c.started_at from crm.associations_both a join crm.pc_0030 c on c.pc_0030_id = a.other_record_id
      where a.object_type_id = 'pc_0054' and a.record_id = $1 and a.other_object_type_id = 'pc_0030'
-       and c.row_status = 'active' and c.status @> '{scheduled}' and c.started_at >= $2::timestamptz - interval '1 day' and c.started_at < $3::timestamptz + interval '1 day'`,
-    [page.id, from, to]
+       and c.row_status = 'active' and c.status @> '{scheduled}' and c.started_at >= $2::timestamptz - interval '1 day' and c.started_at < $3::timestamptz + interval '1 day'
+       and c.pc_0030_id <> $4`,
+    [page.id, from, to, excludeCall]
   );
   for (const r of rows) {
     const d = localDate(page.rules.timezone, new Date(r.started_at).getTime());
@@ -285,12 +288,88 @@ function withDuration(page: BookingPage, raw: unknown): BookingPage {
   return { ...page, rules: page.rules ? { ...page.rules, durationMinutes: minutes } : null };
 }
 
-async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh = false): Promise<Date[]> {
+// A meeting being rescheduled: its own time does not count as busy, and it
+// does not count toward the daily limit.
+interface Exclude {
+  callId: string;
+  start: Date;
+  end: Date;
+}
+
+// busy minus the excluded meeting's time
+function without(busy: Interval[], ex: Exclude | null): Interval[] {
+  if (!ex) return busy;
+  const [a, b] = [ex.start.getTime(), ex.end.getTime()];
+  return busy.flatMap((i) => {
+    const [s, e] = [i.start.getTime(), i.end.getTime()];
+    if (e <= a || s >= b) return [i];
+    return [...(s < a ? [{ start: i.start, end: new Date(a) }] : []), ...(e > b ? [{ start: new Date(b), end: i.end }] : [])];
+  });
+}
+
+async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh = false, exclude: Exclude | null = null): Promise<Date[]> {
   if (!page.rules || !page.host) return [];
   // buffers reach outside the window
   const pad = (page.rules.bufferBeforeMinutes + page.rules.bufferAfterMinutes + page.rules.durationMinutes) * 60000;
-  const busy = await hostBusy(db, page.host, new Date(from.getTime() - pad), new Date(to.getTime() + pad), fresh);
-  return computeSlots(page.rules, busy, await bookedPerDay(db, page, from, to), new Date(), from, to);
+  const busy = without(await hostBusy(db, page.host, new Date(from.getTime() - pad), new Date(to.getTime() + pad), fresh), exclude);
+  return computeSlots(page.rules, busy, await bookedPerDay(db, page, from, to, exclude?.callId), new Date(), from, to);
+}
+
+// ---- manage links (cancel and reschedule) -------------------------------------------
+
+// The CRM's address, for links in invites (UI_URL, else the first CORS origin).
+const uiBase = (process.env.UI_URL || browserOrigins[0] || '').replace(/\/$/, '');
+const manageUrl = (key: string) => (uiBase ? `${uiBase}/p/book/#manage/${key}` : null);
+const MANAGE_KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
+
+interface Meeting {
+  id: string;
+  status: string | null;
+  start: Date;
+  end: Date;
+  host: string | null;
+  attendeeName: string | null;
+  meetingUrl: string | null;
+  provider: 'google' | 'microsoft' | null;
+  eventId: string | null;
+  calendarId: string | null;
+  connectionId: string | null;
+  pageId: string | null;
+}
+
+async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> {
+  if (!MANAGE_KEY_RE.test(key)) throw notFound('meeting not found');
+  const { rows } = await db.query(
+    `select c.pc_0030_id as id, c.status[1] as status, c.started_at, c.ended_at, c.duration_seconds, c.owner[1] as host, c.attendee_name,
+            c.meeting_url, c.calendar_provider, c.calendar_event_id, c.calendar_id, c.calendar_connection_id,
+            (select a.other_record_id from crm.associations_both a
+             where a.object_type_id = 'pc_0030' and a.record_id = c.pc_0030_id and a.other_object_type_id = 'pc_0054' limit 1) as page_id
+     from crm.pc_0030 c where c.manage_key = $1 and c.row_status = 'active'${lock ? ' for update' : ''}`,
+    [key]
+  );
+  const r = rows[0];
+  if (!r) throw notFound('meeting not found');
+  const start = new Date(r.started_at);
+  return {
+    id: r.id, status: r.status, start, end: r.ended_at ? new Date(r.ended_at) : new Date(start.getTime() + (Number(r.duration_seconds) || 1800) * 1000),
+    host: r.host, attendeeName: r.attendee_name, meetingUrl: r.meeting_url, provider: r.calendar_provider, eventId: r.calendar_event_id,
+    calendarId: r.calendar_id, connectionId: r.calendar_connection_id, pageId: r.page_id
+  };
+}
+
+// The calendar account the meeting's event lives on.
+async function meetingConnection(db: Db, m: Meeting): Promise<Connection | null> {
+  if (m.connectionId && /^\d{1,18}$/.test(m.connectionId)) {
+    const { rows } = await db.query(`select ${CONNECTION_COLUMNS} from auth.calendar_connections where id = $1 and status = 'active'`, [m.connectionId]);
+    if (rows[0]) return rows[0];
+  }
+  return m.host ? (await hostConnections(db, m.host)).find((c) => c.provider === m.provider) ?? null : null;
+}
+
+// Cancel and reschedule work until the meeting starts.
+function assertChangeable(m: Meeting): void {
+  if (m.status !== 'scheduled') throw new ApiError(409, m.status === 'cancelled' ? 'this meeting was cancelled' : 'this meeting can no longer be changed', 'conflict');
+  if (m.start.getTime() <= Date.now()) throw new ApiError(409, 'this meeting has already started', 'conflict');
 }
 
 // ---- public routes ---------------------------------------------------------------
@@ -418,11 +497,12 @@ export async function bookingRoutes(app: FastifyInstance) {
     const elapsed = Number(b._elapsed);
     if ((b._hp !== undefined && b._hp !== '') || !Number.isFinite(elapsed) || elapsed < MIN_FILL_MS) {
       reply.code(201);
-      return { start: start.toISOString(), end: end.toISOString(), meeting_url: null, location_type: page.locationType, location_details: page.locationDetails, confirmation_message: page.confirmationMessage };
+      return { start: start.toISOString(), end: end.toISOString(), meeting_url: null, location_type: page.locationType, location_details: page.locationDetails, confirmation_message: page.confirmationMessage, manage_url: null };
     }
     const pageUrl = typeof b.page_url === 'string' && /^https?:\/\//.test(b.page_url) ? b.page_url.slice(0, 2000) : null;
     const host = page.host!;
     let created: { conn: Connection; calendarId: string | null; id: string } | null = null;
+    const manageKey = randomBytes(32).toString('base64url');
 
     try {
       const result = await withTx({ actor: BOOKING_PRINCIPAL.actor, source: 'booking_page' }, async (client: pg.PoolClient) => {
@@ -455,12 +535,14 @@ export async function bookingRoutes(app: FastifyInstance) {
         const online = page.locationType === 'google_meet' && conn.provider === 'google' ? 'google_meet'
           : page.locationType === 'teams' && conn.provider === 'microsoft' ? 'teams' : null;
         const title = `${page.name ?? 'Meeting'}: ${attendee.name ?? attendee.email}`.slice(0, 200);
+        const link = manageUrl(manageKey);
         const lines = [
           `Booked through ${page.name ?? 'a booking page'}.`,
           `${attendee.name ? `${attendee.name} <${attendee.email}>` : attendee.email}`,
           ...(page.durations.length > 1 ? [`Length: ${page.rules!.durationMinutes} minutes`] : []),
           ...answers.flatMap((a) => summarize(a.form.definition, a.values).filter((x) => !x.hidden).map((x) => `${x.label}: ${x.value}`)),
-          ...(page.locationDetails ? ['', page.locationDetails] : [])
+          ...(page.locationDetails ? ['', page.locationDetails] : []),
+          ...(link ? ['', `Need to reschedule or cancel? ${link}`] : [])
         ];
         let event: { id: string; meetingUrl: string | null };
         try {
@@ -495,6 +577,9 @@ export async function bookingRoutes(app: FastifyInstance) {
           meeting_url: event.meetingUrl,
           calendar_provider: conn.provider,
           calendar_event_id: event.id,
+          calendar_id: conn.write_calendar_id,
+          calendar_connection_id: conn.id,
+          manage_key: manageKey,
           body: lines.join('\n')
         }, [
           { object: 'booking_pages', id: page.id },
@@ -511,7 +596,8 @@ export async function bookingRoutes(app: FastifyInstance) {
         meeting_url: result.meetingUrl,
         location_type: page.locationType,
         location_details: page.locationDetails,
-        confirmation_message: page.confirmationMessage
+        confirmation_message: page.confirmationMessage,
+        manage_url: manageUrl(manageKey)
       };
     } catch (err) {
       // the event exists but the CRM rolled back: take the event away again
@@ -522,6 +608,141 @@ export async function bookingRoutes(app: FastifyInstance) {
       throw err;
     }
   });
+
+  // ---- manage link: /p/book/#manage/<key> -----------------------------------------
+
+  // The meeting and its page, for the visitor's cancel / reschedule screen.
+  app.get<{ Params: { mkey: string } }>('/v1/public/booking/manage/:mkey', async (req, reply) => {
+    rateLimit(req, 'booking-read', 120);
+    const m = await loadMeeting(pool, req.params.mkey);
+    const page = m.pageId ? await loadPage(pool, 'id', m.pageId) : null;
+    const minutes = Math.round((m.end.getTime() - m.start.getTime()) / 60000);
+    reply.header('cache-control', 'no-store');
+    return {
+      meeting: {
+        start: m.start.toISOString(),
+        end: m.end.toISOString(),
+        status: m.status,
+        attendee_name: m.attendeeName,
+        meeting_url: m.meetingUrl,
+        can_change: m.status === 'scheduled' && m.start.getTime() > Date.now(),
+        // reschedule needs the page to still take bookings
+        can_reschedule: Boolean(page?.status === 'published' && page.rules && page.host)
+      },
+      page: {
+        name: page?.name ?? 'Meeting',
+        description: page?.description ?? null,
+        host_name: page?.hostName ?? null,
+        duration_minutes: page?.durations.includes(minutes) ? minutes : (page?.rules?.durationMinutes ?? minutes),
+        durations: page?.durations ?? [minutes],
+        timezone: page?.rules?.timezone ?? 'UTC',
+        location_type: page?.locationType ?? null,
+        location_details: page?.locationDetails ?? null,
+        max_days_ahead: page?.rules?.maxDaysAhead ?? 60,
+        form_before: null,
+        form_after: null
+      },
+      theme: await theme()
+    };
+  });
+
+  // Open times for moving the meeting: its own time counts as free.
+  app.get<{ Params: { mkey: string }; Querystring: { from?: string; to?: string; duration?: string } }>(
+    '/v1/public/booking/manage/:mkey/slots',
+    async (req, reply) => {
+      rateLimit(req, 'booking-slots', 60);
+      const m = await loadMeeting(pool, req.params.mkey);
+      const base = m.pageId ? await loadPage(pool, 'id', m.pageId) : null;
+      if (!base || base.status !== 'published' || !base.rules || !base.host) throw notFound('this meeting cannot be moved online');
+      const page = withDuration(base, req.query.duration);
+      const from = req.query.from ? new Date(req.query.from) : new Date();
+      const to = req.query.to ? new Date(req.query.to) : new Date(from.getTime() + 7 * 86400000);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) throw badRequest('from and to must be ISO times, from before to');
+      if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * 86400000) throw badRequest(`at most ${MAX_RANGE_DAYS} days at a time`);
+      const slots = await openSlots(pool, page, from, to, false, { callId: m.id, start: m.start, end: m.end });
+      reply.header('cache-control', 'no-store');
+      return { slots: slots.map((x) => x.toISOString()), duration_minutes: page.rules!.durationMinutes };
+    }
+  );
+
+  // Cancels the meeting: the calendar event is cancelled (the provider tells
+  // the visitor) and the CRM meeting is marked cancelled, or neither.
+  app.post<{ Params: { mkey: string }; Body: { reason?: unknown } }>('/v1/public/booking/manage/:mkey/cancel', { bodyLimit: 8 * 1024 }, async (req) => {
+    await requireOrigin(req.headers.origin);
+    rateLimit(req, 'booking-manage', 10);
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 2000) || null : null;
+    const host = await withTx({ actor: BOOKING_PRINCIPAL.actor, source: 'booking_page' }, async (client) => {
+      const m = await loadMeeting(client, req.params.mkey, true);
+      assertChangeable(m);
+      if (m.eventId) {
+        const conn = await meetingConnection(client, m);
+        if (!conn) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
+        try {
+          await cancelEvent(conn, m.calendarId, m.eventId, reason);
+        } catch (err) {
+          req.log.warn({ err }, 'booking: calendar event could not be cancelled');
+          throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
+        }
+      }
+      await updateRecord(client, await getObject('calls'), BOOKING_PRINCIPAL, m.id, {
+        status: 'cancelled', cancelled_at: new Date().toISOString(), cancel_reason: reason
+      });
+      return m.host;
+    });
+    if (host) forgetBusy(host);
+    return { status: 'cancelled' };
+  });
+
+  // Moves the meeting to another open time (and length, if the page offers
+  // several), under the same host lock as booking.
+  app.post<{ Params: { mkey: string }; Body: { start?: unknown; duration?: unknown } }>(
+    '/v1/public/booking/manage/:mkey/reschedule',
+    { bodyLimit: 8 * 1024 },
+    async (req) => {
+      await requireOrigin(req.headers.origin);
+      rateLimit(req, 'booking-manage', 10);
+      const b = req.body ?? {};
+      const start = typeof b.start === 'string' ? new Date(b.start) : null;
+      if (!start || Number.isNaN(start.getTime())) throw badRequest('start must be an ISO time');
+      const first = await loadMeeting(pool, req.params.mkey);
+      const base = first.pageId ? await loadPage(pool, 'id', first.pageId) : null;
+      if (!base || base.status !== 'published' || !base.rules || !base.host) throw new ApiError(409, 'this meeting cannot be moved online', 'conflict');
+      const page = withDuration(base, b.duration);
+      const end = new Date(start.getTime() + page.rules!.durationMinutes * 60000);
+      const result = await withTx({ actor: BOOKING_PRINCIPAL.actor, source: 'booking_page' }, async (client) => {
+        await client.query("select pg_advisory_xact_lock(hashtext('booking:' || $1))", [page.host]);
+        const m = await loadMeeting(client, req.params.mkey, true);
+        assertChangeable(m);
+        const open = await openSlots(client, page, new Date(start.getTime() - 86400000), new Date(start.getTime() + 86400000), true,
+          { callId: m.id, start: m.start, end: m.end });
+        if (!open.some((x) => x.getTime() === start.getTime())) throw new ApiError(409, 'that time was just taken, pick another', 'slot_taken');
+        if (m.eventId) {
+          const conn = await meetingConnection(client, m);
+          if (!conn) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
+          try {
+            await moveEvent(conn, m.calendarId, m.eventId, start, end);
+          } catch (err) {
+            req.log.warn({ err }, 'booking: calendar event could not be moved');
+            throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
+          }
+        }
+        await updateRecord(client, await getObject('calls'), BOOKING_PRINCIPAL, m.id, {
+          started_at: start.toISOString(), ended_at: end.toISOString(), duration_seconds: page.rules!.durationMinutes * 60
+        });
+        return m;
+      });
+      forgetBusy(page.host!);
+      return {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        meeting_url: result.meetingUrl,
+        location_type: page.locationType,
+        location_details: page.locationDetails,
+        confirmation_message: null,
+        manage_url: manageUrl(req.params.mkey)
+      };
+    }
+  );
 
   // Staff: whether a booking page can take bookings, and its next open times
   // (record page). Needs read access to the page.

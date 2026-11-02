@@ -272,6 +272,31 @@ export async function deleteEvent(conn: Connection, calendarId: string | null, e
   }
 }
 
+// Moves an event; the provider sends the attendee the updated invite.
+export async function moveEvent(conn: Connection, calendarId: string | null, eventId: string, start: Date, end: Date): Promise<void> {
+  if (conn.provider === 'google') {
+    await call(conn, 'PATCH', `/calendars/${enc(calendarId ?? 'primary')}/events/${enc(eventId)}?sendUpdates=all`, {
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: end.toISOString() }
+    });
+  } else {
+    await call(conn, 'PATCH', `/me/events/${enc(eventId)}`, {
+      start: { dateTime: graphDateTime(start), timeZone: 'UTC' },
+      end: { dateTime: graphDateTime(end), timeZone: 'UTC' }
+    });
+  }
+}
+
+// Cancels an event; the provider sends the attendee a cancellation (Graph's
+// cancel action carries the reason as its comment).
+export async function cancelEvent(conn: Connection, calendarId: string | null, eventId: string, reason: string | null): Promise<void> {
+  if (conn.provider === 'google') {
+    await call(conn, 'DELETE', `/calendars/${enc(calendarId ?? 'primary')}/events/${enc(eventId)}?sendUpdates=all`);
+  } else {
+    await call(conn, 'POST', `/me/events/${enc(eventId)}/cancel`, { comment: reason ?? '' });
+  }
+}
+
 // ---- revoke ----------------------------------------------------------------------
 
 // Google can revoke a refresh token; Microsoft has no per-token revoke, so the

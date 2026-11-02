@@ -1,6 +1,5 @@
 /* Hosted booking page (/p/book/). Colors from the theme, like public.css. */
 
-.bk-page { max-width: 760px; }
 .bk-facts { display: flex; gap: 8px 18px; flex-wrap: wrap; margin-top: 10px; color: var(--muted-text); font-size: 14px; }
 .bk-step { margin-top: 22px; }
 .bk-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 16px; font-size: 13px; color: var(--muted-text); }
@@ -9,7 +8,6 @@
 button.bk-step-pill { cursor: pointer; }
 button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary); }
 .bk-step-sep { color: var(--muted-text); }
-.bk-picker { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; align-items: start; }
 .bk-month-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .bk-month-head strong { font-size: 16px; }
 .bk-nav { font: inherit; border: 1px solid var(--border); background: var(--page-background); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; }
@@ -19,10 +17,23 @@ button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary);
 .bk-date { font: inherit; aspect-ratio: 1; border-radius: 999px; border: 0; background: none; color: var(--muted-text); cursor: default; }
 .bk-date.open { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); font-weight: 600; cursor: pointer; }
 .bk-date.open:hover { background: color-mix(in srgb, var(--primary) 22%, transparent); }
-.bk-date.picked { background: var(--primary); color: #fff; }
+.bk-date.picked, .bk-date.picked:hover { background: var(--primary); color: #fff; }
 .bk-date.other { opacity: .45; }
 .bk-date.other.picked { opacity: 1; }
-.bk-times { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+/* time step: the card splits in two; the right column starts at the top and
+   takes its height from the left one, so the times scroll instead of growing it */
+.bk-page { max-width: 860px; }
+.bk-split { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 32px; }
+.bk-main { min-width: 0; }
+.bk-side { position: relative; min-width: 0; }
+.bk-side-inner { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.bk-side-col { display: flex; flex-direction: column; gap: 14px; min-height: 0; flex: 1; }
+.bk-day-title { font-size: 15px; }
+.bk-times-box { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.bk-times-box::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--page-background)); opacity: 0; transition: opacity .15s; }
+.bk-times-box.more::after { opacity: 1; }
+.bk-times { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 2px 0; }
 .bk-time { font: inherit; font-weight: 600; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--primary); color: var(--primary); background: var(--page-background); cursor: pointer; }
 .bk-time:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
 .bk-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -39,7 +50,13 @@ button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary);
 .bk-length:hover { border-color: var(--primary); }
 .bk-length.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
+.pp-btn.bk-danger { background: #b42318; border-color: #b42318; color: #fff; }
+.bk-reason { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14px; max-width: 460px; }
+.bk-reason textarea { font: inherit; font-weight: 400; color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; resize: vertical; }
+
 @media (max-width: 640px) {
-  .bk-picker { grid-template-columns: 1fr; }
-  .bk-times { max-height: none; }
+  .bk-split { display: block; }
+  .bk-side { margin-top: 24px; }
+  .bk-side-inner { position: static; }
+  .bk-times { max-height: 320px; }
 }

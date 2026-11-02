@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Clock, Plus, Trash2 } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -260,6 +260,7 @@ function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolea
 
 export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
   const { toast } = useApp();
+  const navigate = useNavigate();
   const stored = useMemo(() => parse(record.properties.availability), [record.properties.availability]);
   const [hours, setHours] = useState<Availability>(stored ?? DEFAULT);
   const [rows, setRows] = useState<Row[]>(() => rowsOf(stored ?? DEFAULT));
@@ -328,19 +329,37 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   const setOverride = (i: number, o: { date: string; ranges: Range[] } | null) =>
     edit({ ...hours, overrides: o ? hours.overrides.map((x, j) => (j === i ? o : x)) : hours.overrides.filter((_, j) => j !== i) });
 
+  // A new, empty form for one of the slots: made, picked here, then opened in
+  // the form builder (it must be built and published before the page can be).
+  async function createForm(key: 'form_before_id' | 'form_after_id', label: string) {
+    setError(null);
+    try {
+      const pageName = str(record.properties.name) || 'Booking page';
+      const form = await api<{ id: string }>('POST', '/v1/objects/forms', { properties: { name: `${pageName}: ${label.toLowerCase()}` } });
+      if (await save({ [key]: form.id }, 'Form created')) navigate(`/objects/forms/${form.id}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   const when = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const formPicker = (key: 'form_before_id' | 'form_after_id', label: string) => {
     const value = str(record.properties[key]);
     return (
-      <label className="field">
-        <span>{label}</span>
-        <select value={value} disabled={saving} onChange={(e) => save({ [key]: e.target.value || null })}>
-          <option value="">None</option>
-          {forms.map((f) => <option key={f.id} value={f.id}>{f.name}{f.published ? '' : ' (not published)'}</option>)}
-          {value && !forms.some((f) => f.id === value) && <option value={value}>Form {value}</option>}
-        </select>
-        {value && <Link className="small" to={`/objects/forms/${value}`}>Open form</Link>}
-      </label>
+      <div className="field">
+        <label className="field">
+          <span>{label}</span>
+          <select value={value} disabled={saving} onChange={(e) => save({ [key]: e.target.value || null })}>
+            <option value="">None</option>
+            {forms.map((f) => <option key={f.id} value={f.id}>{f.name}{f.published ? '' : ' (not published)'}</option>)}
+            {value && !forms.some((f) => f.id === value) && <option value={value}>Form {value}</option>}
+          </select>
+        </label>
+        <div className="bk-form-links">
+          {value && <Link className="small" to={`/objects/forms/${value}`}>Open form</Link>}
+          <button className="bk-link small" disabled={saving} onClick={() => createForm(key, label)}><Plus size={12} /> Create a new form</button>
+        </div>
+      </div>
     );
   };
 
@@ -422,10 +441,9 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
         <p className="small muted">Hours for one date instead of its weekday's. No hours means closed that day.</p>
         <div className="bk-days">
           {hours.overrides.map((o, i) => (
-            <div className="bk-day" key={i}>
-              <div className="bk-range">
+            <div className="bk-override" key={i}>
+              <div className="bk-override-date">
                 <DatePicker value={o.date} ariaLabel="Date" onChange={(v) => setOverride(i, { ...o, date: v })} />
-                <button className="icon-btn" onClick={() => setOverride(i, null)} aria-label="Remove date"><Trash2 size={14} /></button>
               </div>
               {o.ranges.length ? <Ranges ranges={o.ranges} onChange={(r) => setOverride(i, { ...o, ranges: r })} /> : (
                 <div className="bk-range">
@@ -433,6 +451,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
                   <button className="btn small" onClick={() => setOverride(i, { ...o, ranges: NINE_TO_FIVE })}><Plus size={13} /> Add hours</button>
                 </div>
               )}
+              <button className="icon-btn" onClick={() => setOverride(i, null)} aria-label="Remove date" title="Remove date"><Trash2 size={14} /></button>
             </div>
           ))}
         </div>

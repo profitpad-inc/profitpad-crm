@@ -1,4 +1,4 @@
-import { el, publicApi, queryParamsFromLocation, PublicApiError, type BookingResult, type PublicBookingPage } from './public-api';
+import { el, publicApi, queryParamsFromLocation, PublicApiError, type BookingResult, type ManagedMeeting, type PublicBookingPage } from './public-api';
 import { injectFormCss, renderForm } from './form-renderer';
 
 // "15 min", "1 hr", "1 hr 30 min"
@@ -31,6 +31,10 @@ export interface BookingMountOptions {
 export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void {
   const api = publicApi(opts.apiBase);
   const key = opts.key;
+  // the visitor's manage link (#manage/<key>): reschedule or cancel a meeting
+  const manageKey = key.startsWith('manage/') ? key.slice('manage/'.length) : null;
+  let meeting: ManagedMeeting | null = null;
+  let locationDetails: string | null = null;
   const loadedAt = Date.now();
 
   const LOCATION: Record<string, string> = { google_meet: 'Google Meet', teams: 'Microsoft Teams', phone: 'Phone call', in_person: 'In person' };
@@ -69,10 +73,16 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     root.replaceChildren(el('main', { class: 'pp-page' }, el('div', { class: 'pp-card pp-center' }, el('p', {}, text))));
   }
 
-  type Step = 'before' | 'time' | 'after' | 'done';
+  type Step = 'before' | 'time' | 'after' | 'done' | 'manage';
   let lastStep: Step | null = null;
 
   function shell(step: Step, ...content: (Node | null)[]): void {
+    render(step, content, null);
+  }
+
+  // side: a column on the right that starts at the top of the card and takes
+  // its height from the main column (it scrolls inside, never grows the card)
+  function render(step: Step, content: (Node | null)[], side: HTMLElement | null): void {
     const steps: [Step, string][] = [
       ...(page.form_before ? [['before', 'Your details'] as [Step, string]] : []),
       ['time', 'Time'],
@@ -80,14 +90,17 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       ['done', 'Booked']
     ];
     const facts = [lengthsText(), page.host_name ? `with ${page.host_name}` : null, page.location_type ? LOCATION[page.location_type] : null].filter(Boolean);
-    root.replaceChildren(el('main', { class: 'pp-page bk-page' },
-      el('div', { class: 'pp-card' },
-        el('h1', {}, page.name ?? 'Book a meeting'),
-        el('div', { class: 'bk-facts' }, ...facts.map((f) => el('span', {}, f as string))),
-        page.description ? el('p', { class: 'pp-muted' }, page.description) : null,
-        step === 'done' ? null : stepPills(steps, step),
-        notice ? el('p', { class: 'pp-error', role: 'alert' }, notice) : null,
-        el('div', { class: 'bk-step' }, ...content))));
+    const main = [
+      el('h1', {}, page.name ?? 'Book a meeting'),
+      el('div', { class: 'bk-facts' }, ...facts.map((f) => el('span', {}, f as string))),
+      page.description ? el('p', { class: 'pp-muted' }, page.description) : null,
+      step === 'done' || manageKey ? null : stepPills(steps, step),
+      notice ? el('p', { class: 'pp-error', role: 'alert' }, notice) : null,
+      el('div', { class: 'bk-step' }, ...content)
+    ];
+    root.replaceChildren(el('main', { class: 'pp-page bk-page' }, side
+      ? el('div', { class: 'pp-card bk-split' }, el('div', { class: 'bk-main' }, ...main), el('aside', { class: 'bk-side' }, el('div', { class: 'bk-side-inner' }, side)))
+      : el('div', { class: 'pp-card' }, ...main)));
     notice = null;
     // embedded: bring the top of a new step into view
     if (opts.embedded && lastStep !== null && step !== lastStep && root.getBoundingClientRect().top < 0) {
@@ -160,7 +173,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     slotsByDay = new Map();
     if (to > from) {
       try {
-        const { slots } = await api.bookingSlots(key, from, to, duration);
+        const { slots } = manageKey ? await api.manageSlots(manageKey, from, to, duration) : await api.bookingSlots(key, from, to, duration);
         for (const s of slots) {
           const k = dayKey(new Date(s));
           slotsByDay.set(k, [...(slotsByDay.get(k) ?? []), s]);
@@ -196,7 +209,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       const [y, m] = dayKey(new Date()).split('-').map(Number);
       month = { y, m };
     }
-    shell('time', el('p', { class: 'pp-muted' }, 'Finding open times…'));
+    render('time', [el('p', { class: 'pp-muted' }, 'Finding open times…')], el('div', {}));
     await loadMonth();
     // nothing left this month: start on the next one
     if (first && ![...slotsByDay.keys()].some(inMonth) && !slotError) {
@@ -237,13 +250,17 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
 
     const times = pickedDay ? slotsByDay.get(pickedDay) ?? [] : [];
     const timeList = el('div', { class: 'bk-times' },
-      ...(pickedDay ? [el('strong', {}, longDate(new Date(times[0])))] : []),
       ...times.map((s) => {
         const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)));
         b.addEventListener('click', () => pick(s));
         return b;
       }),
       ...(!pickedDay ? [el('p', { class: 'pp-muted' }, slotsByDay.size ? 'Pick a day.' : 'No open times this month.')] : []));
+    // a fade at the bottom while there are more times below
+    const timesBox = el('div', { class: 'bk-times-box' }, timeList);
+    const fade = () => timesBox.classList.toggle('more', timeList.scrollTop + timeList.clientHeight < timeList.scrollHeight - 4);
+    timeList.addEventListener('scroll', fade);
+    new ResizeObserver(fade).observe(timeList);
 
     const zoneSelect = el('select', { 'aria-label': 'Time zone' }, ...[...new Set([tz, ...zones()])].map((z) => el('option', { value: z, selected: z === tz }, z.replace(/_/g, ' '))));
     zoneSelect.addEventListener('change', async () => {
@@ -267,13 +284,17 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
         return b;
       })) : null;
 
-    // right column: time zone, then length, then the day's times
-    shell('time',
+    // right column, from the top of the card: time zone, length, the day's times
+    render('time', [
       slotError ? el('p', { class: 'pp-error', role: 'alert' }, slotError) : null,
-      el('div', { class: 'bk-picker' },
-        el('div', {}, el('div', { class: 'bk-month-head' }, back, el('strong', {}, title), next), el('div', { class: 'bk-grid' }, ...cells)),
-        el('div', { class: 'bk-side' }, el('label', { class: 'bk-tz' }, 'Times are shown in', zoneSelect), lengths, timeList)),
-      page.form_before ? backLink('Change your details', showBefore) : null);
+      el('div', { class: 'bk-month-head' }, back, el('strong', {}, title), next),
+      el('div', { class: 'bk-grid' }, ...cells),
+      manageKey ? backLink('Keep the current time', showManage) : page.form_before ? backLink('Change your details', showBefore) : null
+    ], el('div', { class: 'bk-side-col' },
+      el('label', { class: 'bk-tz' }, 'Times are shown in', zoneSelect),
+      lengths,
+      pickedDay ? el('strong', { class: 'bk-day-title' }, longDate(new Date(times[0]))) : null,
+      timesBox));
   }
 
   function backLink(text: string, to: () => void): HTMLElement {
@@ -291,7 +312,8 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
 
   function pick(start: string): void {
     chosen = start;
-    if (page.form_after) showAfter();
+    if (manageKey) showMove();
+    else if (page.form_after) showAfter();
     else showConfirm();
   }
 
@@ -365,20 +387,114 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     showDone(res);
   }
 
-  function showDone(res: BookingResult): void {
+  // ---- manage link: the meeting, cancel, reschedule -----------------------------------
+
+  const when = (start: Date, end: Date) => `${longDate(start)}, ${clock(start)} to ${clock(end)}`;
+
+  function meetingFacts(start: Date, end: Date, url: string | null, details: string | null): HTMLElement {
+    const where = url
+      ? el('a', { href: url, target: '_blank', rel: 'noreferrer' }, url)
+      : details ?? (page.location_type ? LOCATION[page.location_type] : null);
+    return el('dl', { class: 'pp-meta' },
+      el('dt', {}, 'When'), el('dd', {}, when(start, end)),
+      el('dt', {}, 'Time zone'), el('dd', {}, tz.replace(/_/g, ' ')),
+      ...(where ? [el('dt', {}, 'Where'), el('dd', {}, where)] : []));
+  }
+
+  function showManage(): void {
+    const m = meeting!;
+    const start = new Date(m.start);
+    if (m.status === 'cancelled') {
+      shell('manage', el('div', { class: 'bk-done' }, el('h2', {}, 'This meeting was cancelled'), meetingFacts(start, new Date(m.end), null, null)));
+      return;
+    }
+    if (!m.can_change) {
+      shell('manage', el('div', { class: 'bk-done' }, el('h2', {}, 'Your meeting'), meetingFacts(start, new Date(m.end), m.meeting_url, locationDetails),
+        el('p', { class: 'pp-muted' }, 'This meeting can no longer be changed online.')));
+      return;
+    }
+    const move = el('button', { class: 'pp-btn primary', type: 'button' }, 'Reschedule');
+    move.addEventListener('click', () => void showPicker(true));
+    const cancel = el('button', { class: 'pp-btn', type: 'button' }, 'Cancel meeting');
+    cancel.addEventListener('click', showCancel);
+    shell('manage', el('div', { class: 'bk-done' },
+      el('h2', {}, m.attendee_name ? `Your meeting, ${m.attendee_name}` : 'Your meeting'),
+      meetingFacts(start, new Date(m.end), m.meeting_url, locationDetails),
+      el('div', { class: 'pp-actions' }, m.can_reschedule ? move : null, cancel)));
+  }
+
+  function showCancel(): void {
+    const reason = el('textarea', { rows: '3', maxlength: '2000', placeholder: 'Optional' });
+    const confirm = el('button', { class: 'pp-btn bk-danger', type: 'button' }, 'Cancel meeting');
+    const keep = el('button', { class: 'pp-btn', type: 'button' }, 'Keep it');
+    const error = el('p', { class: 'pp-error', role: 'alert' });
+    keep.addEventListener('click', showManage);
+    confirm.addEventListener('click', async () => {
+      confirm.disabled = true;
+      error.textContent = '';
+      try {
+        await api.cancelMeeting(manageKey!, reason.value.trim());
+        meeting = { ...meeting!, status: 'cancelled', can_change: false };
+        shell('done', el('div', { class: 'bk-done' },
+          el('h2', {}, 'Your meeting is cancelled'),
+          el('p', { class: 'pp-muted' }, 'A cancellation is on its way to your email.')));
+      } catch (err) {
+        error.textContent = (err as Error).message;
+        confirm.disabled = false;
+      }
+    });
+    const m = meeting!;
+    shell('manage', el('div', { class: 'bk-done' },
+      el('h2', {}, 'Cancel this meeting?'),
+      meetingFacts(new Date(m.start), new Date(m.end), null, null),
+      el('label', { class: 'bk-reason' }, 'Reason', reason),
+      error,
+      el('div', { class: 'pp-actions' }, confirm, keep)));
+  }
+
+  function showMove(): void {
+    const button = el('button', { class: 'pp-btn primary', type: 'button' }, 'Move my meeting');
+    const error = el('p', { class: 'pp-error', role: 'alert' });
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      error.textContent = '';
+      try {
+        const res = await api.rescheduleMeeting(manageKey!, chosen!, duration);
+        meeting = { ...meeting!, start: res.start, end: res.end };
+        showDone(res, true);
+      } catch (err) {
+        if ((err as PublicApiError).status === 409 && (err as PublicApiError).message.includes('taken')) {
+          notice = 'That time was just taken. Pick another.';
+          chosen = null;
+          void showPicker();
+          return;
+        }
+        error.textContent = (err as Error).message;
+        button.disabled = false;
+      }
+    });
+    const m = meeting!;
+    shell('manage',
+      el('p', { class: 'pp-muted' }, `Now: ${when(new Date(m.start), new Date(m.end))}`),
+      chosenBox(), error, el('div', { class: 'pp-actions' }, button));
+  }
+
+  function showDone(res: BookingResult, moved = false): void {
     const start = new Date(res.start);
     const where = res.meeting_url
       ? el('a', { href: res.meeting_url, target: '_blank', rel: 'noreferrer' }, res.meeting_url)
       : res.location_details ?? (res.location_type ? LOCATION[res.location_type] : null);
     shell('done', el('div', { class: 'bk-done' },
-      el('h2', {}, 'You are booked'),
+      el('h2', {}, moved ? 'Your meeting was moved' : 'You are booked'),
       el('dl', { class: 'pp-meta' },
         el('dt', {}, 'When'), el('dd', {}, `${longDate(start)}, ${clock(start)} to ${clock(new Date(res.end))}`),
         el('dt', {}, 'Time zone'), el('dd', {}, tz.replace(/_/g, ' ')),
         ...(where ? [el('dt', {}, 'Where'), el('dd', {}, where)] : [])),
       res.location_details && res.meeting_url ? el('p', { class: 'bk-message' }, res.location_details) : null,
-      el('p', { class: 'pp-muted' }, 'A calendar invite is on its way to your email.'),
-      res.confirmation_message ? el('p', { class: 'bk-message' }, res.confirmation_message) : null));
+      el('p', { class: 'pp-muted' }, moved ? 'An updated invite is on its way to your email.' : 'A calendar invite is on its way to your email.'),
+      res.confirmation_message ? el('p', { class: 'bk-message' }, res.confirmation_message) : null,
+      // embedded, the link opens the hosted page in a new tab
+      res.manage_url ? el('p', {}, el('a', { href: res.manage_url, ...(opts.embedded ? { target: '_blank', rel: 'noreferrer' } : {}) }, 'Reschedule or cancel')) : null));
   }
 
   // ---- start ---------------------------------------------------------------------------
@@ -386,17 +502,25 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   async function load(): Promise<void> {
     if (!key) return message('This link is missing its booking page key.');
     try {
-      page = await api.booking(key);
+      if (manageKey) {
+        const res = await api.manage(manageKey);
+        meeting = res.meeting;
+        locationDetails = res.page.location_details;
+        page = { ...res.page, theme: res.theme };
+      } else {
+        page = await api.booking(key);
+      }
       duration = page.duration_minutes;
       opts.onTheme(page.theme);
       if (!opts.embedded) document.title = page.name ?? 'Book a meeting';
       injectFormCss(opts.styleTarget);
-      if (page.form_before) showBefore();
+      if (manageKey) showManage();
+      else if (page.form_before) showBefore();
       else await showPicker(true);
     } catch (err) {
       const status = (err as { status?: number }).status;
       // embedded on a website not in Settings -> Embed domains, the browser blocks the answer (status 0)
-      message(status === 404 ? 'This booking page is not available.'
+      message(status === 404 ? (manageKey ? 'This meeting link is not valid.' : 'This booking page is not available.')
         : opts.embedded && status === 0 ? 'This booking page is not available on this website.' : (err as Error).message);
     }
   }

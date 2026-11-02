@@ -95,6 +95,18 @@ export interface BookingResult {
   location_type: PublicBookingPage['location_type'];
   location_details: string | null;
   confirmation_message: string | null;
+  // the visitor's cancel / reschedule link (null when the API has no UI address)
+  manage_url: string | null;
+}
+
+export interface ManagedMeeting {
+  start: string;
+  end: string;
+  status: string | null;
+  attendee_name: string | null;
+  meeting_url: string | null;
+  can_change: boolean;
+  can_reschedule: boolean;
 }
 
 export function publicApi(base: string) {
@@ -134,7 +146,17 @@ export function publicApi(base: string) {
     bookingPhone: (key: string, number: string) => call<PhoneResult>('POST', `/booking/${encodeURIComponent(key)}/phone`, { number }),
     book: (key: string, body: {
       start: string; duration: number; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; _hp: string; _elapsed: number;
-    }) => call<BookingResult>('POST', `/booking/${encodeURIComponent(key)}/book`, body)
+    }) => call<BookingResult>('POST', `/booking/${encodeURIComponent(key)}/book`, body),
+    // the visitor's manage link: /p/book/#manage/<key>
+    manage: (mkey: string) =>
+      call<{ meeting: ManagedMeeting; page: Omit<PublicBookingPage, 'theme'> & { location_details: string | null }; theme: Record<string, string> }>(
+        'GET', `/booking/manage/${encodeURIComponent(mkey)}`),
+    manageSlots: (mkey: string, from: Date, to: Date, duration: number) =>
+      call<{ slots: string[]; duration_minutes: number }>('GET',
+        `/booking/manage/${encodeURIComponent(mkey)}/slots?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&duration=${duration}`),
+    cancelMeeting: (mkey: string, reason: string) => call<{ status: string }>('POST', `/booking/manage/${encodeURIComponent(mkey)}/cancel`, { reason }),
+    rescheduleMeeting: (mkey: string, start: string, duration: number) =>
+      call<BookingResult>('POST', `/booking/manage/${encodeURIComponent(mkey)}/reschedule`, { start, duration })
   };
 }
 
