@@ -439,6 +439,15 @@ function slugify(name: string): string {
 // must be a Lucide icon name (lucide.dev/icons), or empty for the default.
 onWrite('views', async (client, properties, existing) => {
   const out = { ...properties };
+  // the code and status are saved only through the views API, which checks
+  // them first; say so instead of a bare "read-only"
+  const code = ['draft_source', 'draft_queries', 'source', 'queries', 'status', 'published_at'].filter((k) => k in out);
+  if (code.length) {
+    throw badRequest(
+      `${code.join(', ')} cannot be changed through records. Save code and queries with save_view_draft (MCP) or PUT /v1/views/{slug}/draft, then publish with publish_view or POST /v1/views/{slug}/publish.`,
+      { property: code[0] }
+    );
+  }
   if (typeof out.icon === 'string') {
     const icon = out.icon.trim().toLowerCase();
     if (icon && !ICON_NAMES.has(icon)) {

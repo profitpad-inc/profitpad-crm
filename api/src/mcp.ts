@@ -255,7 +255,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('get_view', {
     title: 'Get custom view',
-    description: 'One custom view with its code and queries, draft and published.',
+    description: 'One custom view with its code and queries, draft and published. To change the code or queries use save_view_draft, then publish_view.',
     inputSchema: z.object({ view: viewArg }),
     annotations: { readOnlyHint: true }
   }, async ({ view }) => run(async () => viewOut(await loadView(pool, view))));
@@ -278,7 +278,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('save_view_draft', {
     title: 'Save custom view draft',
-    description: 'Replaces the draft code and/or queries of a view (what is not given stays). Checked first; errors come back to fix. The published version does not change until publish_view.',
+    description: 'Changes a view\'s code and/or queries: replaces the draft (what is not given stays; send the whole source, not a diff). Checked first; errors come back to fix. The published version does not change until publish_view. Read view_guide first if you have not.',
     inputSchema: z.object({ view: viewArg, source: z.string().optional(), queries: queriesArg.optional() }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
@@ -286,7 +286,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_view_settings', {
     title: 'Update custom view settings',
-    description: 'Changes a view\'s name, slug (page address), icon, description or audience. Takes effect at once, without publishing.',
+    description: 'Changes a view\'s name, slug (page address), icon, description or audience. Takes effect at once, without publishing. For the code or queries use save_view_draft instead.',
     inputSchema: z.object({
       view: viewArg,
       name: z.string().optional(),

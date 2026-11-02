@@ -78,13 +78,13 @@ Use these instead of building your own, so views look like the rest of the CRM.
 - <Card title subtitle actions>children</Card>: a white box with a border and shadow.
 
 ## Data display
-- <Stat label value hint tone="money"|"danger"|"muted" />: a KPI tile (a card of its own). Use tone="money" for money amounts.
+- <Stat label value hint tone="money"|"danger"|"muted" />: a KPI tile (a card of its own). tone colors the value: money is green (#1e7a4c), danger red (#b42318), muted grey; no tone is the normal text color. Use tone="money" for money amounts.
 - <Table columns rows loading error onRowClick selected empty maxHeight />
   - columns: [{ key, label, align?: 'left'|'right'|'center', width?, render?: (row) => node }]
   - Empty values show "--". Right-aligned columns use tabular figures.
   - onRowClick makes rows clickable; selected(row) highlights one. Rows are keyed by row.id when present, so select an id column.
   - When it sits directly in a Card, the table runs to the card's edges.
-- <Badge tone="primary"|"money"|"danger"|"warning"|"muted">text</Badge>
+- <Badge tone="primary"|"money"|"danger"|"warning"|"muted">text</Badge>: a pill tinted with that color (warning is orange, #b54708).
 - <Tabs tabs={[{ key, label }]} value onChange />
 - <Loading label? />, <Empty>text</Empty>, <ErrorBox error={errOrString} />
 - <RecordLink object id>text</RecordLink>: a link that opens a record.
@@ -97,7 +97,7 @@ Use these instead of building your own, so views look like the rest of the CRM.
 ## Formatters
 - formatNumber(v, decimals?), formatMoney(v, currency = 'USD'), formatPercent(fraction, decimals = 0) (0.25 gives 25%)
 - formatDate(v) gives YYYY-MM-DD, formatDateTime(v) gives YYYY-MM-DD HH:MM (local time), as in the rest of the CRM.
-- chartColors: 8 series colors, the first is the tenant's primary color.
+- chartColors: 8 series colors, in order: [0] the tenant's primary color (var(--primary), cobalt #2445b8 by default), [1] green #0e9f6e, [2] orange #d97706, [3] violet #7c3aed, [4] pink #db2777, [5] cyan #0891b2, [6] lime #65a30d, [7] slate #64748b. Pick by index, or use any CSS color string.
 
 ## Charts (recharts)
 Wrap charts in <ResponsiveContainer width="100%" height={240}>. Typical: BarChart / LineChart / AreaChart / PieChart with XAxis, YAxis, Tooltip, CartesianGrid (strokeDasharray="3 3", vertical={false}). Use fill={chartColors[i]}, fontSize={12} on axes, radius={[4, 4, 0, 0]} on bars. The kit already colors grid lines and axis text.`;
