@@ -28,6 +28,8 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
 
 ## Where we're at (2026-10-31)
 
+- 2026-11-01 (quote signing): Customers draw a signature (and fill in staff-configured signing fields) to accept a quote on `/p/quote/#key`; optional staff countersignature (`pending_countersign` status, `POST /v1/objects/quotes/{id}/countersign`, Countersign dialog on the quote page). Migration `0018_quote_signing.sql` adds `signing_fields`, `signed_fields` (both `json_only`), `customer_signature`, `customer_signed_at`, `customer_ip`, `requires_countersign` (true/false dropdown, there is no checkbox type), `countersigner_name`, `countersigner_signature`, `countersigned_at`, and the `pending_countersign` status option. Code: `api/src/routes/public.ts` (validation hook, accept, countersign), `api/src/pdf/quote.ts` (signature section), `web/src/public/quote.ts` + `signature-pad.ts` + `public.css`, `web/src/components/QuoteSigningCard.tsx`, `web/src/pages/RecordPage.tsx`. Details in `docs/architecture.md` "Public quote and form pages". SQL suite passes and 38 API smoke checks pass on a fresh local database (validation, signature checks, accept, pending, countersign, 401/404/409, PDF); API typecheck and web build pass. Not checked in a browser (canvas drawing untested by hand), not committed, 0018 NOT applied to the server DB (apply before deploying this API, which reads the new columns). Later: signatures as files instead of text columns, emails on sign/countersign, certificate of completion.
+
 - 2026-11-01 (Microsoft sign-in): Live and verified working in production. Added Microsoft SSO (`/v1/auth/microsoft/start` and callback) to `api/src/sso.ts` using OpenID Connect authorization code flow with PKCE, matching Google's flow. Validates v2.0 and STS ID tokens, maps `sub`/`oid` and `email`/`preferred_username`/`upn`, links user in `auth.identities` (provider `microsoft`), and sets session cookie. Surfaces detailed OAuth error descriptions (`auth_detail`) on error. `/v1/auth/config` reports both `google` and `microsoft` flags. UI login page (`web/src/pages/Login.tsx`) renders "Log in with Microsoft" and "Log in with Google". Server env vars: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, optional `MICROSOFT_TENANT` (default `common`), optional `MICROSOFT_ALLOWED_DOMAINS`. Tested and confirmed live with `chris.becher@profitpad3.onmicrosoft.com`. Entra ID note: personal/multitenant app registrations require `"requestedAccessTokenVersion": 2` in the manifest.
 
 - 2026-11-01 (line items sidebar cards): Added `lines` to `DEFAULT_CARDS_FOR` on invoices, carts, quotes, and orders in `web/src/pages/RecordPage.tsx`, so the Line items association card (with line quantities and amounts) shows by default in the right sidebar even when empty (enabling linking new line items). Also included `carts` in sample data line parent targets in `scripts/generate_sample_data.py`. Web build passes; not checked in a browser.
@@ -79,7 +81,7 @@ npm run dev                                                    # http://127.0.0.
 
 ## What's next
 
-1. Create the first admin key (user) and try the API from `/docs`.
+1. Quote signing is built (see Where we're at); try it in a browser, then apply 0018 to the server DB and deploy.
 2. Schedule `select meta.enqueue_calcs();` nightly (n8n).
 3. Both Google sign-in and Microsoft SSO are live in production. Next authentication items: magic links (needs email sending), passkeys (register after signing in).
 4. File storage (object storage + signed URLs) for `pc_0050` and file properties.

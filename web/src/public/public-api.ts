@@ -3,9 +3,16 @@ import type { Condition, FieldType } from './conditions';
 // Fetch helper for the public pages (/p/quote/, /p/form/, embed.js). Never
 // sends cookies or an API key: these pages are opened by customers.
 
+export interface SigningField {
+  key: string;
+  label: string;
+  type: 'text' | 'email' | 'date';
+  required: boolean;
+}
+
 export interface PublicQuote {
   name: string | null;
-  status: 'sent' | 'accepted' | 'rejected' | 'expired';
+  status: 'sent' | 'pending_countersign' | 'accepted' | 'rejected' | 'expired';
   expiration_date: string | null;
   amount: number | null;
   currency: string | null;
@@ -15,6 +22,14 @@ export interface PublicQuote {
   company: string | null;
   contact: { name: string | null; email: string | null } | null;
   lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null }[];
+  signing_fields: SigningField[];
+  signed_fields: Record<string, string> | null;
+  customer_signature: string | null;
+  customer_signed_at: string | null;
+  requires_countersign: boolean;
+  countersigner_name: string | null;
+  countersigner_signature: string | null;
+  countersigned_at: string | null;
 }
 
 export interface FormField {
@@ -78,7 +93,7 @@ export function publicApi(base: string) {
   return {
     quote: (key: string) => call<{ quote: PublicQuote; theme: Record<string, string> }>('GET', `/quotes/${encodeURIComponent(key)}`),
     quotePdfUrl: (key: string) => `${root}/v1/public/quotes/${encodeURIComponent(key)}/pdf`,
-    respond: (key: string, action: 'accept' | 'decline', body: { name: string; email: string; reason?: string }) =>
+    respond: (key: string, action: 'accept' | 'decline', body: { name: string; email: string; reason?: string; fields?: Record<string, string>; signature_png?: string }) =>
       call<{ quote: PublicQuote }>('POST', `/quotes/${encodeURIComponent(key)}/${action}`, body),
     form: (key: string) => call<PublicForm>('GET', `/forms/${encodeURIComponent(key)}`),
     // phone answers are checked by the API (Google's libphonenumber)

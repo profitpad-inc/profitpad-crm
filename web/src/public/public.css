@@ -23,6 +23,7 @@ h2 { font-family: Montserrat, Inter, sans-serif; font-weight: 700; font-size: 17
 .pp-pill { display: inline-block; font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); white-space: nowrap; }
 .pp-pill.accepted { background: #ecfdf3; border-color: #abefc6; color: #05603a; }
 .pp-pill.rejected, .pp-pill.expired { background: #fef3f2; border-color: #fecdca; color: #912018; }
+.pp-pill.pending_countersign { background: #fffaeb; border-color: #fedf89; color: #93370d; }
 
 table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .pp-lines th { text-align: left; font-size: 13px; font-weight: 600; color: var(--muted-text); border-bottom: 2px solid var(--primary); padding: 8px; }
@@ -45,6 +46,17 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .pp-note { margin-top: 20px; padding: 14px 16px; border-radius: 8px; background: var(--surface); }
 .pp-center { text-align: center; padding: 48px 28px; }
 
+/* drawn signatures */
+.pp-sig-box { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14px; }
+.pp-sig-canvas { display: block; width: 100%; max-width: 520px; aspect-ratio: 520 / 160; background: #fff; border: 1px dashed var(--border); border-radius: 8px; touch-action: none; cursor: crosshair; }
+.pp-sig-row { display: flex; justify-content: space-between; align-items: center; max-width: 520px; font-weight: 400; font-size: 13px; color: var(--muted-text); }
+.pp-sig-clear { font: inherit; background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; }
+.pp-signatures { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 20px; }
+.pp-signature { flex: 1 1 240px; }
+.pp-signature img { display: block; width: 100%; max-width: 260px; background: #fff; border-bottom: 1px solid var(--border); }
+.pp-signature .pp-muted { font-size: 13px; margin-top: 4px; }
+.pp-signed-fields { margin-top: 12px; }
+
 @media (max-width: 600px) {
   .pp-page { padding: 16px 12px 32px; }
   .pp-card { padding: 20px 16px; }
@@ -62,5 +74,6 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
 @media print {
   body { background: #fff; }
   .pp-actions, .pp-respond { display: none; }
+  .pp-signature img { border-bottom-color: #999; }
   .pp-card { border: 0; padding: 0; }
 }

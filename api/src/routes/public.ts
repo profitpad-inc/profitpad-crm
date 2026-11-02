@@ -4,7 +4,7 @@ import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
 import { browserOrigins, requireScope, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
-import { updateRecord } from '../records.js';
+import { onWrite, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
@@ -98,6 +98,13 @@ function rateLimit(req: FastifyRequest, bucket: string, max: number, windowMs = 
 
 // ---- quotes ------------------------------------------------------------------
 
+export interface SigningField {
+  key: string;
+  label: string;
+  type: 'text' | 'email' | 'date';
+  required: boolean;
+}
+
 export interface PublicQuote {
   id: string;
   name: string | null;
@@ -111,6 +118,90 @@ export interface PublicQuote {
   company: string | null;
   contact: { name: string | null; email: string | null } | null;
   lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null }[];
+  signing_fields: SigningField[];
+  signed_fields: Record<string, string> | null;
+  customer_signature: string | null;
+  customer_signed_at: string | null;
+  requires_countersign: boolean;
+  countersigner_name: string | null;
+  countersigner_signature: string | null;
+  countersigned_at: string | null;
+}
+
+// ---- signing -----------------------------------------------------------------
+
+const SIGNING_FIELD_TYPES = ['text', 'email', 'date'];
+
+// Staff configure the fields a customer fills in before signing as a JSON
+// array on the quote. Checked strictly on every write; stored normalized.
+export function readSigningFields(raw: unknown): SigningField[] {
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw badRequest('signing_fields must be valid JSON', { property: 'signing_fields' });
+    }
+  }
+  const fail = (msg: string) => badRequest(msg, { property: 'signing_fields' });
+  if (!Array.isArray(parsed)) throw fail('signing_fields must be a JSON array');
+  if (parsed.length > 20) throw fail('signing_fields may have at most 20 fields');
+  const seen = new Set<string>();
+  return parsed.map((f, i) => {
+    const at = `signing field ${i + 1}`;
+    if (!f || typeof f !== 'object' || Array.isArray(f)) throw fail(`${at} must be an object`);
+    const { key, label, type, required } = f as Record<string, unknown>;
+    if (typeof key !== 'string' || !/^[a-z0-9_]{1,64}$/.test(key)) throw fail(`${at}: key must be 1 to 64 lowercase letters, digits or underscores`);
+    if (seen.has(key)) throw fail(`${at}: key "${key}" is used twice`);
+    seen.add(key);
+    if (typeof label !== 'string' || !label.trim() || label.length > 200) throw fail(`${at}: label must be 1 to 200 characters`);
+    if (typeof type !== 'string' || !SIGNING_FIELD_TYPES.includes(type)) throw fail(`${at}: type must be text, email or date`);
+    if (typeof required !== 'boolean') throw fail(`${at}: required must be true or false`);
+    return { key, label: label.trim(), type: type as SigningField['type'], required };
+  });
+}
+
+onWrite('quotes', async (_client, properties) => {
+  const raw = properties.signing_fields;
+  if (raw === undefined || raw === null || raw === '') return properties;
+  const fields = readSigningFields(raw);
+  return { ...properties, signing_fields: fields.length ? JSON.stringify(fields) : null };
+});
+
+const SIGNATURE_PREFIX = 'data:image/png;base64,';
+const MAX_SIGNATURE = 200 * 1024;
+
+// A drawn signature from the canvas: a PNG data URL, at most 200 KB.
+function readSignature(v: unknown): string {
+  if (typeof v !== 'string' || !v.startsWith(SIGNATURE_PREFIX)) throw badRequest('signature_png must be a PNG data URL');
+  if (v.length > MAX_SIGNATURE) throw badRequest('signature_png is too large');
+  const png = Buffer.from(v.slice(SIGNATURE_PREFIX.length), 'base64');
+  if (png.length < 8 || png.readUInt32BE(0) !== 0x89504e47) throw badRequest('signature_png is not a PNG image');
+  return v;
+}
+
+// The customer's answers to the quote's signing fields.
+function readSignedFields(defs: SigningField[], raw: unknown): Record<string, string> {
+  if (raw !== undefined && raw !== null && (typeof raw !== 'object' || Array.isArray(raw))) throw badRequest('fields must be an object');
+  const given = (raw ?? {}) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const f of defs) {
+    const v = text(given[f.key], f.label, 2000, f.required);
+    if (v === null) continue;
+    if (f.type === 'email' && !EMAIL_RE.test(v)) throw badRequest(`${f.label} must be an email address`);
+    if (f.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw badRequest(`${f.label} must be a date (YYYY-MM-DD)`);
+    out[f.key] = v;
+  }
+  return out;
+}
+
+function parseJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== 'string' || !raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -121,12 +212,13 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
   const { rows } = await pool.query(
     `select pc_0022_id as id, name, status[1] as status, to_char(expiration_date, 'YYYY-MM-DD') as expiration_date,
             expiration_date < current_date as past_expiry, amount, currency[1] as currency, responded_at,
-            responder_name, decline_reason
+            responder_name, decline_reason, signing_fields, signed_fields, customer_signature, customer_signed_at,
+            requires_countersign[1] = 'true' as requires_countersign, countersigner_name, countersigner_signature, countersigned_at
      from crm.pc_0022 where public_key = $1 and row_status = 'active'`,
     [checkKey(key)]
   );
   const q = rows[0];
-  if (!q || !['sent', 'accepted', 'rejected', 'expired'].includes(q.status)) throw notFound('quote not found');
+  if (!q || !['sent', 'pending_countersign', 'accepted', 'rejected', 'expired'].includes(q.status)) throw notFound('quote not found');
   const status = q.status === 'sent' && q.past_expiry ? 'expired' : q.status;
 
   const linked = async (otherType: string, select: string, table: string, idCol: string) =>
@@ -159,7 +251,15 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     decline_reason: q.decline_reason,
     company: companies[0]?.name ?? null,
     contact: contacts[0] ? { name: contacts[0].name, email: contacts[0].email } : null,
-    lines: outLines
+    lines: outLines,
+    signing_fields: parseJson<SigningField[]>(q.signing_fields, []),
+    signed_fields: parseJson<Record<string, string> | null>(q.signed_fields, null),
+    customer_signature: q.customer_signature,
+    customer_signed_at: q.customer_signed_at ? new Date(q.customer_signed_at).toISOString() : null,
+    requires_countersign: q.requires_countersign === true,
+    countersigner_name: q.countersigner_name,
+    countersigner_signature: q.countersigner_signature,
+    countersigned_at: q.countersigned_at ? new Date(q.countersigned_at).toISOString() : null
   };
 }
 
@@ -220,10 +320,13 @@ export async function publicRoutes(app: FastifyInstance) {
     return pdf;
   });
 
+  // Accepting needs a drawn signature and the quote's signing fields. When the
+  // quote requires a countersignature it waits as pending_countersign until
+  // staff sign; otherwise it is accepted right away.
   for (const action of ['accept', 'decline'] as const) {
-    app.post<{ Params: { key: string }; Body: { name?: unknown; email?: unknown; reason?: unknown } }>(
+    app.post<{ Params: { key: string }; Body: { name?: unknown; email?: unknown; reason?: unknown; fields?: unknown; signature_png?: unknown } }>(
       `/v1/public/quotes/:key/${action}`,
-      { bodyLimit: 16 * 1024 },
+      { bodyLimit: action === 'accept' ? 320 * 1024 : 16 * 1024 },
       async (req) => {
         rateLimit(req, 'quote-respond', 10);
         const b = req.body ?? {};
@@ -231,21 +334,32 @@ export async function publicRoutes(app: FastifyInstance) {
         const email = text(b.email, 'email', 254, true)!;
         if (!EMAIL_RE.test(email)) throw badRequest('email must be an email address');
         const reason = action === 'decline' ? text(b.reason, 'reason', 2000, false) : null;
+        const signature = action === 'accept' ? readSignature(b.signature_png) : null;
         const quote = await loadPublicQuote(req.params.key);
         if (quote.status !== 'sent') {
           throw new ApiError(409, quote.status === 'expired' ? 'this quote has expired' : `this quote was already ${quote.status}`, 'conflict');
         }
+        const fields = action === 'accept' ? readSignedFields(quote.signing_fields, b.fields) : null;
         const obj = await getObject('quotes');
         await withTx({ actor: PUBLIC_PRINCIPAL.actor, source: 'public_page' }, async (client) => {
           // re-check under the row lock so two clicks cannot both win
           const { rows } = await client.query("select status[1] as status from crm.pc_0022 where pc_0022_id = $1 for update", [quote.id]);
           if (rows[0]?.status !== 'sent') throw new ApiError(409, `this quote was already ${rows[0]?.status ?? 'changed'}`, 'conflict');
+          const now = new Date().toISOString();
+          const waits = action === 'accept' && quote.requires_countersign;
           await updateRecord(client, obj, PUBLIC_PRINCIPAL, quote.id, {
-            status: action === 'accept' ? 'accepted' : 'rejected',
-            responded_at: new Date().toISOString(),
+            status: action === 'decline' ? 'rejected' : waits ? 'pending_countersign' : 'accepted',
+            ...(waits ? {} : { responded_at: now }),
             responder_name: name,
             responder_email: email,
-            ...(action === 'decline' ? { decline_reason: reason } : {})
+            ...(action === 'decline'
+              ? { decline_reason: reason }
+              : {
+                  customer_signature: signature,
+                  customer_signed_at: now,
+                  customer_ip: req.ip,
+                  signed_fields: Object.keys(fields!).length ? JSON.stringify(fields) : null
+                })
           });
         });
         const { id: _id, ...shown } = await loadPublicQuote(req.params.key);
@@ -253,6 +367,38 @@ export async function publicRoutes(app: FastifyInstance) {
       }
     );
   }
+
+  // Staff: countersign a quote the customer has signed (signed in, needs edit
+  // access to the quote). This is what makes it accepted.
+  app.post<{ Params: { id: string }; Body: { name?: unknown; signature_png?: unknown } }>(
+    '/v1/objects/quotes/:id/countersign',
+    { bodyLimit: 320 * 1024 },
+    async (req) => {
+      const p = req.principal!;
+      requireScope(p, 'write');
+      const b = req.body ?? {};
+      const name = text(b.name, 'name', 200, true)!;
+      const signature = readSignature(b.signature_png);
+      const obj = await getObject('quotes');
+      await withTx({ actor: p.actor }, async (client) => {
+        const { rows } = await client.query(
+          "select status[1] as status from crm.pc_0022 where pc_0022_id = $1 and row_status = 'active' for update",
+          [req.params.id]
+        );
+        if (!rows[0]) throw notFound('quote not found');
+        if (rows[0].status !== 'pending_countersign') throw new ApiError(409, 'this quote is not waiting for a countersignature', 'conflict');
+        const now = new Date().toISOString();
+        await updateRecord(client, obj, p, req.params.id, {
+          status: 'accepted',
+          responded_at: now,
+          countersigner_name: name,
+          countersigner_signature: signature,
+          countersigned_at: now
+        });
+      });
+      return { ok: true };
+    }
+  );
 
   app.get<{ Params: { key: string } }>('/v1/public/forms/:key', async (req, reply) => {
     rateLimit(req, 'form-read', 120);

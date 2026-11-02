@@ -7,7 +7,16 @@ import type { PublicQuote } from '../routes/public.js';
 const money = (v: number | null, currency: string | null) =>
   v === null ? '' : new Intl.NumberFormat('en-US', { style: 'currency', currency: currency ?? 'USD' }).format(v);
 
-const STATUS_LABEL: Record<string, string> = { sent: 'Open', accepted: 'Accepted', rejected: 'Declined', expired: 'Expired' };
+const STATUS_LABEL: Record<string, string> = {
+  sent: 'Open', pending_countersign: 'Awaiting countersignature', accepted: 'Accepted', rejected: 'Declined', expired: 'Expired'
+};
+
+const day = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
+// signing times are shown in UTC, to the second: 2026-11-02 14:05:33 UTC
+const utc = (iso: string) => `${new Date(iso).toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+
+// "data:image/png;base64,..." -> PNG bytes pdfkit can draw
+const pngBytes = (dataUrl: string) => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
 
 export function renderQuotePdf(q: PublicQuote, theme: Record<string, string>): Promise<Buffer> {
   const accent = theme.primary ?? '#1f7a74';
@@ -79,10 +88,35 @@ export function renderQuotePdf(q: PublicQuote, theme: Record<string, string>): P
 
   if (q.status === 'accepted' || q.status === 'rejected') {
     doc.moveDown(1.5).font('Helvetica').fontSize(10).fillColor('#555555');
-    const when = q.responded_at ? new Date(q.responded_at).toISOString().slice(0, 10) : '';
+    const when = day(q.responded_at);
     doc.text(`${q.status === 'accepted' ? 'Accepted' : 'Declined'} by ${q.responder_name ?? 'the customer'}${when ? ` on ${when}` : ''}.`, { width });
     if (q.status === 'rejected' && q.decline_reason) doc.text(`Reason: ${q.decline_reason}`, { width });
   }
+
+  // signatures: the customer's (with the fields they filled in), then staff
+  const signature = (title: string, png: string, who: string | null, when: string | null) => {
+    if (doc.y > doc.page.height - 200) doc.addPage();
+    doc.moveDown(1).font('Helvetica-Bold').fontSize(11).fillColor('#111111').text(title, left, doc.y, { width });
+    doc.moveDown(0.3);
+    try {
+      doc.image(pngBytes(png), left, doc.y, { fit: [260, 80] });
+      doc.y += 84;
+    } catch {
+      doc.font('Helvetica').fontSize(10).fillColor('#555555').text('(signature image could not be read)', left, doc.y, { width });
+    }
+    rule();
+    doc.font('Helvetica').fontSize(10).fillColor('#555555')
+      .text([who, when ? `Signed ${utc(when)}` : null].filter(Boolean).join(', '), left, doc.y, { width });
+  };
+  if (q.customer_signature) {
+    signature('Customer signature', q.customer_signature, q.responder_name, q.customer_signed_at);
+    const answered = q.signing_fields.filter((f) => q.signed_fields?.[f.key]);
+    if (answered.length) {
+      doc.moveDown(0.5);
+      for (const f of answered) doc.text(`${f.label}: ${q.signed_fields![f.key]}`, left, doc.y, { width });
+    }
+  }
+  if (q.countersigner_signature) signature('Countersignature', q.countersigner_signature, q.countersigner_name, q.countersigned_at);
 
   doc.end();
   return done;

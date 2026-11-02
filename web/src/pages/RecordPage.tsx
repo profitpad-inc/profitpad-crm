@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { displayName, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { PublicLinkCard } from '../components/PublicLinkCard';
+import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { FormBuilder } from '../components/FormBuilder';
 
 interface Link_ {
@@ -38,13 +39,14 @@ const ACTIVITY_PROPS: Record<string, string[]> = {
   tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'body', 'created_at'],
   form_submissions: ['name', 'submitted_at', 'summary', 'submission_values', 'created_at'],
   // not activities, but read along: quote responses show in the stream, lines in their card
-  quotes: ['status', 'responded_at', 'responder_name', 'responder_email', 'decline_reason'],
+  quotes: ['status', 'responded_at', 'responder_name', 'responder_email', 'decline_reason',
+    'customer_signed_at', 'requires_countersign', 'countersigned_at', 'countersigner_name'],
   lines: ['quantity', 'amount']
 };
-// Shown elsewhere on the page (builder, answers, link card) rather than as raw values
+// Shown elsewhere on the page (builder, answers, link and signing cards) rather than as raw values
 const HIDDEN_PROPS: Record<string, string[]> = {
   forms: ['definition', 'public_key'],
-  quotes: ['public_key'],
+  quotes: ['public_key', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
   form_submissions: ['summary', 'submission_values']
 };
 
@@ -171,6 +173,7 @@ export function RecordPage() {
 
           <aside className="record-right">
             {(object === 'quotes' || object === 'forms') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
+            {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
             {cards.map((o) => (
               <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />
             ))}
@@ -292,15 +295,18 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A customer accepting or declining a quote (on the quote's page and on
-  // the pages of records linked to it), taken from the quote's responded_* values.
+  // A customer accepting, signing or declining a quote (on the quote's page
+  // and on the pages of records linked to it), taken from the quote's
+  // responded_* values, or customer_signed_at while it awaits a countersignature.
   const quotes = [
     ...(object === 'quotes' ? [record] : []),
     ...(associated.find((a) => a.object === 'quotes')?.records.map((r) => r.record) ?? [])
   ];
-  const quoteEvents = tab !== 'activity' ? [] : quotes
-    .filter((q) => typeof q.properties.responded_at === 'string' && ['accepted', 'rejected'].includes(String(q.properties.status)))
-    .map((q) => ({ object: 'quotes', record: q, at: String(q.properties.responded_at), quoteResponse: true }));
+  const quoteEvents = tab !== 'activity' ? [] : quotes.flatMap((q) => {
+    const status = String(q.properties.status);
+    const at = status === 'pending_countersign' ? q.properties.customer_signed_at : ['accepted', 'rejected'].includes(status) ? q.properties.responded_at : null;
+    return typeof at === 'string' ? [{ object: 'quotes', record: q, at, quoteResponse: true }] : [];
+  });
 
   const items = [
     ...associated
@@ -352,19 +358,23 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
             const Icon = objectIcon(o);
             const p = r.properties;
             if (quoteResponse) {
-              const accepted = p.status === 'accepted';
+              const pending = p.status === 'pending_countersign';
+              const accepted = pending || p.status === 'accepted';
+              const verb = pending ? 'signed' : accepted ? 'accepted' : 'declined';
               return (
                 <Link key={`quote-response-${r.id}`} to={`/objects/quotes/${r.id}`} className="activity-item">
                   <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={16} strokeWidth={1.75} /></span>
                   <div className="activity-body">
                     <div className="activity-head">
-                      <strong>Quote {accepted ? 'accepted' : 'declined'}</strong>
+                      <strong>Quote {verb}</strong>
                       <span className="muted small">Quote · {when(at)}</span>
                     </div>
                     <div className="activity-text">
-                      {recordName(r)} {accepted ? 'accepted' : 'declined'} by {String(p.responder_name ?? 'the customer')}
+                      {recordName(r)} {verb} by {String(p.responder_name ?? 'the customer')}
                       {p.responder_email ? ` (${String(p.responder_email)})` : ''}
                     </div>
+                    {pending ? <div className="small muted">Awaiting countersignature</div> : null}
+                    {!pending && accepted && p.countersigner_name ? <div className="small muted">Countersigned by {String(p.countersigner_name)}</div> : null}
                     {!accepted && p.decline_reason ? <div className="small muted">Reason: {String(p.decline_reason)}</div> : null}
                   </div>
                 </Link>
