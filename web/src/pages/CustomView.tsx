@@ -38,8 +38,10 @@ function parseHash(hash: string): { slug: string; params: Params } {
   return { slug, params };
 }
 
-// What a view asks to change, in words for the confirmation (values cut short)
-function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords', args: unknown[]): { title: string; lines: string[] } {
+type Ask = { title: string; lines: string[]; send?: boolean };
+
+// What a view asks to change or send, in words for the confirmation (values cut short)
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration', args: unknown[]): Ask {
   const short = (v: unknown) => {
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 79) + '…' : s;
@@ -49,6 +51,11 @@ function describeChange(label: (o: string) => string, method: 'createRecord' | '
     return [...entries.slice(0, 12).map(([k, x]) => `${k}: ${x === null ? '(cleared)' : short(x)}`), ...(entries.length > 12 ? [`and ${entries.length - 12} more`] : [])];
   };
   const obj = String(args[0] ?? '');
+  if (method === 'callIntegration') {
+    const data = args[1];
+    const lines = data === null || data === undefined ? ['(no data)'] : typeof data === 'object' && !Array.isArray(data) ? props(data) : [short(data)];
+    return { title: `Send to ${label(obj)}`, lines, send: true };
+  }
   if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
   if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
   return { title: 'Link two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `to ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
@@ -77,9 +84,13 @@ export function CustomView() {
   const [busy, setBusy] = useState(false);
   // a view's record changes wait for the viewer's yes (or "don't ask again"
   // for this view while the page is open)
-  const [asking, setAsking] = useState<{ title: string; lines: string[]; resolve: (ok: boolean) => void } | null>(null);
+  const [asking, setAsking] = useState<(Ask & { resolve: (ok: boolean) => void }) | null>(null);
   const [dontAsk, setDontAsk] = useState(false);
   const allowWrites = useRef(false);
+  // the same for sending to integrations, asked separately
+  const allowSends = useRef(false);
+  // integration labels for the confirmation, loaded on a view's first call
+  const integrationLabels = useRef<Map<string, string> | null>(null);
   // the frame loads once; a second load means the view navigated it away
   const frameLoads = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -107,6 +118,8 @@ export function CustomView() {
 
   useEffect(() => {
     allowWrites.current = false;
+    allowSends.current = false;
+    integrationLabels.current = null;
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
@@ -158,14 +171,14 @@ export function CustomView() {
     api('POST', `/v1/views/${encodeURIComponent(s)}/errors${d ? '?draft=1' : ''}`, { errors: errors.slice(0, 20) }).catch(() => undefined);
   }, []);
 
-  const confirmWrite = useCallback((change: { title: string; lines: string[] }) => {
-    if (allowWrites.current) return Promise.resolve(true);
+  const confirmWrite = useCallback((change: Ask) => {
+    if ((change.send ? allowSends : allowWrites).current) return Promise.resolve(true);
     setDontAsk(false);
     return new Promise<boolean>((resolve) => setAsking({ ...change, resolve }));
   }, []);
 
   function answer(ok: boolean) {
-    if (ok && dontAsk) allowWrites.current = true;
+    if (ok && dontAsk && asking) (asking.send ? allowSends : allowWrites).current = true;
     asking?.resolve(ok);
     setAsking(null);
   }
@@ -233,6 +246,16 @@ export function CustomView() {
         const label = (o: string) => objectByName.get(o)?.label_plural ?? o;
         if (!(await confirmWrite(describeChange(label, method, args)))) throw new Error('The viewer did not allow this change');
         break;
+      }
+      case 'callIntegration': {
+        const key = str(args[0], 'integration key');
+        if (!integrationLabels.current) {
+          const list = await api<{ results: { key: string; label: string }[] }>('GET', '/v1/view-integrations').catch(() => ({ results: [] }));
+          integrationLabels.current = new Map(list.results.map((i) => [i.key, i.label]));
+        }
+        const labels = integrationLabels.current;
+        if (!(await confirmWrite(describeChange((k) => labels.get(k) ?? k, method, args)))) throw new Error('The viewer did not allow sending this');
+        return api('POST', `/v1/views/${str(s, 'slug')}/integrations/${key}${d ? '?draft=1' : ''}`, { data: args[1] ?? null });
       }
     }
     switch (method) {
@@ -330,7 +353,7 @@ export function CustomView() {
       </div>
       {asking && (
         <Modal
-          title="Allow this change?"
+          title={asking.send ? 'Allow sending this?' : 'Allow this change?'}
           onClose={() => answer(false)}
           footer={
             <>
@@ -342,7 +365,7 @@ export function CustomView() {
             </>
           }
         >
-          <p className="muted small" style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to make this change as you:</p>
+          <p className="muted small" style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to {asking.send ? 'send this as you' : 'make this change as you'}:</p>
           <p style={{ fontWeight: 500 }}>{asking.title}</p>
           {asking.lines.length > 0 && <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{asking.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
         </Modal>

@@ -109,6 +109,9 @@ export const createRecord = (object: string, properties: Record<string, unknown>
 export const updateRecord = (object: string, id: string, properties: Record<string, unknown>) =>
   call<{ id: string; properties: Record<string, unknown> }>('updateRecord', [object, id, properties]);
 export const linkRecords = (object: string, id: string, toObject: string, toId: string) => call<void>('linkRecords', [object, id, toObject, toId]);
+// Sends data to an integration an admin set up (an n8n webhook, say); the
+// API makes the request and resolves with the endpoint's answer.
+export const callIntegration = <T = unknown>(key: string, data?: unknown) => call<{ status: number; data: T }>('callIntegration', [key, data ?? null]);
 
 // ---- formatters ---------------------------------------------------------------------
 

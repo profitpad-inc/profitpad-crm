@@ -23,6 +23,7 @@ import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
 import { BRAND_PATHS, brandRoutes } from './brand.js';
 import { fileRoutes, startFileSweeper } from './files.js';
 import { viewRoutes } from './routes/views.js';
+import { integrationRoutes } from './routes/integrations.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -196,6 +197,7 @@ export async function buildApp() {
   await app.register(brandRoutes);
   await app.register(fileRoutes);
   await app.register(viewRoutes);
+  await app.register(integrationRoutes);
   return app;
 }
 

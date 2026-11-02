@@ -260,12 +260,16 @@ interface Choice {
   percent: string;
 }
 
+// closed stages have a fixed chance of winning: won 100%, lost 0%
 const choiceDetails = (c: Choice) => ({
   parent_values: c.parent_values,
   is_closed: c.is_closed || c.is_won,
   is_won: c.is_won,
-  probability: c.percent.trim() === '' ? null : Number(c.percent) / 100
+  probability: c.is_won ? 1 : c.is_closed ? 0 : c.percent.trim() === '' ? null : Number(c.percent) / 100
 });
+
+type Outcome = 'open' | 'won' | 'lost';
+const outcomeOf = (c: Choice): Outcome => (c.is_won ? 'won' : c.is_closed ? 'lost' : 'open');
 
 const hasDetails = (o: DropdownOption) => !!(o.parent_values?.length || o.is_closed || o.is_won || (o.probability ?? null) !== null);
 
@@ -365,7 +369,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     setBusy(true);
     setError(null);
     const base = `/v1/schema/${object}/properties`;
-    const bad = stages ? choices.find((c) => c.percent.trim() !== '' && !(Number(c.percent) >= 0 && Number(c.percent) <= 100)) : undefined;
+    const bad = stages ? choices.find((c) => !c.is_closed && c.percent.trim() !== '' && !(Number(c.percent) >= 0 && Number(c.percent) <= 100)) : undefined;
     if (bad) {
       setError(`The chance of winning for ${bad.label || 'a choice'} must be a number from 0 to 100.`);
       setBusy(false);
@@ -626,7 +630,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
             {bool('single_value') && (
               <div className="checks">
                 <label>
-                  <input type="checkbox" checked={stages} onChange={(e) => setStages(e.target.checked)} /> Stage details: closed, won and chance of winning per choice
+                  <input type="checkbox" checked={stages} onChange={(e) => setStages(e.target.checked)} /> Stage details: open or closed, and chance of winning per choice
                 </label>
                 {!stages && property?.dropdown_options?.some(hasDetails) && (
                   <p className="muted small child">Saving clears the stage details these choices have now.</p>
@@ -668,11 +672,27 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                     <button className="icon-btn" onClick={() => setChoices((cs) => cs.filter((_, j) => j !== i))} aria-label="Remove choice"><Trash2 size={14} /></button>
                     {stages && bool('single_value') && (
                       <div className="choice-details small">
-                        <label><input type="checkbox" checked={c.is_closed || c.is_won} disabled={c.is_won} onChange={(e) => updateChoice(i, { is_closed: e.target.checked })} /> Closed</label>
-                        <label><input type="checkbox" checked={c.is_won} onChange={(e) => updateChoice(i, { is_won: e.target.checked, is_closed: e.target.checked || c.is_closed })} /> Won</label>
+                        <select
+                          value={outcomeOf(c)}
+                          aria-label="Stage outcome"
+                          onChange={(e) => {
+                            const o = e.target.value as Outcome;
+                            updateChoice(i, { is_closed: o !== 'open', is_won: o === 'won', percent: o === 'won' ? '100' : o === 'lost' ? '0' : '' });
+                          }}
+                        >
+                          <option value="open">Open</option>
+                          <option value="won">Closed won</option>
+                          <option value="lost">Closed lost</option>
+                        </select>
                         <label>
                           Chance of winning
-                          <input type="number" min={0} max={100} step={1} value={c.percent} placeholder="--" onChange={(e) => updateChoice(i, { percent: e.target.value })} aria-label="Chance of winning in percent" />%
+                          <input
+                            type="number" min={0} max={100} step={1} placeholder="--" aria-label="Chance of winning in percent"
+                            value={c.is_won ? '100' : c.is_closed ? '0' : c.percent}
+                            disabled={c.is_closed}
+                            title={c.is_closed ? 'Closed won is always 100%, closed lost always 0%' : undefined}
+                            onChange={(e) => updateChoice(i, { percent: e.target.value })}
+                          />%
                         </label>
                         {parent && parentChoices.length > 0 && (
                           <span className="choice-parents">

@@ -735,6 +735,7 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .choice-details label { display: inline-flex; align-items: center; gap: 5px; }
 .choice-details input { flex: none; }
 .choice-details input[type='number'] { width: 64px; }
+.choice-details select { width: auto; flex: none; padding-top: 4px; padding-bottom: 4px; }
 .choice-parents { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .calc-test { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 8px; }
 .calc-test-title { font-weight: 500; font-size: 13px; color: var(--muted-text); }

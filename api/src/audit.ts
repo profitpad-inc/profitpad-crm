@@ -36,6 +36,9 @@ export type SecurityEvent =
   | 'payments.connected'
   | 'payments.onboarding_link'
   | 'payments.removed'
+  | 'integration.created'
+  | 'integration.updated'
+  | 'integration.deleted'
   | 'export';
 
 export interface EventInfo {

@@ -15,7 +15,7 @@ export interface ViewInit {
   view: { id: string; name: string | null; slug: string; draft: boolean };
 }
 
-export type BridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords';
+export type BridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration';
 
 // Where the frame sits in the CRM page's visible area, in frame pixels:
 // scrollTop is how much of the frame is scrolled out of view above,
@@ -27,7 +27,7 @@ export interface Viewport {
 
 // What went wrong while the view ran; the page sends these to the API.
 export interface RuntimeError {
-  kind: 'crash' | 'error' | 'console' | 'query' | 'start';
+  kind: 'crash' | 'error' | 'console' | 'query' | 'start' | 'integration';
   message: string;
   detail?: string;
   width?: number;

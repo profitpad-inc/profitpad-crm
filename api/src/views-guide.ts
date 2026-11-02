@@ -7,7 +7,7 @@ import { MAX_QUERIES, MAX_SOURCE, PARAM_TYPES, ROW_CAP, VIEW_MODULES, parseQueri
 // AI needs to build a custom view. The runtime it describes is
 // web/src/view-runtime (kit.tsx); keep the two in step.
 
-export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'sql', 'schema', 'properties', 'examples'] as const;
+export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'sql', 'schema', 'properties', 'integrations', 'examples'] as const;
 export type GuideTopic = (typeof GUIDE_TOPICS)[number];
 
 const OVERVIEW = `# Custom views
@@ -29,7 +29,8 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 ## What views can and cannot do
 - Read data only through the view's own queries (SQL over the view_data schema). Every query runs as the person viewing, with row-level security: they only ever see records their roles let them see, and a query that reads a property their roles hide is refused for them.
 - Change data only through the record actions in @pcrm/view (createRecord, updateRecord, linkRecords), which use the viewer's own permissions.
-- No network access (fetch, XHR, websockets, external scripts, images, fonts or stylesheets are all blocked; images must be data: or blob: URLs, or SVG drawn in JSX), and a view that navigates its own frame to another page is stopped, no imports besides ${VIEW_MODULES.filter((m) => m !== 'react/jsx-runtime').join(', ')}, no localStorage or cookies (the view runs in a sandboxed frame with no origin of its own). Keep state in React or in the address params (useParams / setParams).
+- Talk to outside services (an n8n webhook that posts to Slack, say) only through integrations an admin set up: callIntegration(key, data) (topic "integrations", list_view_integrations).
+- No direct network access (fetch, XHR, websockets, external scripts, images, fonts or stylesheets are all blocked; images must be data: or blob: URLs, or SVG drawn in JSX), and a view that navigates its own frame to another page is stopped, no imports besides ${VIEW_MODULES.filter((m) => m !== 'react/jsx-runtime').join(', ')}, no localStorage or cookies (the view runs in a sandboxed frame with no origin of its own). Keep state in React or in the address params (useParams / setParams).
 - Views cannot create objects. Properties and dropdown options can be created, relabeled and archived with the property tools (topic "properties"), but always ask the admin before changing the CRM's setup. Nothing can be deleted through these tools; deletes are done by an admin in the CRM.
 - Audience: "admins" (default) or "everyone". Even with "everyone", people only see rows their roles allow.
 
@@ -64,6 +65,7 @@ Anything else fails to save.
 - navigate(path): goes to a CRM path, e.g. '/objects/contacts' or '/view/#other-view'.
 - setParams({ key: value }): merges into the address params (undefined or '' removes one). Use it for filters and tabs so links and refreshes keep them.
 - createRecord(object, properties, associations?), updateRecord(object, id, properties), linkRecords(object, id, toObject, toId): change data with the viewer's permissions. The CRM first asks the viewer to allow each change (they can tick "don't ask again on this page"), so call these only from a button the viewer clicked, never on load. Property values follow the CRM API (dropdowns take api_values). They reject with an Error whose message explains why (including "The viewer did not allow this change"); show it. Call refresh() on the affected queries afterwards.
+- callIntegration(key, data?): sends data to an outside service an admin set up (topic "integrations"). Resolves with { status, data } (the service's answer, parsed when it is JSON). Like record changes, the viewer is asked to allow each send, so call it only from a click.
 
 ## Errors and size
 - Show query errors (error is an Error or null); the ErrorBox and Table components do this for you.
@@ -184,9 +186,69 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 - dropdown: single_value, allow_user_add, auto_append_users (users as options), default_value (an option value; never empty), parent_property (another single-value dropdown on the same object that this one depends on, like stage on pipeline). A yes/no is a single-value dropdown with options true and false.
 
 ## Stage details on options
-Dropdown options can carry details, set with add_dropdown_option or update_dropdown_option: parent_values (values of the dropdown's parent_property this option belongs to, e.g. the pipelines a stage is in; empty = all), is_closed, is_won (also makes it closed) and probability (0 to 1). describe_object shows them where set; views read them from view_data.property_options. Deal stages start with stage under pipeline, closed_won closed and won, closed_lost closed. Ask the admin before changing them: reports and views read them.
+Dropdown options can carry details, set with add_dropdown_option or update_dropdown_option: parent_values (values of the dropdown's parent_property this option belongs to, e.g. the pipelines a stage is in; empty = all), is_closed, is_won (also makes it closed) and probability (0 to 1, for open options; closed won is always 1 and closed lost always 0, set automatically, and a different value is refused). Settings shows these as Open, Closed won or Closed lost. describe_object shows them where set; views read them from view_data.property_options. Deal stages start with stage under pipeline, closed_won closed and won, closed_lost closed. Ask the admin before changing them: reports and views read them.
 - date (a calendar day), datetime (timezone display option), file (max_files).
 - calculation: calc_sql is one SQL expression over the current record r (a row of crm.<object>), output type text, number, date or datetime. It may read crm, reporting and integrations, must return one value per record, and must run in under 1 second. Try it with test_calculation first.`;
+
+const INTEGRATIONS = `# Integrations
+
+Views have no network access of their own. To reach an outside service (an n8n workflow that posts to Slack, sends an email, calls another API), an admin adds an integration in Settings, View integrations: a key, a name, a description, the endpoint's URL and optionally a secret header. The CRM's server makes the request, so there is no CORS to deal with and the secret never reaches the browser.
+
+- list_view_integrations shows the ones that exist (key, label, description, audience, enabled). You cannot add or change them. If the view needs one that is missing, tell the admin the key to use, what it should point at, and the data it will receive.
+- In the view: import { callIntegration } from '@pcrm/view'; then await callIntegration('slack-message', { channel: '#sales', text }) from a button's onClick.
+- The viewer first sees "Allow sending this?" with the data listed (they can tick "Don't ask again on this page"). Never call it on load or in an effect.
+- It resolves with { status, data }: data is the service's answer (parsed JSON, or text). It rejects with an Error whose message explains why: "The viewer did not allow sending this", the service's HTTP error ("Slack message answered HTTP 500: ..."), a timeout (15 seconds), or the viewer not being allowed to use it (audience "admins" means only admins can). Show the message, and disable the button while it runs.
+- Limits: data up to 250 KB of JSON, 30 calls a minute per person per integration, answers up to 1 MB.
+- Failed calls show up in get_view_runtime_errors as kind "integration".
+
+## What the service receives
+A JSON POST:
+\`\`\`json
+{
+  "integration": "slack-message",
+  "data": { "channel": "#sales", "text": "Hello" },
+  "view": { "slug": "deal-desk", "name": "Deal desk", "draft": false },
+  "user": { "id": "...", "name": "Pat Lee", "email": "pat@example.com" },
+  "sent_at": "2026-11-02T18:00:00.000Z"
+}
+\`\`\`
+plus the header X-PCRM-Integration: <key> and the secret header if the admin set one. In n8n: a Webhook node (POST, Header Auth with that header) reads body.data; end with "Respond to Webhook" (or respond immediately) so the view gets an answer quickly.
+
+## Example
+\`\`\`tsx
+import { useState } from 'react';
+import { Page, Card, Stack, TextInput, Button, ErrorBox, callIntegration } from '@pcrm/view';
+
+export default function SlackNote() {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  async function send() {
+    setBusy(true); setError(null); setSent(false);
+    try {
+      await callIntegration('slack-message', { text });
+      setText(''); setSent(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Page title="Message the team">
+      <Card>
+        <Stack>
+          <TextInput value={text} onChange={setText} placeholder="What should Slack hear?" />
+          <Button variant="primary" disabled={busy || !text.trim()} onClick={send}>{busy ? 'Sending…' : 'Send to Slack'}</Button>
+          {sent && <span className="muted small">Sent.</span>}
+          <ErrorBox error={error} />
+        </Stack>
+      </Card>
+    </Page>
+  );
+}
+\`\`\``;
 
 // ---- dynamic topics ---------------------------------------------------------------
 
@@ -258,6 +320,7 @@ export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', ob
     case 'sql': return SQL;
     case 'schema': return schemaTopic(p, object);
     case 'properties': return PROPERTIES;
+    case 'integrations': return INTEGRATIONS;
     case 'examples': return examplesTopic();
   }
 }

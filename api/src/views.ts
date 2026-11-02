@@ -519,7 +519,7 @@ export function viewSummary(v: ViewRow) {
 
 // ---- runtime errors (migration 0035) ----------------------------------------------
 
-export const ERROR_KINDS = ['crash', 'error', 'console', 'query', 'start'] as const;
+export const ERROR_KINDS = ['crash', 'error', 'console', 'query', 'start', 'integration'] as const;
 export type ErrorKind = (typeof ERROR_KINDS)[number];
 const MAX_ERRORS_PER_POST = 20;
 const KEEP_ERRORS = 200;

@@ -23,6 +23,7 @@ import {
 } from './views.js';
 import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { findIcons } from './icons.js';
+import { listIntegrations } from './integrations.js';
 
 // MCP server (Streamable HTTP at /mcp) for AI clients such as Claude. Callers
 // need an OAuth access token issued for this resource (oauth.ts); it acts as
@@ -367,6 +368,14 @@ function registerAdminTools(server: McpServer, p: Principal) {
     annotations: { readOnlyHint: true }
   }, async ({ query }) => run(async () => findIcons(query)));
 
+  server.registerTool('list_view_integrations', {
+    title: 'List view integrations',
+    description: 'Lists the integrations views can call with callIntegration(key, data): outside endpoints such as n8n webhooks that an admin set up in Settings, View integrations (key, label, description, audience, enabled). You cannot add or change them; if the view needs one that is missing, tell the admin what to add (the key and the data it will receive). See view_guide topic integrations.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => (await listIntegrations(p)).map((i) => ({
+    key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: 'enabled' in i ? i.enabled : true
+  }))));
+
   server.registerTool('try_view_query', {
     title: 'Try a view query',
     description: 'Runs SQL that is not saved anywhere, with your own access, under the same rules as view queries (view_guide topic sql). First 50 rows.',
@@ -478,9 +487,9 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   const detailsArgs = {
     parent_values: z.array(z.string()).optional().describe('Values of the dropdown\'s parent_property this choice belongs to (e.g. the pipelines a stage is in); [] for all'),
-    is_closed: z.boolean().optional().describe('A closed stage (won or lost)'),
-    is_won: z.boolean().optional().describe('A won stage; also makes it closed'),
-    probability: z.number().min(0).max(1).nullable().optional().describe('Chance of winning, 0 to 1 (null clears)')
+    is_closed: z.boolean().optional().describe('A closed stage (won or lost); closed lost is always probability 0'),
+    is_won: z.boolean().optional().describe('A won stage; also makes it closed and always probability 1'),
+    probability: z.number().min(0).max(1).nullable().optional().describe('Chance of winning for open stages, 0 to 1 (null clears); closed stages set it themselves')
   };
 
   server.registerTool('add_dropdown_option', {
