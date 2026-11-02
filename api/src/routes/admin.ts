@@ -4,12 +4,62 @@ import { stringify as toCsv } from 'csv-stringify/sync';
 import type pg from 'pg';
 import { pool, quoteIdent, withTx, type Db } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
-import { generateKey, hashKey, noneHidden, requireObjectPermission, requireScope, sharingClauses, type Scope, type SharingRule } from '../auth.js';
+import {
+  generateKey, hashKey, noneHidden, requireObjectPermission, requireRecentSignIn, requireScope, sharingClauses, USER_CAN_SIGN_IN,
+  type Principal, type Scope, type SharingRule
+} from '../auth.js';
+import { logEvent } from '../audit.js';
 import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord } from '../records.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { compileFilterGroups, type FilterGroup, type SearchRequest } from '../search.js';
 
 const SCOPES: Scope[] = ['read', 'write', 'schema', 'admin'];
+
+// New API keys belong to a user and expire: 90 days unless the creator picks
+// one of the other lengths (or a date up to a year away).
+export const KEY_EXPIRY_DAYS = [90, 180, 365] as const;
+const DAY = 86400_000;
+
+// Changes to who can do what: admin only, and from a browser only with a
+// recent sign-in.
+function requireAdminChange(p: Principal): void {
+  requireScope(p, 'admin');
+  requireRecentSignIn(p);
+}
+
+function keyExpiry(b: { expires_in_days?: number; expires_at?: string }): Date {
+  if (b.expires_at !== undefined && b.expires_in_days !== undefined) throw badRequest('send expires_in_days or expires_at, not both');
+  if (b.expires_at !== undefined) {
+    const at = new Date(b.expires_at);
+    if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) throw badRequest('expires_at must be a future date');
+    if (at.getTime() > Date.now() + 366 * DAY) throw badRequest('API keys can last at most a year');
+    return at;
+  }
+  const days = b.expires_in_days ?? 90;
+  if (!(KEY_EXPIRY_DAYS as readonly number[]).includes(days)) throw badRequest(`expires_in_days must be one of ${KEY_EXPIRY_DAYS.join(', ')}`);
+  return new Date(Date.now() + days * DAY);
+}
+
+// A key acts as its user, so the user must be able to sign in; an admin key
+// needs a user with an admin role.
+async function checkKeyUser(userId: unknown, scopes: Scope[]): Promise<string> {
+  if (typeof userId !== 'string' || !/^[0-9a-f]{10}$/.test(userId)) throw badRequest('user_id is required: every API key belongs to a user');
+  const { rows } = await pool.query(
+    `select ${USER_CAN_SIGN_IN('u')} as ok,
+       exists (select 1 from auth.role_assignments a join auth.roles r on r.id = a.role_id
+               where r.is_admin and (a.user_id = u.pc_0000_id or a.team_id in (
+                 select other_record_id from crm.associations_both
+                 where object_type_id = 'pc_0000' and record_id = u.pc_0000_id and other_object_type_id = 'pc_0006'))) as admin
+     from crm.pc_0000 u where u.pc_0000_id = $1`,
+    [userId]
+  );
+  if (rows.length === 0) throw badRequest('user_id is not a user');
+  if (!rows[0].ok) throw badRequest('that user is archived or deactivated');
+  if (scopes.includes('admin') && !rows[0].admin) throw badRequest('the admin scope needs a user with an admin role');
+  return userId;
+}
+
+const KEY_COLUMNS = 'id, name, key_prefix, user_id, scopes, created_at, created_by, last_used_at, host(last_used_ip) as last_used_ip, expires_at, revoked_at, replaced_by';
 
 async function hasActiveAdmin(db: Db): Promise<boolean> {
   const { rows } = await db.query('select meta.has_active_admin() as ok');
@@ -134,35 +184,107 @@ export async function adminRoutes(app: FastifyInstance) {
     if (status === 'all') where = '';
     else if (status === 'inactive') where = ' where revoked_at is not null or (expires_at is not null and expires_at <= now())';
     else where = ' where revoked_at is null and (expires_at is null or expires_at > now())';
-    const { rows } = await pool.query(
-      `select id, name, key_prefix, user_id, scopes, created_at, created_by, last_used_at, expires_at, revoked_at
-       from auth.api_keys${where} order by id`
-    );
+    const { rows } = await pool.query(`select ${KEY_COLUMNS} from auth.api_keys${where} order by id`);
     return { results: rows };
   });
 
-  app.post<{ Body: { name: string; scopes: Scope[]; user_id?: string; expires_at?: string } }>('/v1/api-keys', async (req, reply) => {
+  app.post<{ Body: { name: string; scopes: Scope[]; user_id?: string; expires_in_days?: number; expires_at?: string } }>('/v1/api-keys', async (req, reply) => {
     const p = req.principal!;
-    requireScope(p, 'admin');
+    requireAdminChange(p);
     const b = req.body ?? ({} as never);
     if (!Array.isArray(b.scopes) || b.scopes.length === 0 || !b.scopes.every((s) => SCOPES.includes(s))) {
       throw badRequest(`scopes must be a non-empty subset of ${SCOPES.join(', ')}`);
     }
+    const userId = await checkKeyUser(b.user_id, b.scopes);
+    const expiresAt = keyExpiry(b);
     const { key, prefix } = generateKey();
     const { rows } = await pool.query(
       `insert into auth.api_keys (name, key_prefix, key_hash, user_id, scopes, expires_at, created_by)
        values ($1, $2, $3, $4, $5, $6, $7) returning id, name, key_prefix, user_id, scopes, expires_at`,
-      [b.name, prefix, hashKey(key), b.user_id ?? null, b.scopes, b.expires_at ?? null, p.actor]
+      [b.name, prefix, hashKey(key), userId, b.scopes, expiresAt, p.actor]
     );
+    await logEvent(req, 'api_key.created', { userId, target: { type: 'api_key', id: rows[0].id }, details: { name: b.name, prefix, scopes: b.scopes, expires_at: expiresAt } });
     reply.code(201);
     return { ...rows[0], key, note: 'store this key now; it is never shown again' };
   });
 
   app.delete<{ Params: { id: string } }>('/v1/api-keys/:id', async (req, reply) => {
-    requireScope(req.principal!, 'admin');
-    const { rowCount } = await pool.query('update auth.api_keys set revoked_at = now() where id = $1 and revoked_at is null', [req.params.id]);
-    if (!rowCount) throw notFound('api key not found or already revoked');
+    requireAdminChange(req.principal!);
+    const { rows } = await pool.query(
+      'update auth.api_keys set revoked_at = now() where id = $1 and revoked_at is null returning user_id, key_prefix',
+      [req.params.id]
+    );
+    if (!rows.length) throw notFound('api key not found or already revoked');
+    await logEvent(req, 'api_key.revoked', { userId: rows[0].user_id, target: { type: 'api_key', id: req.params.id }, details: { prefix: rows[0].key_prefix } });
     reply.code(204);
+  });
+
+  // Issues a replacement with the same name, user and scopes; the old key
+  // keeps working for grace_hours (default 24, 0 ends it now) so callers can
+  // switch over. A key without a user needs user_id here.
+  app.post<{ Params: { id: string }; Body: { grace_hours?: number; expires_in_days?: number; expires_at?: string; user_id?: string } }>(
+    '/v1/api-keys/:id/rotate',
+    async (req, reply) => {
+      const p = req.principal!;
+      requireAdminChange(p);
+      const b = req.body ?? {};
+      const grace = b.grace_hours ?? 24;
+      if (!Number.isInteger(grace) || grace < 0 || grace > 168) throw badRequest('grace_hours must be a whole number from 0 to 168');
+      const { rows: old } = await pool.query(
+        `select id, name, user_id, scopes from auth.api_keys
+         where id = $1 and revoked_at is null and replaced_by is null and (expires_at is null or expires_at > now())`,
+        [req.params.id]
+      );
+      if (!old.length) throw notFound('api key not found, revoked, expired or already rotated');
+      const userId = await checkKeyUser(old[0].user_id ?? b.user_id, old[0].scopes);
+      const expiresAt = keyExpiry(b);
+      const { key, prefix } = generateKey();
+      const created = await withTx({ actor: p.actor }, async (c) => {
+        const { rows } = await c.query(
+          `insert into auth.api_keys (name, key_prefix, key_hash, user_id, scopes, expires_at, created_by)
+           values ($1, $2, $3, $4, $5, $6, $7) returning id, name, key_prefix, user_id, scopes, expires_at`,
+          [old[0].name, prefix, hashKey(key), userId, old[0].scopes, expiresAt, p.actor]
+        );
+        await c.query(
+          `update auth.api_keys set replaced_by = $2,
+             expires_at = least(coalesce(expires_at, 'infinity'), now() + make_interval(hours => $3))
+           where id = $1`,
+          [old[0].id, rows[0].id, grace]
+        );
+        return rows[0];
+      });
+      await logEvent(req, 'api_key.rotated', {
+        userId, target: { type: 'api_key', id: old[0].id }, details: { replaced_by: created.id, prefix, grace_hours: grace, expires_at: expiresAt }
+      });
+      reply.code(201);
+      return { ...created, replaces: Number(old[0].id), key, note: 'store this key now; it is never shown again' };
+    }
+  );
+
+  // ---- Security log (migration 0019) ---------------------------------------
+  // Newest first; page with before=<id of the last event shown>.
+  app.get<{ Querystring: { limit?: string; before?: string; user_id?: string; event?: string } }>('/v1/security-events', async (req) => {
+    requireScope(req.principal!, 'admin');
+    const q = req.query;
+    const limit = Math.min(Math.max(Number(q.limit ?? 50) || 50, 1), 200);
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (q.before) { params.push(q.before); where.push(`e.id < $${params.length}`); }
+    if (q.user_id) { params.push(q.user_id); where.push(`e.user_id = $${params.length}`); }
+    // "api_key" matches api_key.created, api_key.revoked, ...
+    if (q.event) { params.push(q.event, `${q.event}.%`); where.push(`(e.event = $${params.length - 1} or e.event like $${params.length})`); }
+    params.push(limit);
+    const { rows } = await pool.query(
+      `select e.id, e.occurred_at, e.event, e.actor, e.user_id, host(e.ip) as ip, e.user_agent, e.target_type, e.target_id, e.details,
+         u.name as user_name, a.name as actor_name
+       from auth.security_events e
+       left join crm.pc_0000 u on u.pc_0000_id = e.user_id
+       left join crm.pc_0000 a on e.actor like 'user:%' and a.pc_0000_id = substr(e.actor, 6)
+       ${where.length ? `where ${where.join(' and ')}` : ''}
+       order by e.id desc limit $${params.length}`,
+      params
+    );
+    return { results: rows, next: rows.length === limit ? String(rows[rows.length - 1].id) : null };
   });
 
   // ---- Roles and permissions ---------------------------------------------
@@ -181,18 +303,19 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { name: string; description?: string; is_admin?: boolean; record_access?: 'own' | 'team' | 'all' } }>('/v1/roles', async (req, reply) => {
     const p = req.principal!;
-    requireScope(p, 'admin');
+    requireAdminChange(p);
     const b = req.body ?? ({} as never);
     const { rows } = await pool.query(
       'insert into auth.roles (name, description, is_admin, record_access, created_by) values ($1, $2, $3, $4, $5) returning *',
       [b.name, b.description ?? null, b.is_admin ?? false, b.record_access ?? 'all', p.actor]
     );
+    await logEvent(req, 'role.created', { target: { type: 'role', id: rows[0].id }, details: { name: rows[0].name, is_admin: rows[0].is_admin, record_access: rows[0].record_access } });
     reply.code(201);
     return rows[0];
   });
 
   app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; is_admin?: boolean; record_access?: string } }>('/v1/roles/:id', async (req) => {
-    requireScope(req.principal!, 'admin');
+    requireAdminChange(req.principal!);
     const b = req.body ?? {};
     const { rows } = await keepingAnAdmin(req.principal!.actor, (client) => client.query(
       `update auth.roles set name = coalesce($2, name), description = coalesce($3, description),
@@ -200,19 +323,21 @@ export async function adminRoutes(app: FastifyInstance) {
       [req.params.id, b.name ?? null, b.description ?? null, b.is_admin ?? null, b.record_access ?? null]
     ));
     if (rows.length === 0) throw notFound('role not found');
+    await logEvent(req, 'role.updated', { target: { type: 'role', id: req.params.id }, details: { changes: b } });
     return rows[0];
   });
 
   app.delete<{ Params: { id: string } }>('/v1/roles/:id', async (req, reply) => {
-    requireScope(req.principal!, 'admin');
-    await keepingAnAdmin(req.principal!.actor, (client) => client.query('delete from auth.roles where id = $1', [req.params.id]));
+    requireAdminChange(req.principal!);
+    const { rows } = await keepingAnAdmin(req.principal!.actor, (client) => client.query('delete from auth.roles where id = $1 returning name', [req.params.id]));
+    if (rows.length) await logEvent(req, 'role.deleted', { target: { type: 'role', id: req.params.id }, details: { name: rows[0].name } });
     reply.code(204);
   });
 
   app.put<{ Params: { id: string; object: string }; Body: { can_read?: boolean; can_create?: boolean; can_edit?: boolean; can_delete?: boolean } }>(
     '/v1/roles/:id/object-permissions/:object',
     async (req) => {
-      requireScope(req.principal!, 'admin');
+      requireAdminChange(req.principal!);
       const obj = await getObject(req.params.object);
       const b = req.body ?? {};
       const { rows } = await pool.query(
@@ -223,6 +348,10 @@ export async function adminRoutes(app: FastifyInstance) {
          returning *`,
         [req.params.id, obj.object_type_id, b.can_read ?? true, b.can_create ?? false, b.can_edit ?? false, b.can_delete ?? false]
       );
+      await logEvent(req, 'role.object_permission', {
+        target: { type: 'role', id: req.params.id },
+        details: { object: obj.api_name, read: rows[0].can_read, create: rows[0].can_create, edit: rows[0].can_edit, delete: rows[0].can_delete }
+      });
       return rows[0];
     }
   );
@@ -230,7 +359,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.put<{ Params: { id: string; object: string; property: string }; Body: { access: 'hidden' | 'read_only' | null } }>(
     '/v1/roles/:id/property-permissions/:object/:property',
     async (req) => {
-      requireScope(req.principal!, 'admin');
+      requireAdminChange(req.principal!);
       const obj = await getObject(req.params.object);
       const prop = getProperty(obj, req.params.property);
       if (!prop) throw notFound(`unknown property "${req.params.property}"`);
@@ -244,6 +373,7 @@ export async function adminRoutes(app: FastifyInstance) {
           [req.params.id, prop.pc_0002_id, access]
         );
       }
+      await logEvent(req, 'role.property_permission', { target: { type: 'role', id: req.params.id }, details: { object: obj.api_name, property: prop.api_name, access } });
       return { role_id: Number(req.params.id), property: prop.api_name, access };
     }
   );
@@ -256,7 +386,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules', async (req, reply) => {
     const p = req.principal!;
-    requireScope(p, 'admin');
+    requireAdminChange(p);
     const rule = await validateSharingRule(pool, req.body ?? {});
     const id = await withTx({ actor: p.actor }, async (c) => {
       const { rows } = await c.query(
@@ -267,13 +397,14 @@ export async function adminRoutes(app: FastifyInstance) {
       await saveSharingAssociations(c, rows[0].id, rule);
       return rows[0].id as string;
     });
+    await logEvent(req, 'sharing_rule.created', { target: { type: 'role', id: req.params.id }, details: { rule_id: id, ...req.body } });
     reply.code(201);
     return (await listSharingRules(pool, req.params.id, id))[0];
   });
 
   app.put<{ Params: { id: string; ruleId: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules/:ruleId', async (req) => {
     const p = req.principal!;
-    requireScope(p, 'admin');
+    requireAdminChange(p);
     const rule = await validateSharingRule(pool, req.body ?? {});
     await withTx({ actor: p.actor }, async (c) => {
       const { rowCount } = await c.query(
@@ -284,13 +415,15 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!rowCount) throw notFound('sharing rule not found');
       await saveSharingAssociations(c, Number(req.params.ruleId), rule);
     });
+    await logEvent(req, 'sharing_rule.updated', { target: { type: 'role', id: req.params.id }, details: { rule_id: req.params.ruleId, ...req.body } });
     return (await listSharingRules(pool, req.params.id, req.params.ruleId))[0];
   });
 
   app.delete<{ Params: { id: string; ruleId: string } }>('/v1/roles/:id/sharing-rules/:ruleId', async (req, reply) => {
-    requireScope(req.principal!, 'admin');
-    const { rowCount } = await pool.query('delete from auth.role_sharing_rules where role_id = $1 and id = $2', [req.params.id, req.params.ruleId]);
-    if (!rowCount) throw notFound('sharing rule not found');
+    requireAdminChange(req.principal!);
+    const { rows } = await pool.query('delete from auth.role_sharing_rules where role_id = $1 and id = $2 returning name', [req.params.id, req.params.ruleId]);
+    if (!rows.length) throw notFound('sharing rule not found');
+    await logEvent(req, 'sharing_rule.deleted', { target: { type: 'role', id: req.params.id }, details: { rule_id: req.params.ruleId, name: rows[0].name } });
     reply.code(204);
   });
 
@@ -306,20 +439,24 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string }; Body: { user_id?: string; team_id?: string } }>('/v1/roles/:id/assignments', async (req, reply) => {
-    requireScope(req.principal!, 'admin');
+    requireAdminChange(req.principal!);
     const b = req.body ?? {};
     const { rows } = await pool.query('insert into auth.role_assignments (role_id, user_id, team_id) values ($1, $2, $3) returning *', [
       req.params.id, b.user_id ?? null, b.team_id ?? null
     ]);
+    await logEvent(req, 'role.assigned', { userId: b.user_id ?? null, target: { type: 'role', id: req.params.id }, details: b.team_id ? { team_id: b.team_id } : {} });
     reply.code(201);
     return rows[0];
   });
 
   app.delete<{ Params: { id: string; assignmentId: string } }>('/v1/roles/:id/assignments/:assignmentId', async (req, reply) => {
-    requireScope(req.principal!, 'admin');
-    await keepingAnAdmin(req.principal!.actor, (client) =>
-      client.query('delete from auth.role_assignments where role_id = $1 and id = $2', [req.params.id, req.params.assignmentId])
+    requireAdminChange(req.principal!);
+    const { rows } = await keepingAnAdmin(req.principal!.actor, (client) =>
+      client.query('delete from auth.role_assignments where role_id = $1 and id = $2 returning user_id, team_id', [req.params.id, req.params.assignmentId])
     );
+    if (rows.length) {
+      await logEvent(req, 'role.unassigned', { userId: rows[0].user_id, target: { type: 'role', id: req.params.id }, details: rows[0].team_id ? { team_id: rows[0].team_id } : {} });
+    }
     reply.code(204);
   });
 
@@ -485,6 +622,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
       after = page.next ?? undefined;
     } while (after && records.length < 10000);
+    await logEvent(req, 'export', { target: { type: 'object', id: obj.api_name }, details: { rows: records.length, filters: req.body ?? {} } });
     reply.header('content-type', 'text/csv; charset=utf-8');
     reply.header('content-disposition', `attachment; filename="${obj.api_name}.csv"`);
     return toCsv(records, { header: true });

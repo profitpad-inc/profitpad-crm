@@ -17,15 +17,15 @@ export type ThemeKey = (typeof THEME_FIELDS)[number]['key'];
 export type Theme = Record<ThemeKey, string>;
 
 export const DEFAULT_THEME: Theme = {
-  primary: '#1f7a74',
-  sidebar_background: '#2f3133',
-  sidebar_text: '#eceef0',
-  sidebar_active: '#4a4d50',
+  primary: '#2445b8',
+  sidebar_background: '#1b2430',
+  sidebar_text: '#e6e9ee',
+  sidebar_active: '#2c3746',
   page_background: '#ffffff',
-  surface: '#f5f6f7',
-  text: '#1f2328',
-  muted_text: '#6b7280',
-  border: '#e2e4e8'
+  surface: '#f3f5f8',
+  text: '#18202b',
+  muted_text: '#5d6878',
+  border: '#dce1e8'
 };
 
 export function applyTheme(partial: Partial<Theme> | undefined): Theme {

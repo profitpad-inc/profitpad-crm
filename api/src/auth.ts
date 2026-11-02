@@ -42,6 +42,8 @@ export interface Principal {
   actor: string;
   // null means unrestricted (service key, or a user with an admin role)
   permissions: Permissions | null;
+  // set for a browser session: when its user signed in
+  session?: { id: string; signedInAt: Date };
 }
 
 declare module 'fastify' {
@@ -63,7 +65,46 @@ export function generateKey(): { key: string; prefix: string } {
 // CORS_ORIGINS=https://test-crm.profitpad.com,http://localhost:5173
 export const browserOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
+// Over https the session cookie carries the __Host- prefix, so browsers only
+// accept it from the API host itself (Secure, Path=/, no Domain): a sibling
+// *.profitpad.com site cannot set or overwrite it. Plain http (local dev)
+// cannot use the prefix.
 export const SESSION_COOKIE = 'pcrm_session';
+const HOST_SESSION_COOKIE = `__Host-${SESSION_COOKIE}`;
+
+export function setCookie(req: FastifyRequest, name: string, value: string, path: string, maxAge: number): string {
+  const secure = req.protocol === 'https' ? '; Secure' : '';
+  return `${name}=${encodeURIComponent(value)}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
+}
+
+export function sessionCookie(req: FastifyRequest, token: string, maxAge: number): string {
+  return setCookie(req, req.protocol === 'https' ? HOST_SESSION_COOKIE : SESSION_COOKIE, token, '/', maxAge);
+}
+
+export function readSessionToken(req: FastifyRequest): string | null {
+  return readCookie(req, req.protocol === 'https' ? HOST_SESSION_COOKIE : SESSION_COOKIE);
+}
+
+// Sessions end after a stretch without requests (idle) or a fixed time after
+// sign-in (max), whichever comes first; admins get shorter limits. Admin
+// changes (roles, API keys, sharing rules, sessions of others) also need a
+// sign-in within REAUTH_HOURS, see requireRecentSignIn.
+export const SESSION_POLICY = {
+  user: { idleHours: 7 * 24, maxHours: 30 * 24 },
+  admin: { idleHours: 24, maxHours: 7 * 24 }
+} as const;
+export const REAUTH_HOURS = 4;
+const HOUR = 3600_000;
+
+// When a session stops working, given when it signed in and was last used.
+export function sessionEndsAt(isAdmin: boolean, createdAt: Date, lastSeenAt: Date | null, expiresAt: Date): Date {
+  const policy = isAdmin ? SESSION_POLICY.admin : SESSION_POLICY.user;
+  return new Date(Math.min(
+    expiresAt.getTime(),
+    createdAt.getTime() + policy.maxHours * HOUR,
+    (lastSeenAt ?? createdAt).getTime() + policy.idleHours * HOUR
+  ));
+}
 
 // A user may sign in and act only while their record is active (not archived,
 // merged or deleted) and their Status is not "deactivated". `u` is crm.pc_0000.
@@ -83,22 +124,25 @@ export function readCookie(req: FastifyRequest, name: string): string | null {
 export async function authenticate(req: FastifyRequest): Promise<Principal> {
   const header = req.headers.authorization;
   if (!header) {
-    const session = readCookie(req, SESSION_COOKIE);
+    const session = readSessionToken(req);
     if (session) return authenticateSession(req, session);
   }
   const match = /^Bearer\s+(pcrm_[0-9a-f]{8}_[A-Za-z0-9_-]{43})$/.exec(header ?? '');
   if (!match) throw new ApiError(401, 'missing or malformed API key (Authorization: Bearer pcrm_...)', 'unauthorized');
   const { rows } = await pool.query(
-    `update auth.api_keys k set last_used_at = now()
+    `update auth.api_keys k set last_used_at = now(), last_used_ip = $2
      where key_hash = $1 and revoked_at is null and (expires_at is null or expires_at > now())
        and (user_id is null or exists (select 1 from crm.pc_0000 u where u.pc_0000_id = k.user_id and ${USER_CAN_SIGN_IN('u')}))
      returning id, name, key_prefix, scopes, user_id`,
-    [hashKey(match[1])]
+    [hashKey(match[1]), req.ip || null]
   );
   if (rows.length === 0) throw new ApiError(401, 'invalid, revoked or expired API key, or its user is deactivated', 'unauthorized');
   const row = rows[0];
   const scopes = new Set<Scope>(row.scopes);
-  const permissions = row.user_id && !scopes.has('admin') ? await loadPermissions(pool, row.user_id) : null;
+  const permissions = row.user_id ? await loadPermissions(pool, row.user_id) : null;
+  // a key never does more than its user: the admin scope of a user who no
+  // longer has an admin role is dropped, and their roles apply
+  if (permissions !== null) scopes.delete('admin');
   return {
     keyId: row.id,
     name: row.name,
@@ -123,21 +167,47 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
     }
   }
   const { rows } = await pool.query(
-    `select s.user_id from auth.sessions s join crm.pc_0000 u on u.pc_0000_id = s.user_id
+    `select s.id, s.user_id, s.created_at, s.last_seen_at, s.expires_at from auth.sessions s join crm.pc_0000 u on u.pc_0000_id = s.user_id
      where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and ${USER_CAN_SIGN_IN('u')}`,
     [hashKey(token)]
   );
   if (rows.length === 0) throw new ApiError(401, 'session expired, signed out, or user deactivated', 'unauthorized');
-  const userId: string = rows[0].user_id;
+  const s = rows[0];
+  const userId: string = s.user_id;
   const permissions = await loadPermissions(pool, userId);
+  if (sessionEndsAt(permissions === null, s.created_at, s.last_seen_at, s.expires_at).getTime() <= Date.now()) {
+    // idle too long or past its maximum: end it for good, so the history shows it
+    await pool.query('update auth.sessions set expires_at = least(expires_at, now()) where id = $1', [s.id]);
+    throw new ApiError(401, 'session expired, sign in again', 'unauthorized');
+  }
+  // at most one write a minute per session
+  if (!s.last_seen_at || Date.now() - s.last_seen_at.getTime() > 60_000) {
+    await pool.query('update auth.sessions set last_seen_at = now() where id = $1', [s.id]);
+  }
   return {
     keyId: null,
     name: 'session',
     scopes: new Set<Scope>(permissions === null ? ['admin'] : ['read', 'write']),
     userId,
     actor: `user:${userId}`,
-    permissions
+    permissions,
+    session: { id: String(s.id), signedInAt: s.created_at }
   };
+}
+
+// Admin changes from a browser need a recent sign-in, so a stolen or
+// forgotten session cannot hand out access. API keys are exempt (not
+// interactive; creating and rotating them is itself such a change).
+export function requireRecentSignIn(p: Principal): void {
+  if (!p.session) return;
+  if (Date.now() - p.session.signedInAt.getTime() <= REAUTH_HOURS * HOUR) return;
+  throw new ApiError(403, `sign in again to do this: admin changes need a sign-in within the last ${REAUTH_HOURS} hours`, 'reauth_required');
+}
+
+// Whether a user (not a key) has an admin role, for session limits shown in
+// sign-in history.
+export async function userIsAdmin(userId: string): Promise<boolean> {
+  return (await loadPermissions(pool, userId)) === null;
 }
 
 // A user's roles come from direct assignment or from their teams. Across

@@ -62,6 +62,19 @@ export async function buildApp() {
     }
   });
 
+  // Security headers on every response. JSON never needs to load anything, so
+  // it gets a CSP that blocks everything; the docs page and quote PDFs keep
+  // only frame-ancestors (nothing may frame the API).
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.protocol === 'https') reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'no-referrer');
+    reply.header('x-frame-options', 'DENY');
+    const type = String(reply.getHeader('content-type') ?? '');
+    reply.header('content-security-policy', type.includes('json') ? "default-src 'none'; frame-ancestors 'none'" : "frame-ancestors 'none'");
+    return payload;
+  });
+
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS') return;
     const path = req.url.split('?')[0];

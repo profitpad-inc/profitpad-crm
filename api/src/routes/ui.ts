@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { pool } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
 import { requireScope, type Principal } from '../auth.js';
+import { logEvent } from '../audit.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
 
@@ -206,6 +207,7 @@ export async function uiRoutes(app: FastifyInstance) {
       [req.params.key, JSON.stringify(value), p.actor]
     );
     if (req.params.key === 'forms') clearAllowedOriginsCache();
+    await logEvent(req, 'settings.updated', { target: { type: 'setting', id: req.params.key }, details: req.params.key === 'forms' ? { value } : {} });
     return value;
   });
 

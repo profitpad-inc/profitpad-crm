@@ -31,14 +31,14 @@ export function Home() {
         {!me.is_admin && me.readable_objects.length === 0 && (
           <p className="muted">You don’t have access to anything yet. Ask an admin to give you a role.</p>
         )}
-        <div className="tiles">
+        <div className="object-list">
           {objects.map((o) => {
             const Icon = objectIcon(o);
             return (
-              <Link key={o} to={`/objects/${o}`} className="tile">
-                <Icon size={20} strokeWidth={1.75} />
-                <div className="tile-count">{counts[o]?.toLocaleString() ?? '…'}</div>
-                <div className="muted">{objectByName.get(o)?.label_plural}</div>
+              <Link key={o} to={`/objects/${o}`} className="object-row">
+                <Icon size={18} strokeWidth={1.75} />
+                <span className="object-row-label">{objectByName.get(o)?.label_plural}</span>
+                <span className="object-row-count">{counts[o]?.toLocaleString() ?? '…'}</span>
               </Link>
             );
           })}

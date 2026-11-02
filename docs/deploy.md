@@ -90,25 +90,24 @@ Migration `0013_public_pages.sql` must be applied (`./db/migrate.sh`) before dep
 
 - `TRUST_PROXY=true` in `deploy/.env`, so rate limits and stored submission IPs see the visitor, not nginx.
 - Websites that embed forms are listed in Settings → Forms, not in `CORS_ORIGINS`.
-- Rate limit the public routes in nginx too (not done yet on the server). In the `http` context, for example `/etc/nginx/conf.d/pcrm-public-limit.conf`:
+- Rate limits in nginx (per visitor IP: public routes 30 a minute, sign-in routes 20 a minute, with bursts). Install the zones file and the updated site, keeping the `listen 443 ssl` and certificate lines certbot added to the live site:
 
-  ```nginx
-  limit_req_zone $binary_remote_addr zone=pcrm_public:10m rate=30r/m;
+  ```bash
+  sudo cp /srv/test_crm/deploy/nginx-pcrm-limits.conf /etc/nginx/conf.d/pcrm-limits.conf
+  # merge the location blocks and server_tokens off from deploy/nginx-api.test-crm.profitpad.com.conf
+  # into /etc/nginx/sites-available/api.test-crm.profitpad.com (keep certbot's ssl lines)
+  sudo nginx -t && sudo systemctl reload nginx
   ```
 
-  and in the `api.test-crm.profitpad.com` server block, a location that copies the `proxy_*` lines of the existing `location /`:
+## 6. Security hardening (migration 0019)
 
-  ```nginx
-  location /v1/public/ {
-    limit_req zone=pcrm_public burst=20 nodelay;
-    limit_req_status 429;
-    # same proxy_pass and proxy_set_header lines as location /
-  }
-  ```
+Apply `0019_security.sql` (`./db/migrate.sh`) before deploying an API that includes it: the API writes `auth.security_events`, `auth.sessions.last_seen_at` and `auth.api_keys.last_used_ip`.
 
-  Then `sudo nginx -t && sudo systemctl reload nginx`.
+- After the deploy, everyone signs in once more: the session cookie is now `__Host-pcrm_session` over https and the old `pcrm_session` cookie is no longer read there.
+- Session limits, re-sign-in for admin changes, key rules and the security log are described in `docs/architecture.md`.
+- GitHub: secret scanning, push protection and Dependabot security updates are on for the repo (2026-11-01); `.github/workflows/ci.yml` typechecks the API, builds the UI and fails on high or critical `npm audit` findings; `.github/dependabot.yml` opens weekly update PRs.
 
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.
-- `DOCS_PUBLIC=false` in production: `/docs` and `/v1/openapi.json` then need an API key.
+- `DOCS_PUBLIC=true` in production by choice (2026-11-01): `/docs` and `/v1/openapi.json` are public. They are generated from the live schema, so they show this tenant's custom objects, properties and dropdown values; set `DOCS_PUBLIC=false` to require an API key.

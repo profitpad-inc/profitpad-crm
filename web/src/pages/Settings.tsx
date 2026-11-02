@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { DEFAULT_THEME, THEME_FIELDS, type Theme } from '../lib/theme';
 import { displayName, initials } from '../lib/display';
 import { RoleSettings, UserSettings } from './AccessSettings';
+import { ApiKeySettings, SecurityLog } from './SecuritySettings';
 
 export function Settings() {
   const { me } = useApp();
@@ -20,6 +21,8 @@ export function Settings() {
           {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
           {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
           {me.is_admin && <NavLink to="/settings/forms">Forms</NavLink>}
+          {me.is_admin && <NavLink to="/settings/api-keys">API keys</NavLink>}
+          {me.is_admin && <NavLink to="/settings/security-log">Security log</NavLink>}
         </nav>
         <div className="settings-body">
           <Routes>
@@ -29,6 +32,8 @@ export function Settings() {
             <Route path="users" element={me.is_admin ? <UserSettings /> : <Navigate to="/settings" />} />
             <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
             <Route path="forms" element={me.is_admin ? <FormsSettings /> : <Navigate to="/settings" />} />
+            <Route path="api-keys" element={me.is_admin ? <ApiKeySettings /> : <Navigate to="/settings" />} />
+            <Route path="security-log" element={me.is_admin ? <SecurityLog /> : <Navigate to="/settings" />} />
           </Routes>
         </div>
       </div>

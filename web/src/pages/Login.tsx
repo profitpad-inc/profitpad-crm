@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { API_BASE, api, type Me } from '../lib/api';
+import { LogoMark } from '../components/Logo';
 
 // Set by the API's callback as ?auth_error=...
 const AUTH_ERRORS: Record<string, string> = {
@@ -49,7 +50,9 @@ function MicrosoftMark() {
   );
 }
 
-export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
+// reauth: shown over the app when an admin change needs a fresh sign-in;
+// signing in comes back to the same page.
+export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me: Me) => void; reauth?: boolean; onCancel?: () => void }) {
   const [error, setError] = useState<string | null>(takeAuthError);
   const [config, setConfig] = useState<{ google: boolean; microsoft: boolean }>({ google: false, microsoft: false });
   const [checking, setChecking] = useState(true);
@@ -70,20 +73,21 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
   const hasAny = config.google || config.microsoft;
 
   return (
-    <div className="login">
+    <div className={`login${reauth ? ' reauth' : ''}`}>
       <div className="login-card">
-        <div className="login-mark">P</div>
-        <h1>ProfitPad CRM</h1>
+        <div className="wordmark"><LogoMark size={22} /><b>ProfitPad</b></div>
+        <h1>{reauth ? 'Confirm it\u2019s you' : 'Log in to ProfitPad CRM'}</h1>
+        {reauth && <p className="muted">Changes to access (roles, API keys, sharing rules, other people{'\u2019'}s sessions) need a sign-in within the last 4 hours. Sign in again, then repeat the change.</p>}
         {hasAny ? (
           <div className="login-actions">
             {config.google && (
-              <a className="btn primary sso-btn google-btn" href={googleHref}>
+              <a className="btn sso-btn google-btn" href={googleHref}>
                 <GoogleMark />
                 Log in with Google
               </a>
             )}
             {config.microsoft && (
-              <a className="btn primary sso-btn ms-btn" href={msHref}>
+              <a className="btn sso-btn ms-btn" href={msHref}>
                 <MicrosoftMark />
                 Log in with Microsoft
               </a>
@@ -93,6 +97,7 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
           <p className="muted">Sign-in is not configured. Contact an administrator.</p>
         )}
         {error && <div className="error">{error}</div>}
+        {onCancel && <button className="btn" onClick={onCancel}>Cancel</button>}
       </div>
     </div>
   );

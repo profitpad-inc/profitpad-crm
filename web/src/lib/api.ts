@@ -24,9 +24,15 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const data = text && res.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text;
-  if (!res.ok) throw new ApiError(res.status, data?.message ?? res.statusText, data?.error, data?.details);
+  if (!res.ok) {
+    // admin changes need a recent sign-in; the app shows a "confirm it's you" sign-in
+    if (data?.error === 'reauth_required') window.dispatchEvent(new Event(REAUTH_EVENT));
+    throw new ApiError(res.status, data?.message ?? res.statusText, data?.error, data?.details);
+  }
   return data as T;
 }
+
+export const REAUTH_EVENT = 'pcrm:reauth-required';
 
 // ---- types ----------------------------------------------------------------
 

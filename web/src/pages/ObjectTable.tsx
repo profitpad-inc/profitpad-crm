@@ -479,7 +479,7 @@ function ObjectTableFor({ object }: { object: string }) {
                   }
                   return (
                     <td key={i} {...cellProps(ri, i, c, extra)}>
-                      {formatValue(prop, r.properties[prop.api_name])}
+                      {formatValue(prop, r.properties[prop.api_name]) || <span className="muted empty-value">--</span>}
                       {editable && editButton(r, prop)}
                     </td>
                   );
@@ -708,7 +708,7 @@ function AssociationCell({ record, column, pluralLabel }: { record: CrmRecord; c
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const items = associatedItems(record, column);
-  if (items.length === 0) return null;
+  if (items.length === 0) return <span className="muted empty-value">--</span>;
   if (items.length === 1) {
     return <Link to={`/objects/${column.object}/${items[0].id}`}>{displayName(items[0].properties, items[0].id)}</Link>;
   }

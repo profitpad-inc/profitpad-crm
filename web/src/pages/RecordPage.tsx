@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, EllipsisVertical, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, Plus, X } from 'lucide-react';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
@@ -126,30 +126,31 @@ export function RecordPage() {
   return (
     <div className={`record-page${isUser ? ' two-col' : ''}`}>
       <aside className="record-left">
-        <Link to={`/objects/${object}`} className="back">
-          <ChevronLeft size={16} /> {schema.label_plural}
-        </Link>
-        <div className="record-identity">
-          <span className="record-avatar">{initials(name)}</span>
-          <div className="record-title">
-            <h1>{name}</h1>
-            {subtitle && <div className="muted">{subtitle}</div>}
-          </div>
-          <Menu
-            align="right"
-            trigger={(toggle) => (
-              <button className="icon-btn" onClick={toggle} aria-label="Record actions">
-                <EllipsisVertical size={18} />
-              </button>
-            )}
-          >
-            {(close) => (
-              <>
-                <button onClick={() => { close(); navigate(`/objects/${object}`); }}>Back to {schema.label_plural.toLowerCase()}</button>
+        <div className="record-head">
+          <div className="record-head-bar">
+            <Link to={`/objects/${object}`} className="back">
+              <ChevronLeft size={16} /> {schema.label_plural}
+            </Link>
+            <Menu
+              align="right"
+              trigger={(toggle) => (
+                <button className="icon-btn" onClick={toggle} aria-label="Record actions">
+                  <EllipsisVertical size={18} />
+                </button>
+              )}
+            >
+              {(close) => (
                 <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
-              </>
-            )}
-          </Menu>
+              )}
+            </Menu>
+          </div>
+          <div className="record-identity">
+            <span className="record-avatar">{initials(name)}</span>
+            <div className="record-title">
+              <h1>{name}</h1>
+              {subtitle && subtitle !== name && <div className="muted">{subtitle}</div>}
+            </div>
+          </div>
         </div>
         {isUser && <UserRoles userId={record.id} />}
         <PropertyList schema={schema} record={record} onSaved={setRecord} />
@@ -193,6 +194,8 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   const [focusEditor, setFocusEditor] = useState(true);
   // a refused save, shown under that property; failed: the value refused
   const [error, setError] = useState<{ property: string; message: string; failed: string } | null>(null);
+  // collapsed sections; System starts closed
+  const [closed, setClosed] = useState<Record<string, boolean>>({ system: true });
   const shown = schema.properties.filter((p) => p.row_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   const main = shown.filter((p) => !p.is_base || p.api_name === 'name');
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
@@ -238,6 +241,20 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
     }
   }
 
+  const section = (key: string, title: string, props: Property[]) => {
+    const open = !closed[key];
+    const Chevron = open ? ChevronDown : ChevronRight;
+    return (
+      <section className="prop-section">
+        <button className="prop-section-head" aria-expanded={open} onClick={() => setClosed((c) => ({ ...c, [key]: open }))}>
+          <Chevron size={16} />
+          <h3>{title}</h3>
+        </button>
+        {open && <div className="prop-section-body">{props.map(row)}</div>}
+      </section>
+    );
+  };
+
   const row = (p: Property) => (
     <div key={p.api_name} className={`prop-row${isEditable(p) ? ' editable' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
       <div className="prop-label">{p.label}</div>
@@ -249,7 +266,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
           )}
         </div>
       ) : (
-        <div className="prop-value">{formatValue(p, record.properties[p.api_name]) || <span className="faint">{isEditable(p) ? 'Add' : '—'}</span>}</div>
+        <div className="prop-value">{formatValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>
       )}
       {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
     </div>
@@ -257,10 +274,8 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
 
   return (
     <div className="props">
-      <h3>About this {schema.label_singular.toLowerCase()}</h3>
-      {main.map(row)}
-      <h3 className="sub">System</h3>
-      {system.map(row)}
+      {section('main', `About this ${schema.label_singular.toLowerCase()}`, main)}
+      {section('system', 'System', system)}
     </div>
   );
 }
@@ -354,20 +369,25 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
       ) : (
         <div className="timeline">
           {items.length === 0 && <div className="muted">No activity yet.</div>}
-          {items.map(({ object: o, record: r, at, quoteResponse }) => {
+          {byDay(items, (x) => x.at).map(({ day, rows }) => (
+            <LedgerDay key={day} day={day}>
+          {rows.map(({ object: o, record: r, at, quoteResponse }) => {
             const Icon = objectIcon(o);
             const p = r.properties;
             if (quoteResponse) {
               const pending = p.status === 'pending_countersign';
               const accepted = pending || p.status === 'accepted';
               const verb = pending ? 'signed' : accepted ? 'accepted' : 'declined';
+              const amount = p.amount === null || p.amount === undefined || p.amount === '' ? null
+                : Number(p.amount).toLocaleString(undefined, { style: 'currency', currency: typeof p.currency === 'string' && p.currency ? p.currency : 'USD' });
               return (
                 <Link key={`quote-response-${r.id}`} to={`/objects/quotes/${r.id}`} className="activity-item">
                   <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={16} strokeWidth={1.75} /></span>
                   <div className="activity-body">
                     <div className="activity-head">
                       <strong>Quote {verb}</strong>
-                      <span className="muted small">Quote · {when(at)}</span>
+                      {amount && <span className={accepted ? 'money push-right' : 'num push-right muted'}>{amount}</span>}
+                      <time className="ledger-time" dateTime={at}>{timeOf(at)}</time>
                     </div>
                     <div className="activity-text">
                       {recordName(r)} {verb} by {String(p.responder_name ?? 'the customer')}
@@ -388,7 +408,8 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
                 <div className="activity-body">
                   <div className="activity-head">
                     <strong>{title}</strong>
-                    <span className="muted small">{objectByName.get(o)?.label_singular}{at ? ` · ${new Date(at.length === 10 ? `${at}T00:00:00Z` : at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : ''}</span>
+                    <span className="muted small push-right">{objectByName.get(o)?.label_singular}</span>
+                    {at && <time className="ledger-time" dateTime={at}>{timeOf(at)}</time>}
                   </div>
                   {o === 'tasks' && p.status ? <div className="small muted">Status: {String(p.status).replace(/_/g, ' ')}</div> : null}
                   {body && <div className="activity-text">{body.length > 400 ? `${body.slice(0, 400)}…` : body}</div>}
@@ -397,6 +418,8 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
               </Link>
             );
           })}
+            </LedgerDay>
+          ))}
         </div>
       )}
     </div>
@@ -404,6 +427,39 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
 }
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+// Date-only values (YYYY-MM-DD) have no time and count as that local day.
+const localDate = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
+const timeOf = (iso: string) => (iso.length === 10 ? '' : localDate(iso).toLocaleTimeString(undefined, { timeStyle: 'short' }));
+
+function dayLabel(d: Date): string {
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...(d.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }) });
+}
+
+// Groups rows (already sorted newest first) under day headings.
+function byDay<T>(rows: T[], at: (row: T) => string | null | undefined): { day: string; rows: T[] }[] {
+  const groups: { day: string; rows: T[] }[] = [];
+  for (const row of rows) {
+    const iso = at(row);
+    const day = iso ? dayLabel(localDate(iso)) : 'Undated';
+    if (groups.at(-1)?.day === day) groups.at(-1)!.rows.push(row);
+    else groups.push({ day, rows: [row] });
+  }
+  return groups;
+}
+
+function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
+  return (
+    <>
+      <div className="ledger-day">{day}</div>
+      <div className="ledger-entries">{children}</div>
+    </>
+  );
+}
 
 function ChangeHistory({ object, id, schema }: { object: string; id: string; schema: ObjectDef }) {
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
@@ -420,16 +476,24 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
       {error && <div className="error">{error}</div>}
       {history === null && !error && <div className="muted">Loading…</div>}
       {history?.length === 0 && <div className="muted">No changes recorded.</div>}
-      {history?.map((h, i) => (
-        <div key={i} className="change">
-          <div className="change-head">
-            <strong>{h.property === 'association' ? 'Association' : propLabel(h.property)}</strong>
-            <span className="muted small">{when(h.changed_at)} · {h.changed_by} · {h.source}</span>
-          </div>
-          <div className="small">
-            <span className="faint">{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span> → {h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}
-          </div>
-        </div>
+      {history && byDay(history, (h) => h.changed_at).map(({ day, rows }) => (
+        <LedgerDay key={day} day={day}>
+          {rows.map((h, i) => (
+            <div key={i} className="ledger-entry">
+              <span className="change-dot" aria-hidden="true" />
+              <div className="change-body">
+                <div className="change-head">
+                  <strong>{h.property === 'association' ? 'Association' : propLabel(h.property)}</strong>
+                  <span className="muted small push-right">{h.changed_by}, {h.source}</span>
+                  <time className="ledger-time" dateTime={h.changed_at}>{timeOf(h.changed_at)}</time>
+                </div>
+                <div className="small">
+                  <span className="faint">{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span> → {h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </LedgerDay>
       ))}
     </div>
   );
@@ -508,7 +572,7 @@ function UserRoles({ userId }: { userId: string }) {
 
 interface SignIns {
   identities: { provider: string; email: string | null; created_at: string; last_login_at: string | null }[];
-  sessions: { id: string; created_at: string; expires_at: string; revoked_at: string | null; ip: string | null; user_agent: string | null; status: 'active' | 'signed_out' | 'expired' }[];
+  sessions: { id: string; created_at: string; expires_at: string; revoked_at: string | null; ip: string | null; user_agent: string | null; status: 'active' | 'signed_out' | 'expired'; current: boolean }[];
 }
 
 const PROVIDERS: Record<string, string> = { google: 'Google', microsoft: 'Microsoft', magic_link: 'Email link', passkey: 'Passkey' };
@@ -523,18 +587,49 @@ function device(ua: string | null): string {
 }
 
 function SignInHistory({ id }: { id: string }) {
+  const { me, toast } = useApp();
   const [data, setData] = useState<SignIns | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
+  const load = useCallback(() => api<SignIns>('GET', `/v1/users/${id}/sign-ins`).then(setData).catch((e) => setError((e as Error).message)), [id]);
   useEffect(() => {
     setData(null);
-    api<SignIns>('GET', `/v1/users/${id}/sign-ins`).then(setData).catch((e) => setError((e as Error).message));
-  }, [id]);
+    load();
+  }, [load]);
+
+  // only the user themself and admins may end sessions
+  const canEnd = me.is_admin || me.user?.id === id;
+  async function end(fn: () => Promise<unknown>, message: string) {
+    setActionError(null);
+    try {
+      await fn();
+      toast(message);
+      await load();
+    } catch (e) {
+      setActionError((e as Error).message);
+    }
+  }
 
   if (error) return <div className="muted">{error}</div>;
   if (!data) return <div className="muted">Loading…</div>;
+  const active = data.sessions.filter((s) => s.status === 'active');
+  const others = active.filter((s) => !s.current);
   return (
     <div className="timeline">
+      {canEnd && active.length > 0 && (
+        <div className="session-actions">
+          {others.length > 0 && active.length > others.length && (
+            <button className="btn" onClick={() => end(() => api('POST', `/v1/users/${id}/sessions/revoke`, { keep_current: true }), 'Signed out of the other sessions')}>
+              Sign out other sessions
+            </button>
+          )}
+          <button className="btn" onClick={() => end(() => api('POST', `/v1/users/${id}/sessions/revoke`, {}), 'Signed out everywhere')}>
+            Sign out everywhere
+          </button>
+        </div>
+      )}
+      {actionError && <div className="error">{actionError}</div>}
       {data.identities.length === 0 ? (
         <div className="muted">No sign-in method linked yet. The user is linked the first time they sign in.</div>
       ) : (
@@ -556,12 +651,17 @@ function SignInHistory({ id }: { id: string }) {
             <span className="muted small">{when(s.created_at)}{s.ip ? ` · ${s.ip}` : ''}</span>
           </div>
           <div className="small">
-            <span className={`session-status ${s.status}`}>{SESSION_STATUS[s.status]}</span>
+            <span className={`session-status ${s.status}`}>{SESSION_STATUS[s.status]}{s.current ? ' (this browser)' : ''}</span>
             <span className="muted">
               {s.status === 'active' && ` · until ${when(s.expires_at)}`}
               {s.status === 'signed_out' && s.revoked_at && ` · ${when(s.revoked_at)}`}
               {s.status === 'expired' && ` · ${when(s.expires_at)}`}
             </span>
+            {canEnd && s.status === 'active' && !s.current && (
+              <button className="btn small session-end" onClick={() => end(() => api('DELETE', `/v1/users/${id}/sessions/${s.id}`), 'Session ended')}>
+                Sign out
+              </button>
+            )}
           </div>
         </div>
       ))}

@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
 import { HomeIcon, MORE_GROUPS, ReportingIcon, initials, objectIcon } from '../lib/display';
 import { SearchPalette } from './SearchPalette';
+import { LogoMark } from './Logo';
 
 const EXPANDED_KEY = 'pcrm.sidebarExpanded';
 
@@ -114,7 +115,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
     <>
       <nav className={`sidebar${expanded ? ' expanded' : ''}${drawer ? ' drawer-menu' : ''}`}>
         <div className="sidebar-top">
-          <Link to="/" className="logo" title="ProfitPad CRM">P</Link>
+          <Link to="/" className="logo" title="ProfitPad CRM" aria-label="ProfitPad CRM"><LogoMark size={28} /></Link>
           <button className="nav-item" onClick={() => setSearchOpen(true)} title={expanded ? undefined : 'Search (⌘K)'}>
             <Search size={20} strokeWidth={1.75} />
             {expanded && <span>Search</span>}

@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pool } from './db.js';
-import { hashKey, readCookie, SESSION_COOKIE, USER_CAN_SIGN_IN } from './auth.js';
+import { hashKey, readCookie, readSessionToken, SESSION_COOKIE, SESSION_POLICY, sessionCookie, setCookie, USER_CAN_SIGN_IN } from './auth.js';
+import { logEvent } from './audit.js';
 
 // Google & Microsoft sign-in: OpenID Connect authorization code flow with PKCE.
 // The UI sends the browser to /v1/auth/{google|microsoft}/start, the provider
@@ -29,7 +30,8 @@ const uiUrl = (process.env.UI_URL ?? '').replace(/\/$/, '');
 const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
 const tokenUrl = process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
 
-const SESSION_DAYS = 30;
+// the longest a session can last; admins get less (SESSION_POLICY in auth.ts)
+const SESSION_MAX_HOURS = SESSION_POLICY.user.maxHours;
 const FLOW_COOKIE = 'pcrm_google';
 const CALLBACK_PATH = '/v1/auth/google/callback';
 
@@ -46,10 +48,7 @@ interface Flow {
 const origin = (req: FastifyRequest) => `${req.protocol}://${req.headers.host}`;
 const random = () => randomBytes(32).toString('base64url');
 
-function cookie(req: FastifyRequest, name: string, value: string, path: string, maxAge: number): string {
-  const secure = req.protocol === 'https' ? '; Secure' : '';
-  return `${name}=${encodeURIComponent(value)}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
-}
+const cookie = setCookie;
 
 // only same-site paths, never "//host" or a full URL
 function safeReturnTo(value: unknown): string {
@@ -91,6 +90,36 @@ async function findUser(provider: 'google' | 'microsoft', sub: string, email: st
     [users[0].id, provider, sub, email]
   );
   return { userId: users[0].id };
+}
+
+// A refused sign-in, logged with the email the provider vouched for (if any)
+async function refused(req: FastifyRequest, provider: 'google' | 'microsoft', reason: string, email?: string | null) {
+  await logEvent(req, 'sign_in.failed', { actor: 'public', details: { provider, reason, ...(email ? { email } : {}) } });
+}
+
+// Starts a session for a signed-in user and returns its cookie. Signing in
+// again from the same browser (to confirm an admin change) replaces the old
+// session instead of leaving it behind.
+async function startSession(req: FastifyRequest, provider: 'google' | 'microsoft', userId: string, sub: string, email: string): Promise<string> {
+  const previous = readSessionToken(req);
+  if (previous) {
+    await pool.query(
+      'update auth.sessions set revoked_at = now() where token_hash = $1 and user_id = $2 and revoked_at is null',
+      [hashKey(previous), userId]
+    );
+  }
+  const token = random();
+  await pool.query(
+    `insert into auth.sessions (user_id, token_hash, expires_at, ip, user_agent, last_seen_at)
+     values ($1, $2, now() + make_interval(hours => $3), $4, $5, now())`,
+    [userId, hashKey(token), SESSION_MAX_HOURS, req.ip, req.headers['user-agent'] ?? null]
+  );
+  await pool.query(
+    `update auth.identities set last_login_at = now(), email = $4 where provider = $1 and provider_subject = $2 and user_id = $3`,
+    [provider, sub, userId, email]
+  );
+  await logEvent(req, 'sign_in', { actor: `user:${userId}`, userId, details: { provider, email } });
+  return sessionCookie(req, token, SESSION_MAX_HOURS * 3600);
 }
 
 export async function ssoRoutes(app: FastifyInstance) {
@@ -164,10 +193,15 @@ export async function ssoRoutes(app: FastifyInstance) {
       typeof claims.email === 'string';
     if (!valid) {
       req.log.warn({ iss: claims.iss, aud: claims.aud }, 'google id_token rejected');
+      await refused(req, 'google', 'id_token_invalid');
       return toUi(req, reply, '/', 'google_failed');
     }
-    if (claims.email_verified !== true) return toUi(req, reply, '/', 'email_not_verified');
+    if (claims.email_verified !== true) {
+      await refused(req, 'google', 'email_not_verified', claims.email as string);
+      return toUi(req, reply, '/', 'email_not_verified');
+    }
     if (allowedDomains.length && !allowedDomains.includes(String(claims.hd ?? '').toLowerCase())) {
+      await refused(req, 'google', 'domain_not_allowed', claims.email as string);
       return toUi(req, reply, '/', 'domain_not_allowed');
     }
 
@@ -175,21 +209,10 @@ export async function ssoRoutes(app: FastifyInstance) {
     const found = await findUser('google', claims.sub as string, email);
     if ('error' in found) {
       req.log.info({ email, reason: found.error }, 'google sign-in refused');
+      await refused(req, 'google', found.error, email);
       return toUi(req, reply, '/', found.error);
     }
-    const { userId } = found;
-
-    const token = random();
-    await pool.query(
-      `insert into auth.sessions (user_id, token_hash, expires_at, ip, user_agent)
-       values ($1, $2, now() + make_interval(days => $3), $4, $5)`,
-      [userId, hashKey(token), SESSION_DAYS, req.ip, req.headers['user-agent'] ?? null]
-    );
-    await pool.query(
-      `update auth.identities set last_login_at = now(), email = $3 where provider = 'google' and provider_subject = $1 and user_id = $2`,
-      [claims.sub, userId, email]
-    );
-    reply.header('set-cookie', [clearFlow, cookie(req, SESSION_COOKIE, token, '/', SESSION_DAYS * 86400)]);
+    reply.header('set-cookie', [clearFlow, await startSession(req, 'google', found.userId, claims.sub as string, email)]);
     return toUi(req, reply, flow.returnTo);
   });
 
@@ -287,12 +310,14 @@ export async function ssoRoutes(app: FastifyInstance) {
 
     if (!valid || !sub || !email) {
       req.log.warn({ iss: claims.iss, aud: claims.aud, sub, email }, 'microsoft id_token rejected');
+      await refused(req, 'microsoft', 'id_token_invalid', email);
       return toUi(req, reply, '/', 'microsoft_failed', `id_token invalid (iss=${claims.iss}, aud=${claims.aud}, email=${email})`);
     }
 
     if (msAllowedDomains.length) {
       const domain = email.split('@')[1] ?? '';
       if (!msAllowedDomains.includes(domain)) {
+        await refused(req, 'microsoft', 'domain_not_allowed', email);
         return toUi(req, reply, '/', 'domain_not_allowed');
       }
     }
@@ -300,28 +325,26 @@ export async function ssoRoutes(app: FastifyInstance) {
     const found = await findUser('microsoft', sub, email);
     if ('error' in found) {
       req.log.info({ email, reason: found.error }, 'microsoft sign-in refused');
+      await refused(req, 'microsoft', found.error, email);
       return toUi(req, reply, '/', found.error);
     }
-    const { userId } = found;
-
-    const token = random();
-    await pool.query(
-      `insert into auth.sessions (user_id, token_hash, expires_at, ip, user_agent)
-       values ($1, $2, now() + make_interval(days => $3), $4, $5)`,
-      [userId, hashKey(token), SESSION_DAYS, req.ip, req.headers['user-agent'] ?? null]
-    );
-    await pool.query(
-      `update auth.identities set last_login_at = now(), email = $3 where provider = 'microsoft' and provider_subject = $1 and user_id = $2`,
-      [sub, userId, email]
-    );
-    reply.header('set-cookie', [clearFlow, cookie(req, SESSION_COOKIE, token, '/', SESSION_DAYS * 86400)]);
+    reply.header('set-cookie', [clearFlow, await startSession(req, 'microsoft', found.userId, sub, email)]);
     return toUi(req, reply, flow.returnTo);
   });
 
   app.post('/v1/auth/logout', async (req, reply) => {
-    const token = readCookie(req, SESSION_COOKIE);
-    if (token) await pool.query('update auth.sessions set revoked_at = now() where token_hash = $1 and revoked_at is null', [hashKey(token)]);
-    reply.header('set-cookie', cookie(req, SESSION_COOKIE, '', '/', 0));
+    const token = readSessionToken(req);
+    if (token) {
+      const { rows } = await pool.query(
+        'update auth.sessions set revoked_at = now() where token_hash = $1 and revoked_at is null returning user_id',
+        [hashKey(token)]
+      );
+      if (rows.length) await logEvent(req, 'sign_out', { actor: `user:${rows[0].user_id}`, userId: rows[0].user_id });
+    }
+    // also clear a cookie from before the __Host- prefix
+    const clear = [sessionCookie(req, '', 0)];
+    if (readCookie(req, SESSION_COOKIE)) clear.push(cookie(req, SESSION_COOKIE, '', '/', 0));
+    reply.header('set-cookie', clear);
     return reply.code(204).send();
   });
 }

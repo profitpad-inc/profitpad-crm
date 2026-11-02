@@ -1,6 +1,6 @@
 import {
   Box, Building2, CalendarDays, CircleDollarSign, ClipboardList, Contact, CreditCard, File, FileText, Handshake, Home,
-  LifeBuoy, ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote,
+  ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
   Ticket, User, Users, Wrench, Zap, BarChart3, type LucideIcon
 } from 'lucide-react';
 import type { CrmRecord, Property } from './api';
@@ -27,7 +27,7 @@ const OBJECT_ICONS: Record<string, LucideIcon> = {
   files: File,
   email_templates: MailPlus,
   forms: ClipboardList,
-  form_submissions: LifeBuoy,
+  form_submissions: TextQuote,
   marketing_events: Megaphone,
   marketing_event_participations: CalendarDays,
   object_events: Zap,

@@ -4,6 +4,7 @@ import { Menu as MenuIcon, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { HomeIcon, initials, objectIcon } from '../lib/display';
 import { SearchPalette } from './SearchPalette';
+import { LogoMark } from './Logo';
 import { Sidebar } from './Sidebar';
 
 // Objects pinned to the phone bottom bar, in order. Missing ones are skipped.
@@ -56,7 +57,7 @@ export function MobileHeader() {
         <button className="icon-btn" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
           <MenuIcon size={24} />
         </button>
-        <Link to="/" className="logo small">P</Link>
+        <Link to="/" className="logo small" aria-label="ProfitPad CRM"><LogoMark size={24} /></Link>
         <span className="mobile-header-title">ProfitPad</span>
         <Link to="/settings" className="push-right" aria-label="Settings">
           <span className="avatar">{initials(userName)}</span>

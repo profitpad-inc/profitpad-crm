@@ -4,11 +4,10 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
-import '@fontsource/montserrat/600.css';
-import '@fontsource/montserrat/700.css';
+import '@fontsource/inter/700.css';
 import 'flatpickr/dist/flatpickr.min.css'; // before styles.css, which overrides it
 import './styles.css';
-import { api, type Me } from './lib/api';
+import { api, REAUTH_EVENT, type Me } from './lib/api';
 import { AppProvider } from './lib/app-context';
 import { Sidebar } from './components/Sidebar';
 import { BottomBar } from './components/MobileNav';
@@ -54,10 +53,18 @@ function App() {
     load();
   }, [load]);
 
+  const [reauth, setReauth] = useState(false);
+  useEffect(() => {
+    const show = () => setReauth(true);
+    window.addEventListener(REAUTH_EVENT, show);
+    return () => window.removeEventListener(REAUTH_EVENT, show);
+  }, []);
+
   if (checking) return <div className="splash">Loading…</div>;
   if (!me) return <Login onSignedIn={(m) => setMe(m)} />;
   return (
     <AppProvider me={me} onSignOut={() => setMe(null)}>
+      {reauth && <Login reauth onSignedIn={() => setReauth(false)} onCancel={() => setReauth(false)} />}
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Home />} />

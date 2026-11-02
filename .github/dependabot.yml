@@ -1,0 +1,25 @@
+# Weekly update PRs for the API and UI dependencies and the workflow actions.
+# Security fixes come as their own PRs as soon as an advisory is published
+# (Dependabot security updates, enabled in the repo settings).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      api-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      web-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

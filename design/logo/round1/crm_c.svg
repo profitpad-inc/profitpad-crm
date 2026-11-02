@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.76 -4.03 63.73 63.73" fill="none">
+<g stroke="#0062FF" stroke-width="3.55" stroke-linejoin="miter" stroke-miterlimit="10">
+<clipPath id="cut"><polygon points="-30.760,-50.000 81.080,-50.000 15.664,120.000 -96.176,120.000"/></clipPath>
+<clipPath id="stub"><polygon points="-30.760,-50.000 139.240,-50.000 112.300,20.010 49.740,20.010 11.264,120.000 -96.176,120.000"/></clipPath>
+<g clip-path="url(#stub)"><polyline points="50.614,24.235 57.974,5.110 39.783,18.235 16.683,18.235 4.241,50.570 22.429,37.450"/></g>
+<g clip-path="url(#cut)" stroke-linecap="square"><polyline points="22.429,37.450 47.411,37.450"/></g>
+<polygon points="39.600,20.010 47.650,20.010 43.468,17.780" stroke="none" fill="#0062FF"/>
+<polygon points="22.612,35.675 14.562,35.675 18.744,37.905" stroke="none" fill="#0062FF"/>
+</g>
+</svg>
