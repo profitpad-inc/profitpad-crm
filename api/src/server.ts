@@ -20,6 +20,7 @@ import { calendarRoutes } from './calendar/connect.js';
 import { oauthRoutes } from './oauth.js';
 import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
 import { BRAND_PATHS, brandRoutes } from './brand.js';
+import { fileRoutes, startFileSweeper } from './files.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -100,7 +101,10 @@ export async function buildApp() {
     if (!reply.hasHeader('referrer-policy')) reply.header('referrer-policy', 'no-referrer');
     reply.header('x-frame-options', 'DENY');
     const type = String(reply.getHeader('content-type') ?? '');
-    reply.header('content-security-policy', type.includes('json') ? "default-src 'none'; frame-ancestors 'none'" : "frame-ancestors 'none'");
+    // stored files set their own (a sandbox, files.ts)
+    if (!reply.hasHeader('content-security-policy')) {
+      reply.header('content-security-policy', type.includes('json') ? "default-src 'none'; frame-ancestors 'none'" : "frame-ancestors 'none'");
+    }
     return payload;
   });
 
@@ -116,6 +120,8 @@ export async function buildApp() {
     if (path.startsWith('/v1/public/')) return;
     // OAuth (oauth.ts) and the MCP server (mcp.ts, OAuth tokens only) check their own callers
     if (path.startsWith('/oauth/') || path.startsWith('/.well-known/') || path === '/mcp') return;
+    // stored files: signed links carry their own permission, public links need none (files.ts)
+    if ((req.method === 'GET' || req.method === 'HEAD') && (/^\/v1\/files\/[0-9a-f]{10}\/raw$/.test(path) || path.startsWith('/files/'))) return;
     // A visitor opening the bare domain in a browser lands on the docs
     if (path === '/' && !req.headers.authorization) return reply.redirect('/docs', 302);
     if (docsPublic && (path === '/v1/openapi.json' || path.startsWith('/docs'))) return;
@@ -183,6 +189,7 @@ export async function buildApp() {
   await app.register(oauthRoutes);
   await app.register(mcpRoutes);
   await app.register(brandRoutes);
+  await app.register(fileRoutes);
   return app;
 }
 
@@ -204,8 +211,10 @@ function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
 
 const app = await buildApp();
 const worker = startCalcWorker(app.log);
+const stopFileSweeper = startFileSweeper(app.log);
 const shutdown = async () => {
   clearInterval(worker);
+  stopFileSweeper();
   await app.close();
   await pool.end();
   process.exit(0);

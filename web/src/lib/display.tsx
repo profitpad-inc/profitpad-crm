@@ -104,6 +104,7 @@ export function displayPhone(v: string): string {
 export function formatValue(p: Property, value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
   if (p.type === 'text' && p.options.display === 'phone' && typeof value === 'string') return displayPhone(value);
+  if (p.type === 'file' && Array.isArray(value)) return value.length === 1 ? '1 file' : `${value.length} files`;
   const t = valueType(p);
   if (p.type === 'dropdown') {
     const values = Array.isArray(value) ? value : [value];

@@ -11,7 +11,7 @@ import bookCss from './book.css?inline';
 //   <div data-pcrm-form="FORM_KEY"></div>
 //   <script src="https://test-crm.profitpad.com/p/embed.js" async></script>
 //
-// The website's origin must be listed in Settings -> Forms, or the API refuses
+// The website's origin must be listed in Settings -> Embed domains, or the API refuses
 // the submission. Forms are rendered in the page itself (not an iframe) so the
 // API can see which website sent them.
 //

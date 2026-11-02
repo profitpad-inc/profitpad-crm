@@ -42,8 +42,12 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 5173,
     // keep the browser's Host so the API builds sign-in callbacks on this
-    // origin (http://localhost:5173/v1/auth/.../callback), where its cookies are
-    proxy: { '/v1': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false } }
+    // origin (http://localhost:5173/v1/auth/.../callback), where its cookies are.
+    // /files: public file links, which the API builds on the same origin
+    proxy: {
+      '/v1': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false },
+      '/files/': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false }
+    }
   },
   build: {
     rollupOptions: {

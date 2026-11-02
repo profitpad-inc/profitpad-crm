@@ -89,7 +89,7 @@ Each person needs an active user record whose email matches their Google or Micr
 Migration `0013_public_pages.sql` must be applied (`./db/migrate.sh`) before deploying an API that serves `/v1/public/`. The pages themselves ship with the UI (`/p/quote/`, `/p/form/`, `/p/embed.js` on GitHub Pages); nothing new in DNS.
 
 - `TRUST_PROXY=true` in `deploy/.env`, so rate limits and stored submission IPs see the visitor, not nginx.
-- Websites that embed forms are listed in Settings → Forms, not in `CORS_ORIGINS`.
+- Websites that embed forms are listed in Settings → Embed domains, not in `CORS_ORIGINS`.
 - Rate limits in nginx (per visitor IP: public routes 30 a minute, sign-in routes 20 a minute, with bursts). Install the zones file and the updated site, keeping the `listen 443 ssl` and certificate lines certbot added to the live site:
 
   ```bash
@@ -125,6 +125,18 @@ Apply `0022_meeting_booker.sql` (`./db/migrate.sh`) before deploying the API tha
 - Google Cloud (same OAuth client as sign-in): Calendar API enabled (done 2026-11-01); consent screen stays **Internal**, with the scopes `.../auth/calendar.freebusy`, `.../auth/calendar.events`, `.../auth/calendar.calendarlist.readonly` added; authorized redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/google/callback` and `http://localhost:5173/v1/calendar/google/callback`.
 - Microsoft Entra (same app registration): delegated Graph permissions `Calendars.ReadWrite` and `offline_access` (done 2026-11-01; grant admin consent if the tenant asks for it); Web redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/microsoft/callback` and `http://localhost:5173/v1/calendar/microsoft/callback`.
 - Deploy the UI too (new page `/p/book/`).
+
+## 9. File storage (migration 0025)
+
+Files are stored on this server's disk for now (the plan to move them to Cloudflare R2 later is `docs/plans/file-storage.md`). Apply `0025_file_storage.sql` (`./db/migrate.sh`) before deploying the API that includes it. Then:
+
+- Folder for the files, writable by the container's `node` user (uid 1000) and readable by nginx:
+  `sudo mkdir -p /srv/test_crm_files && sudo chown 1000:1000 /srv/test_crm_files && sudo chmod 755 /srv/test_crm_files`
+- `deploy/.env`: `FILES_URL_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). It signs file links; without it the API makes a random key at start and links stop working on every restart. Optional `FILES_MAX_BYTES` (default 5 GB per file).
+- `deploy/docker-compose.yml` already mounts the folder at `/data/files` and sets `FILES_DIR` and `FILES_ACCEL_PREFIX`; `docker compose up -d --build` picks it up.
+- nginx: add the `/_pcrm_files/` and upload-chunk locations from `deploy/nginx-api.test-crm.profitpad.com.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Without the `/_pcrm_files/` location every download returns an empty body.
+- Check after deploy: upload a small PNG to a file property, open it, then `curl -sI '<signed link>'` should show `content-type: image/png`, `content-disposition: inline`, `content-security-policy: default-src 'none'; img-src 'self' data:; ...` (exactly one CSP header, no `sandbox`), `x-content-type-options: nosniff` and `accept-ranges: bytes`; a non-media file (say a .zip) should show `attachment` and `content-security-policy: sandbox; default-src 'none'`. Also open a video's public link in Chrome and check it plays. Not yet checked: that nginx keeps the API's Content-Type, Content-Disposition and Cache-Control after X-Accel-Redirect and that `$upstream_http_content_security_policy` carries the API's CSP (only tested without nginx, where the API sends the bytes itself).
+- Disk: files are not in `pg_dump` backups. Back up `/srv/test_crm_files` separately, and watch free space (`df -h /srv`).
 
 ## Notes
 

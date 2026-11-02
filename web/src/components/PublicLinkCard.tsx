@@ -96,7 +96,7 @@ export function PublicLinkCard({ object, record, onChanged }: {
           <div className="small muted">Embed on a website</div>
           <textarea readOnly className="public-link-snippet" value={snippet} rows={3} onFocus={(e) => e.target.select()} aria-label="Embed snippet" />
           <div className="small muted">
-            The website must be listed in {me.is_admin ? <Link to="/settings/forms">Settings → Forms</Link> : 'Settings → Forms'}.
+            The website must be listed in {me.is_admin ? <Link to="/settings/embed-domains">Settings → Embed domains</Link> : 'Settings → Embed domains'}.
           </div>
         </>
       )}

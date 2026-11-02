@@ -77,7 +77,9 @@ export interface PublicBookingPage {
   name: string | null;
   description: string | null;
   host_name: string | null;
+  // the default length, and every length the visitor can pick (minutes)
   duration_minutes: number;
+  durations: number[];
   timezone: string;
   location_type: 'google_meet' | 'teams' | 'phone' | 'in_person' | 'custom' | null;
   max_days_ahead: number;
@@ -125,12 +127,13 @@ export function publicApi(base: string) {
     submit: (key: string, body: { values: Record<string, unknown>; page_url: string; _hp: string; _elapsed: number }) =>
       call<{ ok: true; message: string }>('POST', `/forms/${encodeURIComponent(key)}/submissions`, body),
     booking: (key: string) => call<PublicBookingPage>('GET', `/booking/${encodeURIComponent(key)}`),
-    bookingSlots: (key: string, from: Date, to: Date) =>
-      call<{ slots: string[]; duration_minutes: number }>('GET', `/booking/${encodeURIComponent(key)}/slots?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`),
+    bookingSlots: (key: string, from: Date, to: Date, duration: number) =>
+      call<{ slots: string[]; duration_minutes: number }>('GET',
+        `/booking/${encodeURIComponent(key)}/slots?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&duration=${duration}`),
     bookingBefore: (key: string, values: Record<string, unknown>) => call<{ ok: true }>('POST', `/booking/${encodeURIComponent(key)}/before`, { values }),
     bookingPhone: (key: string, number: string) => call<PhoneResult>('POST', `/booking/${encodeURIComponent(key)}/phone`, { number }),
     book: (key: string, body: {
-      start: string; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; _hp: string; _elapsed: number;
+      start: string; duration: number; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; _hp: string; _elapsed: number;
     }) => call<BookingResult>('POST', `/booking/${encodeURIComponent(key)}/book`, body)
   };
 }

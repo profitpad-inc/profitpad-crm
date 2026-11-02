@@ -368,5 +368,20 @@ begin
   perform meta._test_check(has_table_privilege('test_crm_api', 'auth.calendar_connections', 'insert'), 'API writes calendar connections');
 end $t$;
 
+-- File storage (0025): upload status and public link key on files, and the
+-- storage properties only the API's file endpoints may write.
+do $t$
+declare
+  v_file text;
+begin
+  perform meta._test_check((select count(*) from meta.pc_0002 where object_type_id = 'pc_0050' and read_only
+    and api_name in ('mime_type', 'size_bytes', 'storage_key', 'checksum', 'status', 'public_token')) = 6, 'file storage properties are read-only');
+  perform meta._test_check((select array_agg(api_value order by api_value) from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+    where p.object_type_id = 'pc_0050' and p.api_name = 'status') = '{ready,uploading}', 'file status options');
+  perform meta._test_check(has_column_privilege('test_crm_api', 'crm.pc_0050', 'public_token', 'update'), 'API writes public_token');
+  insert into crm.pc_0050 (name, status, public_token) values ('a.png', '{ready}', 'tok1') returning pc_0050_id into v_file;
+  perform meta._test_expect_error($$insert into crm.pc_0050 (name, public_token) values ('b.png', 'tok1')$$, '');
+end $t$;
+
 rollback;
 \echo all core tests passed

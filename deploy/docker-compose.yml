@@ -7,13 +7,19 @@ services:
     image: profitpad-crm-api
     container_name: test-crm-api
     restart: unless-stopped
-    # PGUSER, PGPASSWORD, PGDATABASE, CORS_ORIGINS, DOCS_PUBLIC, TRUST_PROXY
+    # PGUSER, PGPASSWORD, PGDATABASE, CORS_ORIGINS, DOCS_PUBLIC, TRUST_PROXY, FILES_URL_KEY
     env_file: .env
     environment:
       PGHOST: postgres          # the postgres container, reached over n8n_net
       PGPORT: "5432"
       HOST: 0.0.0.0
       PORT: "3100"
+      # stored files: written here by the API, read by nginx on the host
+      # from /srv/test_crm_files (location /_pcrm_files/)
+      FILES_DIR: /data/files
+      FILES_ACCEL_PREFIX: /_pcrm_files/
+    volumes:
+      - /srv/test_crm_files:/data/files
     ports:
       - "127.0.0.1:3100:3100"
     networks:

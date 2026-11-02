@@ -59,3 +59,9 @@
 .cal-calendars label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
 .cal-calendars input { width: auto; }
 .cal-connect { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.bk-lengths { display: flex; flex-wrap: wrap; gap: 8px; }
+.bk-length { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border: 1px solid var(--border); border-radius: 999px; }
+.bk-length.default { border-color: var(--primary); }
+.bk-link { font: inherit; background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; }
+.bk-link:disabled { opacity: .5; cursor: default; }

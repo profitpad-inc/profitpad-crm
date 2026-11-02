@@ -33,6 +33,11 @@ button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary);
 .bk-done .pp-meta { margin-top: 4px; }
 .bk-message { white-space: pre-line; }
 
+.bk-lengths { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.bk-length { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--page-background); color: var(--text); cursor: pointer; }
+.bk-length:hover { border-color: var(--primary); }
+.bk-length.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+
 @media (max-width: 640px) {
   .bk-picker { grid-template-columns: 1fr; }
   .bk-times { max-height: none; }

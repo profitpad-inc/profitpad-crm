@@ -247,6 +247,15 @@ export async function searchRecords(obj: ObjectDef, principal: Principal, req: S
   };
 }
 
+// Checks file ids newly placed in a file property (files.ts registers it):
+// each must be a ready file the caller can already open, so linking a file
+// to a record never grants access to it.
+type FileIdCheck = (db: Db, principal: Principal, ids: string[], property: string) => Promise<void>;
+let fileIdCheck: FileIdCheck | null = null;
+export function onFilePropertyWrite(check: FileIdCheck): void {
+  fileIdCheck = check;
+}
+
 interface WritePlan {
   columns: string[];
   values: unknown[];
@@ -268,6 +277,11 @@ async function planWrite(
     if (!prop || prop.row_status !== 'active' || propertyAccess(principal, prop) === 'hidden') throw badRequest(`unknown property "${name}"`);
     if (!isWritable(prop) || propertyAccess(principal, prop) === 'read_only') throw badRequest(`"${prop.api_name}" is read-only`);
     const { value, newOptions } = toDb(prop, raw, existing?.[prop.api_name]);
+    if (prop.type === 'file' && Array.isArray(value) && fileIdCheck) {
+      const before = new Set(Array.isArray(existing?.[prop.api_name]) ? (existing![prop.api_name] as string[]) : []);
+      const added = (value as string[]).filter((id) => !before.has(id));
+      if (added.length > 0) await fileIdCheck(client, principal, added, prop.api_name);
+    }
     for (const v of newOptions) {
       await client.query('select meta.add_option($1, $2, $3, $4)', [obj.object_type_id, prop.api_name, v, v]);
     }

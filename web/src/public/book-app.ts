@@ -1,6 +1,13 @@
 import { el, publicApi, queryParamsFromLocation, PublicApiError, type BookingResult, type PublicBookingPage } from './public-api';
 import { injectFormCss, renderForm } from './form-renderer';
 
+// "15 min", "1 hr", "1 hr 30 min"
+function lengthLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return [h ? `${h} hr` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+}
+
 // The booking flow, drawn into a container: the hosted page (/p/book/,
 // book.ts) and booking pages embedded in other websites (embed.js, inside a
 // shadow root). Steps: the form before the time (if the page has one), a
@@ -10,7 +17,7 @@ import { injectFormCss, renderForm } from './form-renderer';
 // same transaction as the booking.
 //
 // Embedded, every request comes from the website itself, so the API only
-// answers websites listed in Settings -> Forms (the same list as forms).
+// answers websites listed in Settings -> Embed domains (the same list as forms).
 
 export interface BookingMountOptions {
   apiBase: string;
@@ -35,6 +42,8 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   let afterValues: Record<string, unknown> | null = null;
   let honeypot = '';
   let chosen: string | null = null;
+  // the meeting length picked (minutes); the page's default at first
+  let duration = 0;
   let notice: string | null = null;
   // calendar: the month shown (in the visitor's zone) and its open times by day
   let month = { y: 0, m: 0 };
@@ -70,7 +79,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       ...(page.form_after ? [['after', 'A few questions'] as [Step, string]] : []),
       ['done', 'Booked']
     ];
-    const facts = [`${page.duration_minutes} minutes`, page.host_name ? `with ${page.host_name}` : null, page.location_type ? LOCATION[page.location_type] : null].filter(Boolean);
+    const facts = [lengthsText(), page.host_name ? `with ${page.host_name}` : null, page.location_type ? LOCATION[page.location_type] : null].filter(Boolean);
     root.replaceChildren(el('main', { class: 'pp-page bk-page' },
       el('div', { class: 'pp-card' },
         el('h1', {}, page.name ?? 'Book a meeting'),
@@ -104,6 +113,12 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       }
     });
     return el('nav', { class: 'bk-steps', 'aria-label': 'Steps' }, ...parts);
+  }
+
+  // "30 min", or "15 min, 30 min or 1 hr" when the visitor can pick
+  function lengthsText(): string {
+    const all = (page.durations?.length ? page.durations : [page.duration_minutes]).map(lengthLabel);
+    return all.length > 1 ? `${all.slice(0, -1).join(', ')} or ${all[all.length - 1]}` : all[0];
   }
 
   function formFor(which: 'before' | 'after') {
@@ -145,7 +160,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     slotsByDay = new Map();
     if (to > from) {
       try {
-        const { slots } = await api.bookingSlots(key, from, to);
+        const { slots } = await api.bookingSlots(key, from, to, duration);
         for (const s of slots) {
           const k = dayKey(new Date(s));
           slotsByDay.set(k, [...(slotsByDay.get(k) ?? []), s]);
@@ -238,7 +253,22 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       drawPicker();
     });
 
+    // the visitor's choice of length, when the page offers more than one
+    const lengths = page.durations?.length > 1 ? el('div', { class: 'bk-lengths', role: 'radiogroup', 'aria-label': 'Meeting length' },
+      ...page.durations.map((n) => {
+        const b = el('button', { class: `bk-length${n === duration ? ' on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(n === duration) }, lengthLabel(n));
+        b.addEventListener('click', async () => {
+          if (n === duration) return;
+          duration = n;
+          await loadMonth();
+          if (!pickedDay || !slotsByDay.has(pickedDay)) pickedDay = [...slotsByDay.keys()].filter(inMonth).sort()[0] ?? null;
+          drawPicker();
+        });
+        return b;
+      })) : null;
+
     shell('time',
+      lengths,
       slotError ? el('p', { class: 'pp-error', role: 'alert' }, slotError) : null,
       el('div', { class: 'bk-picker' },
         el('div', {}, el('div', { class: 'bk-month-head' }, back, el('strong', {}, title), next), el('div', { class: 'bk-grid' }, ...cells)),
@@ -257,7 +287,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     const change = el('button', { class: 'bk-link', type: 'button' }, 'Change');
     change.addEventListener('click', () => void showPicker());
     const d = new Date(chosen!);
-    return el('div', { class: 'bk-chosen' }, el('strong', {}, `${longDate(d)}, ${clock(d)} (${tz.replace(/_/g, ' ')})`), change);
+    return el('div', { class: 'bk-chosen' }, el('strong', {}, `${longDate(d)}, ${clock(d)} (${tz.replace(/_/g, ' ')}), ${lengthLabel(duration)}`), change);
   }
 
   function pick(start: string): void {
@@ -311,6 +341,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     try {
       res = await api.book(key, {
         start: chosen!,
+        duration,
         ...(page.form_before ? { before: { values: beforeValues ?? {} } } : {}),
         ...(page.form_after ? { after: { values: afterValues ?? {} } } : {}),
         page_url: pageUrl(),
@@ -357,6 +388,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     if (!key) return message('This link is missing its booking page key.');
     try {
       page = await api.booking(key);
+      duration = page.duration_minutes;
       opts.onTheme(page.theme);
       if (!opts.embedded) document.title = page.name ?? 'Book a meeting';
       injectFormCss(opts.styleTarget);
@@ -364,7 +396,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       else await showPicker(true);
     } catch (err) {
       const status = (err as { status?: number }).status;
-      // embedded on a website not in Settings -> Forms, the browser blocks the answer (status 0)
+      // embedded on a website not in Settings -> Embed domains, the browser blocks the answer (status 0)
       message(status === 404 ? 'This booking page is not available.'
         : opts.embedded && status === 0 ? 'This booking page is not available on this website.' : (err as Error).message);
     }

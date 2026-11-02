@@ -9,6 +9,8 @@ import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
+import { FileCard } from '../components/FileCard';
+import { FileField } from '../components/FileField';
 
 interface Link_ {
   association_id: string;
@@ -50,7 +52,8 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   forms: ['definition', 'public_key'],
   quotes: ['public_key', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
   form_submissions: ['summary', 'submission_values'],
-  booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id']
+  booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options'],
+  files: ['public_token', 'storage_key']
 };
 
 export function RecordPage() {
@@ -180,6 +183,7 @@ export function RecordPage() {
           <aside className="record-right">
             {(object === 'quotes' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
             {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
+            {object === 'files' && <FileCard record={record} />}
             {cards.map((o) => (
               <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />
             ))}
@@ -269,6 +273,10 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
           {p.type === 'dropdown' && p.options.single_value !== true && (
             <button className="btn small" onClick={() => commit(p)}>Save</button>
           )}
+        </div>
+      ) : p.type === 'file' ? (
+        <div className="prop-value">
+          <FileField object={schema.api_name} record={record} property={p} canEdit={p.row_status === 'active' && !p.read_only} onSaved={onSaved} />
         </div>
       ) : (
         <div className="prop-value">{formatValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>

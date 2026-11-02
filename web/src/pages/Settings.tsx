@@ -26,7 +26,7 @@ export function Settings() {
           {me.is_admin && <NavLink to="/settings/properties">Properties</NavLink>}
           {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
           {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
-          {me.is_admin && <NavLink to="/settings/forms">Forms</NavLink>}
+          {me.is_admin && <NavLink to="/settings/embed-domains">Embed domains</NavLink>}
           {me.is_admin && <NavLink to="/settings/api-keys">API keys</NavLink>}
           {me.is_admin && <NavLink to="/settings/security-log">Security log</NavLink>}
         </nav>
@@ -40,7 +40,8 @@ export function Settings() {
             <Route path="properties" element={me.is_admin ? <PropertySettings /> : <Navigate to="/settings" />} />
             <Route path="users" element={me.is_admin ? <UserSettings /> : <Navigate to="/settings" />} />
             <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
-            <Route path="forms" element={me.is_admin ? <FormsSettings /> : <Navigate to="/settings" />} />
+            <Route path="embed-domains" element={me.is_admin ? <EmbedDomains /> : <Navigate to="/settings" />} />
+            <Route path="forms" element={<Navigate to="/settings/embed-domains" replace />} />
             <Route path="api-keys" element={me.is_admin ? <ApiKeySettings /> : <Navigate to="/settings" />} />
             <Route path="security-log" element={me.is_admin ? <SecurityLog /> : <Navigate to="/settings" />} />
           </Routes>
@@ -116,9 +117,9 @@ function ThemeSettings() {
   );
 }
 
-// Websites allowed to send forms (embed.js). The CRM's own address is always
+// Embed domains: websites allowed to embed forms and booking pages (embed.js). The CRM's own address is always
 // allowed, for the hosted /p/form/ page.
-function FormsSettings() {
+function EmbedDomains() {
   const [origins, setOrigins] = useState<string[] | null>(null);
   const [draft, setDraft] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
@@ -151,7 +152,7 @@ function FormsSettings() {
 
   return (
     <section>
-      <h2>Forms</h2>
+      <h2>Embed domains</h2>
       <p className="muted">
         Websites allowed to embed forms and booking pages with the snippet from their record page. Enter each address
         separately: <code>https://example.com</code> and <code>https://www.example.com</code> are different websites.
@@ -164,7 +165,8 @@ function FormsSettings() {
               {origins.map((o) => (
                 <li key={o}>
                   <span>{o}</span>
-                  <button className="icon-btn push-right faint-btn" onClick={() => save(origins.filter((x) => x !== o))} aria-label={`Remove ${o}`}>
+                  <button className="icon-btn push-right" title="Remove" aria-label={`Remove ${o}`}
+                    onClick={() => window.confirm(`Remove ${o}? Forms and booking pages embedded there stop working.`) && save(origins.filter((x) => x !== o))}>
                     <Trash2 size={14} />
                   </button>
                 </li>

@@ -7,10 +7,11 @@ import { DatePicker } from './DatePicker';
 import { SearchSelect } from './SearchSelect';
 import '../booking.css';
 
-// Booking page editor on a booking page's record page: available hours (rows
+// Booking page editor on a booking page's record page: meeting lengths (the
+// visitor picks one; the default is picked at first), available hours (rows
 // of days, from and to, plus date overrides) in the page's time zone, the forms asked before and
 // after the time picker, and whether the page can take bookings (with its next
-// open times). Duration, buffers, notice, location and host are ordinary
+// open times). Buffers, notice, location and host are ordinary
 // properties in the left column. The API checks everything again on save
 // (api/src/routes/booking.ts, api/src/calendar/slots.ts).
 
@@ -198,6 +199,65 @@ function ZoneClock({ zone }: { zone: string }) {
   return <span className="bk-zone-now">({text})</span>;
 }
 
+// "15 min", "1 hr", "1 hr 30 min"
+export function lengthLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return [h ? `${h} hr` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+}
+
+function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolean; onSave: (p: Record<string, unknown>, message: string) => void }) {
+  const raw = record.properties.duration_minutes;
+  const def = raw === null || raw === undefined || raw === '' ? null : Number(raw);
+  let list: number[] = [];
+  try {
+    const parsed = typeof record.properties.duration_options === 'string' ? JSON.parse(record.properties.duration_options) : [];
+    if (Array.isArray(parsed)) list = parsed.filter((n): n is number => typeof n === 'number');
+  } catch {
+    list = [];
+  }
+  const lengths = [...new Set([...list, ...(def ? [def] : [])])].sort((a, b) => a - b);
+  const [adding, setAdding] = useState('');
+  const save = (next: number[], nextDefault: number | null, message: string) =>
+    onSave({ duration_minutes: nextDefault, duration_options: next.length > 1 ? JSON.stringify(next) : null }, message);
+  const add = () => {
+    const n = Number(adding);
+    if (!Number.isInteger(n) || n < 5 || n > 1440 || lengths.includes(n)) return;
+    save([...lengths, n].sort((a, b) => a - b), def ?? n, 'Length added');
+    setAdding('');
+  };
+
+  return (
+    <div className="card">
+      <h3>Meeting lengths</h3>
+      <p className="small muted">Visitors pick one. The default is picked at first.</p>
+      <div className="bk-lengths">
+        {lengths.length === 0 && <span className="muted small">No length yet.</span>}
+        {lengths.map((n) => (
+          <span key={n} className={`bk-length${n === def ? ' default' : ''}`}>
+            <strong>{lengthLabel(n)}</strong>
+            {n === def ? <span className="cal-tag">Default</span> : (
+              <button className="bk-link small" disabled={saving} onClick={() => save(lengths, n, `${lengthLabel(n)} is the default`)}>Make default</button>
+            )}
+            {lengths.length > 1 && (
+              <button className="icon-btn" disabled={saving} aria-label={`Remove ${lengthLabel(n)}`}
+                onClick={() => {
+                  const next = lengths.filter((x) => x !== n);
+                  save(next, n === def ? next[0] : def, 'Length removed');
+                }}><Trash2 size={13} /></button>
+            )}
+          </span>
+        ))}
+      </div>
+      <div className="bk-actions">
+        <input type="number" min={5} max={1440} step={5} placeholder="Minutes" value={adding} style={{ width: 110 }} aria-label="Length in minutes"
+          onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button className="btn small" disabled={saving || !adding} onClick={add}><Plus size={13} /> Add length</button>
+      </div>
+    </div>
+  );
+}
+
 export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
   const { toast } = useApp();
   const stored = useMemo(() => parse(record.properties.availability), [record.properties.availability]);
@@ -312,6 +372,8 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           </>
         )}
       </div>
+
+      <Lengths record={record} saving={saving} onSave={(p, m) => void save(p, m)} />
 
       <div className="card">
         <h3>Forms</h3>

@@ -56,4 +56,4 @@ To model a boolean, use a single-value dropdown with options `true` / `false`.
 `calc_sql` + `calc_output_type` (`text`, `number`, `date`, `datetime`). Display options: `display`, `format`, `prefix`, `suffix`, `decimals`, `timezone`. Rules in `docs/RULES.md` section 5.
 
 ## file
-`max_files` (positive integer, *enforced*). File storage itself is not built yet.
+`max_files` (positive integer, *enforced*). Values are ids of `files` records; upload with the file endpoints first, then add the id (see `docs/architecture.md` "File storage"). Only ready files the caller can already open may be added.

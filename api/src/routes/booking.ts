@@ -67,12 +67,43 @@ interface BookingPage {
   confirmationMessage: string | null;
   formBeforeId: string | null;
   formAfterId: string | null;
+  // lengths the visitor can pick (minutes, sorted); always has the default
+  durations: number[];
 }
 
 const first = (v: unknown): string | null => (Array.isArray(v) ? (v[0] ?? null) : typeof v === 'string' && v !== '' ? v : null);
 const num = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number(v));
 const FORM_ID_RE = /^[0-9a-f]{10}$/;
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$/;
+
+// The meeting lengths a page offers: duration_options plus the default
+// duration_minutes, sorted, 5 to 1440 minutes each, at most 12. strict:
+// refuse bad input (writes) rather than skip it (reads).
+function readDurations(raw: unknown, fallback: number | null, strict: boolean): number[] {
+  let list: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      list = raw ? JSON.parse(raw) : [];
+    } catch {
+      if (strict) throw badRequest('duration_options must be a JSON list of minutes', { property: 'duration_options' });
+      list = [];
+    }
+  }
+  if (list === null || list === undefined) list = [];
+  if (!Array.isArray(list)) {
+    if (strict) throw badRequest('duration_options must be a JSON list of minutes', { property: 'duration_options' });
+    list = [];
+  }
+  const ok = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 5 && n <= 1440;
+  if (strict && !(list as unknown[]).every(ok)) {
+    throw badRequest('Meeting lengths must be whole minutes from 5 to 1440.', { property: 'duration_options' });
+  }
+  const set = new Set((list as unknown[]).filter(ok));
+  if (fallback) set.add(fallback);
+  const out = [...set].sort((a, b) => a - b);
+  if (strict && out.length > 12) throw badRequest('A booking page can offer at most 12 meeting lengths.', { property: 'duration_options' });
+  return out;
+}
 
 // A page from its row (crm.pc_0054 columns, dropdowns as text[] or a plain value).
 function pageFromRow(r: Record<string, unknown>): BookingPage {
@@ -99,7 +130,8 @@ function pageFromRow(r: Record<string, unknown>): BookingPage {
   return {
     id: r.pc_0054_id as string, name: text(r.name), description: text(r.description), status: first(r.status), host: first(r.host),
     hostName: text(r.host_name), rules, locationType: first(r.location_type), locationDetails: text(r.location_details),
-    confirmationMessage: text(r.confirmation_message), formBeforeId: text(r.form_before_id), formAfterId: text(r.form_after_id)
+    confirmationMessage: text(r.confirmation_message), formBeforeId: text(r.form_before_id), formAfterId: text(r.form_after_id),
+    durations: readDurations(r.duration_options, rules?.durationMinutes ?? num(r.duration_minutes), false)
   };
 }
 
@@ -139,7 +171,7 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
   const out: string[] = [];
   if (!page.host) out.push('Pick a host.');
   else if (!(await hostConnections(db, page.host)).length) out.push(`${page.hostName ?? 'The host'} has no connected calendar (Settings → Calendars).`);
-  if (!page.rules) out.push('Set a duration, a time zone and the available hours.');
+  if (!page.rules) out.push('Add a meeting length, a time zone and the available hours.');
   if (!page.formBeforeId && !page.formAfterId) out.push('Pick a form to ask before or after the time.');
   if (page.formBeforeId && page.formBeforeId === page.formAfterId) out.push('The forms before and after the time must be different.');
   const [before, after] = [await loadForm(db, page.formBeforeId), await loadForm(db, page.formAfterId)];
@@ -165,6 +197,12 @@ onWrite('booking_pages', async (client, properties, existing) => {
     if (slug && !SLUG_RE.test(slug)) {
       throw badRequest('The page address can have lowercase letters, digits and dashes (3 to 60, not starting or ending with a dash).', { property: 'slug' });
     }
+  }
+  // the lengths always include the default, and one length is stored as none
+  if (out.duration_options !== undefined || (out.duration_minutes !== undefined && existing?.duration_options)) {
+    const fallback = num(out.duration_minutes !== undefined ? out.duration_minutes : existing?.duration_minutes);
+    const list = readDurations(out.duration_options !== undefined ? out.duration_options : existing?.duration_options, fallback, true);
+    out.duration_options = list.length > 1 ? JSON.stringify(list) : null;
   }
   for (const key of ['form_before_id', 'form_after_id'] as const) {
     const v = out[key];
@@ -239,6 +277,14 @@ async function bookedPerDay(db: Db, page: BookingPage, from: Date, to: Date): Pr
   return out;
 }
 
+// The page with the visitor's chosen length (the default when none is given).
+function withDuration(page: BookingPage, raw: unknown): BookingPage {
+  if (raw === undefined || raw === null || raw === '') return page;
+  const minutes = Number(raw);
+  if (!page.durations.includes(minutes)) throw badRequest(`duration must be one of ${page.durations.join(', ')} minutes`, { field: 'duration' });
+  return { ...page, rules: page.rules ? { ...page.rules, durationMinutes: minutes } : null };
+}
+
 async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh = false): Promise<Date[]> {
   if (!page.rules || !page.host) return [];
   // buffers reach outside the window
@@ -294,6 +340,7 @@ export async function bookingRoutes(app: FastifyInstance) {
       description: page.description,
       host_name: page.hostName,
       duration_minutes: page.rules!.durationMinutes,
+      durations: page.durations,
       timezone: page.rules!.timezone,
       location_type: page.locationType,
       max_days_ahead: page.rules!.maxDaysAhead,
@@ -303,9 +350,9 @@ export async function bookingRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get<{ Params: { key: string }; Querystring: { from?: string; to?: string } }>('/v1/public/booking/:key/slots', async (req, reply) => {
+  app.get<{ Params: { key: string }; Querystring: { from?: string; to?: string; duration?: string } }>('/v1/public/booking/:key/slots', async (req, reply) => {
     rateLimit(req, 'booking-slots', 60);
-    const page = await publishedPage(req.params.key);
+    const page = withDuration(await publishedPage(req.params.key), req.query.duration);
     const from = req.query.from ? new Date(req.query.from) : new Date();
     const to = req.query.to ? new Date(req.query.to) : new Date(from.getTime() + 7 * 86400000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) throw badRequest('from and to must be ISO times, from before to');
@@ -339,12 +386,14 @@ export async function bookingRoutes(app: FastifyInstance) {
 
   app.post<{
     Params: { key: string };
-    Body: { start?: unknown; before?: { values?: unknown }; after?: { values?: unknown }; page_url?: unknown; _hp?: unknown; _elapsed?: unknown };
+    Body: {
+      start?: unknown; duration?: unknown; before?: { values?: unknown }; after?: { values?: unknown }; page_url?: unknown; _hp?: unknown; _elapsed?: unknown;
+    };
   }>('/v1/public/booking/:key/book', { bodyLimit: 64 * 1024 }, async (req, reply) => {
     const origin = await requireOrigin(req.headers.origin);
     rateLimit(req, 'booking-book', 10);
-    const page = await publishedPage(req.params.key);
     const b = req.body ?? {};
+    const page = withDuration(await publishedPage(req.params.key), b.duration);
     const start = typeof b.start === 'string' ? new Date(b.start) : null;
     if (!start || Number.isNaN(start.getTime())) throw badRequest('start must be an ISO time');
     const end = new Date(start.getTime() + page.rules!.durationMinutes * 60000);
@@ -409,6 +458,7 @@ export async function bookingRoutes(app: FastifyInstance) {
         const lines = [
           `Booked through ${page.name ?? 'a booking page'}.`,
           `${attendee.name ? `${attendee.name} <${attendee.email}>` : attendee.email}`,
+          ...(page.durations.length > 1 ? [`Length: ${page.rules!.durationMinutes} minutes`] : []),
           ...answers.flatMap((a) => summarize(a.form.definition, a.values).filter((x) => !x.hidden).map((x) => `${x.label}: ${x.value}`)),
           ...(page.locationDetails ? ['', page.locationDetails] : [])
         ];

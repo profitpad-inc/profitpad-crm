@@ -9,7 +9,7 @@ import { Menu, Modal } from '../components/ui';
 // /v1/schema endpoints, so the database (meta.* functions) enforces the
 // naming and option rules; its messages are shown as they come back.
 
-type PropType = 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation';
+type PropType = 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'file' | 'calculation';
 type Options = Record<string, unknown>;
 
 const TYPE_LABELS: Record<string, string> = {
@@ -24,8 +24,7 @@ const TYPE_LABELS: Record<string, string> = {
   id_list: 'Record ids'
 };
 
-// File storage is not built yet, so file properties are not offered here.
-const NEW_TYPES: PropType[] = ['text', 'number', 'dropdown', 'date', 'datetime', 'calculation'];
+const NEW_TYPES: PropType[] = ['text', 'number', 'dropdown', 'date', 'datetime', 'file', 'calculation'];
 
 const TEXT_DISPLAYS = [
   { value: 'plain', label: 'Plain text' },
@@ -313,6 +312,7 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
       dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users'],
       date: [],
       datetime: ['timezone'],
+      file: ['max_files'],
       calculation: ['display', 'format', 'prefix', 'suffix', 'decimals', 'timezone']
     };
     const out: Options = {};
@@ -510,6 +510,13 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
         )}
 
         {!locked && type === 'number' && numberOptions}
+
+        {!locked && type === 'file' && (
+          <label className="field">
+            <span>Most files per record (empty for no limit)</span>
+            <input type="number" min={1} step={1} value={str('max_files')} onChange={(e) => set('max_files', num(e.target.value))} style={{ width: 120 }} />
+          </label>
+        )}
 
         {!locked && type === 'datetime' && (
           <label className="field">
