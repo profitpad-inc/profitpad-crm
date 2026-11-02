@@ -5,12 +5,13 @@ An object-based CRM in the spirit of HubSpot, built so that almost every change 
 - **Database:** Postgres. One real, typed column per property, one association table, enum metadata in the database, explicit merges and deletes.
 - **API:** TypeScript + Fastify (`api/`). The OpenAPI document is generated from the live schema, so it changes as objects and properties do.
 - **Web app:** React + Vite (`web/`). Table views, record pages, settings, users and roles.
-- **Sign-in:** Google, plus API keys. Microsoft, passkeys and email links are planned (the tables already exist).
+- **Sign-in:** Google and Microsoft for people; API keys for your own scripts and jobs; OAuth for apps a user connects (AI assistants through the MCP server). Passkeys and email links are planned (the tables already exist).
 
 | | Address |
 |---|---|
 | Web app | https://test-crm.profitpad.com (GitHub Pages) |
 | API and docs | https://api.test-crm.profitpad.com/docs |
+| MCP server | https://api.test-crm.profitpad.com/mcp |
 
 ## Repository layout
 
@@ -31,7 +32,8 @@ You need Node 22.9 or newer and access to a database: either the server database
 
 ```bash
 cd api && cp -n .env.example .env && npm install
-npm run create-key -- --name "Me" --scopes admin   # prints the key once
+npm run create-key -- --name "Setup" --scopes admin --bootstrap   # 24-hour key for a database with no users yet
+npm run create-key -- --name "Me" --scopes admin --user <user id>  # a key acting as an existing user
 npm run dev                                         # http://127.0.0.1:3000/docs
 ```
 
@@ -42,6 +44,15 @@ cd web && npm install && npm run dev                # http://localhost:5173
 ```
 
 Sign in with the API key, or with Google once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in `api/.env` (see `docs/deploy.md`, section 4).
+
+## Connecting apps and AI assistants
+
+The API accepts two credentials, both acting as one CRM user and never doing more than that user may:
+
+- **API keys** (`pcrm_...`): for your own scripts, n8n flows and scheduled jobs. Admins make them in Settings → API keys; they last 90 to 365 days and can be rotated.
+- **OAuth tokens**: for apps a user connects themselves. The app sends the user to sign in and click Allow; it gets 1-hour access tokens with rotating refresh tokens, limited to read or read and write. Users see and disconnect their apps in Settings → Connected apps; admins can block an app for everyone.
+
+To use the CRM from an AI assistant such as Claude, add the MCP server address (`https://api.test-crm.profitpad.com/mcp`, also shown in Settings → Connected apps) as a connector and sign in when asked. The full authentication guide is at the top of the API docs; the design is in `docs/architecture.md` ("OAuth and MCP").
 
 For a playground that never touches real data, `./db/test-local.sh` builds a throwaway local Postgres (Homebrew) on port 5499 with every migration applied, and `.claude/launch.json` has an API and web app pointed at it. Fill it with `PCRM_API_URL=http://127.0.0.1:3001 /usr/bin/python3 scripts/generate_sample_data.py`.
 

@@ -346,5 +346,27 @@ begin
   perform meta._test_check(meta.association_system_only('pc_0053', 'pc_0052') and not meta.association_system_only('pc_0053', 'pc_0010'), 'association_system_only');
 end $t$;
 
+-- Meeting booker (0022): booking pages, meeting properties on calls, system
+-- links between meetings and their page, calendar tokens hidden from readers.
+do $t$
+declare
+  v_page text;
+  v_call text;
+begin
+  perform meta._test_check((select api_name from meta.pc_0001 where object_type_id = 'pc_0054') = 'booking_pages', 'booking_pages object');
+  perform meta._test_check((select count(*) from meta.pc_0002 where object_type_id = 'pc_0054' and api_name in
+    ('host', 'duration_minutes', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'public_key')) = 7, 'booking page properties');
+  perform meta._test_check((select count(*) from meta.pc_0002 where object_type_id = 'pc_0030' and api_name in
+    ('attendee_email', 'meeting_url', 'calendar_event_id')) = 3, 'meeting properties on calls');
+  perform meta._test_check(meta.association_system_only('pc_0054', 'pc_0030') and meta.association_system_only('pc_0053', 'pc_0052')
+    and not meta.association_system_only('pc_0054', 'pc_0010'), 'meetings and booking pages are system links');
+  insert into crm.pc_0054 (name) values ('Intro call') returning pc_0054_id into v_page;
+  insert into crm.pc_0030 (name) values ('Booked') returning pc_0030_id into v_call;
+  perform meta.associate('calls', v_call, 'booking_pages', v_page);
+  perform meta._test_expect_error(format($$update crm.pc_0054 set duration_minutes = 1.5 where pc_0054_id = %L$$, v_page), '');
+  perform meta._test_check(not has_table_privilege('test_crm_reader', 'auth.calendar_connections', 'select'), 'readers cannot see calendar tokens');
+  perform meta._test_check(has_table_privilege('test_crm_api', 'auth.calendar_connections', 'insert'), 'API writes calendar connections');
+end $t$;
+
 rollback;
 \echo all core tests passed

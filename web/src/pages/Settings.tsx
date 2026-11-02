@@ -8,6 +8,7 @@ import { displayName, initials } from '../lib/display';
 import { RoleSettings, UserSettings } from './AccessSettings';
 import { ApiKeySettings, SecurityLog } from './SecuritySettings';
 import { ConnectedApps } from './ConnectedApps';
+import { CalendarSettings } from './CalendarSettings';
 import { PropertySettings } from './PropertySettings';
 
 export function Settings() {
@@ -19,6 +20,7 @@ export function Settings() {
         <nav className="settings-nav">
           <NavLink to="/settings" end>Account</NavLink>
           <NavLink to="/settings/connected-apps">Connected apps</NavLink>
+          {me.user && <NavLink to="/settings/calendars">Calendars</NavLink>}
           {me.is_admin && <NavLink to="/settings/theme">Theme</NavLink>}
           {me.is_admin && <NavLink to="/settings/navigation">Navigation menus</NavLink>}
           {me.is_admin && <NavLink to="/settings/properties">Properties</NavLink>}
@@ -32,6 +34,7 @@ export function Settings() {
           <Routes>
             <Route index element={<Account />} />
             <Route path="connected-apps" element={<ConnectedApps />} />
+            <Route path="calendars" element={<CalendarSettings />} />
             <Route path="theme" element={me.is_admin ? <ThemeSettings /> : <Navigate to="/settings" />} />
             <Route path="navigation" element={me.is_admin ? <NavSettings /> : <Navigate to="/settings" />} />
             <Route path="properties" element={me.is_admin ? <PropertySettings /> : <Navigate to="/settings" />} />

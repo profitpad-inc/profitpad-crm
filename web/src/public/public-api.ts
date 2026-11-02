@@ -67,9 +67,32 @@ export interface PhoneResult {
 }
 
 export class PublicApiError extends Error {
-  constructor(public status: number, message: string, public field?: string) {
+  // form: which form of a booking page the field belongs to ('before' or 'after')
+  constructor(public status: number, message: string, public field?: string, public form?: string) {
     super(message);
   }
+}
+
+export interface PublicBookingPage {
+  name: string | null;
+  description: string | null;
+  host_name: string | null;
+  duration_minutes: number;
+  timezone: string;
+  location_type: 'google_meet' | 'teams' | 'phone' | 'in_person' | 'custom' | null;
+  max_days_ahead: number;
+  form_before: Omit<PublicForm, 'theme' | 'description'> | null;
+  form_after: Omit<PublicForm, 'theme' | 'description'> | null;
+  theme: Record<string, string>;
+}
+
+export interface BookingResult {
+  start: string;
+  end: string;
+  meeting_url: string | null;
+  location_type: PublicBookingPage['location_type'];
+  location_details: string | null;
+  confirmation_message: string | null;
 }
 
 export function publicApi(base: string) {
@@ -87,7 +110,7 @@ export function publicApi(base: string) {
       throw new PublicApiError(0, 'Could not reach the server. Check your connection and try again.');
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new PublicApiError(res.status, data.message ?? `Request failed (${res.status})`, data.details?.field);
+    if (!res.ok) throw new PublicApiError(res.status, data.message ?? `Request failed (${res.status})`, data.details?.field, data.details?.form);
     return data as T;
   }
   return {
@@ -100,7 +123,15 @@ export function publicApi(base: string) {
     phone: (key: string, number: string) =>
       call<PhoneResult>('POST', `/forms/${encodeURIComponent(key)}/phone`, { number }),
     submit: (key: string, body: { values: Record<string, unknown>; page_url: string; _hp: string; _elapsed: number }) =>
-      call<{ ok: true; message: string }>('POST', `/forms/${encodeURIComponent(key)}/submissions`, body)
+      call<{ ok: true; message: string }>('POST', `/forms/${encodeURIComponent(key)}/submissions`, body),
+    booking: (key: string) => call<PublicBookingPage>('GET', `/booking/${encodeURIComponent(key)}`),
+    bookingSlots: (key: string, from: Date, to: Date) =>
+      call<{ slots: string[]; duration_minutes: number }>('GET', `/booking/${encodeURIComponent(key)}/slots?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`),
+    bookingBefore: (key: string, values: Record<string, unknown>) => call<{ ok: true }>('POST', `/booking/${encodeURIComponent(key)}/before`, { values }),
+    bookingPhone: (key: string, number: string) => call<PhoneResult>('POST', `/booking/${encodeURIComponent(key)}/phone`, { number }),
+    book: (key: string, body: {
+      start: string; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; _hp: string; _elapsed: number;
+    }) => call<BookingResult>('POST', `/booking/${encodeURIComponent(key)}/book`, body)
   };
 }
 

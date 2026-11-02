@@ -203,9 +203,16 @@ let counter = 0;
 // params: query parameters to use instead of the page's (the preview).
 // checkPhone: how phone answers are checked (default: the form's public
 // endpoint; the builder's preview uses the signed-in API).
+// onSubmit: hands the checked answers to the caller instead of submitting
+// the form (booking pages send them with the booking); errors it throws show
+// on the form like the API's. submitLabel replaces the form's button text and
+// initialValues refills answers given earlier (going back a step).
 export function renderForm(container: HTMLElement, opts: {
   apiBase: string; key: string; form: PublicForm; preview?: boolean; params?: URLSearchParams;
   checkPhone?: (number: string) => Promise<PhoneResult>;
+  onSubmit?: (values: Record<string, unknown>, bot: { hp: string; elapsed: number }) => Promise<void>;
+  submitLabel?: string;
+  initialValues?: Record<string, unknown>;
 }): void {
   const definition = { ...opts.form.definition, fields: normalize(opts.form.definition.fields) };
   const asked = definition.fields.filter((f) => !f.from_url);
@@ -230,7 +237,7 @@ export function renderForm(container: HTMLElement, opts: {
   } else {
     form = el('form', {}, ...asked.map((f) => generatedField(f, `${prefix}-${f.name}`)),
       el('div', { class: 'pcrm-error', role: 'alert', 'data-error': '_form' }),
-      el('button', { type: 'submit' }, definition.submit_label));
+      el('button', { type: 'submit' }, opts.submitLabel ?? definition.submit_label));
     container.append(form);
   }
   form.noValidate = true;
@@ -264,7 +271,7 @@ export function renderForm(container: HTMLElement, opts: {
   form.append(el('div', { class: 'pcrm-hp' }, hp));
 
   for (const f of asked) {
-    const v = fromParams(params, f);
+    const v = opts.initialValues?.[f.name] ?? fromParams(params, f);
     if (v !== undefined) prefill(form, f, v);
   }
   const urlValues = Object.fromEntries(fromUrl.map((f) => [f.name, fromParams(params, f)]).filter(([, v]) => !isEmpty(v)));
@@ -438,6 +445,11 @@ export function renderForm(container: HTMLElement, opts: {
     const submit = form.querySelector<HTMLButtonElement | HTMLInputElement>('button[type=submit], button:not([type]), input[type=submit]');
     if (submit) submit.disabled = true;
     try {
+      if (opts.onSubmit) {
+        await opts.onSubmit(values, { hp: hp.value, elapsed: Date.now() - shownAt });
+        if (submit) submit.disabled = false;
+        return;
+      }
       const query = params.toString();
       const baseUrl = window.location.href.split('#')[0].split('?')[0];
       const pageUrl = query ? `${baseUrl}?${query}` : baseUrl;

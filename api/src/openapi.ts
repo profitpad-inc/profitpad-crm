@@ -68,6 +68,52 @@ function objectSchemas(o: ObjectDef): Record<string, Schema> {
   };
 }
 
+// Shown at the top of the docs page (Markdown).
+const AUTH_GUIDE = `## Authentication
+
+Send a credential in the \`Authorization\` header: \`Authorization: Bearer <credential>\`. There are two kinds, and both act as one CRM user, never with more access than that user's roles give.
+
+| | API key | OAuth access token |
+|---|---|---|
+| Looks like | \`pcrm_<prefix>_<secret>\` | \`pcrm_at_...\` |
+| For | Your own scripts, n8n flows and scheduled jobs | Apps a user connects themselves (AI assistants, other tools) |
+| Made by | An admin, in Settings → API keys (or \`POST /v1/api-keys\`) | The app, after the user signs in and clicks Allow |
+| Lasts | 90, 180 or 365 days; can be rotated | 1 hour, renewed with a rotating refresh token (30 days; 7 for admins) |
+| Scopes | read, write, schema, admin | read, write |
+| Works at | \`/v1\` | \`/v1\` or \`/mcp\`, whichever it was issued for |
+
+**API keys.** Store the key once (it is shown only when created). Each key belongs to a user; the admin scope needs a user with an admin role. Rotate with \`POST /v1/api-keys/{id}/rotate\`. Keys are not accepted by the MCP server.
+
+**OAuth (for apps).** Standard OAuth 2.1 authorization code flow with PKCE (S256); apps are public clients without secrets. Discover the endpoints at \`/.well-known/oauth-authorization-server\`. An app identifies itself with a client ID metadata document (its client_id is an https URL to a JSON file with \`client_id\`, \`client_name\` and \`redirect_uris\`) or registers at \`POST /oauth/register\`. Redirect URIs must be https or http on localhost. Send the user to \`/oauth/authorize\` with \`response_type=code\`, \`client_id\`, \`redirect_uri\`, \`code_challenge\`, \`code_challenge_method=S256\`, \`state\`, \`scope\` (\`read\` or \`read write\`) and \`resource\`: the API URL for tokens used at \`/v1\`, or the MCP URL (\`<API URL>/mcp\`, the default) for the MCP server. The user signs in and allows (or unticks write); the app gets \`code\`, \`state\` and \`iss\` on its redirect URI and trades the code at \`POST /oauth/token\`. Refresh tokens change on every refresh; using an old one again revokes the whole chain. Users see and disconnect their apps in Settings → Connected apps; admins can block an app for everyone. Apps never get the schema or admin scopes, so admin endpoints need an API key or a signed-in admin.
+
+**MCP server.** AI clients such as Claude connect to \`<API URL>/mcp\` (Streamable HTTP, MCP 2026-07-28 and 2025 clients). It needs an OAuth token issued for that address; a request without one gets \`401\` with a \`WWW-Authenticate\` header pointing at \`/.well-known/oauth-protected-resource/mcp\`, from which clients start the OAuth flow by themselves. Tools: list_objects, describe_object, search_records, get_record, create_record, update_record and link_records (the last three need the write scope).`;
+
+// OAuth server, connection management and the MCP endpoint (src/oauth.ts, src/mcp.ts).
+function oauthPaths(): Record<string, unknown> {
+  const tags = ['OAuth and MCP'];
+  const form = (properties: Schema, required: string[]) => ({
+    required: true,
+    content: { 'application/x-www-form-urlencoded': { schema: { type: 'object', required, properties } } }
+  });
+  const oauthError = { 400: json({ type: 'object', properties: { error: { type: 'string' }, error_description: { type: 'string' } } }, 'OAuth error') };
+  const id = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
+  return {
+    '/.well-known/oauth-authorization-server': { get: { tags, security: [], summary: 'Authorization server metadata (RFC 8414)', description: 'Endpoints, scopes (read, write), PKCE S256, client ID metadata document support.', operationId: 'oauth_server_metadata', responses: { 200: json({ type: 'object' }) } } },
+    '/.well-known/oauth-protected-resource': { get: { tags, security: [], summary: 'Protected resource metadata for the REST API (RFC 9728)', operationId: 'oauth_resource_metadata_api', responses: { 200: json({ type: 'object' }) } } },
+    '/.well-known/oauth-protected-resource/mcp': { get: { tags, security: [], summary: 'Protected resource metadata for the MCP server (RFC 9728)', operationId: 'oauth_resource_metadata_mcp', responses: { 200: json({ type: 'object' }) } } },
+    '/oauth/register': { post: { tags, security: [], summary: 'Register an app (dynamic client registration)', description: 'RFC 7591, for clients that do not use a client ID metadata document. Body {client_name, redirect_uris, ...}; every app is a public client (token_endpoint_auth_method none). The consent page shows registered names as unverified.', operationId: 'oauth_register', requestBody: body({ type: 'object', required: ['redirect_uris'], properties: { client_name: { type: 'string' }, redirect_uris: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 20 }, client_uri: { type: 'string' } } }), responses: { 201: json({ type: 'object', properties: { client_id: { type: 'string' }, client_id_issued_at: { type: 'integer' }, client_name: { type: 'string' }, redirect_uris: { type: 'array', items: { type: 'string' } }, token_endpoint_auth_method: { type: 'string' } } }, 'Registered'), ...oauthError } } },
+    '/oauth/authorize': { get: { tags, security: [], summary: 'Sign-in and consent page', description: 'Opened in the user\'s browser, not called by code. Shows sign-in when needed, then the consent page; redirects to redirect_uri with code, state and iss (or error).', operationId: 'oauth_authorize', parameters: ['response_type', 'client_id', 'redirect_uri', 'code_challenge', 'code_challenge_method', 'state', 'scope', 'resource'].map((name) => ({ name, in: 'query', required: ['response_type', 'client_id', 'code_challenge', 'code_challenge_method'].includes(name), schema: { type: 'string' } })), responses: { 200: { description: 'HTML sign-in or consent page' }, 302: { description: 'Back to the app' } } } },
+    '/oauth/token': { post: { tags, security: [], summary: 'Get or refresh tokens', description: 'grant_type authorization_code (code, code_verifier, client_id, redirect_uri, resource?) or refresh_token (refresh_token, client_id, scope?). Access tokens last 1 hour; each refresh returns a new refresh token.', operationId: 'oauth_token', requestBody: form({ grant_type: { type: 'string', enum: ['authorization_code', 'refresh_token'] }, client_id: { type: 'string' }, code: { type: 'string' }, code_verifier: { type: 'string' }, redirect_uri: { type: 'string' }, refresh_token: { type: 'string' }, scope: { type: 'string' }, resource: { type: 'string' } }, ['grant_type', 'client_id']), responses: { 200: json({ type: 'object', properties: { access_token: { type: 'string' }, token_type: { type: 'string' }, expires_in: { type: 'integer' }, refresh_token: { type: 'string' }, scope: { type: 'string' } } }), ...oauthError } } },
+    '/oauth/revoke': { post: { tags, security: [], summary: 'Revoke a token (RFC 7009)', description: 'Revoking a refresh token also ends the access tokens issued with it. Always 200.', operationId: 'oauth_revoke', requestBody: form({ token: { type: 'string' }, client_id: { type: 'string' } }, ['token']), responses: { 200: json({ type: 'object' }) } } },
+    '/v1/oauth/connections': { get: { tags, summary: 'Apps the caller has connected', description: 'all=true lists every user\'s connections (admin). Not available to OAuth tokens.', operationId: 'list_oauth_connections', parameters: [{ name: 'all', in: 'query', required: false, schema: { type: 'boolean' } }], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/oauth/connections/{id}': { delete: { tags, summary: 'Disconnect an app', description: 'Ends every token of the connection at once. Your own, or anyone\'s as an admin with a sign-in within the last 4 hours.', operationId: 'delete_oauth_connection', parameters: [id], responses: { 204: { description: 'Disconnected' }, ...errors } } },
+    '/v1/oauth/apps': { get: { tags, summary: 'Apps that have asked for access (admin)', operationId: 'list_oauth_apps', responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/oauth/apps/{id}/block': { post: { tags, summary: 'Block an app for everyone (admin)', description: 'Its tokens stop working and nobody can connect it until unblocked.', operationId: 'block_oauth_app', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/oauth/apps/{id}/unblock': { post: { tags, summary: 'Unblock an app (admin)', operationId: 'unblock_oauth_app', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/mcp': { post: { tags, security: [{ oauth2: ['read'] }], summary: 'MCP server (Streamable HTTP)', description: 'JSON-RPC for MCP clients; use an MCP client library rather than calling it by hand. Needs an OAuth token issued for this address (API keys are refused). Write tools need the write scope; a read-only token gets 403 insufficient_scope.', operationId: 'mcp', requestBody: body({ type: 'object' }), responses: { 200: json({ type: 'object' }), 401: { description: 'No valid token; see the WWW-Authenticate header' } } } }
+  };
+}
+
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const json = (schema: Schema, description = 'OK') => ({ description, content: { 'application/json': { schema } } });
 const errors = {
@@ -320,6 +366,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     '/v1/public/quotes/{key}/decline': { post: { tags: ['Public pages'], security: [], summary: 'Decline a quote', description: 'Body {name, email, reason?}. Only while the quote is sent and not expired (409 otherwise).', operationId: 'public_decline_quote', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['name', 'email'], properties: { name: { type: 'string' }, email: { type: 'string' }, reason: { type: 'string' } } }), responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/public/forms/{key}': { get: { tags: ['Public pages'], security: [], summary: 'Published form definition', operationId: 'public_get_form', parameters: [publicKeyParam], responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/public/forms/{key}/submissions': { post: { tags: ['Public pages'], security: [], summary: 'Submit a form', description: 'No authentication. The browser\'s Origin must be the UI or a website in Settings → Forms (403 otherwise). Body {values, page_url?, _hp, _elapsed}: values are checked against the form definition; _hp is a hidden field that must stay empty and _elapsed the milliseconds since the form was shown. Limited to 10 per minute per IP and 32 KB.', operationId: 'public_submit_form', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['values'], properties: { values: { type: 'object' }, page_url: { type: 'string' }, _hp: { type: 'string' }, _elapsed: { type: 'number' } } }), responses: { 201: json({ type: 'object' }), ...errors } } },
+    ...oauthPaths(),
     '/v1/integrations/{table}': { get: { tags: ['Integrations'], summary: 'Read an integration table', operationId: 'read_integration', parameters: [{ name: 'table', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
   for (const o of objects) Object.assign(paths, recordPaths(o));
@@ -331,17 +378,34 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       version: reg.version,
       description:
         'Object-based CRM API. Objects, properties and options come from the live registry, so this document changes as the schema does. ' +
-        'Record ids are 10-character lowercase hex strings, unique within an object. Authenticate with `Authorization: Bearer pcrm_...`.'
+        'Record ids are 10-character lowercase hex strings, unique within an object.\n\n' +
+        AUTH_GUIDE
     },
     servers: [{ url: serverUrl }],
-    security: [{ bearer: [] }],
+    // either credential works: an API key or an OAuth access token (alternatives)
+    security: [{ bearer: [] }, { oauth2: [] }],
     tags: [
       { name: 'Schema' }, { name: 'Admin' }, { name: 'Integrations' }, { name: 'Utilities', description: 'Helpers such as phone number validation.' }, { name: 'Public pages', description: 'Customer-facing quote and form pages. The /v1/public routes need no API key.' },
+      { name: 'OAuth and MCP', description: 'Connecting apps as a user (OAuth 2.1) and the MCP server for AI clients. See Authentication above.' },
       ...objects.map((o) => ({ name: o.label_plural, description: `${o.object_type_id}${o.description ? ': ' + o.description : ''}` }))
     ],
     paths,
     components: {
-      securitySchemes: { bearer: { type: 'http', scheme: 'bearer' } },
+      securitySchemes: {
+        bearer: { type: 'http', scheme: 'bearer', description: 'An API key (`pcrm_<prefix>_<secret>`), made by an admin in Settings → API keys.' },
+        oauth2: {
+          type: 'oauth2',
+          description: 'An OAuth access token (`pcrm_at_...`) issued for this API (resource = the API URL). Public clients with PKCE (S256); no client secrets.',
+          flows: {
+            authorizationCode: {
+              authorizationUrl: `${serverUrl}/oauth/authorize`,
+              tokenUrl: `${serverUrl}/oauth/token`,
+              refreshUrl: `${serverUrl}/oauth/token`,
+              scopes: { read: 'See the records the user can see', write: 'Create and change records as the user' }
+            }
+          }
+        }
+      },
       responses: { Error: json(ref('Error'), 'Error') },
       schemas
     }

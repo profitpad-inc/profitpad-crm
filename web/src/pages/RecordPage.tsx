@@ -8,6 +8,7 @@ import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../componen
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { FormBuilder } from '../components/FormBuilder';
+import { BookingPageEditor } from '../components/BookingPageEditor';
 
 interface Link_ {
   association_id: string;
@@ -27,6 +28,7 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 // objects whose pages show other cards by default
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
+  booking_pages: ['calls'],
   invoices: [...DEFAULT_CARDS, 'lines'],
   carts: [...DEFAULT_CARDS, 'lines'],
   quotes: [...DEFAULT_CARDS, 'lines'],
@@ -47,7 +49,8 @@ const ACTIVITY_PROPS: Record<string, string[]> = {
 const HIDDEN_PROPS: Record<string, string[]> = {
   forms: ['definition', 'public_key'],
   quotes: ['public_key', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
-  form_submissions: ['summary', 'submission_values']
+  form_submissions: ['summary', 'submission_values'],
+  booking_pages: ['public_key', 'availability', 'timezone', 'form_before_id', 'form_after_id']
 };
 
 export function RecordPage() {
@@ -119,8 +122,8 @@ export function RecordPage() {
   const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
   const linksTo = objectByName.get(object)?.links_to ?? [];
   const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...associated.map((a) => a.object)])]
-    // a form lists its submissions as a card; elsewhere they are activities
-    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions'));
+    // a form lists its submissions and a booking page its meetings as a card; elsewhere they are activities
+    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls'));
   const isUser = object === 'users';
 
   return (
@@ -165,6 +168,8 @@ export function RecordPage() {
           <section className="record-middle">
             {object === 'forms' ? (
               <FormBuilder record={record} onSaved={setRecord} />
+            ) : object === 'booking_pages' ? (
+              <BookingPageEditor record={record} onSaved={setRecord} />
             ) : object === 'form_submissions' ? (
               <SubmissionAnswers record={record} />
             ) : (
@@ -173,7 +178,7 @@ export function RecordPage() {
           </section>
 
           <aside className="record-right">
-            {(object === 'quotes' || object === 'forms') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
+            {(object === 'quotes' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
             {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
             {cards.map((o) => (
               <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />

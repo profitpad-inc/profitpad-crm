@@ -44,7 +44,7 @@ export const newQuoteKey = () => randomBytes(32).toString('base64url');
 export const newFormKey = () => randomBytes(16).toString('base64url');
 
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
-function checkKey(key: string): string {
+export function checkKey(key: string): string {
   if (!KEY_RE.test(key)) throw notFound('not found');
   return key;
 }
@@ -84,7 +84,7 @@ export function normalizeOrigin(raw: string): string | null {
 // Per IP, per bucket, in memory. nginx limit_req is the main limit in
 // production (docs/deploy.md); this one also covers local runs.
 const hits = new Map<string, number[]>();
-function rateLimit(req: FastifyRequest, bucket: string, max: number, windowMs = 60_000): void {
+export function rateLimit(req: FastifyRequest, bucket: string, max: number, windowMs = 60_000): void {
   const key = `${bucket}:${req.ip}`;
   const now = Date.now();
   const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
@@ -263,7 +263,7 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
   };
 }
 
-async function theme(): Promise<Record<string, string>> {
+export async function theme(): Promise<Record<string, string>> {
   const { rows } = await pool.query("select value from ui.settings where key = 'theme'");
   return rows[0]?.value ?? {};
 }
@@ -295,7 +295,7 @@ async function loadPublishedForm(key: string): Promise<{ id: string; name: strin
 }
 
 // Submissions faster than this are treated as bots.
-const MIN_FILL_MS = 2000;
+export const MIN_FILL_MS = 2000;
 
 // ---- routes ------------------------------------------------------------------
 
@@ -466,7 +466,8 @@ export async function publicRoutes(app: FastifyInstance) {
 
   // Staff: create or regenerate a record's public key (signed in, needs edit
   // access to the record). Regenerating a quote key revokes the old link.
-  for (const [object, newKey] of [['quotes', newQuoteKey], ['forms', newFormKey]] as const) {
+  // Booking pages use form-sized keys (the page is public once published).
+  for (const [object, newKey] of [['quotes', newQuoteKey], ['forms', newFormKey], ['booking_pages', newFormKey]] as const) {
     app.post<{ Params: { id: string } }>(`/v1/objects/${object}/:id/public-link`, async (req) => {
       const p = req.principal!;
       requireScope(p, 'write');

@@ -117,6 +117,15 @@ Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019).
 - Check: `curl -s https://api.test-crm.profitpad.com/.well-known/oauth-authorization-server` returns the metadata, and `curl -si -X POST https://api.test-crm.profitpad.com/mcp` answers 401 with a `WWW-Authenticate` header.
 - Connect an MCP client to `https://api.test-crm.profitpad.com/mcp` (the address is also on Settings → Connected apps).
 
+## 8. Meeting booker (migration 0022)
+
+Apply `0022_meeting_booker.sql` (`./db/migrate.sh`) before deploying the API that includes it. Then:
+
+- `deploy/.env`: `CALENDAR_TOKEN_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). Keep it: losing or changing it means everyone connects their calendars again. Optional `CALENDAR_GOOGLE_DOMAINS` (default `profitpad.com`).
+- Google Cloud (same OAuth client as sign-in): Calendar API enabled (done 2026-11-01); consent screen stays **Internal**, with the scopes `.../auth/calendar.freebusy`, `.../auth/calendar.events`, `.../auth/calendar.calendarlist.readonly` added; authorized redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/google/callback` and `http://localhost:5173/v1/calendar/google/callback`.
+- Microsoft Entra (same app registration): delegated Graph permissions `Calendars.ReadWrite` and `offline_access` (done 2026-11-01; grant admin consent if the tenant asks for it); Web redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/microsoft/callback` and `http://localhost:5173/v1/calendar/microsoft/callback`.
+- Deploy the UI too (new page `/p/book/`).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

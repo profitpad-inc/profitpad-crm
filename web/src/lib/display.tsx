@@ -1,5 +1,5 @@
 import {
-  Box, Building2, CalendarDays, CircleDollarSign, ClipboardList, Contact, CreditCard, File, FileText, Handshake, Home,
+  Box, Building2, CalendarClock, CalendarDays, CircleDollarSign, ClipboardList, Contact, CreditCard, File, FileText, Handshake, Home,
   ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
   Ticket, User, Users, Wrench, Zap, BarChart3, type LucideIcon
 } from 'lucide-react';
@@ -24,6 +24,7 @@ const OBJECT_ICONS: Record<string, LucideIcon> = {
   emails: Mail,
   notes: StickyNote,
   tasks: ListChecks,
+  booking_pages: CalendarClock,
   files: File,
   email_templates: MailPlus,
   forms: ClipboardList,
@@ -44,7 +45,7 @@ export const ReportingIcon = BarChart3;
 // Groups for the "More" menu.
 export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'CRM', objects: ['contacts', 'companies', 'deals', 'tickets', 'products', 'orders', 'services', 'lines', 'quotes', 'invoices', 'payments', 'carts'] },
-  { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks'] },
+  { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks', 'booking_pages'] },
   { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'marketing_events', 'marketing_event_participations'] },
   { label: 'Data', objects: ['users', 'teams', 'files', 'object_events', 'object_event_occurrences'] }
 ];

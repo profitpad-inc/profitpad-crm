@@ -131,17 +131,38 @@ export async function loadClient(clientId: string): Promise<OAuthClient> {
 
 // Addresses a metadata fetch may never reach (SSRF): loopback, private,
 // link-local, carrier-grade NAT, multicast and reserved ranges.
+// No IPv6 rule for IPv4-mapped addresses (::ffff:0:0/96): Node's BlockList
+// matches such a rule against every plain IPv4 address, blocking them all.
+// Mapped addresses are unwrapped and checked as IPv4 instead.
 const blockedAddresses = new BlockList();
 for (const [net, bits] of [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
   ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 4], ['240.0.0.0', 4]
 ] as const) blockedAddresses.addSubnet(net, bits, 'ipv4');
 for (const [net, bits] of [
-  ['::', 127], ['::ffff:0:0', 96], ['64:ff9b::', 96], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]
+  ['::', 127], ['64:ff9b::', 96], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]
 ] as const) blockedAddresses.addSubnet(net, bits, 'ipv6');
 
-const addressBlocked = (address: string, family: number) =>
-  !insecureMetadataFetch && blockedAddresses.check(address, family === 6 ? 'ipv6' : 'ipv4');
+// ::ffff:10.0.0.1 or ::ffff:a00:1 -> 10.0.0.1
+function mappedIpv4(address: string): string | null {
+  const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (dotted) return dotted[1];
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+  if (!hex) return null;
+  const [hi, lo] = [parseInt(hex[1], 16), parseInt(hex[2], 16)];
+  return [hi >> 8, hi & 255, lo >> 8, lo & 255].join('.');
+}
+
+export function isBlockedAddress(address: string, family: number): boolean {
+  if (family === 6) {
+    const v4 = mappedIpv4(address);
+    if (v4) return blockedAddresses.check(v4, 'ipv4');
+    return blockedAddresses.check(address, 'ipv6');
+  }
+  return blockedAddresses.check(address, 'ipv4');
+}
+
+const addressBlocked = (address: string, family: number) => !insecureMetadataFetch && isBlockedAddress(address, family);
 
 // dns.lookup that refuses blocked addresses, used for the connection itself
 // so a second DNS answer cannot swap in a private address.
@@ -178,7 +199,7 @@ async function fetchClientMetadata(clientId: string): Promise<ClientMetadata> {
   }
   const { status, body, cacheControl } = await new Promise<{ status: number; body: string; cacheControl: string }>((resolve, reject) => {
     const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
-    const req = send(url, { method: 'GET', lookup: guardedLookup as never, headers: { accept: 'application/json' }, timeout: 5000 }, (res: IncomingMessage) => {
+    const req = send(url, { method: 'GET', lookup: guardedLookup as never, headers: { accept: 'application/json', 'user-agent': 'ProfitPad-CRM-OAuth/1.0 (+client metadata fetch)' }, timeout: 5000 }, (res: IncomingMessage) => {
       let size = 0;
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => {
