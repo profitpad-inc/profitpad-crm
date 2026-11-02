@@ -15,6 +15,9 @@ import { uiRoutes } from './routes/ui.js';
 import { userRoutes } from './routes/users.js';
 import { allowedOrigins, publicRoutes } from './routes/public.js';
 import { phoneRoutes } from './routes/phone.js';
+import { oauthRoutes } from './oauth.js';
+import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
+import { BRAND_PATHS, brandRoutes } from './brand.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -35,6 +38,11 @@ export async function buildApp() {
     }
   });
 
+  // OAuth token, registration and consent requests are form-encoded
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(body as string)));
+  });
+
   // Registered before the auth hook so preflight requests are answered without a key.
   const appCors = {
     origin: browserOrigins.length ? browserOrigins : false,
@@ -48,7 +56,24 @@ export async function buildApp() {
     // Public pages (/v1/public/) are also called from the websites in the
     // forms allowlist, never with cookies.
     delegator: (req, callback) => {
-      if (!req.url?.startsWith('/v1/public/')) return callback(null, appCors);
+      const path = req.url?.split('?')[0] ?? '';
+      // OAuth discovery and token endpoints serve apps from any origin, never with cookies
+      if (path.startsWith('/.well-known/') || ['/oauth/token', '/oauth/register', '/oauth/revoke'].includes(path)) {
+        return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST'], allowedHeaders: ['content-type', 'authorization'], maxAge: 600 });
+      }
+      // browser-based MCP clients only from MCP_ALLOWED_ORIGINS (mcp.ts)
+      if (path === '/mcp') {
+        const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+        return callback(null, {
+          origin: origin && mcpOriginAllowed(origin) ? origin : false,
+          credentials: false,
+          methods: ['GET', 'POST', 'DELETE'],
+          allowedHeaders: '*',
+          exposedHeaders: ['www-authenticate', 'mcp-session-id', 'mcp-protocol-version'],
+          maxAge: 600
+        });
+      }
+      if (!path.startsWith('/v1/public/')) return callback(null, appCors);
       allowedOrigins().then(
         (allowed) => callback(null, {
           origin: typeof req.headers.origin === 'string' && allowed.has(req.headers.origin) ? req.headers.origin : false,
@@ -78,11 +103,13 @@ export async function buildApp() {
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS') return;
     const path = req.url.split('?')[0];
-    if (path === '/health') return;
+    if (path === '/health' || BRAND_PATHS.has(path)) return;
     // sign-in routes handle their own cookies
     if (path.startsWith('/v1/auth/')) return;
     // customer-facing quote and form pages find records by their public key
     if (path.startsWith('/v1/public/')) return;
+    // OAuth (oauth.ts) and the MCP server (mcp.ts, OAuth tokens only) check their own callers
+    if (path.startsWith('/oauth/') || path.startsWith('/.well-known/') || path === '/mcp') return;
     // A visitor opening the bare domain in a browser lands on the docs
     if (path === '/' && !req.headers.authorization) return reply.redirect('/docs', 302);
     if (docsPublic && (path === '/v1/openapi.json' || path.startsWith('/docs'))) return;
@@ -145,6 +172,9 @@ export async function buildApp() {
   await app.register(userRoutes);
   await app.register(publicRoutes);
   await app.register(phoneRoutes);
+  await app.register(oauthRoutes);
+  await app.register(mcpRoutes);
+  await app.register(brandRoutes);
   return app;
 }
 

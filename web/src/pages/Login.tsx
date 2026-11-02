@@ -13,7 +13,8 @@ const AUTH_ERRORS: Record<string, string> = {
   google_failed: 'Google sign-in failed. Please try again.',
   microsoft_cancelled: 'Microsoft sign-in was cancelled.',
   microsoft_not_configured: 'Microsoft sign-in is not set up on this server.',
-  microsoft_failed: 'Microsoft sign-in failed. Please try again.'
+  microsoft_failed: 'Microsoft sign-in failed. Please try again.',
+  no_verified_email: 'Microsoft did not confirm an email address for this account, so it cannot be linked to a CRM user. Try Google, or ask an admin.'
 };
 
 function takeAuthError(): string | null {

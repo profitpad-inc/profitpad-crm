@@ -222,6 +222,29 @@ export async function schemaRoutes(app: FastifyInstance) {
     return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
   });
 
+  // tries a calculation on one record without saving anything (always rolled back)
+  app.post<{ Params: { object: string }; Body: { calc_sql: string; calc_output_type: string; record_id: string } }>(
+    '/v1/schema/:object/calculations/test',
+    async (req) => {
+      requireScope(req.principal!, 'schema');
+      const obj = await getObject(req.params.object);
+      const b = req.body ?? ({} as never);
+      if (!b.record_id) throw badRequest('record_id is required');
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        await client.query("set local statement_timeout = '15s'");
+        const { rows } = await client.query('select meta.test_calculation($1, $2, $3, $4) as result', [
+          obj.object_type_id, b.calc_sql ?? null, b.calc_output_type ?? null, b.record_id
+        ]);
+        return rows[0].result as { value: string | null; dependencies: unknown[]; ms: number };
+      } finally {
+        await client.query('rollback').catch(() => undefined);
+        client.release();
+      }
+    }
+  );
+
   // association labels
   app.get<{ Querystring: { object?: string } }>('/v1/association-labels', async (req) => {
     requireScope(req.principal!, 'read');

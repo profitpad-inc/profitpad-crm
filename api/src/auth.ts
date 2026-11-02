@@ -44,6 +44,8 @@ export interface Principal {
   permissions: Permissions | null;
   // set for a browser session: when its user signed in
   session?: { id: string; signedInAt: Date };
+  // set for an OAuth access token: the app and the user's grant to it
+  oauth?: { clientId: string; clientName: string; grantId: number; expiresAt: Date };
 }
 
 declare module 'fastify' {
@@ -119,13 +121,26 @@ export function readCookie(req: FastifyRequest, name: string): string | null {
   return null;
 }
 
-// Callers send an API key (Authorization: Bearer) or, from the UI, the
-// HttpOnly session cookie set after Google sign-in.
+// The API's own URL, the OAuth resource for tokens meant for /v1 (the MCP
+// server at /mcp is a separate resource, see oauth.ts).
+export const publicApiUrl = (process.env.PUBLIC_API_URL ?? '').replace(/\/$/, '');
+export const apiBaseUrl = (req: FastifyRequest) => publicApiUrl || `${req.protocol}://${req.headers.host}`;
+
+const OAUTH_ACCESS_TOKEN = /^Bearer\s+(pcrm_at_[A-Za-z0-9_-]{43})$/;
+
+// Callers send an API key or an OAuth access token (Authorization: Bearer) or,
+// from the UI, the HttpOnly session cookie set after Google sign-in.
 export async function authenticate(req: FastifyRequest): Promise<Principal> {
   const header = req.headers.authorization;
   if (!header) {
     const session = readSessionToken(req);
     if (session) return authenticateSession(req, session);
+  }
+  const oauth = OAUTH_ACCESS_TOKEN.exec(header ?? '');
+  if (oauth) {
+    const p = await authenticateOAuthToken(oauth[1], apiBaseUrl(req), req.ip);
+    if (!p) throw new ApiError(401, 'invalid, revoked or expired access token, or one issued for another resource', 'unauthorized');
+    return p;
   }
   const match = /^Bearer\s+(pcrm_[0-9a-f]{8}_[A-Za-z0-9_-]{43})$/.exec(header ?? '');
   if (!match) throw new ApiError(401, 'missing or malformed API key (Authorization: Bearer pcrm_...)', 'unauthorized');
@@ -192,6 +207,56 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
     actor: `user:${userId}`,
     permissions,
     session: { id: String(s.id), signedInAt: s.created_at }
+  };
+}
+
+// The signed-in user of a browser session, or null (for pages such as the
+// OAuth consent screen that offer a sign-in instead of failing).
+export async function sessionPrincipal(req: FastifyRequest): Promise<Principal | null> {
+  const token = readSessionToken(req);
+  if (!token) return null;
+  try {
+    return await authenticateSession(req, token);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return null;
+    throw err;
+  }
+}
+
+// An OAuth access token (oauth.ts issues them) acts as its user, limited to
+// the scopes the user granted and never beyond the user's roles. It is
+// accepted only by the resource it was issued for (RFC 8707 audience).
+export async function authenticateOAuthToken(token: string, resource: string, ip: string | undefined): Promise<Principal | null> {
+  const { rows } = await pool.query(
+    `select t.id, t.scopes, t.expires_at, t.last_used_at, g.id as grant_id, g.user_id, c.client_id, c.name as client_name
+     from auth.oauth_tokens t
+     join auth.oauth_grants g on g.id = t.grant_id
+     join auth.oauth_clients c on c.id = g.client_id
+     join crm.pc_0000 u on u.pc_0000_id = g.user_id
+     where t.token_hash = $1 and t.kind = 'access' and t.resource = $2 and t.revoked_at is null and t.expires_at > now()
+       and g.revoked_at is null and c.blocked_at is null and ${USER_CAN_SIGN_IN('u')}`,
+    [hashKey(token), resource]
+  );
+  if (rows.length === 0) return null;
+  const t = rows[0];
+  // at most one write a minute per token
+  if (!t.last_used_at || Date.now() - t.last_used_at.getTime() > 60_000) {
+    await pool.query(
+      `with t as (update auth.oauth_tokens set last_used_at = now(), last_used_ip = $2 where id = $1 returning grant_id)
+       update auth.oauth_grants g set last_used_at = now() from t where g.id = t.grant_id`,
+      [t.id, ip || null]
+    );
+  }
+  const permissions = await loadPermissions(pool, t.user_id);
+  return {
+    keyId: null,
+    name: `oauth:${t.client_name}`,
+    // read and write only: apps never get the admin scope
+    scopes: new Set<Scope>((t.scopes as string[]).filter((s): s is Scope => s === 'read' || s === 'write')),
+    userId: t.user_id,
+    actor: `user:${t.user_id}`,
+    permissions,
+    oauth: { clientId: t.client_id, clientName: t.client_name, grantId: Number(t.grant_id), expiresAt: t.expires_at }
   };
 }
 

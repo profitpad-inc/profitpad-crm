@@ -61,6 +61,7 @@ Every call is logged in `meta.schema_changes` with the actor (`crm.actor`) and t
 - Output type is `text`, `number`, `date` or `datetime`. The expression must return exactly one value per record (use `limit 1` or an aggregate inside a subquery).
 - Rejected automatically: semicolons, comments, `$`, `E''` strings, unbalanced quotes or parentheses; reading anything outside `crm`, `reporting`, `integrations`; dangerous functions (`pg_sleep`, `set_config`, `query_to_xml`, `ts_stat`, `nextval`, advisory locks, file and large-object functions, ...); circular references; taking more than 1 second on any of 10 sampled records; failing on any sampled record.
 - Values are stored in a real column and refreshed by `meta.calc_queue`: the record itself and records one association away are queued when something they read changes. The API worker drains the queue every 2 seconds and right after each write. Chains deeper than one association are caught by `select meta.enqueue_calcs();` (schedule nightly, e.g. from n8n).
+- To try an expression before saving it, `POST /v1/schema/{object}/calculations/test` with `calc_sql`, `calc_output_type` and `record_id` (or `meta.test_calculation(object, calc_sql, output_type, record_id)`). It runs the same checks as saving, returns the value for that record, and saves nothing.
 - A calculation that later fails at runtime keeps its last value; the error is in `meta.pc_0002.calc_last_error` (also on `GET /v1/schema/{object}/properties/{property}`).
 
 ## 6. Reporting (read-only AI)

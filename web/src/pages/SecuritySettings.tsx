@@ -227,6 +227,16 @@ const EVENT_LABELS: Record<string, string> = {
   'sharing_rule.updated': 'Sharing rule changed',
   'sharing_rule.deleted': 'Sharing rule deleted',
   'settings.updated': 'Settings changed',
+  'oauth.client_registered': 'App registered',
+  'oauth.authorized': 'App connected',
+  'oauth.denied': 'App connection denied',
+  'oauth.revoked': 'App disconnected',
+  'oauth.token_reuse': 'App token reused (chain revoked)',
+  'oauth.app_blocked': 'App blocked',
+  'oauth.app_unblocked': 'App unblocked',
+  'calendar.connected': 'Calendar connected',
+  'calendar.connect_failed': 'Calendar connection refused',
+  'calendar.disconnected': 'Calendar disconnected',
   export: 'Records exported'
 };
 
@@ -239,6 +249,8 @@ const EVENT_FILTERS: { value: string; label: string }[] = [
   { value: 'role', label: 'Roles' },
   { value: 'sharing_rule', label: 'Sharing rules' },
   { value: 'settings', label: 'Settings' },
+  { value: 'oauth', label: 'Connected apps' },
+  { value: 'calendar', label: 'Calendars' },
   { value: 'export', label: 'Exports' }
 ];
 

@@ -23,6 +23,16 @@ export type SecurityEvent =
   | 'sharing_rule.updated'
   | 'sharing_rule.deleted'
   | 'settings.updated'
+  | 'oauth.client_registered'
+  | 'oauth.authorized'
+  | 'oauth.denied'
+  | 'oauth.revoked'
+  | 'oauth.token_reuse'
+  | 'oauth.app_blocked'
+  | 'oauth.app_unblocked'
+  | 'calendar.connected'
+  | 'calendar.connect_failed'
+  | 'calendar.disconnected'
   | 'export';
 
 export interface EventInfo {

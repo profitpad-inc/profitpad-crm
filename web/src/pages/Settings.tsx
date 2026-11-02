@@ -7,6 +7,8 @@ import { DEFAULT_THEME, THEME_FIELDS, type Theme } from '../lib/theme';
 import { displayName, initials } from '../lib/display';
 import { RoleSettings, UserSettings } from './AccessSettings';
 import { ApiKeySettings, SecurityLog } from './SecuritySettings';
+import { ConnectedApps } from './ConnectedApps';
+import { PropertySettings } from './PropertySettings';
 
 export function Settings() {
   const { me } = useApp();
@@ -16,8 +18,10 @@ export function Settings() {
       <div className="settings-layout">
         <nav className="settings-nav">
           <NavLink to="/settings" end>Account</NavLink>
+          <NavLink to="/settings/connected-apps">Connected apps</NavLink>
           {me.is_admin && <NavLink to="/settings/theme">Theme</NavLink>}
           {me.is_admin && <NavLink to="/settings/navigation">Navigation menus</NavLink>}
+          {me.is_admin && <NavLink to="/settings/properties">Properties</NavLink>}
           {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
           {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
           {me.is_admin && <NavLink to="/settings/forms">Forms</NavLink>}
@@ -27,8 +31,10 @@ export function Settings() {
         <div className="settings-body">
           <Routes>
             <Route index element={<Account />} />
+            <Route path="connected-apps" element={<ConnectedApps />} />
             <Route path="theme" element={me.is_admin ? <ThemeSettings /> : <Navigate to="/settings" />} />
             <Route path="navigation" element={me.is_admin ? <NavSettings /> : <Navigate to="/settings" />} />
+            <Route path="properties" element={me.is_admin ? <PropertySettings /> : <Navigate to="/settings" />} />
             <Route path="users" element={me.is_admin ? <UserSettings /> : <Navigate to="/settings" />} />
             <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
             <Route path="forms" element={me.is_admin ? <FormsSettings /> : <Navigate to="/settings" />} />

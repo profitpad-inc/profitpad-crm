@@ -75,7 +75,10 @@ export interface Property {
   options: Record<string, unknown>;
   dropdown_options?: DropdownOption[];
   calc_output_type?: 'text' | 'number' | 'date' | 'datetime';
+  calc_sql?: string;
+  calc_last_error?: string;
   is_base: boolean;
+  is_native?: boolean;
   read_only: boolean;
   row_status: string;
 }

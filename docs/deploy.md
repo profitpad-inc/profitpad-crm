@@ -107,6 +107,16 @@ Apply `0019_security.sql` (`./db/migrate.sh`) before deploying an API that inclu
 - Session limits, re-sign-in for admin changes, key rules and the security log are described in `docs/architecture.md`.
 - GitHub: secret scanning, push protection and Dependabot security updates are on for the repo (2026-11-01); `.github/workflows/ci.yml` typechecks the API, builds the UI and fails on high or critical `npm audit` findings; `.github/dependabot.yml` opens weekly update PRs.
 
+## 7. OAuth and MCP (migration 0020)
+
+Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019). Then:
+
+- Deploy the API (it needs `npm ci` for the new `@modelcontextprotocol/server` and `zod` packages, which the Docker build does) and the UI.
+- `PUBLIC_API_URL=https://api.test-crm.profitpad.com` must be set: it is the OAuth issuer and the MCP resource (`https://api.test-crm.profitpad.com/mcp`). Do not set `OAUTH_INSECURE_METADATA_FETCH`.
+- nginx: add the `pcrm_oauth` zone (in `deploy/nginx-pcrm-limits.conf`) and the `/oauth/` and `= /mcp` locations from `deploy/nginx-api.test-crm.profitpad.com.conf` (the `/mcp` one turns off buffering for streamed replies), as in section 5.
+- Check: `curl -s https://api.test-crm.profitpad.com/.well-known/oauth-authorization-server` returns the metadata, and `curl -si -X POST https://api.test-crm.profitpad.com/mcp` answers 401 with a `WWW-Authenticate` header.
+- Connect an MCP client to `https://api.test-crm.profitpad.com/mcp` (the address is also on Settings → Connected apps).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

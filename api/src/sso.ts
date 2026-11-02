@@ -52,11 +52,14 @@ const cookie = setCookie;
 
 // only same-site paths, never "//host" or a full URL
 function safeReturnTo(value: unknown): string {
-  return typeof value === 'string' && /^\/(?![/\\])/.test(value) ? value : '/';
+  return typeof value === 'string' && value.length <= 3000 && /^\/(?![/\\])/.test(value) ? value : '/';
 }
 
+// Paths under /oauth/ (the consent page, oauth.ts) live on the API, all
+// others in the UI.
 function toUi(req: FastifyRequest, reply: FastifyReply, path: string, error?: string, errorDetail?: string) {
-  const url = new URL((uiUrl || origin(req)) + path);
+  const base = path.startsWith('/oauth/') ? publicApiUrl || origin(req) : uiUrl || origin(req);
+  const url = new URL(base + path);
   if (error) url.searchParams.set('auth_error', error);
   if (errorDetail) url.searchParams.set('auth_detail', errorDetail.slice(0, 300));
   return reply.redirect(url.toString(), 302);
@@ -71,13 +74,17 @@ function idTokenClaims(idToken: string): Record<string, unknown> {
 }
 
 // The user id, or the auth_error code to show
-async function findUser(provider: 'google' | 'microsoft', sub: string, email: string): Promise<{ userId: string } | { error: string }> {
+// linkEmail: the address a first sign-in may be matched on (null: only an
+// account linked before can sign in)
+async function findUser(provider: 'google' | 'microsoft', sub: string, linkEmail: string | null): Promise<{ userId: string } | { error: string }> {
   const { rows: linked } = await pool.query(
     `select i.user_id, ${USER_CAN_SIGN_IN('u')} as ok from auth.identities i join crm.pc_0000 u on u.pc_0000_id = i.user_id
      where i.provider = $1 and i.provider_subject = $2`,
     [provider, sub]
   );
   if (linked.length) return linked[0].ok ? { userId: linked[0].user_id } : { error: 'user_deactivated' };
+  if (!linkEmail) return { error: 'no_verified_email' };
+  const email = linkEmail;
   const { rows: users } = await pool.query(
     `select pc_0000_id as id, ${USER_CAN_SIGN_IN('u')} as ok from crm.pc_0000 u where lower(email) = lower($1) and row_status = 'active'`,
     [email]
@@ -293,12 +300,15 @@ export async function ssoRoutes(app: FastifyInstance) {
       claims.iss.startsWith('https://sts.windows.net/')
     );
     const sub = typeof claims.sub === 'string' ? claims.sub : typeof claims.oid === 'string' ? claims.oid : null;
-    const email = (
-      (typeof claims.email === 'string' && claims.email) ||
-      (typeof claims.preferred_username === 'string' && claims.preferred_username) ||
-      (typeof claims.upn === 'string' && claims.upn) ||
-      ''
-    ).toLowerCase().trim() || null;
+    const claim = (name: string) => (typeof claims[name] === 'string' ? (claims[name] as string).toLowerCase().trim() : '') || null;
+    // A first sign-in is matched to a user by an address Microsoft vouches
+    // for: the UPN (its domain must be verified in the user's tenant, or be
+    // the tenant's .onmicrosoft.com) or the email claim (left out for
+    // unverified addresses on app registrations made after June 2023).
+    // preferred_username can be changed, so it is never used to link an
+    // account (nOAuth); it only names accounts that are already linked.
+    const linkEmail = claim('upn') ?? claim('email');
+    const email = linkEmail ?? claim('preferred_username');
 
     const valid =
       issValid &&
@@ -322,7 +332,7 @@ export async function ssoRoutes(app: FastifyInstance) {
       }
     }
 
-    const found = await findUser('microsoft', sub, email);
+    const found = await findUser('microsoft', sub, linkEmail);
     if ('error' in found) {
       req.log.info({ email, reason: found.error }, 'microsoft sign-in refused');
       await refused(req, 'microsoft', found.error, email);

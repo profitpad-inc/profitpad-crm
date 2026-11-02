@@ -7,6 +7,7 @@
     "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
     "start": "tsx --env-file-if-exists=.env src/server.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'",
     "create-key": "tsx --env-file-if-exists=.env src/cli/create-key.ts"
   },
   "engines": {
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@fastify/cors": "11.3.1",
+    "@modelcontextprotocol/server": "2.4.0",
     "@scalar/fastify-api-reference": "1.76.4",
     "csv-parse": "7.0.3",
     "csv-stringify": "6.9.0",
@@ -23,7 +25,8 @@
     "pdfkit": "0.20.2",
     "pg": "8.23.1",
     "sanitize-html": "2.18.1",
-    "tsx": "4.23.15"
+    "tsx": "4.23.15",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/google-libphonenumber": "7.4.31",
