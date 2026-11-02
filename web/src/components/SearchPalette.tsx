@@ -88,7 +88,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
                   </button>
                 ))}
                 {result.total > result.results.length && (
-                  <button className="palette-more" onClick={() => go(`/objects/${object}?q=${encodeURIComponent(q.trim())}`)}>
+                  <button className="palette-more" onClick={() => go(`/objects/${object}?s=${encodeURIComponent(q.trim())}`)}>
                     See all {result.total}
                   </button>
                 )}

@@ -38,7 +38,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const [sorts, setSorts] = useState<Sort[]>([]);
   const [appliedViewId, setAppliedViewId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [query, setQuery] = useState(searchParams.get('q') ?? '');
+  const urlSearch = searchParams.get('s') ?? '';
+  const [query, setQuery] = useState(urlSearch);
   const [debounced, setDebounced] = useState(query);
   const [data, setData] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -97,6 +98,40 @@ function ObjectTableFor({ object }: { object: string }) {
     const h = setTimeout(() => setDebounced(query.trim()), 300);
     return () => clearTimeout(h);
   }, [query]);
+
+  // the search lives in ?s= so a refresh or shared link keeps it; replace
+  // rather than push so typing doesn't fill the back button. syncedSearch is
+  // the value both sides agree on, so each effect only reacts to the other side
+  const syncedSearch = useRef(urlSearch);
+  useEffect(() => {
+    if (debounced === syncedSearch.current) return;
+    syncedSearch.current = debounced;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (debounced) next.set('s', debounced);
+      else next.delete('s');
+      return next;
+    }, { replace: true });
+  }, [debounced, setSearchParams]);
+
+  // the URL changed from outside (back button, a "See all" link while already
+  // on this table)
+  useEffect(() => {
+    if (urlSearch === syncedSearch.current) return;
+    syncedSearch.current = urlSearch;
+    setQuery(urlSearch);
+    setDebounced(urlSearch);
+  }, [urlSearch]);
+
+  // switching views keeps the search
+  function showView(id: number | undefined) {
+    setSearchParams(() => {
+      const next = new URLSearchParams();
+      if (id !== undefined) next.set('view', String(id));
+      if (debounced) next.set('s', debounced);
+      return next;
+    });
+  }
 
   // What the search needs from the columns, as sorted string keys so that
   // resizing or reordering columns doesn't fetch the records again.
@@ -373,7 +408,7 @@ function ObjectTableFor({ object }: { object: string }) {
     if (viewDialog.mode === 'create') {
       const created = await api<View>('POST', '/v1/ui/views', { object, name: viewDialog.name.trim(), columns, sorts });
       setViews((vs) => [...vs, created]);
-      setSearchParams({ view: String(created.id) });
+      showView(created.id);
     } else if (activeView) {
       const updated = await api<View>('PATCH', `/v1/ui/views/${activeView.id}`, { name: viewDialog.name.trim() });
       setViews((vs) => vs.map((v) => (v.id === updated.id ? updated : v)));
@@ -386,7 +421,7 @@ function ObjectTableFor({ object }: { object: string }) {
     await api('DELETE', `/v1/ui/views/${view.id}`);
     const rest = views.filter((v) => v.id !== view.id);
     setViews(rest);
-    setSearchParams(rest[0] ? { view: String(rest[0].id) } : {});
+    showView(rest[0]?.id);
   }
 
   const summary = objectByName.get(object);
@@ -425,7 +460,7 @@ function ObjectTableFor({ object }: { object: string }) {
       <div className="tabs">
         {views.map((v) => (
           <div key={v.id} className={`tab${v.id === activeView?.id ? ' active' : ''}`}>
-            <button onClick={() => setSearchParams({ view: String(v.id) })}>{v.name}</button>
+            <button onClick={() => showView(v.id)}>{v.name}</button>
             {v.id === activeView?.id && (
               <Menu
                 align="left"
