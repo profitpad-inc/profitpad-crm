@@ -9,6 +9,7 @@ import {
 import { useApp } from '../lib/app-context';
 import { defaultSortDirection, displayName, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { FileUploadButton } from '../components/FileUploadButton';
 import { ColumnPicker, associationColumnLabel, moveTo } from '../components/ColumnPicker';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 
@@ -26,7 +27,7 @@ export function ObjectTable() {
 function ObjectTableFor({ object }: { object: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { objectByName } = useApp();
+  const { objectByName, toast } = useApp();
 
   const [schema, setSchema] = useState<ObjectDef | null>(null);
   const [views, setViews] = useState<View[]>([]);
@@ -358,9 +359,24 @@ function ObjectTableFor({ object }: { object: string }) {
           <h1>{schema.label_plural}</h1>
           {data && <span className="count">{data.total.toLocaleString()} {data.total === 1 ? 'record' : 'records'}</span>}
         </div>
-        <button className="btn primary" onClick={() => setShowCreate(true)}>
-          <Plus size={16} /> Create {schema.label_singular.toLowerCase()}
-        </button>
+        {object === 'files' ? (
+          // a file record without bytes is no use, so files are uploaded instead of created
+          <FileUploadButton
+            onError={setError}
+            onUploaded={(ids) => {
+              if (ids.length === 1) {
+                navigate(`/objects/files/${ids[0]}`);
+                return;
+              }
+              toast(`${ids.length} files uploaded`);
+              fetchPage();
+            }}
+          />
+        ) : (
+          <button className="btn primary" onClick={() => setShowCreate(true)}>
+            <Plus size={16} /> Create {schema.label_singular.toLowerCase()}
+          </button>
+        )}
       </header>
 
       <div className="tabs">
