@@ -240,9 +240,14 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   const shown = schema.properties.filter((p) => p.row_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   const main = shown.filter((p) => !p.is_base || p.api_name === 'name');
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
+  // without edit access (the role, or this record only through a read-only
+  // sharing rule) every property is locked, like a calculation; a save's
+  // reply has no can_edit, which counts as editable
+  const canEdit = schema.permissions.edit && record.can_edit !== false;
+  const editable = (p: Property) => canEdit && isEditable(p);
 
   function start(p: Property) {
-    if (!isEditable(p)) return;
+    if (!editable(p)) return;
     setEditing(p.api_name);
     setFocusEditor(true);
     // after a refused save, carry on from the refused text
@@ -297,7 +302,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   };
 
   const row = (p: Property) => (
-    <div key={p.api_name} className={`prop-row${isEditable(p) ? ' editable' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
+    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
       <div className="prop-label">{p.label}</div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
@@ -308,7 +313,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
         </div>
       ) : p.type === 'file' ? (
         <div className="prop-value">
-          <FileField object={schema.api_name} record={record} property={p} canEdit={p.row_status === 'active' && !p.read_only} onSaved={onSaved} />
+          <FileField object={schema.api_name} record={record} property={p} canEdit={canEdit && p.row_status === 'active' && !p.read_only} onSaved={onSaved} />
         </div>
       ) : (
         <div className="prop-value">{formatValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>

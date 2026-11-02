@@ -349,7 +349,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       }
     },
     '/v1/schema/{object}': {
-      get: { tags: ['Schema'], summary: 'Get an object with its properties', operationId: 'get_object', parameters: [objectParam], responses: { 200: json({ type: 'object' }), ...errors } },
+      get: { tags: ['Schema'], summary: 'Get an object with its properties', description: 'Includes `permissions` ({create, edit, delete}) for the caller, from their roles and the key\'s scopes; each property\'s `read_only` also covers properties the caller\'s roles make read-only. Record-level access can still refuse a single record; a single record read returns `can_edit` for that.', operationId: 'get_object', parameters: [objectParam], responses: { 200: json({ type: 'object' }), ...errors } },
       patch: { tags: ['Schema'], summary: 'Relabel an object', operationId: 'update_object', parameters: [objectParam], requestBody: body({ type: 'object' }), responses: { 200: json({ type: 'object' }), ...errors } }
     },
     '/v1/schema/{object}/properties': {

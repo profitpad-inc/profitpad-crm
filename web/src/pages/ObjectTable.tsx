@@ -508,12 +508,16 @@ function ObjectTableFor({ object }: { object: string }) {
       {picked.size > 0 ? (
         <div className="toolbar bulk-bar">
           <span className="bulk-count">{picked.size.toLocaleString()} selected</span>
-          <button className="btn small" onClick={() => setBulk('edit')}>
-            <Pencil size={14} /> Edit all
-          </button>
-          <button className="btn small bulk-delete" onClick={() => setBulk('delete')}>
-            <Trash2 size={14} /> Delete all
-          </button>
+          {schema?.permissions.edit && (
+            <button className="btn small" onClick={() => setBulk('edit')}>
+              <Pencil size={14} /> Edit all
+            </button>
+          )}
+          {schema?.permissions.delete && (
+            <button className="btn small bulk-delete" onClick={() => setBulk('delete')}>
+              <Trash2 size={14} /> Delete all
+            </button>
+          )}
           <button className="btn small" onClick={() => setPicked(new Set())}>Clear selection</button>
         </div>
       ) : (
@@ -609,7 +613,7 @@ function ObjectTableFor({ object }: { object: string }) {
                   }
                   const prop = schema.properties.find((p) => p.api_name === c.property);
                   if (!prop) return null;
-                  const editable = isEditable(prop);
+                  const editable = schema.permissions.edit && isEditable(prop);
                   const extra = [editable ? 'editable' : '', editing?.record.id === r.id && editing.property.api_name === prop.api_name ? 'editing' : ''].filter(Boolean);
                   if (i === 0 || prop.api_name === 'name') {
                     return (

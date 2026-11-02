@@ -3,7 +3,7 @@ import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { requireObjectPermission, requireScope } from '../auth.js';
 import {
-  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, bulkUpdateRecords, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite,
+  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, bulkUpdateRecords, canEditRecord, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite,
   parseAssociationQuery, searchRecords, updateRecord, type AssociationSpec, type MultiMode
 } from '../records.js';
 import type { SearchRequest } from '../search.js';
@@ -59,7 +59,9 @@ export async function recordRoutes(app: FastifyInstance) {
     requireScope(req.principal!, 'read');
     const obj = await objectForWrite(req.params.object);
     const associations = parseAssociationQuery(req.query.associations, req.query.association_properties);
-    return getRecord(pool, obj, req.principal!, req.params.id, props(req.query), associations);
+    const record = await getRecord(pool, obj, req.principal!, req.params.id, props(req.query), associations);
+    record.can_edit = await canEditRecord(pool, obj, req.principal!, record.id);
+    return record;
   });
 
   app.post<{ Params: ObjParams; Body: { properties?: Record<string, unknown>; associations?: { object: string; id: string; label_id?: string }[] } }>(

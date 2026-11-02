@@ -11,6 +11,8 @@ export interface RecordOut {
   object_type_id: string;
   row_status: string;
   merged_into_id?: string;
+  // single reads only: whether the caller may edit this record
+  can_edit?: boolean;
   // set when a batch read asked for a merged id and got its winner
   requested_id?: string;
   properties: Record<string, unknown>;
@@ -428,6 +430,24 @@ export async function assertAccessible(db: Db, obj: ObjectDef, principal: Princi
     params
   );
   if (rows[0].n !== new Set(ids).size) throw notFound(`one or more ${obj.api_name} records not found`);
+}
+
+// Whether the caller may edit this record: write scope, the role's edit
+// permission and record-level access in edit mode (a record seen only
+// through a read-only sharing rule is not editable).
+export async function canEditRecord(db: Db, obj: ObjectDef, principal: Principal, id: string): Promise<boolean> {
+  if (!principal.scopes.has('admin') && !principal.scopes.has('write')) return false;
+  if (!principal.permissions) return true;
+  if (!principal.permissions.objects.get(obj.object_type_id)?.edit) return false;
+  const params: unknown[] = [id];
+  const access = recordFilter(principal, obj, params, 't', 'edit');
+  if (access === 'true') return true;
+  const { rows } = await db.query(
+    `select 1 from crm.${quoteIdent(obj.object_type_id)} t
+     where t.${quoteIdent(obj.id_column)} = $1 and t.row_status in ('active', 'archived') and ${access}`,
+    params
+  );
+  return rows.length > 0;
 }
 
 export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, value: unknown): Promise<string | null> {

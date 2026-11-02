@@ -84,6 +84,8 @@ export interface Property {
 }
 
 export interface ObjectDef extends ObjectSummary {
+  // what the signed-in user may do with this object's records
+  permissions: { create: boolean; edit: boolean; delete: boolean };
   properties: Property[];
 }
 
@@ -99,6 +101,8 @@ export interface CrmRecord {
   row_status: string;
   // batch read: the merged id that was asked for
   requested_id?: string;
+  // single reads: false when the user can see but not edit this record
+  can_edit?: boolean;
   properties: Record<string, unknown>;
   associations?: Record<string, AssociatedRecord[]>;
 }

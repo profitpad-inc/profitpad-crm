@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
-import { requireScope } from '../auth.js';
+import { propertyAccess, requireScope, type Principal } from '../auth.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
 
 // Schema changes always go through the meta.* functions, which enforce the
@@ -22,7 +22,9 @@ function objectOut(o: ObjectDef) {
   };
 }
 
-export function propertyOut(p: PropertyDef) {
+// With a principal, read_only also covers properties the caller's roles make
+// read-only, so the UI can show them locked.
+export function propertyOut(p: PropertyDef, principal?: Principal) {
   return {
     id: p.pc_0002_id,
     api_name: p.api_name,
@@ -36,9 +38,19 @@ export function propertyOut(p: PropertyDef) {
     calc_last_error: p.calc_last_error ?? undefined,
     is_base: p.is_base,
     is_native: p.is_native,
-    read_only: p.read_only || p.type === 'calculation',
+    read_only: p.read_only || p.type === 'calculation' || (!!principal && propertyAccess(principal, p) === 'read_only'),
     row_status: p.row_status
   };
+}
+
+// What the caller may do with this object's records (roles plus the API
+// key's scopes), so the UI can lock what the API would refuse. Record-level
+// access (own/team, sharing rules) can still refuse a single record.
+function callerPermissions(p: Principal, obj: ObjectDef) {
+  const write = p.scopes.has('admin') || p.scopes.has('write');
+  const perm = p.permissions ? p.permissions.objects.get(obj.object_type_id) : undefined;
+  const can = (action: 'create' | 'edit' | 'delete') => write && (!p.permissions || !!perm?.[action]);
+  return { create: can('create'), edit: can('edit'), delete: can('delete') };
 }
 
 async function findProperty(objectKey: string, name: string): Promise<[ObjectDef, PropertyDef]> {
@@ -58,7 +70,12 @@ export async function schemaRoutes(app: FastifyInstance) {
   app.get<{ Params: { object: string } }>('/v1/schema/:object', async (req) => {
     requireScope(req.principal!, 'read');
     const obj = await getObject(req.params.object);
-    return { ...objectOut(obj), properties: obj.properties.filter((p) => p.row_status === 'active').map(propertyOut) };
+    const p = req.principal!;
+    return {
+      ...objectOut(obj),
+      permissions: callerPermissions(p, obj),
+      properties: obj.properties.filter((pr) => pr.row_status === 'active').map((pr) => propertyOut(pr, p))
+    };
   });
 
   app.post<{ Body: { api_name: string; label_singular: string; label_plural: string; description?: string } }>('/v1/schema', async (req, reply) => {
@@ -100,7 +117,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     requireScope(req.principal!, 'read');
     const obj = await getObject(req.params.object);
     const all = req.query.include_archived === 'true';
-    return { results: obj.properties.filter((p) => all || p.row_status === 'active').map(propertyOut) };
+    return { results: obj.properties.filter((p) => all || p.row_status === 'active').map((pr) => propertyOut(pr)) };
   });
 
   app.get<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property', async (req) => {
