@@ -15,7 +15,8 @@ const page = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 // Scripts only from the site itself, so injected markup (say, a form's custom
 // HTML) cannot run code; requests only to the site and the API. Images may
 // come from any https site (custom form HTML). frame-ancestors cannot be set
-// from a meta tag.
+// from a meta tag. Frames only from the site itself: the custom view frame
+// (public/view-frame, built by vite.frame.config.ts).
 function csp(apiUrl: string): Plugin {
   const api = apiUrl ? new URL(apiUrl).origin : '';
   const policy = [
@@ -28,7 +29,7 @@ function csp(apiUrl: string): Plugin {
     "object-src 'none'",
     "base-uri 'self'",
     `form-action 'self'${api ? ` ${api}` : ''}`,
-    "frame-src 'none'"
+    "frame-src 'self'"
   ].join('; ');
   return {
     name: 'pcrm-csp',

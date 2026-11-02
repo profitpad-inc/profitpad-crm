@@ -105,13 +105,15 @@ function etransferForm(et: NonNullable<PublicPayment['etransfer']>, amount: stri
 }
 
 // Back from Stripe Checkout (?paid=1): the webhook usually lands within
-// seconds; check a few times so the page shows the result.
-export async function afterCheckout(reload: () => Promise<PublicPayment | null>): Promise<void> {
+// seconds; check a few times so the page shows the result. After the first
+// try the API also asks Stripe directly, in case the webhook is missing.
+export async function afterCheckout(reload: () => Promise<PublicPayment | null>, check: () => Promise<unknown>): Promise<void> {
   const url = new URL(window.location.href);
   if (url.searchParams.get('paid') !== '1') return;
   url.searchParams.delete('paid');
   window.history.replaceState(null, '', url.toString());
   for (let i = 0; i < 8; i++) {
+    if (i > 0) await check().catch(() => undefined);
     const p = await reload();
     if (!p || p.status !== 'unpaid') return;
     await new Promise((r) => setTimeout(r, 2000));

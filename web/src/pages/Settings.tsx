@@ -106,7 +106,7 @@ function ThemeSettings() {
           <label key={f.key} className="color-field">
             <input type="color" value={draft[f.key]} onChange={(e) => update({ ...draft, [f.key]: e.target.value })} />
             <span>{f.label}</span>
-            <code className="muted">{draft[f.key]}</code>
+            <HexInput value={draft[f.key]} onChange={(hex) => update({ ...draft, [f.key]: hex })} />
           </label>
         ))}
       </div>
@@ -117,6 +117,35 @@ function ThemeSettings() {
         {saved && <span className="muted small">{saved}</span>}
       </div>
     </section>
+  );
+}
+
+// Text box beside each swatch so a hex code can be typed or pasted. Accepts #rgb or #rrggbb, with or without the #
+// (a pasted "#0362FF" next to the box's own # gives one #, not two); anything else stays as typed until it becomes
+// valid, and reverts on blur.
+function parseHex(text: string): string | null {
+  const m = text.trim().replace(/^#+/, '').toLowerCase();
+  if (/^[0-9a-f]{6}$/.test(m)) return `#${m}`;
+  if (/^[0-9a-f]{3}$/.test(m)) return `#${m.split('').map((c) => c + c).join('')}`;
+  return null;
+}
+
+function HexInput({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);
+  return (
+    <input
+      className="hex-input"
+      value={text}
+      spellCheck={false}
+      onChange={(e) => {
+        const typed = e.target.value.replace(/^(\s*)#{2,}/, '$1#');
+        setText(typed);
+        const hex = parseHex(typed);
+        if (hex && hex !== value) onChange(hex);
+      }}
+      onBlur={() => setText(value)}
+    />
   );
 }
 
@@ -190,15 +219,25 @@ function EmbedDomains() {
   );
 }
 
+interface Menu {
+  scope: string;
+  user_id: string | null;
+  items: NavItem[];
+  bottom_left: 'menu' | 'home';
+  bottom: NavItem[];
+}
+
+const BOTTOM_MAX = 3;
+
 interface UserOption {
   id: string;
   name: string;
 }
 
-function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: (o: string, id: number) => string): string {
+function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: (o: string, id: number) => string, customViewName: (slug: string) => string): string {
   switch (item.type) {
     case 'home': return 'Home';
-    case 'reporting': return 'Reporting';
+    case 'custom_view': return item.label ?? `Custom view: ${customViewName(item.slug)}`;
     case 'divider': return '— Divider —';
     case 'object': return item.label ?? objectLabel(item.object);
     case 'view': return item.label ?? `${objectLabel(item.object)}: ${viewName(item.object, item.view_id)}`;
@@ -207,34 +246,43 @@ function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: 
 }
 
 function NavSettings() {
-  const { objects, objectByName, reloadNav, navSource } = useApp();
+  const { objects, objectByName, reloadNav, navSource, customViews } = useApp();
   const [target, setTarget] = useState<string>('default');
-  const [menus, setMenus] = useState<{ scope: string; user_id: string | null; items: NavItem[] }[]>([]);
+  const [menus, setMenus] = useState<Menu[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [items, setItems] = useState<NavItem[]>([]);
+  const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
+  const [bottom, setBottom] = useState<NavItem[]>([]);
   const [views, setViews] = useState<Record<string, View[]>>({});
-  const [adding, setAdding] = useState<{ section: number | null; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
+  // section: a section's index, null for the top level, 'bottom' for the mobile bottom bar
+  const [adding, setAdding] = useState<{ section: number | null | 'bottom'; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadMenus() {
-    const res = await api<{ results: { scope: string; user_id: string | null; items: NavItem[] }[] }>('GET', '/v1/ui/nav/menus');
+    const res = await api<{ results: Menu[] }>('GET', '/v1/ui/nav/menus');
     setMenus(res.results);
     return res.results;
   }
 
   useEffect(() => {
-    loadMenus().then((m) => setItems(m.find((x) => x.scope === 'default')?.items ?? []));
+    loadMenus().then((m) => showMenu(m.find((x) => x.scope === 'default')));
     api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
       .then((r) => setUsers(r.results.map((u) => ({ id: u.id, name: displayName(u.properties, u.id) }))))
       .catch(() => undefined);
   }, []);
 
+  function showMenu(m: Menu | undefined) {
+    setItems(m?.items ?? []);
+    setBottomLeft(m?.bottom_left ?? 'menu');
+    setBottom(m?.bottom ?? []);
+  }
+
   function pickTarget(t: string) {
     setTarget(t);
     setMessage(null);
     const own = menus.find((m) => m.scope === 'user' && m.user_id === t);
-    setItems(t === 'default' ? menus.find((m) => m.scope === 'default')?.items ?? [] : own?.items ?? menus.find((m) => m.scope === 'default')?.items ?? []);
+    showMenu((t !== 'default' && own) || menus.find((m) => m.scope === 'default'));
   }
 
   useEffect(() => {
@@ -244,6 +292,7 @@ function NavSettings() {
 
   const objectLabel = (o: string) => objectByName.get(o)?.label_plural ?? o;
   const viewName = (o: string, id: number) => views[o]?.find((v) => v.id === id)?.name ?? `view ${id}`;
+  const customViewName = (slug: string) => customViews.find((v) => v.slug === slug)?.name ?? slug;
 
   function update(section: number | null, fn: (list: NavItem[]) => NavItem[]) {
     setItems((all) => {
@@ -266,19 +315,29 @@ function NavSettings() {
     else if (adding.type === 'view') {
       if (!adding.view) return;
       item = { type: 'view', object: adding.object, view_id: Number(adding.view), ...(adding.label ? { label: adding.label } : {}) };
+    } else if (adding.type === 'custom_view') {
+      if (!adding.view) return;
+      item = { type: 'custom_view', slug: adding.view, ...(adding.label ? { label: adding.label } : {}) };
     } else if (adding.type === 'section') {
       if (!adding.label.trim()) return;
       item = { type: 'section', label: adding.label.trim(), items: [] };
-    } else item = { type: adding.type as 'home' | 'reporting' | 'divider' };
-    update(adding.section, (l) => [...l, item]);
+    } else item = { type: adding.type as 'home' | 'divider' };
+    if (adding.section === 'bottom') {
+      if (bottom.length >= BOTTOM_MAX) {
+        setError(`The bottom bar holds at most ${BOTTOM_MAX} links between the left button and Search.`);
+        return;
+      }
+      setError(null);
+      setBottom((l) => [...l, item]);
+    } else update(adding.section, (l) => [...l, item]);
     setAdding((a) => ({ ...a, label: '' }));
   }
 
   async function save() {
     setError(null);
     try {
-      if (target === 'default') await api('PUT', '/v1/ui/nav/default', { items });
-      else await api('PUT', `/v1/ui/nav/users/${target}`, { items });
+      if (target === 'default') await api('PUT', '/v1/ui/nav/default', { items, bottom_left: bottomLeft, bottom });
+      else await api('PUT', `/v1/ui/nav/users/${target}`, { items, bottom_left: bottomLeft, bottom });
       await loadMenus();
       await reloadNav();
       setMessage('Saved.');
@@ -290,7 +349,7 @@ function NavSettings() {
   async function resetUser() {
     await api('DELETE', `/v1/ui/nav/users/${target}`);
     const m = await loadMenus();
-    setItems(m.find((x) => x.scope === 'default')?.items ?? []);
+    showMenu(m.find((x) => x.scope === 'default'));
     await reloadNav();
     setMessage('This user now uses the default menu.');
   }
@@ -300,7 +359,7 @@ function NavSettings() {
   const renderList = (list: NavItem[], section: number | null) =>
     list.map((it, i) => (
       <div key={`${section}-${i}`} className={`nav-edit-row${section !== null ? ' child' : ''}`}>
-        <span className="nav-edit-label">{itemLabel(it, objectLabel, viewName)}</span>
+        <span className="nav-edit-label">{itemLabel(it, objectLabel, viewName, customViewName)}</span>
         <button className="icon-btn" onClick={() => update(section, (l) => move(l, i, -1))} disabled={i === 0} aria-label="Move up"><ArrowUp size={14} /></button>
         <button className="icon-btn" onClick={() => update(section, (l) => move(l, i, 1))} disabled={i === list.length - 1} aria-label="Move down"><ArrowDown size={14} /></button>
         <button className="icon-btn" onClick={() => update(section, (l) => l.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={14} /></button>
@@ -311,7 +370,7 @@ function NavSettings() {
     ));
 
   return (
-    <section>
+    <section className="nav-settings">
       <h2>Navigation menus</h2>
       <p className="muted">
         The default menu is shown to everyone without their own. Pick a user to give them their own menu.
@@ -332,17 +391,47 @@ function NavSettings() {
 
       <div className="nav-edit">{renderList(items, null)}</div>
 
-      <div className="nav-add">
-        <select value={adding.section ?? ''} onChange={(e) => setAdding((a) => ({ ...a, section: e.target.value === '' ? null : Number(e.target.value) }))}>
+      <h3 className="nav-settings-group">Mobile bottom bar</h3>
+      <p className="muted small">Shown along the bottom of the screen on mobile: the left button, up to {BOTTOM_MAX} links, then Search.</p>
+      <label className="field inline">
+        <span>Left button</span>
+        <select value={bottomLeft} onChange={(e) => setBottomLeft(e.target.value as 'menu' | 'home')}>
+          <option value="menu">Menu (opens the full menu)</option>
+          <option value="home">Home</option>
+        </select>
+      </label>
+      <div className="nav-edit">
+        {bottom.length === 0 && <p className="muted small">No links between the left button and Search.</p>}
+        {bottom.map((it, i) => (
+          <div key={i} className="nav-edit-row">
+            <span className="nav-edit-label">{itemLabel(it, objectLabel, viewName, customViewName)}</span>
+            <button className="icon-btn" onClick={() => setBottom((l) => move(l, i, -1))} disabled={i === 0} aria-label="Move up"><ArrowUp size={14} /></button>
+            <button className="icon-btn" onClick={() => setBottom((l) => move(l, i, 1))} disabled={i === bottom.length - 1} aria-label="Move down"><ArrowDown size={14} /></button>
+            <button className="icon-btn" onClick={() => setBottom((l) => l.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+
+      <div className="nav-add nav-settings-foot">
+        <select
+          value={adding.section ?? ''}
+          onChange={(e) => {
+            const v = e.target.value;
+            const section = v === '' ? null : v === 'bottom' ? 'bottom' : Number(v);
+            // dividers and sections cannot go in the bottom bar
+            setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section') ? 'object' : a.type }));
+          }}
+        >
           <option value="">Add to top level</option>
           {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Add to section "{it.label}"</option>)}
+          <option value="bottom">Add to mobile bottom bar</option>
         </select>
-        <select value={adding.type} onChange={(e) => setAdding((a) => ({ ...a, type: e.target.value }))}>
+        <select value={adding.type} onChange={(e) => setAdding((a) => ({ ...a, type: e.target.value, view: '' }))}>
           <option value="object">Object</option>
           <option value="view">Saved view</option>
           <option value="home">Home</option>
-          <option value="reporting">Reporting</option>
-          <option value="divider">Divider</option>
+          <option value="custom_view">Custom view</option>
+          {adding.section !== 'bottom' && <option value="divider">Divider</option>}
           {adding.section === null && <option value="section">Section</option>}
         </select>
         {(adding.type === 'object' || adding.type === 'view') && (
@@ -356,7 +445,13 @@ function NavSettings() {
             {(views[adding.object] ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}{v.shared ? '' : ' (personal)'}</option>)}
           </select>
         )}
-        {(adding.type === 'section' || adding.type === 'view') && (
+        {adding.type === 'custom_view' && (
+          <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
+            <option value="">Choose a view</option>
+            {customViews.map((v) => <option key={v.slug} value={v.slug}>{v.name ?? v.slug}{v.status === 'published' ? '' : ' (draft)'}</option>)}
+          </select>
+        )}
+        {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (
           <input placeholder={adding.type === 'section' ? 'Section name' : 'Label (optional)'} value={adding.label} maxLength={63} onChange={(e) => setAdding((a) => ({ ...a, label: e.target.value }))} />
         )}
         <button className="btn" onClick={add}><Plus size={14} /> Add</button>

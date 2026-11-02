@@ -17,7 +17,7 @@ import { Home } from './pages/Home';
 import { ObjectTable } from './pages/ObjectTable';
 import { RecordPage } from './pages/RecordPage';
 import { Settings } from './pages/Settings';
-import { Reporting } from './pages/Reporting';
+import { CustomView } from './pages/CustomView';
 
 // Desktop: sidebar rail on the left. Phone: bottom bar, with the full menu
 // in a hamburger drawer on the home page.
@@ -70,7 +70,9 @@ function App() {
           <Route index element={<Home />} />
           <Route path="objects/:object" element={<ObjectTable />} />
           <Route path="objects/:object/:id" element={<RecordPage />} />
-          <Route path="reporting" element={<Reporting />} />
+          <Route path="view" element={<CustomView />} />
+          {/* the old mock dashboard became the Reporting custom view */}
+          <Route path="reporting" element={<Navigate to="/view/#reporting" replace />} />
           <Route path="settings/*" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

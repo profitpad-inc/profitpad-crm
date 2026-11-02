@@ -218,7 +218,7 @@ async function load(): Promise<void> {
     const res = await api.quote(key);
     applyTheme(res.theme);
     render(res.quote);
-    await afterCheckout(reload);
+    await afterCheckout(reload, () => api.checkPayment('quotes', key));
   } catch (err) {
     const status = (err as { status?: number }).status;
     message(status === 404 ? 'This quote link is not valid or has been withdrawn.' : (err as Error).message);

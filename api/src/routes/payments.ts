@@ -6,7 +6,7 @@ import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
 import { browserOrigins, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { getObject } from '../registry.js';
-import { updateRecord } from '../records.js';
+import { assertAccessible, updateRecord } from '../records.js';
 import { isAdmin } from './ui.js';
 import { loadPublicInvoice, loadPublicQuote, rateLimit } from './public.js';
 import { toMinor } from '../payments/amounts.js';
@@ -206,6 +206,51 @@ async function paymentByIntent(client: pg.PoolClient, piId: string | null): Prom
 
 const idOf = (v: string | { id: string } | null | undefined) => (typeof v === 'string' ? v : v?.id ?? null);
 
+// Brings a checkout row in line with the session as Stripe has it now. Used
+// when a webhook may have been missed; a delayed method that later fails
+// stays pending here until its async_payment_failed event arrives.
+async function applySession(client: pg.PoolClient, row: CheckoutRow, session: Stripe.Checkout.Session): Promise<boolean> {
+  if (session.status === 'expired') {
+    if (row.status !== 'open') return false;
+    await client.query("update auth.stripe_checkout_sessions set status = 'expired' where session_id = $1", [row.session_id]);
+    return true;
+  }
+  if (session.status !== 'complete') return false;
+  const paid = session.payment_status !== 'unpaid';
+  if (row.status === 'complete' && !paid) return false;
+  const paymentId = await paymentForSession(client, row, session, paid ? 'succeeded' : 'pending');
+  if (row.status !== 'complete') await client.query("update auth.stripe_checkout_sessions set status = 'complete' where session_id = $1", [row.session_id]);
+  if (paid) await markPaymentSucceeded(client, paymentId);
+  return true;
+}
+
+// Stripe retries webhooks for days, but one can still be missed (an outage, a
+// local listener that was not running). Checkouts for a quote or invoice that
+// we have not heard back about are read from Stripe: when the customer comes
+// back from Checkout, before a new checkout starts, and when staff open the
+// record. Returns whether anything changed.
+async function syncCheckouts(object: Payable, recordId: string): Promise<boolean> {
+  if (!stripeConfigured()) return false;
+  const conn = await currentConnection();
+  if (!conn) return false;
+  const { rows } = await pool.query(
+    `select s.session_id from auth.stripe_checkout_sessions s
+     left join crm.pc_0024 p on p.pc_0024_id = s.payment_record_id
+     where s.object = $1 and s.record_id = $2 and s.account_id = $3 and s.created_at > now() - interval '30 days'
+       and (s.status = 'open' or (s.status = 'complete' and p.status[1] = 'pending'))`,
+    [object, recordId, conn.account_id]
+  );
+  let changed = false;
+  for (const { session_id } of rows) {
+    const session = await stripe().checkout.sessions.retrieve(session_id, {}, { stripeAccount: conn.account_id });
+    await withTx({ actor: 'payments', source: 'stripe_sync' }, async (client) => {
+      const row = await checkoutRow(client, session_id);
+      if (row && (await applySession(client, row, session))) changed = true;
+    });
+  }
+  return changed;
+}
+
 async function handleEvent(client: pg.PoolClient, event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case 'checkout.session.completed':
@@ -262,7 +307,8 @@ export async function paymentRoutes(app: FastifyInstance) {
     const p = req.principal!;
     if (!isAdmin(p)) throw forbidden('only admins can see payment settings');
     let conn = await currentConnection();
-    if (conn && conn.status !== 'active' && stripeConfigured()) {
+    // read again even when active: Stripe can still ask for more (shown on the page)
+    if (conn && stripeConfigured()) {
       conn = await refreshConnection(conn).catch((err) => {
         req.log.warn(err, 'could not refresh the Stripe account');
         return conn;
@@ -352,13 +398,30 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
   }
 
+  // ---- staff: catch up on missed Stripe webhooks ----
+
+  for (const object of ['quotes', 'invoices'] as const) {
+    app.post<{ Params: { id: string } }>(`/v1/objects/${object}/:id/check-payments`, async (req) => {
+      const p = req.principal!;
+      requireScope(p, 'read');
+      await assertAccessible(pool, await getObject(object), p, [req.params.id]);
+      return { changed: await syncCheckouts(object, req.params.id) };
+    });
+  }
+
   // ---- customers: pay or report an e-Transfer ----
 
   for (const object of ['quotes', 'invoices'] as const) {
     app.post<{ Params: { key: string } }>(`/v1/public/${object}/:key/pay`, async (req) => {
       rateLimit(req, 'pay', 10);
       if (!stripeConfigured() || !uiBase) throw new ApiError(409, 'online payment is not available', 'conflict');
-      const paying = await loadPaying(object, req.params.key);
+      let paying = await loadPaying(object, req.params.key);
+      // an earlier checkout may have been paid without us hearing about it
+      const synced = await syncCheckouts(object, paying.id).catch((err) => {
+        req.log.warn(err, 'could not check Stripe checkouts');
+        return false;
+      });
+      if (synced) paying = await loadPaying(object, req.params.key);
       refuseUnlessPayable(paying.payment);
       if (!paying.payment.online) throw new ApiError(409, 'online payment is not available', 'conflict');
       const amountMinor = toMinor(paying.payment.amount_due);
@@ -399,6 +462,20 @@ export async function paymentRoutes(app: FastifyInstance) {
         [session.id, conn.account_id, object, paying.id, paying.purpose, amountMinor, currency, session.url, session.expires_at]
       );
       return { url: session.url };
+    });
+
+    // The customer is back from Checkout: read our open checkouts from Stripe
+    // in case the webhook is late or missing.
+    app.post<{ Params: { key: string } }>(`/v1/public/${object}/:key/check-payment`, async (req) => {
+      rateLimit(req, 'pay-check', 20);
+      const load = () => (object === 'quotes' ? loadPublicQuote(req.params.key) : loadPublicInvoice(req.params.key));
+      const record = await load();
+      if (!record.payment) return { payment: null };
+      const changed = await syncCheckouts(object, record.id).catch((err) => {
+        req.log.warn(err, 'could not check Stripe checkouts');
+        return false;
+      });
+      return { payment: changed ? (await load()).payment : record.payment };
     });
 
     app.post<{ Params: { key: string }; Body: { name?: unknown; email?: unknown } }>(

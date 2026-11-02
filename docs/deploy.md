@@ -145,7 +145,13 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 - `deploy/.env`: `STRIPE_SECRET_KEY=` (platform secret key; `sk_test_...` until going live) and `STRIPE_WEBHOOK_SECRET=` (`whsec_...`), and `UI_URL=https://test-crm.profitpad.com` (return links from Stripe). Then `docker compose up -d --build`.
 - No nginx change: the webhook is a normal `/v1/` path and Stripe's events are far below the body limit.
 - Deploy the UI too (new page `/p/invoice/`).
-- Local testing: `stripe listen --forward-connect-to localhost:3000/v1/stripe/webhook` prints a `whsec_` secret for `api/.env`.
+- Local testing: `stripe listen --forward-connect-to localhost:3000/v1/stripe/webhook --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,charge.refunded,charge.dispute.created,charge.dispute.closed` prints a `whsec_` secret for `api/.env` (newer CLIs require the event list).
+
+## 11. Custom views (migrations 0030 to 0032)
+
+- Once, as `n8n` (claude_admin cannot create roles): `psql -U n8n -d test_crm -v ON_ERROR_STOP=1 -f db/bootstrap/002_view_reader.sql` (creates `test_crm_view_reader`, granted to `test_crm_api`). 0030 refuses to run without it.
+- Apply 0030 (row-level security, `view_data`), 0031 (views object, seed views, the Reporting menu item) and 0032 (OAuth `schema` scope), then deploy the API (new dependencies `sucrase` and `lucide`, installed by the Docker build; keep `lucide` at the same version as `lucide-react` in `web/`) and the UI (the build now also writes `view-frame/index.html`; new dependency `recharts`).
+- Admins who connected an MCP client before this must reconnect and leave "Build custom views..." ticked to get the view and property tools.
 
 ## Notes
 

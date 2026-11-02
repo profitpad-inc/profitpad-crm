@@ -60,7 +60,7 @@ async function load(): Promise<void> {
     const res = await api.invoice(key);
     applyTheme(res.theme);
     render(res.invoice);
-    await afterCheckout(reload);
+    await afterCheckout(reload, () => api.checkPayment('invoices', key));
   } catch (err) {
     const status = (err as { status?: number }).status;
     message(status === 404 ? 'This invoice link is not valid or has been withdrawn.' : (err as Error).message);

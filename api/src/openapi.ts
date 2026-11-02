@@ -123,6 +123,28 @@ const errors = {
   404: { $ref: '#/components/responses/Error' },
   409: { $ref: '#/components/responses/Error' }
 };
+// Custom views (views.ts, routes/views.ts)
+function viewPaths(): Record<string, Schema> {
+  const tags = ['Custom views'];
+  const slug = { name: 'slug', in: 'path', required: true, description: 'The view\'s page address or id', schema: { type: 'string' } };
+  const draft = { name: 'draft', in: 'query', required: false, description: '1: the draft (schema scope)', schema: { type: 'string', enum: ['1'] } };
+  const queries = { type: 'object', description: 'Named queries: {"name": {"sql": "select ...", "params": {"p": "text|number|date|datetime|boolean"}}} or {"name": "select ..."}', additionalProperties: true };
+  const view = { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, slug: { type: 'string' }, icon: { type: 'string', nullable: true }, url_path: { type: 'string' }, description: { type: 'string', nullable: true }, status: { type: 'string', enum: ['draft', 'published'] }, audience: { type: 'string', enum: ['admins', 'everyone'] }, unpublished_changes: { type: 'boolean' }, published_at: { type: 'string', format: 'date-time', nullable: true }, draft_source: { type: 'string', nullable: true }, draft_queries: queries, source: { type: 'string', nullable: true }, queries } };
+  const result = { type: 'object', properties: { columns: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, type: { type: 'string' } } } }, rows: { type: 'array', items: { type: 'object' } }, truncated: { type: 'boolean' } } };
+  return {
+    '/v1/views': {
+      get: { tags, summary: 'Views the caller can open', description: 'Published views for their audience; admins also see drafts. Without code.', operationId: 'list_openable_views', responses: { 200: json({ type: 'object' }), ...errors } },
+      post: { tags, summary: 'Create a view (draft)', description: 'Schema scope. The source (TSX with a default export, imports limited to react, @pcrm/view and recharts) is compiled and every query checked first; 400 explains what is wrong. slug defaults from the name.', operationId: 'create_view', requestBody: body({ type: 'object', required: ['name'], properties: { name: { type: 'string' }, slug: { type: 'string' }, icon: { type: 'string', description: 'Lucide icon name, like chart-column' }, description: { type: 'string' }, audience: { type: 'string', enum: ['admins', 'everyone'] }, source: { type: 'string' }, queries } }), responses: { 201: json(view, 'Created'), ...errors } }
+    },
+    '/v1/views/{slug}': { get: { tags, summary: 'A view, ready to draw', description: 'The compiled module and the names and params of its queries.', operationId: 'open_view', parameters: [slug, draft], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/views/{slug}/code': { get: { tags, summary: 'A view\'s code and queries', description: 'Schema scope. Draft and published.', operationId: 'view_code', parameters: [slug], responses: { 200: json(view), ...errors } } },
+    '/v1/views/{slug}/queries/{name}': { post: { tags, summary: 'Run one of a view\'s queries', description: 'Read-only, as the caller with row-level security, 10 seconds, at most 5000 rows. 403 when the caller\'s roles cannot read an object the query reads, or hide a property it reads.', operationId: 'run_view_query', parameters: [slug, { name: 'name', in: 'path', required: true, schema: { type: 'string' } }, draft], requestBody: body({ type: 'object', properties: { params: { type: 'object' } } }), responses: { 200: json(result), ...errors } } },
+    '/v1/views/{slug}/draft': { put: { tags, summary: 'Save the draft', description: 'Schema scope. Replaces the draft source and/or queries (what is not sent stays), after the same checks as create.', operationId: 'save_view_draft', parameters: [slug], requestBody: body({ type: 'object', properties: { source: { type: 'string' }, queries } }), responses: { 200: json(view), ...errors } } },
+    '/v1/views/{slug}/publish': { post: { tags, summary: 'Publish the draft', description: 'Schema scope. The draft becomes what everyone with access sees.', operationId: 'publish_view', parameters: [slug], responses: { 200: json(view), ...errors } } },
+    '/v1/views/try-query': { post: { tags, summary: 'Try SQL without saving it', description: 'Schema scope. Same rules as view queries, with the caller\'s access. At most 50 rows.', operationId: 'try_view_query', requestBody: body({ type: 'object', required: ['sql'], properties: { sql: { type: 'string' }, params: { type: 'object', description: '{"since": "date"}' }, values: { type: 'object', description: '{"since": "2026-01-01"}' } } }), responses: { 200: json(result), ...errors } } }
+  };
+}
+
 const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
 const toObjectParam = { name: 'toObject', in: 'path', required: true, description: 'Object api_name or code', schema: { type: 'string' } };
 const toIdParam = { name: 'toId', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
@@ -407,6 +429,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     '/v1/public/forms/{key}': { get: { tags: ['Public pages'], security: [], summary: 'Published form definition', operationId: 'public_get_form', parameters: [publicKeyParam], responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/public/forms/{key}/submissions': { post: { tags: ['Public pages'], security: [], summary: 'Submit a form', description: 'No authentication. The browser\'s Origin must be the UI or a website in Settings → Embed domains (403 otherwise). Body {values, page_url?, _hp, _elapsed}: values are checked against the form definition; _hp is a hidden field that must stay empty and _elapsed the milliseconds since the form was shown. Limited to 10 per minute per IP and 32 KB.', operationId: 'public_submit_form', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['values'], properties: { values: { type: 'object' }, page_url: { type: 'string' }, _hp: { type: 'string' }, _elapsed: { type: 'number' } } }), responses: { 201: json({ type: 'object' }), ...errors } } },
     ...oauthPaths(),
+    ...viewPaths(),
     '/v1/integrations/{table}': { get: { tags: ['Integrations'], summary: 'Read an integration table', operationId: 'read_integration', parameters: [{ name: 'table', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
   for (const o of objects) Object.assign(paths, recordPaths(o));
@@ -427,6 +450,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     tags: [
       { name: 'Schema' }, { name: 'Admin' }, { name: 'Integrations' }, { name: 'Files', description: 'Uploading files and links to open them. Files are attached to records through file properties.' }, { name: 'Utilities', description: 'Helpers such as phone number validation.' }, { name: 'Public pages', description: 'Customer-facing quote and form pages. The /v1/public routes need no API key.' },
       { name: 'OAuth and MCP', description: 'Connecting apps as a user (OAuth 2.1) and the MCP server for AI clients. See Authentication above.' },
+      { name: 'Custom views', description: 'Pages built from React and read-only SQL over the view_data schema, stored as views records (/view/#slug in the UI). Queries run with row-level security as the caller. Usually built by an admin\'s AI through the MCP server.' },
       ...objects.map((o) => ({ name: o.label_plural, description: `${o.object_type_id}${o.description ? ': ' + o.description : ''}` }))
     ],
     paths,
@@ -441,7 +465,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
               authorizationUrl: `${serverUrl}/oauth/authorize`,
               tokenUrl: `${serverUrl}/oauth/token`,
               refreshUrl: `${serverUrl}/oauth/token`,
-              scopes: { read: 'See the records the user can see', write: 'Create and change records as the user' }
+              scopes: { read: 'See the records the user can see', write: 'Create and change records as the user', schema: 'Admins only: build custom views, and add, change and archive properties and dropdown options' }
             }
           }
         }

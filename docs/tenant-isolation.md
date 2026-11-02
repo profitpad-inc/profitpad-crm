@@ -49,7 +49,7 @@ A bug, a stolen credential or a mistake in one tenant must never expose or chang
 
 ### 5. Row-level security as a second wall
 
-Record access (own, team, sharing rules) is enforced in the API (`recordFilter`), not in Postgres. That is fine within one tenant, but a missed filter on a new endpoint leaks records to users of that tenant. Before onboarding clients with strict internal access needs, add Postgres row-level security on `crm.*` tables keyed on `current_setting('crm.user_id')`, set by `withTx` the same way `crm.actor` is today, and keep `recordFilter` as the fast path.
+Record access (own, team, sharing rules) is enforced in the API (`recordFilter`). That is fine within one tenant, but a missed filter on a new endpoint leaks records to users of that tenant. Migration 0030 added Postgres row-level security on every `crm` object table, keyed on per-transaction settings (`pcrm.access`, `pcrm.owner_ids`, `pcrm.rule_ids`), but only custom view queries run under it so far (as `test_crm_view_reader`; every other role has an allow-all policy). Next step, before onboarding clients with strict internal access needs: have `withTx` set the same settings for every request and replace the API role's allow-all policy with the real one, keeping `recordFilter` as the fast path, and check the cost of `rls.shared_ids` on large tables.
 
 ### 6. Reporting and AI access
 

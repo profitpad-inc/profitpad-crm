@@ -1,7 +1,7 @@
 import {
   Box, Building2, CalendarClock, CalendarDays, CircleDollarSign, ClipboardList, Contact, CreditCard, File, FileText, Handshake, Home,
   ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
-  Ticket, User, Users, Wrench, Zap, BarChart3, type LucideIcon
+  Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, type LucideIcon
 } from 'lucide-react';
 import type { CrmRecord, Property } from './api';
 
@@ -32,7 +32,8 @@ const OBJECT_ICONS: Record<string, LucideIcon> = {
   marketing_events: Megaphone,
   marketing_event_participations: CalendarDays,
   object_events: Zap,
-  object_event_occurrences: Zap
+  object_event_occurrences: Zap,
+  views: LayoutDashboard
 };
 
 export function objectIcon(apiName: string): LucideIcon {
@@ -47,7 +48,7 @@ export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'CRM', objects: ['contacts', 'companies', 'deals', 'tickets', 'products', 'orders', 'services', 'lines', 'quotes', 'invoices', 'payments', 'carts'] },
   { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks', 'booking_pages'] },
   { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'marketing_events', 'marketing_event_participations'] },
-  { label: 'Data', objects: ['users', 'teams', 'files', 'object_events', 'object_event_occurrences'] }
+  { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'object_events', 'object_event_occurrences'] }
 ];
 
 // The best human name for a record: name, else first + last, else email,

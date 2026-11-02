@@ -11,3 +11,6 @@ output.json
 
 # files stored by a local API (FILES_DIR)
 api/data/
+
+# built by web/vite.frame.config.ts (npm run build / npm run dev)
+web/public/view-frame/

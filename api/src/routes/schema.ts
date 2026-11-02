@@ -60,6 +60,103 @@ async function findProperty(objectKey: string, name: string): Promise<[ObjectDef
   return [obj, prop];
 }
 
+// ---- property changes, shared with the MCP server's admin tools (mcp.ts) ----------
+
+export interface PropertyInput {
+  api_name: string; label: string; type: string; description?: string; options?: Record<string, unknown>;
+  dropdown_options?: { api_value: string; label: string; description?: string; display_order?: number }[];
+  calc_sql?: string; calc_output_type?: string;
+}
+
+export async function createProperty(p: Principal, objectKey: string, b: PropertyInput, source?: string) {
+  requireScope(p, 'schema');
+  const obj = await getObject(objectKey);
+  await withTx({ actor: p.actor, source }, (c) =>
+    c.query(
+      `select meta.create_property(p_object => $1, p_api_name => $2, p_label => $3, p_type => $4, p_options => $5,
+         p_description => $6, p_dropdown_options => $7, p_calc_sql => $8, p_calc_output_type => $9)`,
+      [obj.object_type_id, b.api_name, b.label, b.type, JSON.stringify(b.options ?? {}), b.description ?? null,
+        JSON.stringify(b.dropdown_options ?? []), b.calc_sql ?? null, b.calc_output_type ?? null]
+    )
+  );
+  return propertyOut((await findProperty(obj.object_type_id, b.api_name))[1]);
+}
+
+export async function updateProperty(
+  p: Principal, objectKey: string, name: string,
+  b: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string },
+  source?: string
+) {
+  requireScope(p, 'schema');
+  const [obj, prop] = await findProperty(objectKey, name);
+  await withTx({ actor: p.actor, source }, async (c) => {
+    if (b.label !== undefined || b.description !== undefined || b.options !== undefined) {
+      await c.query('select meta.update_property($1, $2, $3, $4, $5)', [
+        obj.object_type_id, prop.api_name, b.label ?? null, b.description ?? null, b.options ? JSON.stringify(b.options) : null
+      ]);
+    }
+    if (b.calc_sql !== undefined || b.calc_output_type !== undefined) {
+      await c.query('select meta.update_calculation($1, $2, $3, $4)', [
+        obj.object_type_id, prop.api_name, b.calc_sql ?? prop.calc_sql, b.calc_output_type ?? null
+      ]);
+    }
+  });
+  return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+}
+
+export async function setPropertyArchived(p: Principal, objectKey: string, name: string, archived: boolean, source?: string) {
+  requireScope(p, 'schema');
+  const [obj, prop] = await findProperty(objectKey, name);
+  await withTx({ actor: p.actor, source }, (c) =>
+    c.query(archived ? 'select meta.archive_property($1, $2)' : 'select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name])
+  );
+  return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+}
+
+export async function addOption(
+  p: Principal, objectKey: string, name: string, b: { api_value: string; label: string; display_order?: number; description?: string }, source?: string
+) {
+  requireScope(p, 'schema');
+  const [obj, prop] = await findProperty(objectKey, name);
+  await withTx({ actor: p.actor, source }, (c) =>
+    c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null])
+  );
+  return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+}
+
+export async function updateOption(
+  p: Principal, objectKey: string, name: string, value: string,
+  b: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' }, source?: string
+) {
+  requireScope(p, 'schema');
+  const [obj, prop] = await findProperty(objectKey, name);
+  await withTx({ actor: p.actor, source }, (c) =>
+    c.query('select meta.update_option($1, $2, $3, $4, $5, $6, $7)', [
+      obj.object_type_id, prop.api_name, value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.row_status ?? null
+    ])
+  );
+  return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+}
+
+// tries a calculation on one record without saving anything (always rolled back)
+export async function testCalculation(p: Principal, objectKey: string, b: { calc_sql: string; calc_output_type: string; record_id: string }) {
+  requireScope(p, 'schema');
+  const obj = await getObject(objectKey);
+  if (!b.record_id) throw badRequest('record_id is required');
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query("set local statement_timeout = '15s'");
+    const { rows } = await client.query('select meta.test_calculation($1, $2, $3, $4) as result', [
+      obj.object_type_id, b.calc_sql ?? null, b.calc_output_type ?? null, b.record_id
+    ]);
+    return rows[0].result as { value: string | null; dependencies: unknown[]; ms: number };
+  } finally {
+    await client.query('rollback').catch(() => undefined);
+    client.release();
+  }
+}
+
 export async function schemaRoutes(app: FastifyInstance) {
   app.get('/v1/schema', async (req) => {
     requireScope(req.principal!, 'read');
@@ -134,61 +231,24 @@ export async function schemaRoutes(app: FastifyInstance) {
       calc_sql?: string; calc_output_type?: string;
     };
   }>('/v1/schema/:object/properties', async (req, reply) => {
-    const p = req.principal!;
-    requireScope(p, 'schema');
-    const obj = await getObject(req.params.object);
-    const b = req.body ?? ({} as never);
-    await withTx({ actor: p.actor }, (c) =>
-      c.query(
-        `select meta.create_property(p_object => $1, p_api_name => $2, p_label => $3, p_type => $4, p_options => $5,
-           p_description => $6, p_dropdown_options => $7, p_calc_sql => $8, p_calc_output_type => $9)`,
-        [obj.object_type_id, b.api_name, b.label, b.type, JSON.stringify(b.options ?? {}), b.description ?? null,
-          JSON.stringify(b.dropdown_options ?? []), b.calc_sql ?? null, b.calc_output_type ?? null]
-      )
-    );
+    const out = await createProperty(req.principal!, req.params.object, req.body ?? ({} as never));
     reply.code(201);
-    const [, prop] = await findProperty(obj.object_type_id, b.api_name);
-    return propertyOut(prop);
+    return out;
   });
 
   app.patch<{
     Params: { object: string; property: string };
     Body: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string };
   }>('/v1/schema/:object/properties/:property', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'schema');
-    const [obj, prop] = await findProperty(req.params.object, req.params.property);
-    const b = req.body ?? {};
-    await withTx({ actor: p.actor }, async (c) => {
-      if (b.label !== undefined || b.description !== undefined || b.options !== undefined) {
-        await c.query('select meta.update_property($1, $2, $3, $4, $5)', [
-          obj.object_type_id, prop.api_name, b.label ?? null, b.description ?? null, b.options ? JSON.stringify(b.options) : null
-        ]);
-      }
-      if (b.calc_sql !== undefined || b.calc_output_type !== undefined) {
-        await c.query('select meta.update_calculation($1, $2, $3, $4)', [
-          obj.object_type_id, prop.api_name, b.calc_sql ?? prop.calc_sql, b.calc_output_type ?? null
-        ]);
-      }
-    });
-    const [, updated] = await findProperty(obj.object_type_id, prop.api_name);
-    return propertyOut(updated);
+    return updateProperty(req.principal!, req.params.object, req.params.property, req.body ?? {});
   });
 
   app.post<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property/archive', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'schema');
-    const [obj, prop] = await findProperty(req.params.object, req.params.property);
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.archive_property($1, $2)', [obj.object_type_id, prop.api_name]));
-    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+    return setPropertyArchived(req.principal!, req.params.object, req.params.property, true);
   });
 
   app.post<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property/unarchive', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'schema');
-    const [obj, prop] = await findProperty(req.params.object, req.params.property);
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name]));
-    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+    return setPropertyArchived(req.principal!, req.params.object, req.params.property, false);
   });
 
   app.delete<{ Params: { object: string; property: string }; Body: { confirm?: string } }>('/v1/schema/:object/properties/:property', async (req, reply) => {
@@ -203,15 +263,9 @@ export async function schemaRoutes(app: FastifyInstance) {
   app.post<{ Params: { object: string; property: string }; Body: { api_value: string; label: string; display_order?: number; description?: string } }>(
     '/v1/schema/:object/properties/:property/options',
     async (req, reply) => {
-      const p = req.principal!;
-      requireScope(p, 'schema');
-      const [obj, prop] = await findProperty(req.params.object, req.params.property);
-      const b = req.body ?? ({} as never);
-      await withTx({ actor: p.actor }, (c) =>
-        c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null])
-      );
+      const out = await addOption(req.principal!, req.params.object, req.params.property, req.body ?? ({} as never));
       reply.code(201);
-      return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+      return out;
     }
   );
 
@@ -219,16 +273,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     Params: { object: string; property: string; value: string };
     Body: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' };
   }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'schema');
-    const [obj, prop] = await findProperty(req.params.object, req.params.property);
-    const b = req.body ?? {};
-    await withTx({ actor: p.actor }, (c) =>
-      c.query('select meta.update_option($1, $2, $3, $4, $5, $6, $7)', [
-        obj.object_type_id, prop.api_name, req.params.value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.row_status ?? null
-      ])
-    );
-    return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
+    return updateOption(req.principal!, req.params.object, req.params.property, req.params.value, req.body ?? {});
   });
 
   app.delete<{ Params: { object: string; property: string; value: string } }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
@@ -239,27 +284,9 @@ export async function schemaRoutes(app: FastifyInstance) {
     return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
   });
 
-  // tries a calculation on one record without saving anything (always rolled back)
   app.post<{ Params: { object: string }; Body: { calc_sql: string; calc_output_type: string; record_id: string } }>(
     '/v1/schema/:object/calculations/test',
-    async (req) => {
-      requireScope(req.principal!, 'schema');
-      const obj = await getObject(req.params.object);
-      const b = req.body ?? ({} as never);
-      if (!b.record_id) throw badRequest('record_id is required');
-      const client = await pool.connect();
-      try {
-        await client.query('begin');
-        await client.query("set local statement_timeout = '15s'");
-        const { rows } = await client.query('select meta.test_calculation($1, $2, $3, $4) as result', [
-          obj.object_type_id, b.calc_sql ?? null, b.calc_output_type ?? null, b.record_id
-        ]);
-        return rows[0].result as { value: string | null; dependencies: unknown[]; ms: number };
-      } finally {
-        await client.query('rollback').catch(() => undefined);
-        client.release();
-      }
-    }
+    async (req) => testCalculation(req.principal!, req.params.object, req.body ?? ({} as never))
   );
 
   // association labels

@@ -158,10 +158,23 @@ export interface View {
 }
 
 export type NavItem =
-  | { type: 'home' | 'reporting' | 'divider' }
+  | { type: 'home' | 'divider' }
   | { type: 'object'; object: string; label?: string }
   | { type: 'view'; object: string; view_id: number; label?: string }
+  | { type: 'custom_view'; slug: string; label?: string }
   | { type: 'section'; label: string; items: NavItem[] };
+
+// A custom view the user can open (GET /v1/views), for menus
+export interface CustomViewSummary {
+  id: string;
+  name: string | null;
+  slug: string;
+  icon: string | null;
+  description: string | null;
+  status: 'draft' | 'published';
+  audience: 'admins' | 'everyone';
+  unpublished_changes: boolean;
+}
 
 // ---- schema cache -----------------------------------------------------------
 

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
-import { api, type Me, type NavItem, type ObjectSummary } from './api';
+import { api, type CustomViewSummary, type Me, type NavItem, type ObjectSummary } from './api';
 import { applyTheme, type Theme } from './theme';
 
 interface AppState {
@@ -10,6 +10,12 @@ interface AppState {
   objectByName: Map<string, ObjectSummary>;
   nav: NavItem[];
   navSource: 'default' | 'user';
+  // mobile bottom bar: the left button, then the links (Search is always added after them)
+  bottomLeft: 'menu' | 'home';
+  bottomNav: NavItem[];
+  // custom views this user can open (menu items for others are hidden)
+  customViews: CustomViewSummary[];
+  reloadCustomViews: () => Promise<void>;
   theme: Theme;
   reloadNav: () => Promise<void>;
   reloadObjects: () => Promise<void>;
@@ -30,6 +36,9 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const [objects, setObjects] = useState<ObjectSummary[]>([]);
   const [nav, setNav] = useState<NavItem[]>([]);
   const [navSource, setNavSource] = useState<'default' | 'user'>('default');
+  const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
+  const [bottomNav, setBottomNav] = useState<NavItem[]>([]);
+  const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
   const [theme, setThemeState] = useState<Theme>(() => applyTheme(undefined));
   const [ready, setReady] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -55,18 +64,26 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   }, [me]);
 
   const reloadNav = useCallback(async () => {
-    const res = await api<{ source: 'default' | 'user'; items: NavItem[] }>('GET', '/v1/ui/nav');
+    const res = await api<{ source: 'default' | 'user'; items: NavItem[]; bottom_left: 'menu' | 'home'; bottom: NavItem[] }>('GET', '/v1/ui/nav');
     setNav(res.items);
     setNavSource(res.source);
+    setBottomLeft(res.bottom_left ?? 'menu');
+    setBottomNav(res.bottom ?? []);
+  }, []);
+
+  const reloadCustomViews = useCallback(async () => {
+    const res = await api<{ results: CustomViewSummary[] }>('GET', '/v1/views');
+    setCustomViews(res.results);
   }, []);
 
   useEffect(() => {
     Promise.all([
       reloadObjects(),
       reloadNav(),
+      reloadCustomViews().catch(() => undefined),
       api<{ theme?: Partial<Theme> }>('GET', '/v1/ui/settings').then((s) => setThemeState(applyTheme(s.theme)))
     ]).finally(() => setReady(true));
-  }, [reloadObjects, reloadNav]);
+  }, [reloadObjects, reloadNav, reloadCustomViews]);
 
   const setTheme = useCallback((t: Partial<Theme>) => setThemeState(applyTheme(t)), []);
   const signOut = useCallback(() => {
@@ -77,8 +94,8 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   return (
     <Ctx.Provider
       value={{
-        me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, theme,
-        reloadNav, reloadObjects, setTheme, signOut, toast
+        me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, bottomLeft, bottomNav, customViews, theme,
+        reloadNav, reloadObjects, reloadCustomViews, setTheme, signOut, toast
       }}
     >
       {children}

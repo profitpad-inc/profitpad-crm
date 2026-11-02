@@ -28,6 +28,18 @@ interface State {
   settings: Settings;
 }
 
+// Stripe names what it needs with codes such as
+// identity.individual.verification.proof_of_liveness
+const REQUIREMENTS: Record<string, string> = {
+  'identity.individual.verification.proof_of_liveness': 'A selfie to confirm the identity of the account representative'
+};
+
+function requirementLabel(code: string): string {
+  if (REQUIREMENTS[code]) return REQUIREMENTS[code];
+  const words = code.replace(/[._]/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 const STATUS: Record<Connection['status'], string> = {
   onboarding: 'Setup not finished',
   active: 'Taking payments',
@@ -145,11 +157,18 @@ export function PaymentSettings() {
             <dt>Stripe account</dt><dd><code>{conn.account_id}</code></dd>
             <dt>Country</dt><dd>{conn.country === 'CA' ? 'Canada' : conn.country === 'US' ? 'United States' : conn.country}</dd>
           </dl>
-          {conn.status !== 'active' && todo.length > 0 && (
-            <ul className="small">{todo.map((t, i) => <li key={i}>{t.description}</li>)}</ul>
+          {todo.length > 0 && (
+            <>
+              <p className="small">
+                {conn.status === 'active'
+                  ? 'Stripe still needs the following. Payments work for now, but Stripe can pause them if these are not done in time:'
+                  : 'Stripe needs the following before you can take payments:'}
+              </p>
+              <ul className="small">{todo.map((t, i) => <li key={i}>{requirementLabel(t.description)}</li>)}</ul>
+            </>
           )}
           <div className="actions">
-            {conn.status !== 'active' && <button className="btn primary" disabled={busy} onClick={onboard}>Continue setup on Stripe</button>}
+            {(conn.status !== 'active' || todo.length > 0) && <button className="btn primary" disabled={busy} onClick={onboard}>Continue setup on Stripe</button>}
             <a className="btn" href="https://dashboard.stripe.com" target="_blank" rel="noreferrer">Open Stripe Dashboard</a>
             <button className="btn" onClick={remove}>Remove</button>
           </div>

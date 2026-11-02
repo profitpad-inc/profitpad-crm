@@ -70,6 +70,13 @@ Every call is logged in `meta.schema_changes` with the actor (`crm.actor`) and t
 - Use `reporting.<object>` views (active rows only, single dropdowns as text, `<property>__label` columns), `reporting.associations`, `reporting.properties`, `reporting.property_options`, `reporting.objects`.
 - Saved report views or helper tables built on top of `reporting.*` block property archiving/retyping (the database refuses with a dependency error). Remove or update them first.
 
+## 6a. Custom view queries
+
+- Written in a view's `queries` (or tried with `POST /v1/views/try-query`); checked by `meta.analyze_view_query` on every save.
+- One SELECT (or WITH ... SELECT). Only `view_data.*` (unqualified names resolve there). Same text rules and function denylist as calculations. Params are `:name`, declared with a type; `:me` is the viewer.
+- They run as `test_crm_view_reader`: read-only, 10 seconds, at most 5000 rows, filtered by row-level security to the viewer's records. Never `select *`: a viewer whose roles hide a property gets a 403 for any query that reads it.
+- Never add amounts in different currencies together.
+
 ## 7. Before anything destructive
 
 - Take a backup: `pg_dump -h localhost -p 5433 -U claude_admin -d test_crm -Fc -f backups/test_crm_$(date +%Y%m%d_%H%M%S).dump`

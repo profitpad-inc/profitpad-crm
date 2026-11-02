@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build && vite build -c vite.embed.config.ts && cp dist/index.html dist/404.html",
+    "dev": "npm run build:frame && vite",
+    "build": "tsc --noEmit && npm run build:frame && vite build && vite build -c vite.embed.config.ts && cp dist/index.html dist/404.html",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:frame": "vite build -c vite.frame.config.ts --logLevel warn"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",
@@ -16,7 +17,8 @@
     "lucide-react": "1.66.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-router-dom": "7.18.5"
+    "react-router-dom": "7.18.5",
+    "recharts": "3.10.1"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

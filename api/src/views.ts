@@ -1,0 +1,468 @@
+import { createHash } from 'node:crypto';
+import { transform } from 'sucrase';
+import type pg from 'pg';
+import { pool, withTx, type Db } from './db.js';
+import { ApiError, badRequest, forbidden, notFound } from './errors.js';
+import { propertyAccess, requireObjectPermission, requireScope, type Principal } from './auth.js';
+import { getProperty, getRegistry } from './registry.js';
+import { createRecord, onWrite, SLUG_RE } from './records.js';
+import { findIcons, ICON_NAMES } from './icons.js';
+
+// Custom views (migration 0031): React (TSX) source plus named read-only SQL
+// queries over view_data, run as test_crm_view_reader so row-level security
+// (0030) limits rows to what the viewer may see. The source runs in a
+// sandboxed iframe in the browser (web/src/view-runtime), never here.
+
+export const VIEW_MODULES = ['react', 'react/jsx-runtime', '@pcrm/view', 'recharts'] as const;
+export const PARAM_TYPES = { text: 'text', number: 'numeric', date: 'date', datetime: 'timestamptz', boolean: 'boolean' } as const;
+export type ParamType = keyof typeof PARAM_TYPES;
+export const MAX_SOURCE = 200_000;
+export const MAX_QUERIES = 30;
+export const ROW_CAP = 5000;
+const QUERY_TIMEOUT = '10s';
+const NAME_RE = /^[a-z][a-z0-9_]{0,62}$/;
+
+export interface QuerySpec {
+  sql: string;
+  params: Record<string, ParamType>;
+}
+export type Queries = Record<string, QuerySpec>;
+
+export interface QueryAnalysis {
+  objects: string[];
+  columns: { object: string; column: string }[];
+  output: { name: string; type: string }[];
+}
+
+export interface QueryResult {
+  columns: { name: string; type: string }[];
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+}
+
+// ---- params ----------------------------------------------------------------------
+
+// :name placeholders outside quotes. "::" casts are left alone, so
+// ":since::date" is the param since cast to date. :me is the viewer's user id.
+function scanParams(sql: string): { name: string; start: number; end: number }[] {
+  const out: { name: string; start: number; end: number }[] = [];
+  let quote: string | null = null;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch !== ':' || sql[i - 1] === ':' || sql[i + 1] === ':') continue;
+    const m = /^[a-z_][a-z0-9_]*/i.exec(sql.slice(i + 1));
+    if (!m) continue;
+    out.push({ name: m[0].toLowerCase(), start: i, end: i + 1 + m[0].length });
+    i += m[0].length;
+  }
+  return out;
+}
+
+function substitute(sql: string, replace: (name: string) => string): string {
+  let out = '';
+  let at = 0;
+  for (const p of scanParams(sql)) {
+    out += sql.slice(at, p.start) + replace(p.name);
+    at = p.end;
+  }
+  return out + sql.slice(at);
+}
+
+// {"name": {"sql": "...", "params": {"since": "date"}}}; a plain string is a
+// query without params. Every :param in the SQL must be declared.
+export function parseQueries(raw: unknown): Queries {
+  let value = raw;
+  if (typeof value === 'string') {
+    try {
+      value = value.trim() === '' ? {} : JSON.parse(value);
+    } catch {
+      throw badRequest('queries must be JSON: {"name": {"sql": "select ...", "params": {"p": "text"}}}');
+    }
+  }
+  if (value === null || value === undefined) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) throw badRequest('queries must be an object of named queries');
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > MAX_QUERIES) throw badRequest(`a view can have at most ${MAX_QUERIES} queries`);
+  const out: Queries = {};
+  for (const [name, spec] of entries) {
+    if (!NAME_RE.test(name)) throw badRequest(`query name "${name}" must be lowercase letters, digits and underscores`);
+    const s = typeof spec === 'string' ? { sql: spec } : spec;
+    if (!s || typeof s !== 'object' || typeof (s as { sql?: unknown }).sql !== 'string') throw badRequest(`query "${name}" needs "sql"`);
+    const sql = (s as { sql: string }).sql.trim();
+    const params: Record<string, ParamType> = {};
+    const declared = (s as { params?: unknown }).params ?? {};
+    if (typeof declared !== 'object' || Array.isArray(declared) || declared === null) throw badRequest(`query "${name}": params must be {"name": "type"}`);
+    for (const [p, t] of Object.entries(declared as Record<string, unknown>)) {
+      if (!NAME_RE.test(p) || p === 'me') throw badRequest(`query "${name}": "${p}" is not a valid param name ("me" is built in)`);
+      if (typeof t !== 'string' || !(t in PARAM_TYPES)) throw badRequest(`query "${name}": param "${p}" type must be one of ${Object.keys(PARAM_TYPES).join(', ')}`);
+      params[p] = t as ParamType;
+    }
+    for (const used of scanParams(sql)) {
+      if (used.name !== 'me' && !params[used.name]) throw badRequest(`query "${name}" uses :${used.name}, which is not in its params`);
+    }
+    out[name] = { sql, params };
+  }
+  return out;
+}
+
+function paramValue(query: string, name: string, type: ParamType, v: unknown): unknown {
+  if (v === undefined || v === null || v === '') return null;
+  const fail = () => badRequest(`query "${query}": param "${name}" must be a ${type}`);
+  switch (type) {
+    case 'text':
+      if (typeof v !== 'string') throw fail();
+      return v;
+    case 'number':
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+      if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) return v.trim();
+      throw fail();
+    case 'date':
+      if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) throw fail();
+      return v;
+    case 'datetime':
+      if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(v) || Number.isNaN(Date.parse(v))) throw fail();
+      return new Date(v).toISOString();
+    case 'boolean':
+      if (typeof v !== 'boolean') throw fail();
+      return v;
+  }
+}
+
+// ---- compile and analyze ---------------------------------------------------------
+
+const hash = (s: string) => createHash('sha256').update(s).digest('hex');
+const compiled = new Map<string, string>();
+
+// TSX -> a CommonJS module whose require() only knows VIEW_MODULES and whose
+// default export is the page component. Cached by source hash.
+export function compileSource(source: string): string {
+  if (typeof source !== 'string' || source.trim() === '') throw badRequest('the view has no code');
+  if (source.length > MAX_SOURCE) throw badRequest(`the code is longer than ${MAX_SOURCE} characters`);
+  const key = hash(source);
+  const hit = compiled.get(key);
+  if (hit) return hit;
+  let code: string;
+  try {
+    code = transform(source, {
+      transforms: ['typescript', 'jsx', 'imports'],
+      jsxRuntime: 'automatic',
+      production: true,
+      filePath: 'view.tsx'
+    }).code;
+  } catch (err) {
+    throw badRequest(`the code does not compile: ${(err as Error).message}`);
+  }
+  for (const m of code.matchAll(/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g)) {
+    if (!(VIEW_MODULES as readonly string[]).includes(m[2])) {
+      throw badRequest(`views can only import ${VIEW_MODULES.filter((x) => x !== 'react/jsx-runtime').join(', ')} (not "${m[2]}")`);
+    }
+  }
+  if (!/\bexports\.\s*default\s*=/.test(code)) throw badRequest('the code must have a default export: the page component (export default function MyView() {...})');
+  if (compiled.size > 500) compiled.clear();
+  compiled.set(key, code);
+  return code;
+}
+
+const analyses = new Map<string, QueryAnalysis>();
+
+// meta.analyze_view_query checks the SQL without running it. Cached per
+// schema version (registry) and SQL.
+export async function analyzeQuery(name: string, spec: QuerySpec): Promise<QueryAnalysis> {
+  const version = (await getRegistry()).version;
+  const key = `${version}:${hash(JSON.stringify(spec))}`;
+  const hit = analyses.get(key);
+  if (hit) return hit;
+  const probe = substitute(spec.sql, (p) => `(null::${PARAM_TYPES[p === 'me' ? 'text' : spec.params[p]]})`);
+  let info: QueryAnalysis;
+  try {
+    const { rows } = await pool.query('select meta.analyze_view_query($1) as info', [probe]);
+    info = rows[0].info;
+  } catch (err) {
+    throw badRequest(`query "${name}": ${(err as Error).message}`, { query: name });
+  }
+  if (analyses.size > 2000) analyses.clear();
+  analyses.set(key, info);
+  return info;
+}
+
+// What the caller's roles allow: Read on every object the query reads, and no
+// hidden property among its columns. Rows are limited by row-level security.
+export async function checkQueryAccess(p: Principal, name: string, info: QueryAnalysis): Promise<void> {
+  if (!p.permissions) return;
+  const reg = await getRegistry();
+  for (const code of info.objects) {
+    const obj = reg.byKey.get(code);
+    if (obj) requireObjectPermission(p, obj, 'read');
+  }
+  for (const c of info.columns) {
+    const obj = reg.byKey.get(c.object);
+    const prop = obj && getProperty(obj, c.column);
+    if (obj && prop && propertyAccess(p, prop) === 'hidden') {
+      throw forbidden(`query "${name}" reads ${obj.label_plural} ${prop.label}, which your roles hide`);
+    }
+  }
+}
+
+// ---- run ------------------------------------------------------------------------
+
+function rlsSettings(p: Principal): [string, string[], number[]] {
+  const perms = p.permissions;
+  if (!perms || perms.recordAccess === 'all' || !p.userId) return ['all', [], []];
+  return ['restricted', perms.recordAccess === 'own' ? [p.userId] : perms.teamUserIds, perms.sharingRules.map((r) => r.id)];
+}
+
+const INT8 = 20;
+const NUMERIC = 1700;
+
+// Runs one query read-only as test_crm_view_reader with the viewer's
+// row-level security settings, a 10s timeout and a row cap.
+export async function runQuery(
+  p: Principal, name: string, spec: QuerySpec, input: Record<string, unknown> = {}, limit = ROW_CAP
+): Promise<QueryResult> {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw badRequest('params must be an object');
+  for (const k of Object.keys(input)) {
+    if (!spec.params[k]) throw badRequest(`query "${name}" has no param "${k}"`);
+  }
+  const info = await analyzeQuery(name, spec);
+  await checkQueryAccess(p, name, info);
+  const values: unknown[] = [];
+  const index = new Map<string, number>();
+  const sql = substitute(spec.sql, (param) => {
+    if (!index.has(param)) {
+      values.push(param === 'me' ? p.userId : paramValue(name, param, spec.params[param], input[param]));
+      index.set(param, values.length);
+    }
+    return `$${index.get(param)}::${PARAM_TYPES[param === 'me' ? 'text' : spec.params[param]]}`;
+  });
+  const [access, owners, rules] = rlsSettings(p);
+  const client = await pool.connect();
+  try {
+    await client.query('begin read only');
+    await client.query('set local role test_crm_view_reader');
+    await client.query(
+      `select set_config('pcrm.access', $1, true), set_config('pcrm.owner_ids', $2, true), set_config('pcrm.rule_ids', $3, true),
+              set_config('statement_timeout', $4, true), set_config('search_path', 'view_data, pg_catalog, public', true)`,
+      [access, `{${owners.join(',')}}`, `{${rules.join(',')}}`, QUERY_TIMEOUT]
+    );
+    let res: pg.QueryResult;
+    try {
+      res = await client.query({ text: `select * from (${sql}) q limit ${limit + 1}`, values });
+    } catch (err) {
+      const e = err as { code?: string; message: string };
+      if (e.code === '57014') throw new ApiError(504, `query "${name}" took longer than ${QUERY_TIMEOUT}`, 'timeout', { query: name });
+      throw badRequest(`query "${name}" failed: ${e.message}`, { query: name });
+    }
+    const numeric = new Set(res.fields.filter((f) => f.dataTypeID === INT8 || f.dataTypeID === NUMERIC).map((f) => f.name));
+    const rows = res.rows.slice(0, limit).map((r) => {
+      for (const k of numeric) {
+        if (typeof r[k] === 'string' && Number.isFinite(Number(r[k]))) r[k] = Number(r[k]);
+      }
+      return r;
+    });
+    return { columns: info.output, rows, truncated: res.rows.length > limit };
+  } finally {
+    await client.query('rollback').catch(() => undefined);
+    client.release();
+  }
+}
+
+// ---- records ----------------------------------------------------------------------
+
+export interface ViewRow {
+  id: string;
+  name: string | null;
+  slug: string;
+  icon: string | null;
+  description: string | null;
+  status: 'draft' | 'published';
+  audience: 'admins' | 'everyone';
+  draft_source: string | null;
+  draft_queries: string | null;
+  source: string | null;
+  queries: string | null;
+  published_at: Date | null;
+  updated_at: Date;
+}
+
+const VIEW_COLUMNS = `pc_0055_id as id, name, slug, icon, description, status[1] as status, audience[1] as audience,
+  draft_source, draft_queries, source, queries, published_at, updated_at`;
+
+export async function loadView(db: Db, slugOrId: string): Promise<ViewRow> {
+  const { rows } = await db.query(
+    `select ${VIEW_COLUMNS} from crm.pc_0055 where (lower(slug) = lower($1) or pc_0055_id = $1) and row_status = 'active'`,
+    [slugOrId]
+  );
+  if (!rows[0]) throw notFound(`no view "${slugOrId}"`);
+  return rows[0];
+}
+
+export async function listViews(p: Principal): Promise<ViewRow[]> {
+  const { rows } = await pool.query(`select ${VIEW_COLUMNS} from crm.pc_0055 where row_status = 'active' order by lower(name), pc_0055_id`);
+  return (rows as ViewRow[]).filter((v) => canOpen(p, v, false));
+}
+
+const isAdmin = (p: Principal) => p.permissions === null;
+export const canEditViews = (p: Principal) => p.scopes.has('admin') || p.scopes.has('schema');
+
+// Drafts need the schema scope (admins in the UI, admin MCP connections);
+// a published view is open to admins, or to everyone when its audience says so.
+export function canOpen(p: Principal, v: ViewRow, draft: boolean): boolean {
+  if (draft) return canEditViews(p);
+  if (v.status !== 'published' || !v.source) return canEditViews(p) && !!v.draft_source;
+  if (!(p.scopes.has('admin') || p.scopes.has('read'))) return false;
+  return v.audience === 'everyone' || isAdmin(p);
+}
+
+export function viewParts(v: ViewRow, draft: boolean): { source: string | null; queries: Queries } {
+  const useDraft = draft || v.status !== 'published' || !v.source;
+  return { source: useDraft ? v.draft_source : v.source, queries: parseQueries(useDraft ? v.draft_queries : v.queries) };
+}
+
+export function openView(p: Principal, v: ViewRow, draft: boolean) {
+  if (!canOpen(p, v, draft)) throw (v.status === 'published' || draft ? forbidden('you cannot open this view') : notFound(`no view "${v.slug}"`));
+  const { source, queries } = viewParts(v, draft);
+  if (!source) throw notFound('this view has no code yet');
+  return {
+    id: v.id,
+    name: v.name,
+    slug: v.slug,
+    icon: v.icon,
+    description: v.description,
+    status: v.status,
+    audience: v.audience,
+    draft: draft || v.status !== 'published',
+    module: compileSource(source),
+    queries: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { params: q.params }])),
+    can_edit: canEditViews(p)
+  };
+}
+
+export async function runViewQuery(p: Principal, slug: string, name: string, params: Record<string, unknown>, draft: boolean): Promise<QueryResult> {
+  const v = await loadView(pool, slug);
+  if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');
+  const spec = viewParts(v, draft).queries[name];
+  if (!spec) throw notFound(`view "${v.slug}" has no query "${name}"`);
+  return runQuery(p, name, spec, params ?? {});
+}
+
+// Checks a draft: the code compiles and every query passes the analysis.
+export async function checkDraft(source: string | null, queries: Queries): Promise<void> {
+  if (source !== null) compileSource(source);
+  for (const [name, spec] of Object.entries(queries)) await analyzeQuery(name, spec);
+}
+
+const asText = (q: Queries) => JSON.stringify(q, null, 2);
+
+export async function saveDraft(p: Principal, idOrSlug: string, input: { source?: string; queries?: unknown }): Promise<ViewRow> {
+  requireScope(p, 'schema');
+  const v = await loadView(pool, idOrSlug);
+  const source = input.source !== undefined ? input.source : v.draft_source;
+  const queries = input.queries !== undefined ? parseQueries(input.queries) : parseQueries(v.draft_queries);
+  await checkDraft(source, queries);
+  await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
+    c.query('update crm.pc_0055 set draft_source = $2, draft_queries = $3 where pc_0055_id = $1', [v.id, source, asText(queries)])
+  );
+  return loadView(pool, v.id);
+}
+
+export async function publishView(p: Principal, idOrSlug: string): Promise<ViewRow> {
+  requireScope(p, 'schema');
+  const v = await loadView(pool, idOrSlug);
+  if (!v.draft_source) throw badRequest('the draft has no code to publish');
+  const queries = parseQueries(v.draft_queries);
+  await checkDraft(v.draft_source, queries);
+  await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
+    c.query(
+      `update crm.pc_0055 set source = draft_source, queries = draft_queries, status = '{published}', published_at = now()
+       where pc_0055_id = $1`,
+      [v.id]
+    )
+  );
+  return loadView(pool, v.id);
+}
+
+export async function createView(
+  p: Principal,
+  input: { name?: string; slug?: string; icon?: string; description?: string; audience?: string; source?: string; queries?: unknown }
+): Promise<ViewRow> {
+  requireScope(p, 'schema');
+  if (typeof input.name !== 'string' || input.name.trim() === '') throw badRequest('a view needs a name');
+  const queries = parseQueries(input.queries ?? {});
+  await checkDraft(input.source ?? null, queries);
+  const obj = (await getRegistry()).byKey.get('views')!;
+  const id = await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, async (c) => {
+    const props: Record<string, unknown> = { name: input.name!.trim(), description: input.description ?? null };
+    if (input.slug) props.slug = input.slug;
+    if (input.icon) props.icon = input.icon;
+    if (input.audience) props.audience = input.audience;
+    const newId = await createRecord(c, obj, p, props);
+    await c.query('update crm.pc_0055 set draft_source = $2, draft_queries = $3 where pc_0055_id = $1', [newId, input.source ?? null, asText(queries)]);
+    return newId;
+  });
+  return loadView(pool, id);
+}
+
+// What a view record looks like to the MCP and the views API.
+export function viewOut(v: ViewRow, withCode = true) {
+  return {
+    id: v.id,
+    name: v.name,
+    slug: v.slug,
+    icon: v.icon,
+    url_path: `/view/#${v.slug}`,
+    description: v.description,
+    status: v.status,
+    audience: v.audience,
+    unpublished_changes: v.status !== 'published' || v.draft_source !== v.source || v.draft_queries !== v.queries,
+    published_at: v.published_at,
+    updated_at: v.updated_at,
+    ...(withCode ? { draft_source: v.draft_source, draft_queries: parseQueries(v.draft_queries), source: v.source, queries: parseQueries(v.queries) } : {})
+  };
+}
+
+// ---- write hook --------------------------------------------------------------------
+
+function slugify(name: string): string {
+  const s = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  return s.length >= 3 ? s : `view-${s || 'page'}`.slice(0, 60);
+}
+
+// Views always have a page address: picked, or made from the name. The icon
+// must be a Lucide icon name (lucide.dev/icons), or empty for the default.
+onWrite('views', async (client, properties, existing) => {
+  const out = { ...properties };
+  if (typeof out.icon === 'string') {
+    const icon = out.icon.trim().toLowerCase();
+    if (icon && !ICON_NAMES.has(icon)) {
+      const close = findIcons(icon.replace(/-?\d+$/, ''), 8);
+      throw badRequest(`"${icon}" is not a Lucide icon name${close.length ? ` (close: ${close.join(', ')})` : ''}`, { property: 'icon' });
+    }
+    out.icon = icon || null;
+  }
+  if (out.slug !== undefined || !existing) {
+    let slug = typeof out.slug === 'string' ? out.slug.trim().toLowerCase() : '';
+    if (!slug && existing) throw badRequest('A view needs a page address.', { property: 'slug' });
+    if (!slug) {
+      const base = slugify(typeof out.name === 'string' ? out.name : 'view');
+      slug = base;
+      for (let n = 2; ; n++) {
+        const { rows } = await client.query('select 1 from crm.pc_0055 where lower(slug) = $1', [slug]);
+        if (!rows.length) break;
+        slug = `${base.slice(0, 56)}-${n}`;
+      }
+    }
+    if (!SLUG_RE.test(slug)) {
+      throw badRequest('The page address can have lowercase letters, digits and dashes (3 to 60, not starting or ending with a dash).', { property: 'slug' });
+    }
+    out.slug = slug;
+  }
+  return out;
+});

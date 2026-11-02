@@ -11,6 +11,8 @@ import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
 import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
+import { ViewCode } from '../components/ViewCode';
+import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { AddLineModal } from '../components/AddLineModal';
@@ -62,7 +64,8 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   invoices: ['public_key', 'slug'],
   form_submissions: ['summary', 'submission_values'],
   booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options'],
-  files: ['public_token', 'storage_key']
+  files: ['public_token', 'storage_key'],
+  views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries']
 };
 
 export function RecordPage() {
@@ -125,6 +128,23 @@ export function RecordPage() {
     };
   }, [object, id, navigate, loadAssociations]);
 
+  // a Stripe payment whose webhook went missing shows up once someone opens the record
+  useEffect(() => {
+    if (object !== 'quotes' && object !== 'invoices') return;
+    let cancelled = false;
+    api<{ changed: boolean }>('POST', `/v1/objects/${object}/${id}/check-payments`)
+      .then(async ({ changed }) => {
+        if (!changed || cancelled) return;
+        await loadAssociations();
+        const r = await api<CrmRecord>('GET', `/v1/objects/${object}/${id}`);
+        if (!cancelled) setRecord(r);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [object, id, loadAssociations]);
+
   // after a card changes this record too (adding a line can update the deal amount)
   const refresh = async () => {
     await loadAssociations();
@@ -181,7 +201,7 @@ export function RecordPage() {
             </Menu>
           </div>
           <div className="record-identity">
-            <span className="record-avatar">{initials(name)}</span>
+            {object === 'views' ? <ViewIconAvatar record={record} onChanged={setRecord} /> : <span className="record-avatar">{initials(name)}</span>}
             <div className="record-title">
               <h1>{name}</h1>
               {subtitle && subtitle !== name && <div className="muted">{subtitle}</div>}
@@ -205,6 +225,11 @@ export function RecordPage() {
               <BookingPageEditor record={record} onSaved={setRecord} />
             ) : object === 'form_submissions' ? (
               <SubmissionAnswers record={record} />
+            ) : object === 'views' ? (
+              <>
+                <ViewCode record={record} onChanged={setRecord} />
+                <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
+              </>
             ) : (
               <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
             )}

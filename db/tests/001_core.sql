@@ -465,5 +465,117 @@ begin
   update crm.pc_0052 set slug = 'contact-us' where pc_0052_id = (select max(pc_0052_id) from crm.pc_0052 where row_status = 'active');
 end $t$;
 
+-- 30. Row-level security for custom view queries (0030)
+reset role;
+do $t$
+declare
+  v_u1 text;
+  v_u2 text;
+  v_co text;
+  v_c3 text;
+  v_role bigint;
+  v_rule bigint;
+  v_names text[];
+  v_cos text[];
+  v_users integer;
+  v_info jsonb;
+begin
+  insert into crm.pc_0000 (name) values ('Rls One') returning pc_0000_id into v_u1;
+  insert into crm.pc_0000 (name) values ('Rls Two') returning pc_0000_id into v_u2;
+  insert into crm.pc_0010 (name, owner) values ('Rls mine', array[v_u1]);
+  insert into crm.pc_0010 (name, owner) values ('Rls theirs', array[v_u2]);
+  insert into crm.pc_0010 (name, owner) values ('Rls linked', array[v_u2]) returning pc_0010_id into v_c3;
+  insert into crm.pc_0011 (name, owner) values ('ACME Rls', array[v_u2]) returning pc_0011_id into v_co;
+  insert into crm.pc_0011 (name, owner) values ('Other Rls', array[v_u2]);
+  perform meta.associate('pc_0011', v_co, 'pc_0010', v_c3, null);
+  insert into auth.roles (name, record_access) values ('Rls role', 'own') returning id into v_role;
+  insert into auth.role_sharing_rules (role_id, name, object_type_id, filter_groups)
+    values (v_role, 'Acme', 'pc_0011', '[{"filters":[{"property":"name","operator":"contains","value":"acme"}]}]') returning id into v_rule;
+  insert into auth.role_sharing_rule_associations (rule_id, object_type_id) values (v_rule, 'pc_0010');
+
+  -- own records only
+  set local role test_crm_view_reader;
+  perform set_config('pcrm.access', 'restricted', true), set_config('pcrm.owner_ids', format('{%s}', v_u1), true), set_config('pcrm.rule_ids', '{}', true);
+  select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
+  select array_agg(name order by name) into v_cos from view_data.companies where name like '%Rls';
+  select count(*) into v_users from view_data.users where name like 'Rls%';
+  reset role;
+  perform meta._test_check(v_names = '{"Rls mine"}', 'view reader sees only own contacts');
+  perform meta._test_check(v_cos is null, 'view reader sees no companies it does not own');
+  perform meta._test_check(v_users = 2, 'users are not limited by record access');
+
+  -- plus a sharing rule: the matching company and the contact linked to it
+  set local role test_crm_view_reader;
+  perform set_config('pcrm.rule_ids', format('{%s}', v_rule), true);
+  select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
+  select array_agg(name order by name) into v_cos from view_data.companies where name like '%Rls';
+  reset role;
+  perform meta._test_check(v_names = '{"Rls linked","Rls mine"}', 'sharing rule shares linked contacts');
+  perform meta._test_check(v_cos = '{"ACME Rls"}', 'sharing rule shares matching companies');
+
+  -- team: both users' records
+  set local role test_crm_view_reader;
+  perform set_config('pcrm.owner_ids', format('{%s,%s}', v_u1, v_u2), true), set_config('pcrm.rule_ids', '{}', true);
+  select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
+  reset role;
+  perform meta._test_check(v_names = '{"Rls linked","Rls mine","Rls theirs"}', 'team access sees teammates records');
+
+  -- everything, and nothing when the settings are missing
+  set local role test_crm_view_reader;
+  perform set_config('pcrm.access', 'all', true), set_config('pcrm.owner_ids', '', true);
+  select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
+  perform set_config('pcrm.access', '', true);
+  select count(*) into v_users from view_data.contacts;
+  reset role;
+  perform meta._test_check(cardinality(v_names) = 3, 'access all sees every contact');
+  perform meta._test_check(v_users = 0, 'no settings, no rows');
+
+  -- the API still sees every row; the reader cannot write or leave view_data
+  set local role test_crm_api;
+  select count(*) into v_users from crm.pc_0010 where name like 'Rls%';
+  reset role;
+  perform meta._test_check(v_users = 3, 'API role is not filtered');
+  perform meta._test_expect_error($$set local role test_crm_view_reader; update crm.pc_0010 set name = 'x'$$, 'permission denied');
+  reset role;
+  perform meta._test_expect_error($$set local role test_crm_view_reader; select count(*) from reporting.contacts$$, 'permission denied');
+  reset role;
+  perform meta._test_expect_error($$set local role test_crm_view_reader; select meta.hex_id('x')$$, 'permission denied');
+  reset role;
+
+  -- filter compiler (same output shape as search.ts, literals inlined)
+  perform meta._test_check(meta.compile_filter_groups('pc_0010', '[{"filters":[{"property":"name","operator":"eq","value":"x"}]}]', 't') = '((t.name = ''x''::text))', 'compile eq');
+  perform meta._test_check(meta.compile_filter_groups('pc_0010', '[{"filters":[{"property":"owner","operator":"in","values":["a","b"]}]},{"filters":[{"property":"name","operator":"starts_with","value":"5%_"}]}]', 's')
+    = '((s.owner && array[''a''::text, ''b''::text]::text[]) or (s.name ilike E''5\\%\\_%''))', 'compile in and starts_with');
+  perform meta._test_check(meta.compile_filter_groups('pc_0010', '[{"filters":[{"property":"nope","operator":"eq","value":"x"}]}]', 't') is null, 'unknown property compiles to nothing');
+  perform meta._test_check(meta.compile_filter_groups('pc_0010', '[{"filters":[{"property":"name","operator":"gt","value":"x"}]}]', 't') is null, 'range on text compiles to nothing');
+  perform meta._test_check(meta.compile_filter_groups('pc_0010', '[{"filters":[{"property":"created_at","operator":"between","values":["2020-01-01T00:00:00Z","2030-01-01T00:00:00Z"]}]}]', 't') like '((t.created_at between %::timestamptz and %::timestamptz))', 'compile between');
+
+  -- view query analysis
+  v_info := meta.analyze_view_query('select c.name, c.email, co.name as company from view_data.contacts c left join view_data.associations a on a.record_id = c.pc_0010_id left join companies co on co.pc_0011_id = a.other_record_id');
+  perform meta._test_check(v_info -> 'objects' ?& array['pc_0010', 'pc_0011'], 'analysis lists objects read');
+  perform meta._test_check(v_info -> 'columns' @> '[{"object": "pc_0010", "column": "email"}]', 'analysis lists columns read');
+  perform meta._test_check(jsonb_array_length(v_info -> 'output') = 3 and v_info -> 'output' -> 2 ->> 'name' = 'company', 'analysis lists output columns');
+  perform meta._test_check(meta.analyze_view_query('select owner__label from contacts') -> 'columns' @> '[{"object": "pc_0010", "column": "owner"}]', 'label columns count as their property');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select 1; select 2')$$, 'semicolons');
+  perform meta._test_expect_error($$select meta.analyze_view_query('delete from view_data.contacts')$$, 'single select');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select * from crm.pc_0010')$$, 'may only read view_data');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select * from reporting.contacts')$$, 'may only read view_data');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select * from auth.api_keys')$$, 'may only read view_data');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select 1 as x where pg_sleep(1) is null')$$, 'may not call');
+  perform meta._test_expect_error($$select meta.analyze_view_query('with x as (delete from view_data.contacts returning *) select * from x')$$, 'invalid');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select name from nowhere')$$, 'invalid');
+  perform meta._test_check(not exists (select 1 from pg_class where relname like '_view_probe_%'), 'no probe views left behind');
+
+  -- properties still archive and delete with the policies and view_data views in place
+  perform meta.create_property('contacts', 'rls_tmp', 'Rls tmp', 'text');
+  perform meta._test_check(exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'contacts' and column_name = 'rls_tmp'), 'new property shows in view_data');
+  perform meta.archive_property('contacts', 'rls_tmp');
+  perform meta.delete_property('contacts', 'rls_tmp', 'rls_tmp');
+  perform meta._test_check(not exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'contacts' and column_name = 'rls_tmp'), 'deleted property leaves view_data');
+  perform meta.create_object('rls_things', 'Rls thing', 'Rls things');
+  perform meta._test_check(exists (select 1 from pg_policies where tablename = (select object_type_id from meta.pc_0001 where api_name = 'rls_things') and policyname = 'view_reader_read'), 'new objects get policies');
+  perform meta._test_check((select viewowner from pg_views where schemaname = 'view_data' and viewname = 'rls_things') = 'test_crm_view_reader', 'new objects get a view_data view');
+end $t$;
+
 rollback;
 \echo all core tests passed

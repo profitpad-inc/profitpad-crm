@@ -18,7 +18,7 @@ export const PAYMENT_PRINCIPAL: Principal = {
   permissions: {
     objects: new Map([
       ['pc_0022', { read: true, create: false, edit: true, delete: false }],
-      ['pc_0023', { read: true, create: false, edit: true, delete: false }],
+      ['pc_0023', { read: true, create: true, edit: true, delete: false }],
       ['pc_0024', { read: true, create: true, edit: true, delete: false }],
       ['pc_0010', { read: true, create: false, edit: false, delete: false }],
       ['pc_0011', { read: true, create: false, edit: false, delete: false }]
@@ -115,12 +115,53 @@ export async function setPaymentStatus(client: pg.PoolClient, paymentId: string,
   await updateRecord(client, await getObject('payments'), PAYMENT_PRINCIPAL, paymentId, { status, ...extra });
 }
 
+// A paid quote gets a paid invoice for what was paid, with no number (staff
+// fill it in): the deposit, or the full amount with the quote's lines copied.
+// Linked to the quote, the payment and the quote's deals, contacts and
+// companies.
+async function invoiceForQuotePayment(
+  client: pg.PoolClient,
+  quoteId: string,
+  paymentId: string,
+  pay: { amount: string | number; currency: string | null; purpose: string; paid_at: string | null }
+): Promise<string> {
+  const { rows: q } = await client.query('select name from crm.pc_0022 where pc_0022_id = $1', [quoteId]);
+  const quoteName = q[0]?.name ?? quoteId;
+  const deposit = pay.purpose === 'quote_deposit';
+  const { rows: others } = await client.query(
+    `select other_object_type_id, other_record_id from crm.associations_both
+     where object_type_id = 'pc_0022' and record_id = $1 and other_object_type_id in ('pc_0010', 'pc_0011', 'pc_0012')`,
+    [quoteId]
+  );
+  const names: Record<string, string> = { pc_0010: 'contacts', pc_0011: 'companies', pc_0012: 'deals' };
+  const invoiceId = await createRecord(
+    client,
+    await getObject('invoices'),
+    PAYMENT_PRINCIPAL,
+    {
+      name: deposit ? `Deposit for ${quoteName}` : quoteName,
+      status: 'paid',
+      amount: Number(pay.amount),
+      currency: pay.currency,
+      due_date: (pay.paid_at ? new Date(pay.paid_at) : new Date()).toISOString().slice(0, 10)
+    },
+    [
+      { object: 'quotes', id: quoteId },
+      { object: 'payments', id: paymentId },
+      ...others.map((r) => ({ object: names[r.other_object_type_id], id: r.other_record_id as string }))
+    ]
+  );
+  if (!deposit) await client.query("select meta.copy_lines('pc_0022', $1, 'pc_0023', $2)", [quoteId, invoiceId]);
+  return invoiceId;
+}
+
 // The money has arrived: the payment is succeeded, its invoice paid, and a
 // quote that is paid instead of signed is accepted (the payer is the
-// responder). Safe to call twice.
+// responder). A paid quote also gets a paid invoice. Safe to call twice.
 export async function markPaymentSucceeded(client: pg.PoolClient, paymentId: string): Promise<void> {
   const { rows } = await client.query(
-    `select status[1] as status, payer_name, payer_email, paid_at from crm.pc_0024 where pc_0024_id = $1 for update`,
+    `select status[1] as status, payer_name, payer_email, paid_at, amount, currency[1] as currency, purpose[1] as purpose
+     from crm.pc_0024 where pc_0024_id = $1 for update`,
     [paymentId]
   );
   const pay = rows[0];
@@ -155,6 +196,10 @@ export async function markPaymentSucceeded(client: pg.PoolClient, paymentId: str
         responder_name: pay.payer_name,
         responder_email: pay.payer_email
       });
+    }
+    if (pay.purpose?.startsWith('quote_') && invoices.length === 0) {
+      const { rows: now } = await client.query('select paid_at from crm.pc_0024 where pc_0024_id = $1', [paymentId]);
+      await invoiceForQuotePayment(client, q.id, paymentId, { ...pay, paid_at: now[0]?.paid_at ?? null });
     }
   }
 }

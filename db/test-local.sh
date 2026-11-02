@@ -25,6 +25,7 @@ su -d postgres -tAc "select 1 from pg_roles where rolname = 'test_crm_reader'" |
 su -d postgres -c "grant test_crm_reader to reporting_reader" >/dev/null
 su -d postgres -c "drop database if exists test_crm" -c "create database test_crm owner n8n" >/dev/null
 su -d test_crm -v ON_ERROR_STOP=1 -f "$root/db/bootstrap/000_superuser.sql" >/dev/null 2>&1
+su -d test_crm -v ON_ERROR_STOP=1 -f "$root/db/bootstrap/002_view_reader.sql" >/dev/null 2>&1
 # mirror the server: no CREATE on public for everyone, no TEMP for claude_admin
 su -d test_crm -c "alter database test_crm set timezone = 'UTC'" -c "revoke create on schema public from public" \
   -c "grant create, usage on schema public to claude_admin" -c "revoke temp on database test_crm from public" >/dev/null

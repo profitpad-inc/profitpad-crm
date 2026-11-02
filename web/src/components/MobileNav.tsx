@@ -2,36 +2,46 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu as MenuIcon, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { HomeIcon, initials, objectIcon } from '../lib/display';
+import { HomeIcon, initials } from '../lib/display';
+import { isNavActive, navLink } from '../lib/nav';
+import { ViewIcon } from '../lib/lucide-icons';
 import { SearchPalette } from './SearchPalette';
 import { LogoMark } from './Logo';
 import { Sidebar } from './Sidebar';
-
-// Objects pinned to the phone bottom bar, in order. Missing ones are skipped.
-const BOTTOM_OBJECTS = ['contacts', 'deals', 'tasks'];
 
 export function userDisplayName(me: ReturnType<typeof useApp>['me']): string {
   return me.user?.name || [me.user?.first_name, me.user?.last_name].filter(Boolean).join(' ') || me.key_name;
 }
 
 export function BottomBar() {
-  const { objectByName } = useApp();
+  const { bottomLeft, bottomNav, objectByName, customViews } = useApp();
   const location = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // left: the full menu or Home; links this user cannot open are skipped; Search is always last
   return (
     <>
       <nav className="bottom-bar">
-        <Link to="/" className={`bottom-item${location.pathname === '/' ? ' active' : ''}`}>
-          <HomeIcon size={22} strokeWidth={1.75} />
-          <span>Home</span>
-        </Link>
-        {BOTTOM_OBJECTS.filter((o) => objectByName.has(o)).map((o) => {
-          const Icon = objectIcon(o);
+        {bottomLeft === 'menu' ? (
+          <button className={`bottom-item${drawerOpen ? ' active' : ''}`} onClick={() => setDrawerOpen(true)}>
+            <MenuIcon size={22} strokeWidth={1.75} />
+            <span>Menu</span>
+          </button>
+        ) : (
+          <Link to="/" className={`bottom-item${location.pathname === '/' ? ' active' : ''}`}>
+            <HomeIcon size={22} strokeWidth={1.75} />
+            <span>Home</span>
+          </Link>
+        )}
+        {bottomNav.map((item, i) => {
+          const link = navLink(item, objectByName, customViews);
+          if (!link) return null;
+          const { to, label, Icon, iconName } = link;
           return (
-            <Link key={o} to={`/objects/${o}`} className={`bottom-item${location.pathname.startsWith(`/objects/${o}`) ? ' active' : ''}`}>
-              <Icon size={22} strokeWidth={1.75} />
-              <span>{objectByName.get(o)?.label_plural}</span>
+            <Link key={i} to={to} className={`bottom-item${isNavActive(item, location) ? ' active' : ''}`}>
+              <ViewIcon icon={iconName} fallback={Icon} size={22} strokeWidth={1.75} />
+              <span>{label}</span>
             </Link>
           );
         })}
@@ -41,6 +51,7 @@ export function BottomBar() {
         </button>
       </nav>
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
+      {drawerOpen && <Drawer onClose={() => setDrawerOpen(false)} />}
     </>
   );
 }

@@ -17,7 +17,8 @@ import { logEvent } from './audit.js';
 // Microsoft (the usual session cookie), approves on a consent page served by
 // the API, and the app trades the code for tokens at /oauth/token. Tokens act
 // as that user, never beyond the user's roles, and only with the scopes the
-// user allowed (read, optionally write). Apps are public clients: PKCE (S256)
+// user allowed (read, optionally write, and for admins optionally schema:
+// custom views and properties). Apps are public clients: PKCE (S256)
 // is required and there are no client secrets.
 //
 // Apps identify themselves with a Client ID Metadata Document (client_id is
@@ -27,11 +28,12 @@ import { logEvent } from './audit.js';
 // the MCP server (<api>/mcp) or the REST API (<api>), and each accepts only
 // its own.
 
-export const SCOPES = ['read', 'write'] as const;
+export const SCOPES = ['read', 'write', 'schema'] as const;
 type OAuthScope = (typeof SCOPES)[number];
 const SCOPE_TEXT: Record<OAuthScope, string> = {
   read: 'See the records you can see in the CRM',
-  write: 'Create and change records as you'
+  write: 'Create and change records as you',
+  schema: 'Build custom views, and add, change and archive properties and dropdown options (you are an admin)'
 };
 
 const ACCESS_TOKEN_SECONDS = 3600;
@@ -424,10 +426,11 @@ async function consentPage(req: FastifyRequest, reply: FastifyReply, p: Principa
     ? `Published by ${escapeHtml(new URL(a.client.clientId).host)}`
     : 'Registered itself automatically (its name is not verified)';
   const hidden = (name: string, value: string | undefined) => (value === undefined ? '' : `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`);
-  const scopes = a.scopes.map((s) =>
+  // schema is offered only to admins; for anyone else it is left out
+  const scopes = a.scopes.filter((s) => s !== 'schema' || p.permissions === null).map((s) =>
     s === 'read'
       ? `<label><input type="checkbox" checked disabled> <span>${SCOPE_TEXT.read}</span></label>`
-      : `<label><input type="checkbox" name="allow_write" value="yes" checked> <span>${SCOPE_TEXT.write}</span></label>`
+      : `<label><input type="checkbox" name="allow_${s}" value="yes" checked> <span>${SCOPE_TEXT[s]}</span></label>`
   ).join('');
   return sendPage(reply, 200, `Allow ${a.client.name}?`, `
     <h1>Allow ${escapeHtml(a.client.name)} to use the CRM?</h1>
@@ -672,7 +675,8 @@ export async function oauthRoutes(app: FastifyInstance) {
       await logEvent(req, 'oauth.denied', { userId: p.userId, target: { type: 'oauth_client', id: a.client.id }, details: { client: a.client.name } });
       return reply.redirect(errorRedirect(req, a.redirectUri, 'access_denied', 'the user denied access', a.state), 302);
     }
-    const scopes: OAuthScope[] = a.scopes.filter((s) => s === 'read' || body.allow_write === 'yes');
+    const admin = p.permissions === null;
+    const scopes: OAuthScope[] = a.scopes.filter((s) => s === 'read' || (s === 'write' && body.allow_write === 'yes') || (s === 'schema' && admin && body.allow_schema === 'yes'));
     const code = random();
     const grantId = await withTx({ actor: p.actor, source: 'oauth' }, async (db) => {
       const { rows } = await db.query(

@@ -3,7 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
-import { HomeIcon, MORE_GROUPS, ReportingIcon, initials, objectIcon } from '../lib/display';
+import { MORE_GROUPS, initials, objectIcon } from '../lib/display';
+import { isNavActive, navLink } from '../lib/nav';
+import { ViewIcon } from '../lib/lucide-icons';
 import { SearchPalette } from './SearchPalette';
 import { LogoMark } from './Logo';
 
@@ -20,7 +22,7 @@ function readExpanded(): boolean {
 // 'rail' is the desktop sidebar; 'drawer' is the same menu, always expanded,
 // inside the phone hamburger drawer (More opens inline there).
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, objectByName, objects } = useApp();
+  const { me, nav, objectByName, objects, customViews } = useApp();
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
@@ -53,16 +55,6 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   }, [drawer]);
 
   const userName = me.user?.name || [me.user?.first_name, me.user?.last_name].filter(Boolean).join(' ') || me.key_name;
-  const params = new URLSearchParams(location.search);
-
-  function isActive(item: NavItem): boolean {
-    if (item.type === 'home') return location.pathname === '/';
-    if (item.type === 'reporting') return location.pathname.startsWith('/reporting');
-    if (item.type === 'object') return location.pathname.startsWith(`/objects/${item.object}`) && !params.get('view');
-    if (item.type === 'view') return location.pathname.startsWith(`/objects/${item.object}`) && params.get('view') === String(item.view_id);
-    return false;
-  }
-
   function renderItem(item: NavItem, key: string) {
     if (item.type === 'divider') return <div key={key} className="nav-divider" />;
     if (item.type === 'section') {
@@ -89,23 +81,12 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         </div>
       );
     }
-    let to = '/';
-    let label = 'Home';
-    let Icon = HomeIcon;
-    if (item.type === 'reporting') {
-      to = '/reporting';
-      label = 'Reporting';
-      Icon = ReportingIcon;
-    } else if (item.type === 'object' || item.type === 'view') {
-      const obj = objectByName.get(item.object);
-      if (!obj) return null; // not readable for this user, or archived
-      to = item.type === 'view' ? `/objects/${item.object}?view=${item.view_id}` : `/objects/${item.object}`;
-      label = item.label ?? obj.label_plural;
-      Icon = objectIcon(item.object);
-    }
+    const link = navLink(item, objectByName, customViews);
+    if (!link) return null;
+    const { to, label, Icon, iconName } = link;
     return (
-      <Link key={key} to={to} className={`nav-item${isActive(item) ? ' active' : ''}`} title={expanded ? undefined : label}>
-        <Icon size={20} strokeWidth={1.75} />
+      <Link key={key} to={to} className={`nav-item${isNavActive(item, location) ? ' active' : ''}`} title={expanded ? undefined : label}>
+        <ViewIcon icon={iconName} fallback={Icon} size={20} strokeWidth={1.75} />
         {expanded && <span>{label}</span>}
       </Link>
     );

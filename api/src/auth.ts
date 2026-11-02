@@ -252,8 +252,9 @@ export async function authenticateOAuthToken(token: string, resource: string, ip
   return {
     keyId: null,
     name: `oauth:${t.client_name}`,
-    // read and write only: apps never get the admin scope
-    scopes: new Set<Scope>((t.scopes as string[]).filter((s): s is Scope => s === 'read' || s === 'write')),
+    // read and write, plus schema while the user is an admin: apps never get
+    // the admin scope
+    scopes: new Set<Scope>((t.scopes as string[]).filter((s): s is Scope => s === 'read' || s === 'write' || (s === 'schema' && permissions === null))),
     userId: t.user_id,
     actor: `user:${t.user_id}`,
     permissions,

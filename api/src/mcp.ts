@@ -14,6 +14,14 @@ import { OPERATORS } from './search.js';
 import { mcpResourceMetadataUrl, mcpResourceUrl, SCOPES } from './oauth.js';
 import { isWritable } from './values.js';
 import { brandIcons } from './brand.js';
+import {
+  addOption, createProperty, setPropertyArchived, testCalculation, updateOption, updateProperty
+} from './routes/schema.js';
+import {
+  createView, listViews, loadView, parseQueries, publishView, runQuery, runViewQuery, saveDraft, viewOut
+} from './views.js';
+import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
+import { findIcons } from './icons.js';
 
 // MCP server (Streamable HTTP at /mcp) for AI clients such as Claude. Callers
 // need an OAuth access token issued for this resource (oauth.ts); it acts as
@@ -30,6 +38,10 @@ export const mcpOriginAllowed = (origin: string | undefined) => !origin || allow
 const INSTRUCTIONS = `ProfitPad CRM: records (contacts, companies, deals, tickets, quotes and more) organised as objects with typed properties, linked to each other by associations.
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
 Records are addressed by object api_name and record id. You act as the signed-in user and see only what they may see.`;
+
+// for connections with the schema scope (admins)
+const ADMIN_INSTRUCTIONS = `
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Ask the admin before publishing a view or changing properties.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -67,9 +79,9 @@ const filterGroupsArg = z.array(z.object({
 function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[]): McpServer {
   const server = new McpServer(
     { name: 'profitpad-crm', title: 'ProfitPad CRM', version: VERSION, icons, websiteUrl: process.env.UI_URL || undefined },
-    { instructions: INSTRUCTIONS }
+    { instructions: INSTRUCTIONS + (p.scopes.has('schema') ? ADMIN_INSTRUCTIONS : '') }
   );
-  const writeChallenge = requireScopes(...SCOPES);
+  const writeChallenge = requireScopes('read', 'write');
 
   server.registerTool('list_objects', {
     title: 'List objects',
@@ -206,7 +218,236 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
     return { association_id: associationId };
   }));
 
+  if (p.scopes.has('schema')) registerAdminTools(server, p);
   return server;
+}
+
+const viewArg = z.string().describe('The view\'s slug (page address) or id');
+const queriesArg = z.union([z.string(), z.record(z.string(), z.union([z.string(), z.object({ sql: z.string(), params: z.record(z.string(), z.string()).optional() })]))])
+  .describe('Named queries: {"name": {"sql": "select ...", "params": {"p": "text"}}} or {"name": "select ..."}; see view_guide topic sql');
+const propertyArg = z.string().describe('Property api_name');
+const SCHEMA_SOURCE = 'mcp';
+
+// Custom views and property changes, for connections with the schema scope
+// (admins who allowed it on the consent page). Every change goes through the
+// same functions as the REST API (views.ts, routes/schema.ts).
+function registerAdminTools(server: McpServer, p: Principal) {
+  const schemaChallenge = requireScopes('schema');
+
+  server.registerTool('view_guide', {
+    title: 'Custom view guide',
+    description: `How to build custom views: workflow, React runtime, UI kit, styling, SQL rules, the data, property rules and full examples. Read "overview" first. Topics: ${GUIDE_TOPICS.join(', ')}. For "schema", object narrows it to one object with dropdown values.`,
+    inputSchema: z.object({ topic: z.enum(GUIDE_TOPICS).optional(), object: z.string().optional() }),
+    annotations: { readOnlyHint: true }
+  }, async ({ topic, object }) => {
+    try {
+      return { content: [{ type: 'text', text: await viewGuide(p, topic ?? 'overview', object) }] };
+    } catch (err) {
+      return run(() => Promise.reject(err));
+    }
+  });
+
+  server.registerTool('list_views', {
+    title: 'List custom views',
+    description: 'Lists every custom view: name, slug, address, status (draft or published), audience and whether the draft has unpublished changes.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => (await listViews(p)).map((v) => viewOut(v, false))));
+
+  server.registerTool('get_view', {
+    title: 'Get custom view',
+    description: 'One custom view with its code and queries, draft and published.',
+    inputSchema: z.object({ view: viewArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ view }) => run(async () => viewOut(await loadView(pool, view))));
+
+  server.registerTool('create_view', {
+    title: 'Create custom view',
+    description: 'Creates a custom view as a draft (nobody but admins sees it until published). The code and queries are checked first; errors come back to fix. slug defaults from the name.',
+    inputSchema: z.object({
+      name: z.string(),
+      slug: z.string().optional().describe('Page address: lowercase letters, digits, dashes, 3 to 60'),
+      icon: z.string().optional().describe('Lucide icon name for menus, like chart-column; find one with find_icons'),
+      description: z.string().optional(),
+      audience: z.enum(['admins', 'everyone']).optional().describe('Default admins'),
+      source: z.string().optional().describe('React (TSX) module with a default export; see view_guide'),
+      queries: queriesArg.optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async (args) => run(async () => viewOut(await createView(p, args))));
+
+  server.registerTool('save_view_draft', {
+    title: 'Save custom view draft',
+    description: 'Replaces the draft code and/or queries of a view (what is not given stays). Checked first; errors come back to fix. The published version does not change until publish_view.',
+    inputSchema: z.object({ view: viewArg, source: z.string().optional(), queries: queriesArg.optional() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ view, source, queries }) => run(async () => viewOut(await saveDraft(p, view, { source, queries }))));
+
+  server.registerTool('update_view_settings', {
+    title: 'Update custom view settings',
+    description: 'Changes a view\'s name, slug (page address), icon, description or audience. Takes effect at once, without publishing.',
+    inputSchema: z.object({
+      view: viewArg,
+      name: z.string().optional(),
+      slug: z.string().optional(),
+      icon: z.string().optional().describe('Lucide icon name, like chart-column ("" for the default); find one with find_icons'),
+      description: z.string().optional(),
+      audience: z.enum(['admins', 'everyone']).optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ view, ...props }) => run(async () => {
+    requireScope(p, 'schema');
+    const v = await loadView(pool, view);
+    const obj = await objectForWrite('views');
+    const changes = Object.fromEntries(Object.entries(props).filter(([, x]) => x !== undefined));
+    await withTx({ actor: p.actor, source: SCHEMA_SOURCE }, (c) => updateRecord(c, obj, p, v.id, changes));
+    return viewOut(await loadView(pool, v.id), false);
+  }));
+
+  server.registerTool('find_icons', {
+    title: 'Find icons',
+    description: 'Searches Lucide icon names (lucide.dev/icons) for a view\'s menu icon, e.g. "chart", "users", "calendar".',
+    inputSchema: z.object({ query: z.string() }),
+    annotations: { readOnlyHint: true }
+  }, async ({ query }) => run(async () => findIcons(query)));
+
+  server.registerTool('try_view_query', {
+    title: 'Try a view query',
+    description: 'Runs SQL that is not saved anywhere, with your own access, under the same rules as view queries (view_guide topic sql). First 50 rows.',
+    inputSchema: z.object({
+      sql: z.string(),
+      params: z.record(z.string(), z.string()).optional().describe('Declared params: {"since": "date"}'),
+      values: z.record(z.string(), z.unknown()).optional().describe('Param values: {"since": "2026-01-01"}')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ sql, params, values }) => run(async () => {
+    requireScope(p, 'schema');
+    const spec = parseQueries({ try: { sql, params: params ?? {} } }).try;
+    return runQuery(p, 'try', spec, values ?? {}, 50);
+  }));
+
+  server.registerTool('run_view_query', {
+    title: 'Run a view query',
+    description: 'Runs one of a view\'s saved queries (the draft by default) with your own access. First 50 rows.',
+    inputSchema: z.object({
+      view: viewArg,
+      query: z.string(),
+      params: z.record(z.string(), z.unknown()).optional(),
+      published: z.boolean().optional().describe('Run the published version instead of the draft')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ view, query, params, published }) => run(async () => {
+    const result = await runViewQuery(p, view, query, params ?? {}, !published);
+    return { ...result, rows: result.rows.slice(0, 50), truncated: result.truncated || result.rows.length > 50 };
+  }));
+
+  server.registerTool('publish_view', {
+    title: 'Publish custom view',
+    description: 'Makes the draft the version everyone with access sees. Ask the admin first.',
+    inputSchema: z.object({ view: viewArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ view }) => run(async () => viewOut(await publishView(p, view), false)));
+
+  server.registerTool('archive_view', {
+    title: 'Archive custom view',
+    description: 'Archives a view: it stops opening and leaves menus. It can be restored from the Views page.',
+    inputSchema: z.object({ view: viewArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ view }) => run(async () => {
+    requireScope(p, 'schema');
+    const v = await loadView(pool, view);
+    await withTx({ actor: p.actor, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_record_status($1, $2, $3)', ['pc_0055', [v.id], 'archived']));
+    return { archived: v.slug };
+  }));
+
+  // ---- properties ----
+
+  const optionsArg = z.record(z.string(), z.unknown()).optional().describe('Type options; see view_guide topic properties');
+
+  server.registerTool('create_property', {
+    title: 'Create property',
+    description: 'Adds a property (a typed field) to an object. Ask the admin first. api_name is permanent. See view_guide topic properties for names, types and options.',
+    inputSchema: z.object({
+      object: objectArg,
+      api_name: z.string(),
+      label: z.string(),
+      type: z.enum(['text', 'number', 'dropdown', 'date', 'datetime', 'calculation', 'file']),
+      description: z.string().optional(),
+      options: optionsArg,
+      dropdown_options: z.array(z.object({ api_value: z.string(), label: z.string(), display_order: z.number().int().optional() })).optional(),
+      calc_sql: z.string().optional(),
+      calc_output_type: z.enum(['text', 'number', 'date', 'datetime']).optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ object, ...b }) => run(() => createProperty(p, object, b, SCHEMA_SOURCE)));
+
+  server.registerTool('update_property', {
+    title: 'Update property',
+    description: 'Changes a property\'s label, description or options, or a calculation\'s SQL. The api_name and type cannot change.',
+    inputSchema: z.object({
+      object: objectArg,
+      property: propertyArg,
+      label: z.string().optional(),
+      description: z.string().optional(),
+      options: optionsArg.describe('The full options object (replaces the current one)'),
+      calc_sql: z.string().optional(),
+      calc_output_type: z.enum(['text', 'number', 'date', 'datetime']).optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ object, property, ...b }) => run(() => updateProperty(p, object, property, b, SCHEMA_SOURCE)));
+
+  for (const archived of [true, false]) {
+    server.registerTool(archived ? 'archive_property' : 'unarchive_property', {
+      title: archived ? 'Archive property' : 'Unarchive property',
+      description: archived
+        ? 'Hides a property everywhere and keeps its data (there is no delete here). Blocked while a calculation reads it.'
+        : 'Brings back an archived property.',
+      inputSchema: z.object({ object: objectArg, property: propertyArg }),
+      annotations: { readOnlyHint: false, destructiveHint: archived, idempotentHint: true },
+      scopeChallenge: schemaChallenge
+    }, async ({ object, property }) => run(() => setPropertyArchived(p, object, property, archived, SCHEMA_SOURCE)));
+  }
+
+  server.registerTool('add_dropdown_option', {
+    title: 'Add dropdown option',
+    description: 'Adds a choice to a dropdown property.',
+    inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string().describe('api_value'), label: z.string(), display_order: z.number().int().optional() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ object, property, value, label, display_order }) => run(() => addOption(p, object, property, { api_value: value, label, display_order }, SCHEMA_SOURCE)));
+
+  server.registerTool('update_dropdown_option', {
+    title: 'Update dropdown option',
+    description: 'Relabels or reorders a dropdown choice. Its value (api_value) cannot change.',
+    inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string(), label: z.string().optional(), display_order: z.number().int().optional() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ object, property, value, label, display_order }) => run(() => updateOption(p, object, property, value, { label, display_order }, SCHEMA_SOURCE)));
+
+  for (const archived of [true, false]) {
+    server.registerTool(archived ? 'archive_dropdown_option' : 'unarchive_dropdown_option', {
+      title: archived ? 'Archive dropdown option' : 'Unarchive dropdown option',
+      description: archived
+        ? 'Stops a choice from being picked; records that have it keep it (there is no delete here).'
+        : 'Makes an archived choice available again.',
+      inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string() }),
+      annotations: { readOnlyHint: false, destructiveHint: archived, idempotentHint: true },
+      scopeChallenge: schemaChallenge
+    }, async ({ object, property, value }) => run(() => updateOption(p, object, property, value, { row_status: archived ? 'archived' : 'active' }, SCHEMA_SOURCE)));
+  }
+
+  server.registerTool('test_calculation', {
+    title: 'Test calculation',
+    description: 'Tries calculation SQL on one record with the same checks as saving; saves nothing.',
+    inputSchema: z.object({ object: objectArg, record_id: z.string(), calc_sql: z.string(), calc_output_type: z.enum(['text', 'number', 'date', 'datetime']) }),
+    annotations: { readOnlyHint: true }
+  }, async ({ object, ...b }) => run(() => testCalculation(p, object, b)));
 }
 
 const handler = createMcpHandler((ctx) => buildServer(ctx.authInfo!.extra!.principal as Principal, ctx.authInfo!.extra!.icons as ReturnType<typeof brandIcons>), {

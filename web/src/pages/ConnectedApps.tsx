@@ -35,7 +35,8 @@ interface OAuthApp {
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
-const access = (scopes: string[]) => (scopes.includes('write') ? 'Read and write' : 'Read only');
+const access = (scopes: string[]) =>
+  (scopes.includes('write') ? 'Read and write' : 'Read only') + (scopes.includes('schema') ? ', views and properties' : '');
 
 // Who vouches for an app's name: the site hosting its metadata document, or
 // nobody (it registered itself).

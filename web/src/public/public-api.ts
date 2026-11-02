@@ -161,6 +161,9 @@ export function publicApi(base: string) {
       call<{ quote: PublicQuote }>('POST', `/quotes/${encodeURIComponent(key)}/${action}`, body),
     invoice: (key: string) => call<{ invoice: PublicInvoice; theme: Record<string, string> }>('GET', `/invoices/${encodeURIComponent(key)}`),
     pay: (object: 'quotes' | 'invoices', key: string) => call<{ url: string }>('POST', `/${object}/${encodeURIComponent(key)}/pay`, {}),
+    // asks Stripe about our open checkouts, in case the webhook is late or missing
+    checkPayment: (object: 'quotes' | 'invoices', key: string) =>
+      call<{ payment: PublicPayment | null }>('POST', `/${object}/${encodeURIComponent(key)}/check-payment`, {}),
     etransferSent: (object: 'quotes' | 'invoices', key: string, body: { name: string; email: string }) =>
       call<{ payment: PublicPayment | null }>('POST', `/${object}/${encodeURIComponent(key)}/etransfer-sent`, body),
     form: (key: string) => call<PublicForm>('GET', `/forms/${encodeURIComponent(key)}`),

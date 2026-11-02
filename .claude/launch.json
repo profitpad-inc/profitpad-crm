@@ -14,6 +14,18 @@
       "port": 5174
     },
     {
+      "name": "api-payments-sandbox",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5498", "PGUSER=claude_admin", "PGDATABASE=test_crm", "PORT=3003", "UI_URL=http://localhost:5176", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "port": 3003
+    },
+    {
+      "name": "web-payments-sandbox",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["API_URL=http://127.0.0.1:3003", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5176", "--strictPort"],
+      "port": 5176
+    },
+    {
       "name": "web-local-copy-2",
       "runtimeExecutable": "env",
       "runtimeArgs": ["API_URL=http://127.0.0.1:3001", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5175", "--strictPort"],

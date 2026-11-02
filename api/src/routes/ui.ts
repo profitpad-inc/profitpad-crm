@@ -53,9 +53,10 @@ function validateFormsSettings(value: unknown): { allowed_origins: string[] } {
 // ---- sidebar menus -----------------------------------------------------------
 
 type NavItem =
-  | { type: 'home' | 'reporting' | 'divider' }
+  | { type: 'home' | 'divider' }
   | { type: 'object'; object: string; label?: string }
   | { type: 'view'; object: string; view_id: number; label?: string }
+  | { type: 'custom_view'; slug: string; label?: string }
   | { type: 'section'; label: string; items: NavItem[] };
 
 async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
@@ -67,7 +68,6 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
     if (label !== undefined && (label.length < 1 || label.length > 63)) throw badRequest('menu labels must be 1 to 63 characters');
     switch (it.type) {
       case 'home':
-      case 'reporting':
       case 'divider':
         out.push({ type: it.type });
         break;
@@ -83,6 +83,13 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
         out.push({ type: 'view', object: obj.api_name, view_id: Number(it.view_id), ...(label ? { label } : {}) });
         break;
       }
+      // a custom view (crm.pc_0055, /view/#slug); hidden for users who cannot open it
+      case 'custom_view': {
+        const { rows } = await pool.query("select slug from crm.pc_0055 where lower(slug) = lower($1) and row_status = 'active'", [String(it.slug ?? '')]);
+        if (rows.length === 0) throw badRequest(`custom view "${String(it.slug)}" does not exist`);
+        out.push({ type: 'custom_view', slug: rows[0].slug, ...(label ? { label } : {}) });
+        break;
+      }
       case 'section':
         if (depth > 0) throw badRequest('sections cannot be nested');
         if (!label) throw badRequest('sections need a label');
@@ -92,6 +99,19 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
         throw badRequest(`unknown menu item type "${String(it.type)}"`);
     }
   }
+  return out;
+}
+
+// the mobile bottom bar: the left button, then up to 3 links (Search is always added after them)
+function validateBottomLeft(left: unknown): 'menu' | 'home' {
+  if (left !== 'menu' && left !== 'home') throw badRequest('bottom_left must be "menu" or "home"');
+  return left;
+}
+
+async function validateBottom(items: unknown): Promise<NavItem[]> {
+  if (!Array.isArray(items) || items.length > 3) throw badRequest('bottom must be an array of at most 3 items');
+  const out = await validateNav(items);
+  if (out.some((it) => it.type === 'divider' || it.type === 'section')) throw badRequest('the bottom bar takes home, object, view and custom_view items only');
   return out;
 }
 
@@ -141,10 +161,15 @@ function validateSorts(obj: ObjectDef, sorts: unknown): { property: string; dire
   });
 }
 
+// Long values that make poor table columns: a custom view's code and queries
+// (its record page shows them in the Code card).
+const NOT_DEFAULT_COLUMNS: Record<string, string[]> = { pc_0055: ['draft_source', 'draft_queries', 'source', 'queries'] };
+
 // Default view: name plus the first few native properties, newest first.
 function defaultColumns(obj: ObjectDef): Column[] {
+  const skip = NOT_DEFAULT_COLUMNS[obj.object_type_id] ?? [];
   const native = obj.properties
-    .filter((p) => !p.is_base && p.row_status === 'active' && p.type !== 'file' && !/body|description|definition|values/.test(p.api_name))
+    .filter((p) => !p.is_base && p.row_status === 'active' && p.type !== 'file' && !/body|description|definition|values/.test(p.api_name) && !skip.includes(p.api_name))
     .slice(0, 5);
   return [
     { type: 'property', property: 'name' },
@@ -215,45 +240,59 @@ export async function uiRoutes(app: FastifyInstance) {
   app.get('/v1/ui/nav', async (req) => {
     const p = req.principal!;
     const { rows } = await pool.query(
-      `select scope, items from ui.nav_menus where (scope = 'user' and user_id = $1) or scope = 'default'
+      `select scope, items, bottom_left, bottom_items from ui.nav_menus where (scope = 'user' and user_id = $1) or scope = 'default'
        order by (scope = 'user') desc limit 1`,
       [p.userId]
     );
-    return { source: rows[0]?.scope ?? 'default', items: rows[0]?.items ?? [] };
+    return { source: rows[0]?.scope ?? 'default', items: rows[0]?.items ?? [], bottom_left: rows[0]?.bottom_left ?? 'menu', bottom: rows[0]?.bottom_items ?? [] };
   });
 
   app.get('/v1/ui/nav/menus', async (req) => {
     requireAdmin(req.principal!);
     const { rows } = await pool.query(
-      `select m.scope, m.user_id, u.name as user_name, m.items, m.updated_at, m.updated_by
+      `select m.scope, m.user_id, u.name as user_name, m.items, m.bottom_left, m.bottom_items as bottom, m.updated_at, m.updated_by
        from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
     );
     return { results: rows };
   });
 
-  app.put<{ Body: { items: unknown } }>('/v1/ui/nav/default', async (req) => {
+  // bottom_left and bottom are optional; left out, the bottom bar stays as it is
+  app.put<{ Body: { items: unknown; bottom_left?: unknown; bottom?: unknown } }>('/v1/ui/nav/default', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
     const items = await validateNav(req.body?.items);
-    await pool.query(
-      `update ui.nav_menus set items = $1, updated_at = now(), updated_by = $2 where scope = 'default'`,
-      [JSON.stringify(items), p.actor]
+    const left = req.body?.bottom_left === undefined ? null : validateBottomLeft(req.body.bottom_left);
+    const bottom = req.body?.bottom === undefined ? null : await validateBottom(req.body.bottom);
+    const { rows } = await pool.query(
+      `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
+         updated_at = now(), updated_by = $4
+       where scope = 'default' returning bottom_left, bottom_items`,
+      [JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor]
     );
-    return { source: 'default', items };
+    return { source: 'default', items, bottom_left: rows[0]?.bottom_left ?? 'menu', bottom: rows[0]?.bottom_items ?? [] };
   });
 
-  app.put<{ Params: { userId: string }; Body: { items: unknown } }>('/v1/ui/nav/users/:userId', async (req) => {
+  // bottom_left and bottom are optional; left out, a new menu copies the default's bottom bar and an existing one keeps its own
+  app.put<{ Params: { userId: string }; Body: { items: unknown; bottom_left?: unknown; bottom?: unknown } }>('/v1/ui/nav/users/:userId', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
     const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and row_status = 'active'", [req.params.userId]);
     if (users.length === 0) throw notFound('user not found');
     const items = await validateNav(req.body?.items);
-    await pool.query(
-      `insert into ui.nav_menus (scope, user_id, items, updated_by) values ('user', $1, $2, $3)
-       on conflict (user_id) where scope = 'user' do update set items = excluded.items, updated_at = now(), updated_by = excluded.updated_by`,
-      [req.params.userId, JSON.stringify(items), p.actor]
+    const left = req.body?.bottom_left === undefined ? null : validateBottomLeft(req.body.bottom_left);
+    const bottom = req.body?.bottom === undefined ? null : await validateBottom(req.body.bottom);
+    const { rows } = await pool.query(
+      `insert into ui.nav_menus (scope, user_id, items, bottom_left, bottom_items, updated_by)
+       values ('user', $1, $2,
+         coalesce($3, (select bottom_left from ui.nav_menus where scope = 'default'), 'menu'),
+         coalesce($4, (select bottom_items from ui.nav_menus where scope = 'default'), '[]'), $5)
+       on conflict (user_id) where scope = 'user' do update
+         set items = excluded.items, bottom_left = coalesce($3, ui.nav_menus.bottom_left), bottom_items = coalesce($4, ui.nav_menus.bottom_items),
+           updated_at = now(), updated_by = excluded.updated_by
+       returning bottom_left, bottom_items`,
+      [req.params.userId, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor]
     );
-    return { source: 'user', items };
+    return { source: 'user', items, bottom_left: rows[0].bottom_left, bottom: rows[0].bottom_items };
   });
 
   // back to the default menu
