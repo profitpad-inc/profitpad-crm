@@ -18,7 +18,7 @@ import {
   addOption, createProperty, setPropertyArchived, testCalculation, updateOption, updateProperty
 } from './routes/schema.js';
 import {
-  createView, listViews, loadView, parseQueries, publishView, runQuery, runViewQuery, saveDraft, viewOut
+  createView, listViews, loadView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut, type ViewRow
 } from './views.js';
 import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { findIcons } from './icons.js';
@@ -41,7 +41,7 @@ Records are addressed by object api_name and record id. You act as the signed-in
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Ask the admin before publishing a view or changing properties.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -228,6 +228,13 @@ const queriesArg = z.union([z.string(), z.record(z.string(), z.union([z.string()
 const propertyArg = z.string().describe('Property api_name');
 const SCHEMA_SOURCE = 'mcp';
 
+// After a draft is saved the model shows the preview link and asks; it does
+// not publish on its own.
+const draftSaved = (v: ViewRow) => ({
+  ...viewOut(v),
+  next_step: `Saved as a draft; nobody else sees it yet. Give the user this link to preview it: ${viewOut(v).draft_url} . Then ask whether to publish. Do not call publish_view unless they say yes.`
+});
+
 // Custom views and property changes, for connections with the schema scope
 // (admins who allowed it on the consent page). Every change goes through the
 // same functions as the REST API (views.ts, routes/schema.ts).
@@ -274,7 +281,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async (args) => run(async () => viewOut(await createView(p, args))));
+  }, async (args) => run(async () => draftSaved(await createView(p, args))));
 
   server.registerTool('save_view_draft', {
     title: 'Save custom view draft',
@@ -282,7 +289,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     inputSchema: z.object({ view: viewArg, source: z.string().optional(), queries: queriesArg.optional() }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
-  }, async ({ view, source, queries }) => run(async () => viewOut(await saveDraft(p, view, { source, queries }))));
+  }, async ({ view, source, queries }) => run(async () => draftSaved(await saveDraft(p, view, { source, queries }))));
 
   server.registerTool('update_view_settings', {
     title: 'Update custom view settings',
@@ -345,11 +352,19 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('publish_view', {
     title: 'Publish custom view',
-    description: 'Makes the draft the version everyone with access sees. Ask the admin first.',
+    description: 'Makes the draft the version everyone with access sees. Only call this when the user has explicitly asked to publish (after seeing the draft); saving a draft never needs it.',
     inputSchema: z.object({ view: viewArg }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     scopeChallenge: schemaChallenge
   }, async ({ view }) => run(async () => viewOut(await publishView(p, view), false)));
+
+  server.registerTool('revert_view_draft', {
+    title: 'Revert custom view draft',
+    description: 'Throws away the draft\'s unpublished changes: the draft becomes the published code and queries again. Ask the user first.',
+    inputSchema: z.object({ view: viewArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ view }) => run(async () => viewOut(await revertDraft(p, view), false)));
 
   server.registerTool('archive_view', {
     title: 'Archive custom view',

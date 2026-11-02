@@ -4,7 +4,7 @@ import { badRequest } from '../errors.js';
 import { requireScope } from '../auth.js';
 import { ICON_NAMES } from '../icons.js';
 import {
-  canEditViews, createView, listViews, loadView, openView, parseQueries, publishView, runQuery, runViewQuery, saveDraft, viewOut
+  canEditViews, createView, listViews, loadView, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut
 } from '../views.js';
 
 type SlugParams = { slug: string };
@@ -63,6 +63,11 @@ export async function viewRoutes(app: FastifyInstance) {
 
   app.post<{ Params: SlugParams }>('/v1/views/:slug/publish', async (req) => {
     return viewOut(await publishView(req.principal!, req.params.slug));
+  });
+
+  // throws the draft away: back to the published code and queries
+  app.post<{ Params: SlugParams }>('/v1/views/:slug/revert', async (req) => {
+    return viewOut(await revertDraft(req.principal!, req.params.slug));
   });
 
   // Tries SQL that is not saved anywhere, with the caller's own access (for

@@ -20,8 +20,8 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 3. Learn the data: view_guide topic "schema" (optionally for one object), or describe_object.
 4. Write and test each query with try_view_query until it returns what you expect.
 5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again.
-6. run_view_query runs a saved draft query. Ask the admin to look at the draft at /view/?draft=1#<slug>.
-7. publish_view only when the admin agrees: publishing replaces what everyone sees. Drafts never affect the published version.
+6. run_view_query runs a saved draft query. Then give the user the draft_url from create_view / save_view_draft (/view/?draft=1#<slug>) so they can preview it, and ask whether to publish.
+7. publish_view only when the user says to publish. Never publish on your own, even for a small change: publishing replaces what everyone sees. Drafts never affect the published version.
 8. Give the view an icon for menus: a Lucide icon name (lucide.dev/icons) such as chart-column, set with create_view or update_view_settings. find_icons searches the names. Admins can also pick one on the view's page.
 9. To put a view in the sidebar, the admin adds a "Custom view" item in Settings, Navigation.
 

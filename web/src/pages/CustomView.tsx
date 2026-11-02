@@ -21,6 +21,8 @@ interface ViewPayload {
   module: string;
   queries: ViewInit['queries'];
   can_edit: boolean;
+  // admins only: the draft differs from the published version
+  unpublished_changes?: boolean;
 }
 
 const FRAME_URL = `${import.meta.env.BASE_URL}view-frame/index.html`;
@@ -41,7 +43,7 @@ function buildHash(slug: string, params: Params): string {
 }
 
 export function CustomView() {
-  const { me, toast } = useApp();
+  const { me, toast, reloadCustomViews } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
   const mobile = useIsMobile();
@@ -51,6 +53,8 @@ export function CustomView() {
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState(400);
   const [frameKey, setFrameKey] = useState(0);
+  const [reloads, setReloads] = useState(0);
+  const [busy, setBusy] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // the latest values for the message handler, which is set up once per frame
   const latest = useRef({ slug, params, draft, view });
@@ -72,7 +76,28 @@ export function CustomView() {
     return () => {
       live = false;
     };
-  }, [slug, draft]);
+  }, [slug, draft, reloads]);
+
+  // the draft bar's Publish and Revert to published (admins)
+  async function draftAction(action: 'publish' | 'revert') {
+    const v = latest.current.view;
+    if (!v) return;
+    const ask = action === 'publish'
+      ? 'Publish the draft? Everyone who can open this view will see it.'
+      : 'Throw away the draft\'s changes and go back to the published version? This cannot be undone.';
+    if (!confirm(ask)) return;
+    setBusy(true);
+    try {
+      await api('POST', `/v1/views/${encodeURIComponent(v.slug)}/${action}`);
+      toast(action === 'publish' ? 'Published' : 'Draft reverted');
+      reloadCustomViews().catch(() => undefined);
+      setReloads((n) => n + 1);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const send = useCallback((msg: ToFrame) => frameRef.current?.contentWindow?.postMessage(msg, '*'), []);
 
@@ -163,6 +188,14 @@ export function CustomView() {
             <span className="muted">{view.name}</span>
             {view.draft && <span className="pill">Draft</span>}
             <span className="spacer" />
+            {view.draft && view.unpublished_changes && (
+              <>
+                {view.status === 'published' && (
+                  <button className="btn small" disabled={busy} onClick={() => draftAction('revert')}>Revert to published</button>
+                )}
+                <button className="btn small primary" disabled={busy} onClick={() => draftAction('publish')}>Publish</button>
+              </>
+            )}
             {view.status === 'published' && (
               <Link to={{ pathname: '/view/', search: draft ? '' : '?draft=1', hash: location.hash }}>{draft ? 'See published' : 'See draft'}</Link>
             )}

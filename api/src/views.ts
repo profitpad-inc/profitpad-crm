@@ -341,7 +341,9 @@ export function openView(p: Principal, v: ViewRow, draft: boolean) {
     draft: draft || v.status !== 'published',
     module: compileSource(source),
     queries: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { params: q.params }])),
-    can_edit: canEditViews(p)
+    can_edit: canEditViews(p),
+    // for admins: whether the draft differs from what people see
+    unpublished_changes: canEditViews(p) ? hasUnpublishedChanges(v) : undefined
   };
 }
 
@@ -389,6 +391,17 @@ export async function publishView(p: Principal, idOrSlug: string): Promise<ViewR
   return loadView(pool, v.id);
 }
 
+// Throws the draft away: the draft becomes the published code and queries again.
+export async function revertDraft(p: Principal, idOrSlug: string): Promise<ViewRow> {
+  requireScope(p, 'schema');
+  const v = await loadView(pool, idOrSlug);
+  if (v.status !== 'published' || !v.source) throw badRequest('this view has never been published, so there is nothing to go back to');
+  await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
+    c.query('update crm.pc_0055 set draft_source = source, draft_queries = queries where pc_0055_id = $1', [v.id])
+  );
+  return loadView(pool, v.id);
+}
+
 export async function createView(
   p: Principal,
   input: { name?: string; slug?: string; icon?: string; description?: string; audience?: string; source?: string; queries?: unknown }
@@ -410,6 +423,13 @@ export async function createView(
   return loadView(pool, id);
 }
 
+const hasUnpublishedChanges = (v: ViewRow) => v.status !== 'published' || v.draft_source !== v.source || v.draft_queries !== v.queries;
+
+// Links to a view in the CRM (UI_URL, the address people sign in at); just
+// the path when UI_URL is not set.
+const uiBase = (process.env.UI_URL ?? '').replace(/\/$/, '');
+export const viewUrl = (slug: string, draft = false) => `${uiBase}/view/${draft ? '?draft=1' : ''}#${slug}`;
+
 // What a view record looks like to the MCP and the views API.
 export function viewOut(v: ViewRow, withCode = true) {
   return {
@@ -418,10 +438,12 @@ export function viewOut(v: ViewRow, withCode = true) {
     slug: v.slug,
     icon: v.icon,
     url_path: `/view/#${v.slug}`,
+    url: viewUrl(v.slug),
+    draft_url: viewUrl(v.slug, true),
     description: v.description,
     status: v.status,
     audience: v.audience,
-    unpublished_changes: v.status !== 'published' || v.draft_source !== v.source || v.draft_queries !== v.queries,
+    unpublished_changes: hasUnpublishedChanges(v),
     published_at: v.published_at,
     updated_at: v.updated_at,
     ...(withCode ? { draft_source: v.draft_source, draft_queries: parseQueries(v.draft_queries), source: v.source, queries: parseQueries(v.queries) } : {})
