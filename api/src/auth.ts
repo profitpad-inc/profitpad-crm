@@ -377,9 +377,11 @@ export function propertyAccess(p: Principal, prop: PropertyDef): 'full' | 'read_
 export type AccessMode = 'read' | 'edit' | 'delete';
 
 // Extra WHERE clause for record-level access ("own" / "team", plus the
-// role's sharing rules), using $n params appended to params.
+// role's sharing rules), using $n params appended to params. Users have no
+// owner, so only the role's object permissions limit them.
 export function recordFilter(p: Principal, obj: ObjectDef, params: unknown[], alias = 't', mode: AccessMode = 'read'): string {
   if (!p.permissions || p.permissions.recordAccess === 'all' || !p.userId) return 'true';
+  if (obj.object_type_id === 'pc_0000') return 'true';
   const owner = obj.byName.get('owner');
   const ids = p.permissions.recordAccess === 'own' ? [p.userId] : p.permissions.teamUserIds;
   let base: string;
