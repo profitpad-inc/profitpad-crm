@@ -1241,3 +1241,7 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .bulk-bar .bulk-delete { color: var(--danger); }
 .bulk-edit { display: flex; flex-direction: column; gap: 14px; }
 .bulk-edit .checks { max-height: 260px; overflow: auto; }
+
+/* add line item dialog */
+.line-mode { margin-bottom: 0; }
+.line-product { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }

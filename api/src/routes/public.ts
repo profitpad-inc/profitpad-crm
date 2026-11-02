@@ -8,6 +8,7 @@ import { onWrite, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
+import { invoicePayable, publicPayment, quotePayable, type PublicPayment } from '../payments/state.js';
 
 // Public pages: customers open quotes (/p/quote/#key) and fill in forms
 // (/p/form/#key, or the embed snippet on an allowed website) without signing
@@ -126,6 +127,21 @@ export interface PublicQuote {
   countersigner_name: string | null;
   countersigner_signature: string | null;
   countersigned_at: string | null;
+  payment: PublicPayment | null;
+}
+
+export interface PublicInvoice {
+  id: string;
+  name: string | null;
+  invoice_number: string | null;
+  status: string;
+  due_date: string | null;
+  amount: number | null;
+  currency: string | null;
+  company: string | null;
+  contact: { name: string | null; email: string | null } | null;
+  lines: PublicQuote['lines'];
+  payment: PublicPayment | null;
 }
 
 // ---- signing -----------------------------------------------------------------
@@ -213,7 +229,8 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     `select pc_0022_id as id, name, status[1] as status, to_char(expiration_date, 'YYYY-MM-DD') as expiration_date,
             expiration_date < current_date as past_expiry, amount, currency[1] as currency, responded_at,
             responder_name, decline_reason, signing_fields, signed_fields, customer_signature, customer_signed_at,
-            requires_countersign[1] = 'true' as requires_countersign, countersigner_name, countersigner_signature, countersigned_at
+            requires_countersign[1] = 'true' as requires_countersign, countersigner_name, countersigner_signature, countersigned_at,
+            online_payment[1] as online_payment, deposit_type[1] as deposit_type, deposit_value
      from crm.pc_0022 where public_key = $1 and row_status = 'active'`,
     [checkKey(key)]
   );
@@ -221,36 +238,25 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
   if (!q || !['sent', 'pending_countersign', 'accepted', 'rejected', 'expired'].includes(q.status)) throw notFound('quote not found');
   const status = q.status === 'sent' && q.past_expiry ? 'expired' : q.status;
 
-  const linked = async (otherType: string, select: string, table: string, idCol: string) =>
-    (
-      await pool.query(
-        `select ${select} from crm.associations_both a
-         join crm.${table} o on o.${idCol} = a.other_record_id and o.row_status = 'active'
-         where a.object_type_id = 'pc_0022' and a.record_id = $1 and a.other_object_type_id = $2
-         order by o.${idCol}`,
-        [q.id, otherType]
-      )
-    ).rows;
-  const lines = await linked('pc_0020', 'o.name, o.sku, o.quantity, o.unit_price, o.discount, o.amount', 'pc_0020', 'pc_0020_id');
-  const companies = await linked('pc_0011', 'o.name', 'pc_0011', 'pc_0011_id');
-  const contacts = await linked('pc_0010', 'o.name, o.email', 'pc_0010', 'pc_0010_id');
-
-  const outLines = lines.map((l) => ({
-    name: l.name, sku: l.sku, quantity: num(l.quantity), unit_price: num(l.unit_price), discount: num(l.discount), amount: num(l.amount)
-  }));
+  const { lines: outLines, company, contact } = await linkedParts('pc_0022', q.id);
   const lineTotal = outLines.reduce((s, l) => s + (l.amount ?? 0), 0);
+  const amount = q.amount !== null ? Number(q.amount) : outLines.length ? lineTotal : null;
+  const payable = quotePayable({
+    id: q.id, name: q.name, status, amount, currency: q.currency,
+    online_payment: q.online_payment, deposit_type: q.deposit_type, deposit_value: num(q.deposit_value)
+  });
   return {
     id: q.id,
     name: q.name,
     status,
     expiration_date: q.expiration_date,
-    amount: q.amount !== null ? Number(q.amount) : outLines.length ? lineTotal : null,
+    amount,
     currency: q.currency,
     responded_at: q.responded_at ? new Date(q.responded_at).toISOString() : null,
     responder_name: q.responder_name,
     decline_reason: q.decline_reason,
-    company: companies[0]?.name ?? null,
-    contact: contacts[0] ? { name: contacts[0].name, email: contacts[0].email } : null,
+    company,
+    contact,
     lines: outLines,
     signing_fields: parseJson<SigningField[]>(q.signing_fields, []),
     signed_fields: parseJson<Record<string, string> | null>(q.signed_fields, null),
@@ -259,7 +265,60 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     requires_countersign: q.requires_countersign === true,
     countersigner_name: q.countersigner_name,
     countersigner_signature: q.countersigner_signature,
-    countersigned_at: q.countersigned_at ? new Date(q.countersigned_at).toISOString() : null
+    countersigned_at: q.countersigned_at ? new Date(q.countersigned_at).toISOString() : null,
+    payment: payable ? await publicPayment(payable) : null
+  };
+}
+
+// Lines, the first company and the first contact linked to a quote or invoice.
+async function linkedParts(table: 'pc_0022' | 'pc_0023', id: string) {
+  const linked = async (otherType: string, select: string, idCol: string) =>
+    (
+      await pool.query(
+        `select ${select} from crm.associations_both a
+         join crm.${otherType} o on o.${idCol} = a.other_record_id and o.row_status = 'active'
+         where a.object_type_id = $1 and a.record_id = $2 and a.other_object_type_id = $3
+         order by o.${idCol}`,
+        [table, id, otherType]
+      )
+    ).rows;
+  const lines = await linked('pc_0020', 'o.name, o.sku, o.quantity, o.unit_price, o.discount, o.amount', 'pc_0020_id');
+  const companies = await linked('pc_0011', 'o.name', 'pc_0011_id');
+  const contacts = await linked('pc_0010', 'o.name, o.email', 'pc_0010_id');
+  return {
+    lines: lines.map((l) => ({
+      name: l.name, sku: l.sku, quantity: num(l.quantity), unit_price: num(l.unit_price), discount: num(l.discount), amount: num(l.amount)
+    })),
+    company: (companies[0]?.name ?? null) as string | null,
+    contact: contacts[0] ? { name: contacts[0].name as string | null, email: contacts[0].email as string | null } : null
+  };
+}
+
+// Customers see invoices once they are open (and after they are paid).
+export async function loadPublicInvoice(key: string): Promise<PublicInvoice> {
+  const { rows } = await pool.query(
+    `select pc_0023_id as id, name, invoice_number, status[1] as status, to_char(due_date, 'YYYY-MM-DD') as due_date,
+            amount, currency[1] as currency
+     from crm.pc_0023 where public_key = $1 and row_status = 'active'`,
+    [checkKey(key)]
+  );
+  const i = rows[0];
+  if (!i || !['open', 'paid'].includes(i.status)) throw notFound('invoice not found');
+  const { lines, company, contact } = await linkedParts('pc_0023', i.id);
+  const lineTotal = lines.reduce((s, l) => s + (l.amount ?? 0), 0);
+  const amount = i.amount !== null ? Number(i.amount) : lines.length ? lineTotal : null;
+  return {
+    id: i.id,
+    name: i.name,
+    invoice_number: i.invoice_number,
+    status: i.status,
+    due_date: i.due_date,
+    amount,
+    currency: i.currency,
+    company,
+    contact,
+    lines,
+    payment: await publicPayment(invoicePayable({ id: i.id, invoice_number: i.invoice_number, status: i.status, amount, currency: i.currency }))
   };
 }
 
@@ -306,6 +365,14 @@ export async function publicRoutes(app: FastifyInstance) {
     reply.header('cache-control', 'no-store');
     const { id: _id, ...shown } = quote;
     return { quote: shown, theme: await theme() };
+  });
+
+  app.get<{ Params: { key: string } }>('/v1/public/invoices/:key', async (req, reply) => {
+    rateLimit(req, 'quote-read', 60);
+    const invoice = await loadPublicInvoice(req.params.key);
+    reply.header('cache-control', 'no-store');
+    const { id: _id, ...shown } = invoice;
+    return { invoice: shown, theme: await theme() };
   });
 
   app.get<{ Params: { key: string } }>('/v1/public/quotes/:key/pdf', async (req, reply) => {
@@ -467,7 +534,7 @@ export async function publicRoutes(app: FastifyInstance) {
   // Staff: create or regenerate a record's public key (signed in, needs edit
   // access to the record). Regenerating a quote key revokes the old link.
   // Booking pages use form-sized keys (the page is public once published).
-  for (const [object, newKey] of [['quotes', newQuoteKey], ['forms', newFormKey], ['booking_pages', newFormKey]] as const) {
+  for (const [object, newKey] of [['quotes', newQuoteKey], ['invoices', newQuoteKey], ['forms', newFormKey], ['booking_pages', newFormKey]] as const) {
     app.post<{ Params: { id: string } }>(`/v1/objects/${object}/:id/public-link`, async (req) => {
       const p = req.principal!;
       requireScope(p, 'write');

@@ -9,6 +9,7 @@ import {
 import { useApp } from '../lib/app-context';
 import { defaultSortDirection, displayName, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { AddLineModal } from '../components/AddLineModal';
 import { FileUploadButton } from '../components/FileUploadButton';
 import { ColumnPicker, associationColumnLabel, moveTo } from '../components/ColumnPicker';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
@@ -653,7 +654,16 @@ function ObjectTableFor({ object }: { object: string }) {
           onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`, true)}
         />
       )}
-      {showCreate && (
+      {showCreate && object === 'lines' && (
+        <AddLineModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(r) => {
+            setShowCreate(false);
+            navigate(`/objects/${object}/${r.id}`);
+          }}
+        />
+      )}
+      {showCreate && object !== 'lines' && (
         <CreateRecordModal
           object={schema}
           onClose={() => setShowCreate(false)}

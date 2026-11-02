@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react';
 // The API runs on :3000 (api/) unless API_URL says otherwise; the dev
 // server proxies /v1 to it.
 //
-// Four pages: the CRM app (index.html) and the public quote, form and booking
-// pages (p/quote/, p/form/, p/book/), which import nothing from the app so customers only
+// Five pages: the CRM app (index.html) and the public quote, invoice, form and
+// booking pages (p/quote/, p/invoice/, p/form/, p/book/), which import nothing from the app so customers only
 // download the public code. embed.js is built separately (vite.embed.config.ts).
 const page = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -54,6 +54,7 @@ export default defineConfig(({ mode }) => ({
       input: {
         app: page('index.html'),
         quote: page('p/quote/index.html'),
+        invoice: page('p/invoice/index.html'),
         form: page('p/form/index.html'),
         book: page('p/book/index.html')
       }

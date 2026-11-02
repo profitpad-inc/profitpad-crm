@@ -33,6 +33,9 @@ export type SecurityEvent =
   | 'calendar.connected'
   | 'calendar.connect_failed'
   | 'calendar.disconnected'
+  | 'payments.connected'
+  | 'payments.onboarding_link'
+  | 'payments.removed'
   | 'export';
 
 export interface EventInfo {

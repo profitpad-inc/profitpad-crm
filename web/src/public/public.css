@@ -1,4 +1,4 @@
-/* Hosted public pages (/p/quote/, /p/form/). Colors come from the theme
+/* Hosted public pages (/p/quote/, /p/invoice/, /p/form/). Colors come from the theme
    (applyTheme in src/lib/theme.ts sets the CSS variables). */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -46,6 +46,13 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .pp-note { margin-top: 20px; padding: 14px 16px; border-radius: 8px; background: var(--surface); }
 .pp-center { text-align: center; padding: 48px 28px; }
 
+/* paying (payment-box.ts) */
+.pp-pay { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.pp-pay .pp-respond { margin-top: 16px; }
+.pp-pay .pp-meta { margin-top: 0; }
+.pp-instructions { white-space: pre-line; margin: 0; }
+.pp-paid { background: #ecfdf3; color: #05603a; }
+
 /* drawn signatures */
 .pp-sig-box { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14px; }
 .pp-sig-canvas { display: block; width: 100%; max-width: 520px; aspect-ratio: 520 / 160; background: #fff; border: 1px dashed var(--border); border-radius: 8px; touch-action: none; cursor: crosshair; }
@@ -73,7 +80,7 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 8px; }
 
 @media print {
   body { background: #fff; }
-  .pp-actions, .pp-respond { display: none; }
+  .pp-actions, .pp-respond, .pp-pay { display: none; }
   .pp-signature img { border-bottom-color: #999; }
   .pp-card { border: 0; padding: 0; }
 }

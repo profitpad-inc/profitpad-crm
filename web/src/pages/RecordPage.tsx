@@ -7,10 +7,14 @@ import { displayName, formatValue, initials, nameProperties, objectIcon, recordN
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
+import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
 import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
 import { FileField } from '../components/FileField';
+import { AddLineModal } from '../components/AddLineModal';
+import { CreateRecordModal } from '../components/CreateRecordModal';
+import { SearchSelect } from '../components/SearchSelect';
 
 interface Link_ {
   association_id: string;
@@ -31,9 +35,12 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
   booking_pages: ['calls'],
-  invoices: [...DEFAULT_CARDS, 'lines'],
+  deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],
+  // the parent has its own card (LineParentCard)
+  lines: ['products'],
+  invoices: [...DEFAULT_CARDS, 'lines', 'payments'],
   carts: [...DEFAULT_CARDS, 'lines'],
-  quotes: [...DEFAULT_CARDS, 'lines'],
+  quotes: [...DEFAULT_CARDS, 'lines', 'payments'],
   orders: [...DEFAULT_CARDS, 'lines']
 };
 const ACTIVITY_PROPS: Record<string, string[]> = {
@@ -51,6 +58,7 @@ const ACTIVITY_PROPS: Record<string, string[]> = {
 const HIDDEN_PROPS: Record<string, string[]> = {
   forms: ['definition', 'public_key'],
   quotes: ['public_key', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
+  invoices: ['public_key'],
   form_submissions: ['summary', 'submission_values'],
   booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options'],
   files: ['public_token', 'storage_key']
@@ -124,9 +132,13 @@ export function RecordPage() {
   const name = recordName(record);
   const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
   const linksTo = objectByName.get(object)?.links_to ?? [];
-  const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...associated.map((a) => a.object)])]
+  // every object that can hold line items (custom ones too) shows the card
+  const lineCard = object !== 'products' && object !== 'lines' && linksTo.includes('lines') ? ['lines'] : [];
+  const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...lineCard, ...associated.map((a) => a.object)])]
     // a form lists its submissions and a booking page its meetings as a card; elsewhere they are activities
-    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls'));
+    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls'))
+    .filter((o) => object !== 'lines' || o === 'products');
+  const lineCount = associated.find((a) => a.object === 'lines')?.records.length ?? 0;
   const isUser = object === 'users';
 
   return (
@@ -181,11 +193,13 @@ export function RecordPage() {
           </section>
 
           <aside className="record-right">
-            {(object === 'quotes' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
+            {(object === 'quotes' || object === 'invoices' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
+            {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
             {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
             {object === 'files' && <FileCard record={record} />}
+            {object === 'lines' && <LineParentCard selfId={id} associated={associated} onChanged={loadAssociations} />}
             {cards.map((o) => (
-              <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} onChanged={loadAssociations} />
+              <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} onChanged={loadAssociations} />
             ))}
           </aside>
         </>
@@ -698,12 +712,16 @@ function UserHistory({ object, id, schema }: { object: string; id: string; schem
   );
 }
 
-function AssociationCard({ self, selfId, other, items, onChanged }: {
-  self: string; selfId: string; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; onChanged: () => Promise<void>;
+function AssociationCard({ self, selfId, other, items, lineCount, onChanged }: {
+  self: string; selfId: string; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; lineCount: number; onChanged: () => Promise<void>;
 }) {
   const { objectByName } = useApp();
+  const navigate = useNavigate();
   const meta = objectByName.get(other);
   const [adding, setAdding] = useState(false);
+  // the add-line dialog, or the create dialog for a quote or invoice made from a deal
+  const [dialog, setDialog] = useState<'line' | 'create' | null>(null);
+  const [createSchema, setCreateSchema] = useState<ObjectDef | null>(null);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CrmRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -745,21 +763,71 @@ function AssociationCard({ self, selfId, other, items, onChanged }: {
     await onChanged();
   }
 
+  async function openCreate() {
+    setError(null);
+    try {
+      setCreateSchema(await getSchema(other));
+      setDialog('create');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   if (!meta) return null;
   const Icon = objectIcon(other);
   // links the system makes (a form and its submissions) cannot be added or removed here
   const editable = !(objectByName.get(self)?.system_links ?? []).includes(other);
+  // new lines are made here (product or custom), not picked; a product's lines are made on their parent
+  const newLines = other === 'lines' && self !== 'products';
+  // a line has one product
+  const full = self === 'lines' && items.length > 0;
+  const canCreate = self === 'deals' && (other === 'quotes' || other === 'invoices');
+  const label = meta.label_singular.toLowerCase();
   return (
     <div className="card">
       <div className="card-head">
         <Icon size={16} strokeWidth={1.75} />
         <h3>{meta.label_plural} <span className="muted">({items.length})</span></h3>
-        {editable && (
-          <button className="icon-btn push-right" onClick={() => setAdding((v) => !v)} aria-label={`Add ${meta.label_singular}`}>
-            {adding ? <X size={16} /> : <Plus size={16} />}
-          </button>
+        {editable && !full && !(other === 'lines' && self === 'products') && (
+          canCreate && !adding ? (
+            <Menu
+              align="right"
+              trigger={(toggle) => (
+                <button className="icon-btn push-right" onClick={toggle} aria-label={`Add ${label}`}>
+                  <Plus size={16} />
+                </button>
+              )}
+            >
+              {(close) => (
+                <>
+                  <button onClick={() => { close(); openCreate(); }}>Create {label}</button>
+                  <button onClick={() => { close(); setAdding(true); }}>Link an existing {label}</button>
+                </>
+              )}
+            </Menu>
+          ) : (
+            <button className="icon-btn push-right" onClick={() => (newLines ? setDialog('line') : setAdding((v) => !v))} aria-label={`Add ${label}`}>
+              {adding ? <X size={16} /> : <Plus size={16} />}
+            </button>
+          )
         )}
       </div>
+      {dialog === 'line' && (
+        <AddLineModal
+          parent={{ object: self, id: selfId }}
+          onClose={() => setDialog(null)}
+          onCreated={() => { setDialog(null); onChanged(); }}
+        />
+      )}
+      {dialog === 'create' && createSchema && (
+        <CreateRecordModal
+          object={createSchema}
+          associations={[{ object: self, id: selfId }]}
+          copyLines={{ object: self, id: selfId, count: lineCount, label: (objectByName.get(self)?.label_singular ?? self).toLowerCase() }}
+          onClose={() => { setDialog(null); onChanged(); }}
+          onCreated={(r) => navigate(`/objects/${other}/${r.id}`)}
+        />
+      )}
       {adding && (
         <div className="card-add">
           <input autoFocus placeholder={`Search ${meta.label_plural.toLowerCase()}`} value={q} onChange={(e) => setQ(e.target.value)} />
@@ -784,6 +852,87 @@ function AssociationCard({ self, selfId, other, items, onChanged }: {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- line items ---------------------------------------------------------------------
+
+// The record a line belongs to (a deal, quote, invoice, ...): at most one. A
+// line without one can be given one here.
+function LineParentCard({ selfId, associated, onChanged }: { selfId: string; associated: Associated[]; onChanged: () => Promise<void> }) {
+  const { objectByName } = useApp();
+  const parentObjects = (objectByName.get('lines')?.links_to ?? []).filter((o) => o !== 'products' && objectByName.has(o));
+  const parent = associated.filter((a) => parentObjects.includes(a.object)).flatMap((a) => a.records.map((r) => ({ object: a.object, record: r.record })))[0];
+  const [target, setTarget] = useState(parentObjects.includes('deals') ? 'deals' : parentObjects[0] ?? '');
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<CrmRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (parent || !target) return;
+    const h = setTimeout(async () => {
+      try {
+        const s = await getSchema(target);
+        const res = await api<SearchResult>('POST', `/v1/objects/${target}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
+        setResults(res.results);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    }, 250);
+    return () => clearTimeout(h);
+  }, [parent, target, q]);
+
+  async function link(targetId: string) {
+    setError(null);
+    try {
+      await api('PUT', `/v1/objects/lines/${selfId}/associations/${target}/${targetId}`, {});
+      setQ('');
+      await onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function unlink() {
+    if (!parent || !confirm(`Remove this line item from its ${objectByName.get(parent.object)?.label_singular.toLowerCase()}?`)) return;
+    await api('DELETE', `/v1/objects/lines/${selfId}/associations/${parent.object}/${parent.record.id}`);
+    await onChanged();
+  }
+
+  const Icon = parent ? objectIcon(parent.object) : Plus;
+  return (
+    <div className="card">
+      <div className="card-head">
+        <Icon size={16} strokeWidth={1.75} />
+        <h3>Belongs to</h3>
+      </div>
+      {error && <div className="error">{error}</div>}
+      {parent ? (
+        <div className="card-row">
+          <div className="card-row-main">
+            <Link to={`/objects/${parent.object}/${parent.record.id}`}>{recordName(parent.record)}</Link>
+            <div className="small muted">{objectByName.get(parent.object)?.label_singular}</div>
+          </div>
+          <button className="icon-btn push-right faint-btn" onClick={unlink} aria-label="Remove from parent">
+            <X size={14} />
+          </button>
+        </div>
+      ) : (
+        <div className="card-add">
+          <div className="muted small">Not on any record yet.</div>
+          <SearchSelect
+            value={target}
+            ariaLabel="Kind of record"
+            options={parentObjects.map((o) => ({ value: o, label: objectByName.get(o)?.label_singular ?? o }))}
+            onChange={(v) => { setTarget(v); setQ(''); }}
+          />
+          <input placeholder={`Search ${(objectByName.get(target)?.label_plural ?? '').toLowerCase()}`} value={q} onChange={(e) => setQ(e.target.value)} />
+          {results.map((r) => (
+            <button key={r.id} className="card-pick" onClick={() => link(r.id)}>{recordName(r)}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

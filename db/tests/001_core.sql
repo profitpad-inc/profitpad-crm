@@ -383,5 +383,68 @@ begin
   perform meta._test_expect_error($$insert into crm.pc_0050 (name, public_token) values ('b.png', 'tok1')$$, '');
 end $t$;
 
+-- Line items (0028): products and one parent only, archive/restore/delete
+-- follow the parent, copying lines.
+do $t$
+declare
+  v_deal text;
+  v_deal2 text;
+  v_quote text;
+  v_contact text;
+  v_p1 text;
+  v_p2 text;
+  v_l1 text;
+  v_l2 text;
+  v_l3 text;
+  v_copies text[];
+begin
+  perform meta._test_check(meta.association_allowed('pc_0020', 'pc_0022') and meta.association_allowed('pc_2001', 'pc_0020')
+    and meta.association_allowed('pc_0020', 'pc_0026') and not meta.association_allowed('pc_0020', 'pc_0010')
+    and not meta.association_allowed('pc_0011', 'pc_0020') and not meta.association_allowed('pc_0020', 'pc_0020'), 'lines link to products and parents only');
+  insert into crm.pc_0012 (name) values ('Line deal') returning pc_0012_id into v_deal;
+  insert into crm.pc_0012 (name) values ('Line deal 2') returning pc_0012_id into v_deal2;
+  insert into crm.pc_0022 (name) values ('Line quote') returning pc_0022_id into v_quote;
+  insert into crm.pc_0010 (name) values ('Line contact') returning pc_0010_id into v_contact;
+  insert into crm.pc_0021 (name, price) values ('P1', 10) returning pc_0021_id into v_p1;
+  insert into crm.pc_0021 (name, price) values ('P2', 20) returning pc_0021_id into v_p2;
+  insert into crm.pc_0020 (name, quantity, unit_price) values ('L1', 2, 10) returning pc_0020_id into v_l1;
+  insert into crm.pc_0020 (name, quantity, unit_price) values ('L2', 1, 5) returning pc_0020_id into v_l2;
+  insert into crm.pc_0020 (name) values ('Loose') returning pc_0020_id into v_l3;
+
+  perform meta.associate('lines', v_l1, 'products', v_p1);
+  perform meta._test_expect_error(format($$select meta.associate('lines', %L, 'products', %L)$$, v_l1, v_p2), 'one product');
+  perform meta.associate('lines', v_l1, 'deals', v_deal);
+  perform meta.associate('lines', v_l2, 'deals', v_deal);
+  perform meta._test_expect_error(format($$select meta.associate('lines', %L, 'quotes', %L)$$, v_l1, v_quote), 'one parent');
+  perform meta._test_expect_error(format($$select meta.associate('deals', %L, 'lines', %L)$$, v_deal2, v_l1), 'one parent');
+  perform meta._test_expect_error(format($$select meta.associate('lines', %L, 'contacts', %L)$$, v_l1, v_contact), 'cannot be associated');
+  perform meta._test_check(meta.associate('lines', v_l1, 'deals', v_deal) is not null, 'relinking the same parent is a no-op');
+
+  v_copies := meta.copy_lines('deals', v_deal, 'quotes', v_quote);
+  perform meta._test_check(cardinality(v_copies) = 2, 'copy_lines copies active lines');
+  perform meta._test_check((select name || quantity || unit_price from crm.pc_0020 where pc_0020_id = v_copies[1]) = 'L1210', 'copies keep values');
+  perform meta._test_check(exists (select 1 from crm.associations_both where object_type_id = 'pc_0020' and record_id = v_copies[1] and other_record_id = v_p1), 'copies keep the product');
+  perform meta._test_check((select count(*) from crm.associations_both where object_type_id = 'pc_0022' and record_id = v_quote and other_object_type_id = 'pc_0020') = 2, 'copies belong to the quote');
+  perform meta._test_expect_error(format($$select meta.copy_lines('deals', %L, 'contacts', %L)$$, v_deal, v_contact), 'line items');
+
+  -- a line archived on its own stays archived when the parent comes back
+  perform meta.set_record_status('lines', array[v_l2], 'archived');
+  perform meta._test_check(meta.set_record_status('deals', array[v_deal], 'archived') = 1, 'archive returns the parent count');
+  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l1) = 'archived', 'archiving a parent archives its lines');
+  perform meta.set_record_status('deals', array[v_deal], 'active');
+  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l1) = 'active', 'restoring a parent restores lines archived with it');
+  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l2) = 'archived', 'lines archived on their own stay archived');
+  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l3) = 'active', 'loose lines untouched');
+
+  -- merging a parent moves its lines to the winner
+  perform meta.merge_records('deals', v_deal2, v_deal);
+  perform meta._test_check(exists (select 1 from crm.associations_both where object_type_id = 'pc_0020' and record_id = v_l1 and other_record_id = v_deal2), 'merge moves lines to the winner');
+
+  perform meta.delete_record('deals', v_deal2);
+  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l1) = 'deleted'
+    and (select row_status from crm.pc_0020 where pc_0020_id = v_l2) = 'deleted', 'deleting a parent deletes its lines');
+  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_copies[1]) = 'active', 'other parents keep their lines');
+end $t$;
+
 rollback;
 \echo all core tests passed

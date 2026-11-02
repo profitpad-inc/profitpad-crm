@@ -9,6 +9,7 @@ import { RoleSettings, UserSettings } from './AccessSettings';
 import { ApiKeySettings, SecurityLog } from './SecuritySettings';
 import { ConnectedApps } from './ConnectedApps';
 import { CalendarSettings } from './CalendarSettings';
+import { PaymentSettings } from './PaymentSettings';
 import { PropertySettings } from './PropertySettings';
 
 export function Settings() {
@@ -27,6 +28,7 @@ export function Settings() {
           {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
           {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
           {me.is_admin && <NavLink to="/settings/embed-domains">Embed domains</NavLink>}
+          {me.is_admin && <NavLink to="/settings/payments">Payments</NavLink>}
           {me.is_admin && <NavLink to="/settings/api-keys">API keys</NavLink>}
           {me.is_admin && <NavLink to="/settings/security-log">Security log</NavLink>}
         </nav>
@@ -42,6 +44,7 @@ export function Settings() {
             <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
             <Route path="embed-domains" element={me.is_admin ? <EmbedDomains /> : <Navigate to="/settings" />} />
             <Route path="forms" element={<Navigate to="/settings/embed-domains" replace />} />
+            <Route path="payments" element={me.is_admin ? <PaymentSettings /> : <Navigate to="/settings" />} />
             <Route path="api-keys" element={me.is_admin ? <ApiKeySettings /> : <Navigate to="/settings" />} />
             <Route path="security-log" element={me.is_admin ? <SecurityLog /> : <Navigate to="/settings" />} />
           </Routes>

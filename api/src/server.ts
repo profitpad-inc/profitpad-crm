@@ -17,6 +17,7 @@ import { allowedOrigins, publicRoutes } from './routes/public.js';
 import { phoneRoutes } from './routes/phone.js';
 import { bookingRoutes } from './routes/booking.js';
 import { calendarRoutes } from './calendar/connect.js';
+import { paymentRoutes } from './routes/payments.js';
 import { oauthRoutes } from './oauth.js';
 import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
 import { BRAND_PATHS, brandRoutes } from './brand.js';
@@ -116,6 +117,8 @@ export async function buildApp() {
     if (path.startsWith('/v1/auth/')) return;
     // calendar connect callbacks check the session themselves (calendar/connect.ts)
     if (/^\/v1\/calendar\/[a-z]+\/callback$/.test(path)) return;
+    // Stripe signs its webhook calls (routes/payments.ts)
+    if (path === '/v1/stripe/webhook') return;
     // customer-facing quote and form pages find records by their public key
     if (path.startsWith('/v1/public/')) return;
     // OAuth (oauth.ts) and the MCP server (mcp.ts, OAuth tokens only) check their own callers
@@ -186,6 +189,7 @@ export async function buildApp() {
   await app.register(phoneRoutes);
   await app.register(bookingRoutes);
   await app.register(calendarRoutes);
+  await app.register(paymentRoutes);
   await app.register(oauthRoutes);
   await app.register(mcpRoutes);
   await app.register(brandRoutes);

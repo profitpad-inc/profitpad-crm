@@ -5,9 +5,12 @@ import './public.css';
 import { applyTheme } from '../lib/theme';
 import { el, keyFromHash, publicApi, queryParamsFromLocation, type PublicQuote } from './public-api';
 import { attachSignaturePad } from './signature-pad';
+import { day, linesTable, money } from './document';
+import { afterCheckout, paymentBox } from './payment-box';
 
 // Customer view of a quote: /p/quote/#<public key>. View, accept (fill in the
-// quote's signing fields and draw a signature) or decline, download the PDF.
+// quote's signing fields and draw a signature) or decline, download the PDF,
+// and pay (a deposit or the full amount) when the quote allows it.
 // ?name=, ?email= and ?<signing field key>= in the URL prefill the accept form.
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -18,17 +21,6 @@ const key = keyFromHash();
 const STATUS: Record<PublicQuote['status'], string> = {
   sent: 'Open', pending_countersign: 'Awaiting countersignature', accepted: 'Accepted', rejected: 'Declined', expired: 'Expired'
 };
-
-function money(v: number | null, currency: string | null): string {
-  if (v === null) return '';
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency ?? 'USD' }).format(v);
-}
-
-function day(iso: string): string {
-  // date-only values are calendar days: format without shifting time zones
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-}
 
 // signing times are shown in UTC, to the second: 2026-11-02 14:05:33 UTC
 function utc(iso: string): string {
@@ -49,18 +41,7 @@ function render(q: PublicQuote): void {
   add('Attention', q.contact?.name ? `${q.contact.name}${q.contact.email ? ` (${q.contact.email})` : ''}` : q.contact?.email);
   add('Valid until', q.expiration_date ? day(q.expiration_date) : null);
 
-  const lines = q.lines.length
-    ? el('table', { class: 'pp-lines' },
-        el('thead', {}, el('tr', {},
-          el('th', {}, 'Item'), el('th', { class: 'num' }, 'Qty'), el('th', { class: 'num' }, 'Unit price'),
-          el('th', { class: 'num' }, 'Discount'), el('th', { class: 'num' }, 'Amount'))),
-        el('tbody', {}, ...q.lines.map((l) => el('tr', {},
-          el('td', {}, l.name ?? '', l.sku ? el('div', { class: 'pp-sku' }, `SKU ${l.sku}`) : null),
-          el('td', { class: 'num', 'data-label': 'Qty' }, l.quantity === null ? '' : String(l.quantity)),
-          el('td', { class: 'num', 'data-label': 'Unit price' }, money(l.unit_price, q.currency)),
-          el('td', { class: 'num', 'data-label': 'Discount' }, l.discount ? money(l.discount, q.currency) : ''),
-          el('td', { class: 'num', 'data-label': 'Amount' }, money(l.amount, q.currency))))))
-    : null;
+  const lines = linesTable(q.lines, q.currency);
 
   const actions = el('div', { class: 'pp-actions' });
   const respondBox = el('div', {});
@@ -97,8 +78,20 @@ function render(q: PublicQuote): void {
       el('div', { class: 'pp-total' }, el('span', {}, 'Total'), el('span', {}, money(q.amount, q.currency) || 'n/a')),
       note,
       signatures(q),
+      paymentBox(q.payment, {
+        pay: () => api.pay('quotes', key),
+        etransferSent: (body) => api.etransferSent('quotes', key, body),
+        reload: async () => void (await reload()),
+        contact: q.contact
+      }),
       actions,
       respondBox)));
+}
+
+async function reload() {
+  const res = await api.quote(key);
+  render(res.quote);
+  return res.quote.payment;
 }
 
 function signatures(q: PublicQuote): HTMLElement | null {
@@ -225,6 +218,7 @@ async function load(): Promise<void> {
     const res = await api.quote(key);
     applyTheme(res.theme);
     render(res.quote);
+    await afterCheckout(reload);
   } catch (err) {
     const status = (err as { status?: number }).status;
     message(status === 404 ? 'This quote link is not valid or has been withdrawn.' : (err as Error).message);

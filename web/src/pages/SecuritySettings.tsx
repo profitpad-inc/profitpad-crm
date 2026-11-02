@@ -237,6 +237,9 @@ const EVENT_LABELS: Record<string, string> = {
   'calendar.connected': 'Calendar connected',
   'calendar.connect_failed': 'Calendar connection refused',
   'calendar.disconnected': 'Calendar disconnected',
+  'payments.connected': 'Stripe account created',
+  'payments.onboarding_link': 'Stripe setup opened',
+  'payments.removed': 'Stripe removed',
   export: 'Records exported'
 };
 

@@ -1,6 +1,6 @@
 import type { Condition, FieldType } from './conditions';
 
-// Fetch helper for the public pages (/p/quote/, /p/form/, embed.js). Never
+// Fetch helper for the public pages (/p/quote/, /p/invoice/, /p/form/, embed.js). Never
 // sends cookies or an API key: these pages are opened by customers.
 
 export interface SigningField {
@@ -30,6 +30,33 @@ export interface PublicQuote {
   countersigner_name: string | null;
   countersigner_signature: string | null;
   countersigned_at: string | null;
+  payment: PublicPayment | null;
+}
+
+// Paying a quote or invoice online (Stripe Checkout) or by Interac e-Transfer.
+export interface PublicPayment {
+  kind: 'deposit' | 'full';
+  amount_due: number;
+  currency: string;
+  status: 'unpaid' | 'pending' | 'paid';
+  pending_method: string | null;
+  paid_at: string | null;
+  can_pay: boolean;
+  online: boolean;
+  etransfer: { email: string; instructions: string; reference: string } | null;
+}
+
+export interface PublicInvoice {
+  name: string | null;
+  invoice_number: string | null;
+  status: 'open' | 'paid';
+  due_date: string | null;
+  amount: number | null;
+  currency: string | null;
+  company: string | null;
+  contact: { name: string | null; email: string | null } | null;
+  lines: PublicQuote['lines'];
+  payment: PublicPayment | null;
 }
 
 export interface FormField {
@@ -132,6 +159,10 @@ export function publicApi(base: string) {
     quotePdfUrl: (key: string) => `${root}/v1/public/quotes/${encodeURIComponent(key)}/pdf`,
     respond: (key: string, action: 'accept' | 'decline', body: { name: string; email: string; reason?: string; fields?: Record<string, string>; signature_png?: string }) =>
       call<{ quote: PublicQuote }>('POST', `/quotes/${encodeURIComponent(key)}/${action}`, body),
+    invoice: (key: string) => call<{ invoice: PublicInvoice; theme: Record<string, string> }>('GET', `/invoices/${encodeURIComponent(key)}`),
+    pay: (object: 'quotes' | 'invoices', key: string) => call<{ url: string }>('POST', `/${object}/${encodeURIComponent(key)}/pay`, {}),
+    etransferSent: (object: 'quotes' | 'invoices', key: string, body: { name: string; email: string }) =>
+      call<{ payment: PublicPayment | null }>('POST', `/${object}/${encodeURIComponent(key)}/etransfer-sent`, body),
     form: (key: string) => call<PublicForm>('GET', `/forms/${encodeURIComponent(key)}`),
     // phone answers are checked by the API (Google's libphonenumber)
     phone: (key: string, number: string) =>

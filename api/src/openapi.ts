@@ -264,7 +264,18 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
     },
     [`${base}/{id}/restore`]: {
       post: { tags: [tag], summary: 'Restore from recycle bin', operationId: `restore_${o.api_name}`, parameters: [idParam], responses: { 200: json(rec), ...errors } }
-    }
+    },
+    ...(o.links_to.includes('lines') && o.api_name !== 'products' ? {
+      [`${base}/{id}/lines/copy`]: {
+        post: {
+          tags: [tag], summary: 'Copy line items from another record', operationId: `copy_lines_${o.api_name}`,
+          description: 'Copies the active line items of another record that has line items (for example a deal) onto this one. Each copy keeps the product link and every property except unique, read-only and calculated ones, which start blank.',
+          parameters: [idParam],
+          requestBody: body({ type: 'object', required: ['from_object', 'from_id'], properties: { from_object: { type: 'string' }, from_id: { type: 'string' } } }),
+          responses: { 200: json({ type: 'object', properties: { copied: { type: 'integer' }, ids: { type: 'array', items: { type: 'string' } } } }), ...errors }
+        }
+      }
+    } : {})
   };
 }
 

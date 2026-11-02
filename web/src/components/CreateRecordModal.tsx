@@ -19,7 +19,15 @@ const STARTS_WITH: Record<string, Record<string, unknown>> = {
   forms: { status: 'draft' }
 };
 
-export function CreateRecordModal({ object, onClose, onCreated }: { object: ObjectDef; onClose: () => void; onCreated: (r: CrmRecord) => void }) {
+// associations: records the new one is linked to (a quote made from a deal).
+// copyLines: offers to copy that record's line items onto the new one.
+export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines }: {
+  object: ObjectDef;
+  onClose: () => void;
+  onCreated: (r: CrmRecord) => void;
+  associations?: { object: string; id: string }[];
+  copyLines?: { object: string; id: string; count: number; label: string };
+}) {
   const { me } = useApp();
   const editable = object.properties.filter((p) => isEditable(p) && p.api_name !== 'created_at');
   const preferred = PREFERRED[object.api_name];
@@ -35,6 +43,8 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
   // property: shown under that field when the API says which one failed
   const [error, setError] = useState<{ message: string; property?: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copy, setCopy] = useState(true);
+  const [created, setCreated] = useState<CrmRecord | null>(null);
 
   async function save() {
     setBusy(true);
@@ -47,10 +57,23 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
     if (!properties.name && (properties.first_name || properties.last_name) && object.properties.some((p) => p.api_name === 'first_name')) {
       properties.name = [properties.first_name, properties.last_name].filter(Boolean).join(' ');
     }
+    let record = created;
     try {
-      const created = await api<CrmRecord>('POST', `/v1/objects/${object.api_name}`, { properties });
-      onCreated(created);
+      // a retry after a failed copy does not create the record twice
+      if (!record) {
+        record = await api<CrmRecord>('POST', `/v1/objects/${object.api_name}`, { properties, associations });
+        setCreated(record);
+      }
+      if (copyLines && copy && copyLines.count > 0) {
+        await api('POST', `/v1/objects/${object.api_name}/${record.id}/lines/copy`, { from_object: copyLines.object, from_id: copyLines.id });
+      }
+      onCreated(record);
     } catch (err) {
+      if (record) {
+        setError({ message: `The ${object.label_singular.toLowerCase()} was created, but its line items were not copied: ${(err as Error).message}` });
+        setBusy(false);
+        return;
+      }
       const property = err instanceof ApiError ? err.details?.property : undefined;
       setError({ message: (err as Error).message, property: fields.some((p) => p.api_name === property) ? property : undefined });
       setBusy(false);
@@ -64,7 +87,7 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Creating…' : 'Create'}</button>
+          <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Creating…' : created ? 'Try copying again' : 'Create'}</button>
         </>
       }
     >
@@ -76,6 +99,11 @@ export function CreateRecordModal({ object, onClose, onCreated }: { object: Obje
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}
+        {copyLines && copyLines.count > 0 && (
+          <div className="checks">
+            <label><input type="checkbox" checked={copy} disabled={!!created} onChange={(e) => setCopy(e.target.checked)} /> Copy the {copyLines.label}'s {copyLines.count} line {copyLines.count === 1 ? 'item' : 'items'}</label>
+          </div>
+        )}
         {error && !error.property && <div className="error">{error.message}</div>}
       </div>
     </Modal>

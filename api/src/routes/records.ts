@@ -204,6 +204,33 @@ export async function recordRoutes(app: FastifyInstance) {
     return { archived: n };
   });
 
+  // Copies another record's active line items onto this one (a deal's lines
+  // onto a new quote). Unique, read-only and calculated line properties start
+  // blank; the product link is kept. Body {from_object, from_id}.
+  app.post<{ Params: RecParams; Body: { from_object?: string; from_id?: string } }>('/v1/objects/:object/:id/lines/copy', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    const obj = await objectForWrite(req.params.object);
+    const { from_object, from_id } = req.body ?? {};
+    if (!from_object || !from_id) throw badRequest('from_object and from_id are required');
+    const from = await objectForWrite(from_object);
+    const lines = await objectForWrite('lines');
+    if (!obj.links_to.includes('lines') || obj.api_name === 'products' || !from.links_to.includes('lines') || from.api_name === 'products') {
+      throw badRequest(`${from.api_name} and ${obj.api_name} do not both have line items`);
+    }
+    requireObjectPermission(p, obj, 'edit');
+    requireObjectPermission(p, from, 'read');
+    requireObjectPermission(p, lines, 'create');
+    await assertAccessible(pool, obj, p, [req.params.id], 'edit');
+    await assertAccessible(pool, from, p, [from_id]);
+    const ids = await withTx({ actor: p.actor, source: 'copy' }, async (c) => {
+      const { rows } = await c.query('select meta.copy_lines($1, $2, $3, $4) as ids', [from.object_type_id, from_id, obj.object_type_id, req.params.id]);
+      return rows[0].ids as string[];
+    });
+    await drainCalcQueue(5);
+    return { copied: ids.length, ids };
+  });
+
   app.get<{ Params: RecParams; Querystring: { limit?: string; property?: string } }>('/v1/objects/:object/:id/history', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');

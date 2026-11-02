@@ -138,6 +138,15 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 - Check after deploy: upload a small PNG to a file property, open it, then `curl -sI '<signed link>'` should show `content-type: image/png`, `content-disposition: inline`, `content-security-policy: default-src 'none'; img-src 'self' data:; ...` (exactly one CSP header, no `sandbox`), `x-content-type-options: nosniff` and `accept-ranges: bytes`; a non-media file (say a .zip) should show `attachment` and `content-security-policy: sandbox; default-src 'none'`. Also open a video's public link in Chrome and check it plays. Not yet checked: that nginx keeps the API's Content-Type, Content-Disposition and Cache-Control after X-Accel-Redirect and that `$upstream_http_content_security_policy` carries the API's CSP (only tested without nginx, where the API sends the bytes itself).
 - Disk: files are not in `pg_dump` backups. Back up `/srv/test_crm_files` separately, and watch free space (`df -h /srv`).
 
+## 10. Payments (migration 0027, applied 2026-11-02)
+
+- Stripe (ProfitPad's account, the platform): activate it, turn on Connect and complete the platform profile (without it creating accounts fails, e.g. `connect_profile_not_submitted`). Under Settings → Connect → Payment methods, set the defaults for connected accounts (cards on; ACH Direct Debit, Canadian pre-authorized debit and Klarna on or off) and turn on "Allow connected accounts to customize their own payment methods".
+- Webhook: Workbench → Webhooks → add a destination for **Connected accounts**, snapshot payload, URL `https://api.test-crm.profitpad.com/v1/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`. Copy its signing secret.
+- `deploy/.env`: `STRIPE_SECRET_KEY=` (platform secret key; `sk_test_...` until going live) and `STRIPE_WEBHOOK_SECRET=` (`whsec_...`), and `UI_URL=https://test-crm.profitpad.com` (return links from Stripe). Then `docker compose up -d --build`.
+- No nginx change: the webhook is a normal `/v1/` path and Stripe's events are far below the body limit.
+- Deploy the UI too (new page `/p/invoice/`).
+- Local testing: `stripe listen --forward-connect-to localhost:3000/v1/stripe/webhook` prints a `whsec_` secret for `api/.env`.
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.
