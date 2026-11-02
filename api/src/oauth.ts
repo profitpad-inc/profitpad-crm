@@ -363,7 +363,7 @@ function page(title: string, body: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="same-origin">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>${escapeHtml(title)} · ProfitPad CRM</title>
 <style>
@@ -397,7 +397,11 @@ function page(title: string, body: string): string {
 }
 
 function sendPage(reply: FastifyReply, status: number, title: string, body: string) {
-  return reply.code(status).header('cache-control', 'no-store').type('text/html; charset=utf-8').send(page(title, body));
+  // same-origin, not no-referrer: the consent form posts back here, and under
+  // no-referrer browsers send Origin: null, which the session check refuses.
+  // Other sites (the app's redirect URI) still get no referrer.
+  return reply.code(status).header('cache-control', 'no-store').header('referrer-policy', 'same-origin')
+    .type('text/html; charset=utf-8').send(page(title, body));
 }
 
 function signInPage(req: FastifyRequest, reply: FastifyReply, a: AuthRequest) {

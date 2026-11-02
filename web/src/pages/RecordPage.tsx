@@ -50,7 +50,7 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   forms: ['definition', 'public_key'],
   quotes: ['public_key', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
   form_submissions: ['summary', 'submission_values'],
-  booking_pages: ['public_key', 'availability', 'timezone', 'form_before_id', 'form_after_id']
+  booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id']
 };
 
 export function RecordPage() {

@@ -8,7 +8,7 @@ import { getObject } from '../registry.js';
 import { assertAccessible, createRecord, onWrite } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, summarize, type FormDefinition } from '../forms.js';
-import { allowedOrigins, checkKey, MIN_FILL_MS, rateLimit, theme } from './public.js';
+import { allowedOrigins, MIN_FILL_MS, rateLimit, theme } from './public.js';
 import {
   busyTimes, CalendarAuthError, CONNECTION_COLUMNS, createEvent, deleteEvent, type Connection, type Interval
 } from '../calendar/providers.js';
@@ -72,6 +72,7 @@ interface BookingPage {
 const first = (v: unknown): string | null => (Array.isArray(v) ? (v[0] ?? null) : typeof v === 'string' && v !== '' ? v : null);
 const num = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number(v));
 const FORM_ID_RE = /^[0-9a-f]{10}$/;
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$/;
 
 // A page from its row (crm.pc_0054 columns, dropdowns as text[] or a plain value).
 function pageFromRow(r: Record<string, unknown>): BookingPage {
@@ -105,7 +106,8 @@ function pageFromRow(r: Record<string, unknown>): BookingPage {
 async function loadPage(db: Db, where: 'key' | 'id', value: string): Promise<BookingPage | null> {
   const { rows } = await db.query(
     `select b.*, u.name as host_name from crm.pc_0054 b left join crm.pc_0000 u on u.pc_0000_id = b.host[1]
-     where ${where === 'key' ? 'b.public_key' : 'b.pc_0054_id'} = $1 and b.row_status = 'active'`,
+     where ${where === 'key' ? '(b.public_key = $1 or lower(b.slug) = lower($1))' : 'b.pc_0054_id = $1'} and b.row_status = 'active'
+     ${where === 'key' ? 'order by b.public_key = $1 desc limit 1' : ''}`,
     [value]
   );
   return rows[0] ? pageFromRow(rows[0]) : null;
@@ -156,6 +158,13 @@ onWrite('booking_pages', async (client, properties, existing) => {
   }
   if (out.availability !== undefined && out.availability !== null && out.availability !== '') {
     out.availability = JSON.stringify(readAvailability(out.availability));
+  }
+  if (typeof out.slug === 'string') {
+    const slug = out.slug.trim().toLowerCase();
+    out.slug = slug;
+    if (slug && !SLUG_RE.test(slug)) {
+      throw badRequest('The page address can have lowercase letters, digits and dashes (3 to 60, not starting or ending with a dash).', { property: 'slug' });
+    }
   }
   for (const key of ['form_before_id', 'form_after_id'] as const) {
     const v = out[key];
@@ -241,7 +250,9 @@ async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh 
 // ---- public routes ---------------------------------------------------------------
 
 async function publishedPage(key: string): Promise<BookingPage> {
-  const page = await loadPage(pool, 'key', checkKey(key));
+  // the random key or the address the user picked (slug)
+  if (!/^[A-Za-z0-9_-]{3,64}$/.test(key)) throw notFound('booking page not found');
+  const page = await loadPage(pool, 'key', key);
   if (!page || page.status !== 'published' || !page.rules || !page.host) throw notFound('booking page not found');
   return page;
 }
@@ -253,7 +264,8 @@ async function requireOrigin(origin: unknown): Promise<string> {
   return origin;
 }
 
-const MAX_RANGE_DAYS = 42;
+// six calendar weeks plus a day either side for time zones
+const MAX_RANGE_DAYS = 45;
 
 function attendeeOf(forms: { form: BookingForm; values: Record<string, unknown> }[]): { email: string | null; name: string | null } {
   let email: string | null = null;

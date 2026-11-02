@@ -177,7 +177,8 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
   // must come from the UI itself (CSRF).
   if (UNSAFE_METHODS.has(req.method)) {
     const origin = req.headers.origin;
-    if (!origin || !(browserOrigins.includes(origin) || origin === `${req.protocol}://${req.headers.host}`)) {
+    // (the API's own pages, such as the OAuth consent form, post from publicApiUrl)
+    if (!origin || !(browserOrigins.includes(origin) || origin === `${req.protocol}://${req.headers.host}` || (publicApiUrl && origin === publicApiUrl))) {
       throw forbidden('requests signed in with a session cookie must come from the CRM web app');
     }
   }

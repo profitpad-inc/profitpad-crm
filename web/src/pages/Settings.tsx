@@ -153,13 +153,13 @@ function FormsSettings() {
     <section>
       <h2>Forms</h2>
       <p className="muted">
-        Websites allowed to send forms embedded with the snippet from a form's record page. Enter each address
+        Websites allowed to embed forms and booking pages with the snippet from their record page. Enter each address
         separately: <code>https://example.com</code> and <code>https://www.example.com</code> are different websites.
-        This stops other websites from posting your forms; spam is handled by rate limits and hidden bot checks.
+        This stops other websites from using your forms and booking pages; spam is handled by rate limits and hidden bot checks.
       </p>
       {origins && (
         <div className="origin-list">
-          {origins.length === 0 ? <div className="muted small">No websites yet. Forms can only be sent from their hosted page.</div> : (
+          {origins.length === 0 ? <div className="muted small">No websites yet. Forms and booking pages only work on their hosted page.</div> : (
             <ul>
               {origins.map((o) => (
                 <li key={o}>

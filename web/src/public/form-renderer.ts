@@ -56,9 +56,10 @@ export const FORM_CSS = `
 .pcrm-form .pcrm-muted { color: var(--pcrm-muted); }
 `;
 
-export function injectFormCss(doc: Document = document): void {
-  if (doc.getElementById('pcrm-form-css')) return;
-  doc.head.append(el('style', { id: 'pcrm-form-css' }, FORM_CSS));
+// target: the page, or a shadow root (embedded booking pages)
+export function injectFormCss(target: Document | ShadowRoot = document): void {
+  if (target.getElementById('pcrm-form-css')) return;
+  (target instanceof Document ? target.head : target).append(el('style', { id: 'pcrm-form-css' }, FORM_CSS));
 }
 
 // Older APIs send options as plain strings and email/phone as field types.

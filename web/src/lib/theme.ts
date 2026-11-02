@@ -28,9 +28,11 @@ export const DEFAULT_THEME: Theme = {
   border: '#dce1e8'
 };
 
-export function applyTheme(partial: Partial<Theme> | undefined): Theme {
+// target: where the CSS variables go (default the whole page; an embedded
+// booking page sets them on its own element so the website is not touched)
+export function applyTheme(partial: Partial<Theme> | undefined, target: HTMLElement = document.documentElement): Theme {
   const theme = { ...DEFAULT_THEME, ...(partial ?? {}) };
-  const root = document.documentElement;
+  const root = target;
   for (const [k, v] of Object.entries(theme)) root.style.setProperty(`--${k.replace(/_/g, '-')}`, v);
   return theme;
 }

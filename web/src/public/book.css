@@ -3,9 +3,12 @@
 .bk-page { max-width: 760px; }
 .bk-facts { display: flex; gap: 8px 18px; flex-wrap: wrap; margin-top: 10px; color: var(--muted-text); font-size: 14px; }
 .bk-step { margin-top: 22px; }
-.bk-steps { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 16px; font-size: 13px; color: var(--muted-text); }
-.bk-steps span { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
-.bk-steps span.on { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.bk-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 16px; font-size: 13px; color: var(--muted-text); }
+.bk-step-pill { font: inherit; color: inherit; background: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
+.bk-step-pill.on { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+button.bk-step-pill { cursor: pointer; }
+button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary); }
+.bk-step-sep { color: var(--muted-text); }
 .bk-picker { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; align-items: start; }
 .bk-month-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .bk-month-head strong { font-size: 16px; }
@@ -17,6 +20,8 @@
 .bk-date.open { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); font-weight: 600; cursor: pointer; }
 .bk-date.open:hover { background: color-mix(in srgb, var(--primary) 22%, transparent); }
 .bk-date.picked { background: var(--primary); color: #fff; }
+.bk-date.other { opacity: .45; }
+.bk-date.other.picked { opacity: 1; }
 .bk-times { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
 .bk-time { font: inherit; font-weight: 600; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--primary); color: var(--primary); background: var(--page-background); cursor: pointer; }
 .bk-time:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
