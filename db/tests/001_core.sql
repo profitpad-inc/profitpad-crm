@@ -446,5 +446,24 @@ begin
   perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_copies[1]) = 'active', 'other parents keep their lines');
 end $t$;
 
+
+-- Required status with a default, and page addresses (0029).
+do $t$
+declare
+  v_quote text;
+begin
+  insert into crm.pc_0022 (name) values ('Defaulted') returning pc_0022_id into v_quote;
+  perform meta._test_check((select status from crm.pc_0022 where pc_0022_id = v_quote) = '{draft}', 'new quotes start as draft');
+  perform meta._test_check((select status from crm.pc_0054 where pc_0054_id = (select max(pc_0054_id) from crm.pc_0054)) is not null, 'booking pages have a status');
+  perform meta._test_expect_error(format($$update crm.pc_0022 set status = null where pc_0022_id = %L$$, v_quote), 'required');
+  perform meta._test_expect_error($$select meta.update_property('invoices', 'status', p_options => '{"single_value": true, "default_value": "nope"}')$$, 'not an option');
+  perform meta.delete_record('quotes', v_quote);
+  perform meta._test_check((select row_status from crm.pc_0022 where pc_0022_id = v_quote) = 'deleted', 'deleting a record with a required status works');
+  perform meta.update_property('invoices', 'status', p_options => '{"single_value": true}');
+  perform meta._test_check((select column_default from information_schema.columns where table_schema = 'crm' and table_name = 'pc_0023' and column_name = 'status') is null, 'removing default_value drops the default');
+  perform meta._test_check((select count(*) from meta.pc_0002 where api_name = 'slug' and object_type_id in ('pc_0022', 'pc_0023', 'pc_0052', 'pc_0054')) = 4, 'page addresses');
+  update crm.pc_0052 set slug = 'contact-us' where pc_0052_id = (select max(pc_0052_id) from crm.pc_0052 where row_status = 'active');
+end $t$;
+
 rollback;
 \echo all core tests passed

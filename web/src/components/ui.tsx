@@ -112,9 +112,11 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
   if (property.type === 'dropdown') {
     const options = (property.dropdown_options ?? []).filter((o) => o.row_status === 'active' || value.split(';').includes(o.api_value));
     if (property.options.single_value === true) {
+      // a dropdown with a default (status on quotes, invoices, forms) is never empty
+      const fallback = typeof property.options.default_value === 'string' ? property.options.default_value : null;
       return (
-        <select value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur}>
-          <option value="">None</option>
+        <select value={value || fallback || ''} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur}>
+          {fallback === null && <option value="">None</option>}
           {options.map((o) => (
             <option key={o.api_value} value={o.api_value}>{o.label}</option>
           ))}

@@ -309,7 +309,7 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
     const keep: Record<PropType, string[]> = {
       text: ['single_line', 'display', 'regex', 'regex_scope', 'json_only', 'unique', 'case_insensitive'],
       number: ['format', 'prefix', 'suffix', 'decimals', 'min', 'max', 'currency_code', 'currency_property'],
-      dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users'],
+      dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users', 'default_value'],
       date: [],
       datetime: ['timezone'],
       file: ['max_files'],
@@ -556,6 +556,15 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
               <label><input type="checkbox" checked={bool('allow_user_add')} onChange={(e) => set('allow_user_add', e.target.checked)} /> API writes may add new choices</label>
               <label><input type="checkbox" checked={bool('auto_append_users')} onChange={(e) => set('auto_append_users', e.target.checked)} /> Fill choices with every active user</label>
             </div>
+            <label className="field">
+              <span>Default</span>
+              <select value={str('default_value')} onChange={(e) => set('default_value', e.target.value)}>
+                <option value="">None (the value can be empty)</option>
+                {choices.filter((c) => c.existing && c.row_status !== 'archived').map((c) => (
+                  <option key={c.api_value} value={c.api_value}>{c.label}: new records start with it, never empty</option>
+                ))}
+              </select>
+            </label>
             <div className="field">
               <span>Choices</span>
               <div className="choice-list">

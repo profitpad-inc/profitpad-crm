@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { ApiError, badRequest } from './errors.js';
 import type { Principal } from './auth.js';
 import { getObject, type ObjectDef, type PropertyDef } from './registry.js';
-import { createRecord, findIdByUnique, onWrite, updateRecord } from './records.js';
+import { cleanSlug, createRecord, findIdByUnique, onWrite, updateRecord } from './records.js';
 import sanitizeHtml from 'sanitize-html';
 import { checkPhone } from './phone.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
@@ -576,7 +576,8 @@ export function checkFormHtml(raw: string, def: FormDefinition): { html: string;
 
 // Every write to a form: when the HTML or the definition changes and the form
 // has custom HTML, the HTML must still fit the definition. Stored cleaned.
-onWrite('forms', async (_client, properties, existing) => {
+onWrite('forms', async (_client, input, existing) => {
+  const properties = cleanSlug(input);
   if (!('html' in properties) && !('definition' in properties)) return properties;
   const html = 'html' in properties ? properties.html : existing?.html;
   if (typeof html !== 'string' || !html.trim()) return 'html' in properties ? { ...properties, html: null } : properties;

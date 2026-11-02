@@ -12,6 +12,7 @@ import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
 import { FileField } from '../components/FileField';
+import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { AddLineModal } from '../components/AddLineModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { SearchSelect } from '../components/SearchSelect';
@@ -56,9 +57,9 @@ const ACTIVITY_PROPS: Record<string, string[]> = {
 };
 // Shown elsewhere on the page (builder, answers, link and signing cards) rather than as raw values
 const HIDDEN_PROPS: Record<string, string[]> = {
-  forms: ['definition', 'public_key'],
-  quotes: ['public_key', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
-  invoices: ['public_key'],
+  forms: ['definition', 'public_key', 'slug'],
+  quotes: ['public_key', 'slug', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
+  invoices: ['public_key', 'slug'],
   form_submissions: ['summary', 'submission_values'],
   booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options'],
   files: ['public_token', 'storage_key']
@@ -72,7 +73,10 @@ export function RecordPage() {
   const [record, setRecord] = useState<CrmRecord | null>(null);
   const [associated, setAssociated] = useState<Associated[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // bumped when a save changes a line's amount, so its parent can be offered the new total
+  const [lineSaves, setLineSaves] = useState(0);
 
+  const labelOf = useCallback((o: string) => objectByName.get(o)?.label_singular ?? o, [objectByName]);
   const codeToName = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o.api_name])), [objects]);
 
   const loadAssociations = useCallback(async () => {
@@ -121,9 +125,23 @@ export function RecordPage() {
     };
   }, [object, id, navigate, loadAssociations]);
 
+  // after a card changes this record too (adding a line can update the deal amount)
+  const refresh = async () => {
+    await loadAssociations();
+    setRecord(await api<CrmRecord>('GET', `/v1/objects/${object}/${id}`));
+  };
+
+  function saved(r: CrmRecord) {
+    if (object === 'lines' && String(r.properties.amount ?? '') !== String(record?.properties.amount ?? '')) setLineSaves((n) => n + 1);
+    setRecord(r);
+  }
+
   async function archive() {
     if (!confirm('Move this record to the recycle bin?')) return;
+    // a line's deal, quote, ... is offered its new total once the line is gone
+    const parents = object === 'lines' ? await parentsOfLines([id]).catch(() => []) : [];
     await api('DELETE', `/v1/objects/${object}/${id}`);
+    await offerAmountUpdates(parents, labelOf).catch(() => 0);
     navigate(`/objects/${object}`);
   }
 
@@ -171,7 +189,7 @@ export function RecordPage() {
           </div>
         </div>
         {isUser && <UserRoles userId={record.id} />}
-        <PropertyList schema={schema} record={record} onSaved={setRecord} />
+        <PropertyList schema={schema} record={record} onSaved={saved} />
       </aside>
 
       {isUser ? (
@@ -197,9 +215,9 @@ export function RecordPage() {
             {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
             {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
             {object === 'files' && <FileCard record={record} />}
-            {object === 'lines' && <LineParentCard selfId={id} associated={associated} onChanged={loadAssociations} />}
+            {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
             {cards.map((o) => (
-              <AssociationCard key={o} self={object} selfId={id} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} onChanged={loadAssociations} />
+              <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} onChanged={refresh} />
             ))}
           </aside>
         </>
@@ -712,8 +730,8 @@ function UserHistory({ object, id, schema }: { object: string; id: string; schem
   );
 }
 
-function AssociationCard({ self, selfId, other, items, lineCount, onChanged }: {
-  self: string; selfId: string; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; lineCount: number; onChanged: () => Promise<void>;
+function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, onChanged }: {
+  self: string; selfId: string; selfRecord: CrmRecord; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; lineCount: number; onChanged: () => Promise<void>;
 }) {
   const { objectByName } = useApp();
   const navigate = useNavigate();
@@ -760,6 +778,10 @@ function AssociationCard({ self, selfId, other, items, lineCount, onChanged }: {
   async function unlink(targetId: string) {
     if (!confirm('Remove this association?')) return;
     await api('DELETE', `/v1/objects/${self}/${selfId}/associations/${other}/${targetId}`);
+    // removing a line from a deal, quote, ... offers the new total as its amount
+    if (other === 'lines' && AMOUNT_PARENTS.includes(self)) {
+      await offerAmountUpdates([{ object: self, id: selfId }], (o) => objectByName.get(o)?.label_singular ?? o).catch(() => 0);
+    }
     await onChanged();
   }
 
@@ -824,6 +846,11 @@ function AssociationCard({ self, selfId, other, items, lineCount, onChanged }: {
           object={createSchema}
           associations={[{ object: self, id: selfId }]}
           copyLines={{ object: self, id: selfId, count: lineCount, label: (objectByName.get(self)?.label_singular ?? self).toLowerCase() }}
+          // a quote or invoice made from a deal starts with the deal's amount and currency
+          startWith={{
+            amount: selfRecord.properties.amount,
+            currency: Array.isArray(selfRecord.properties.currency) ? selfRecord.properties.currency[0] : selfRecord.properties.currency
+          }}
           onClose={() => { setDialog(null); onChanged(); }}
           onCreated={(r) => navigate(`/objects/${other}/${r.id}`)}
         />
@@ -860,7 +887,10 @@ function AssociationCard({ self, selfId, other, items, lineCount, onChanged }: {
 
 // The record a line belongs to (a deal, quote, invoice, ...): at most one. A
 // line without one can be given one here.
-function LineParentCard({ selfId, associated, onChanged }: { selfId: string; associated: Associated[]; onChanged: () => Promise<void> }) {
+// After a save that changes the line's amount (saves goes up), a deal parent
+// (deal, quote, invoice, cart, order) is offered its new line items total as
+// its amount.
+function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: string; associated: Associated[]; saves: number; onChanged: () => Promise<void> }) {
   const { objectByName } = useApp();
   const parentObjects = (objectByName.get('lines')?.links_to ?? []).filter((o) => o !== 'products' && objectByName.has(o));
   const parent = associated.filter((a) => parentObjects.includes(a.object)).flatMap((a) => a.records.map((r) => ({ object: a.object, record: r.record })))[0];
@@ -868,6 +898,32 @@ function LineParentCard({ selfId, associated, onChanged }: { selfId: string; ass
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CrmRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [offer, setOffer] = useState<ParentTotals | null>(null);
+  const amountParent = parent && AMOUNT_PARENTS.includes(parent.object) ? parent : null;
+  const parentObject = amountParent?.object ?? null;
+  const parentId = amountParent?.record.id ?? null;
+  const label = (o: string) => (objectByName.get(o)?.label_singular ?? o).toLowerCase();
+
+  useEffect(() => {
+    setOffer(null);
+    if (!saves || !parentObject || !parentId) return;
+    let cancelled = false;
+    parentTotals(parentObject, parentId).then((t) => !cancelled && t.total !== t.amount && setOffer(t)).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [saves, parentObject, parentId]);
+
+  async function updateDeal() {
+    if (!parentId || !offer) return;
+    setError(null);
+    try {
+      await setParentAmount(offer.object, parentId, offer.total);
+      setOffer(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   useEffect(() => {
     if (parent || !target) return;
@@ -908,6 +964,15 @@ function LineParentCard({ selfId, associated, onChanged }: { selfId: string; ass
         <h3>Belongs to</h3>
       </div>
       {error && <div className="error">{error}</div>}
+      {offer && (
+        <div className="line-deal-offer">
+          <div className="small">The {label(offer.object)}'s line items now total {money(offer.total, offer.currency)}; its amount is {money(offer.amount, offer.currency)}.</div>
+          <div className="public-link-actions">
+            <button className="btn primary small" onClick={updateDeal}>Update {label(offer.object)} amount</button>
+            <button className="btn small" onClick={() => setOffer(null)}>Keep</button>
+          </div>
+        </div>
+      )}
       {parent ? (
         <div className="card-row">
           <div className="card-row-main">

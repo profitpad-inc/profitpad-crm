@@ -297,6 +297,19 @@ async function planWrite(
 // and returns the properties to write, or throws.
 type WriteHook = (client: pg.PoolClient, properties: Record<string, unknown>, existing: Record<string, unknown> | null) => Promise<Record<string, unknown>>;
 const writeHooks = new Map<string, WriteHook>();
+// a page address the user picked (slug): /p/quote/#acme-roof
+export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$/;
+// Quote, invoice and form writes: the slug is stored lowercase and checked
+// here for a readable message (the database enforces the same rule).
+export function cleanSlug(properties: Record<string, unknown>): Record<string, unknown> {
+  if (typeof properties.slug !== 'string') return properties;
+  const slug = properties.slug.trim().toLowerCase();
+  if (slug && !SLUG_RE.test(slug)) {
+    throw badRequest('The page address can have lowercase letters, digits and dashes (3 to 60, not starting or ending with a dash).', { property: 'slug' });
+  }
+  return { ...properties, slug: slug || null };
+}
+
 export function onWrite(objectApiName: string, hook: WriteHook): void {
   writeHooks.set(objectApiName, hook);
 }

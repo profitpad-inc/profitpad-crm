@@ -4,7 +4,7 @@ import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
 import { browserOrigins, requireScope, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
-import { onWrite, updateRecord } from '../records.js';
+import { cleanSlug, onWrite, SLUG_RE, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
@@ -46,9 +46,12 @@ export const newFormKey = () => randomBytes(16).toString('base64url');
 
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 export function checkKey(key: string): string {
-  if (!KEY_RE.test(key)) throw notFound('not found');
+  if (!KEY_RE.test(key) && !SLUG_RE.test(key.toLowerCase())) throw notFound('not found');
   return key;
 }
+// SQL that finds a record by its random key or its slug; a key match wins.
+const byKey = `(public_key = $1 or lower(slug) = lower($1)) and row_status = 'active'`;
+const keyFirst = 'order by public_key = $1 desc nulls last limit 1';
 
 // ---- allowed origins ---------------------------------------------------------
 
@@ -177,7 +180,10 @@ export function readSigningFields(raw: unknown): SigningField[] {
   });
 }
 
-onWrite('quotes', async (_client, properties) => {
+onWrite('invoices', async (_client, properties) => cleanSlug(properties));
+
+onWrite('quotes', async (_client, input) => {
+  const properties = cleanSlug(input);
   const raw = properties.signing_fields;
   if (raw === undefined || raw === null || raw === '') return properties;
   const fields = readSigningFields(raw);
@@ -231,7 +237,7 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
             responder_name, decline_reason, signing_fields, signed_fields, customer_signature, customer_signed_at,
             requires_countersign[1] = 'true' as requires_countersign, countersigner_name, countersigner_signature, countersigned_at,
             online_payment[1] as online_payment, deposit_type[1] as deposit_type, deposit_value
-     from crm.pc_0022 where public_key = $1 and row_status = 'active'`,
+     from crm.pc_0022 where ${byKey} ${keyFirst}`,
     [checkKey(key)]
   );
   const q = rows[0];
@@ -299,7 +305,7 @@ export async function loadPublicInvoice(key: string): Promise<PublicInvoice> {
   const { rows } = await pool.query(
     `select pc_0023_id as id, name, invoice_number, status[1] as status, to_char(due_date, 'YYYY-MM-DD') as due_date,
             amount, currency[1] as currency
-     from crm.pc_0023 where public_key = $1 and row_status = 'active'`,
+     from crm.pc_0023 where ${byKey} ${keyFirst}`,
     [checkKey(key)]
   );
   const i = rows[0];
@@ -346,7 +352,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 async function loadPublishedForm(key: string): Promise<{ id: string; name: string | null; description: string | null; html: string | null; definition: FormDefinition }> {
   const { rows } = await pool.query(
     `select pc_0052_id as id, name, description, html, definition from crm.pc_0052
-     where public_key = $1 and row_status = 'active' and status @> '{published}'`,
+     where ${byKey} and status @> '{published}' ${keyFirst}`,
     [checkKey(key)]
   );
   if (!rows[0]) throw notFound('form not found');

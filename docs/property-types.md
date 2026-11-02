@@ -44,6 +44,7 @@ Values are `api_value`s; labels live in `meta.pc_0003` and are looked up at read
 | `allow_user_add` | boolean | API writes may introduce new values (created with label = api_value) |
 | `allow_form_add` | boolean | reserved for forms |
 | `auto_append_users` | boolean | every active user becomes an option (`api_value` = user id, label = user name) |
+| `default_value` | option `api_value` | *enforced*: the value is never empty (deleted records excepted) and new records start with it (column default). Must be one of the options. The UI offers no "None" choice (migration 0029; status on quotes, invoices, forms and booking pages defaults to `draft`) |
 
 Always *enforced*: only known option values, no duplicates, no empty arrays. Archived options stay valid on records that already have them but are refused on new writes.
 

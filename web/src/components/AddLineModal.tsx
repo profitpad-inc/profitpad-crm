@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { formatValue } from '../lib/display';
+import { AMOUNT_PARENTS, lineAmount, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
+import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable, toInput } from './ui';
 
 // New line item: pick a product (its name, SKU and price fill the line and the
 // line links to it) or write a custom line. With a parent the line is created
-// on it (a deal, quote, invoice, ...); from the Lines table it has none.
+// on it (a deal, quote, invoice, ...); from the Lines table it has none. On a
+// deal, quote, invoice, cart or order it offers to set the parent's amount to
+// the new total of its lines.
 const LINE_FIELDS = ['name', 'sku', 'quantity', 'unit_price', 'discount'];
 
 export function AddLineModal({ parent, onClose, onCreated }: {
@@ -23,6 +27,16 @@ export function AddLineModal({ parent, onClose, onCreated }: {
   const [values, setValues] = useState<Record<string, string>>({ quantity: '1' });
   const [error, setError] = useState<{ message: string; property?: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const { objectByName } = useApp();
+  const [deal, setDeal] = useState<ParentTotals | null>(null);
+  const [updateDeal, setUpdateDeal] = useState(true);
+  const parentLabel = parent ? (objectByName.get(parent.object)?.label_singular ?? parent.object).toLowerCase() : '';
+  // set once the line exists, so a retry after a failed deal update does not add it twice
+  const [added, setAdded] = useState<CrmRecord | null>(null);
+
+  useEffect(() => {
+    if (parent && AMOUNT_PARENTS.includes(parent.object)) parentTotals(parent.object, parent.id).then(setDeal).catch(() => undefined);
+  }, [parent?.object, parent?.id]);
 
   useEffect(() => {
     getSchema('lines').then(setSchema).catch((err) => setError({ message: (err as Error).message }));
@@ -90,9 +104,21 @@ export function AddLineModal({ parent, onClose, onCreated }: {
       ...(product ? [{ object: 'products', id: product.id }] : []),
       ...(parent ? [parent] : [])
     ];
+    let created = added;
     try {
-      onCreated(await api<CrmRecord>('POST', '/v1/objects/lines', { properties, associations }));
+      if (!created) {
+        created = await api<CrmRecord>('POST', '/v1/objects/lines', { properties, associations });
+        setAdded(created);
+      }
+      // the total from the stored lines, not the preview
+      if (deal && updateDeal && parent) await setParentAmount(parent.object, parent.id, (await parentTotals(parent.object, parent.id)).total);
+      onCreated(created);
     } catch (err) {
+      if (created) {
+        setError({ message: `The line was added, but the ${parentLabel} amount was not updated: ${(err as Error).message}` });
+        setBusy(false);
+        return;
+      }
       const property = err instanceof ApiError ? err.details?.property : undefined;
       setError({ message: (err as Error).message, property: fields.some((p) => p.api_name === property) ? property : undefined });
       setBusy(false);
@@ -106,8 +132,8 @@ export function AddLineModal({ parent, onClose, onCreated }: {
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={busy || !schema}>{busy ? 'Adding…' : 'Add'}</button>
+          <button className="btn" onClick={() => (added ? onCreated(added) : onClose())}>{added ? 'Close' : 'Cancel'}</button>
+          <button className="btn primary" onClick={save} disabled={busy || !schema}>{busy ? 'Adding…' : added ? 'Try again' : 'Add'}</button>
         </>
       }
     >
@@ -148,6 +174,14 @@ export function AddLineModal({ parent, onClose, onCreated }: {
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}
+        {deal && showFields && (
+          <div className="checks">
+            <label>
+              <input type="checkbox" checked={updateDeal} onChange={(e) => setUpdateDeal(e.target.checked)} />
+              Update the {parentLabel} amount: {money(deal.amount, deal.currency)} → {money(deal.total + lineAmount(values), deal.currency)}
+            </label>
+          </div>
+        )}
         {error && !error.property && <div className="error">{error.message}</div>}
       </div>
     </Modal>

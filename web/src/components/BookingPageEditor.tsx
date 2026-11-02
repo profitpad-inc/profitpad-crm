@@ -387,7 +387,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
                 <div className="bk-slots">{check.next_slots.map((s) => <span key={s} className="bk-slot">{when.format(new Date(s))}</span>)}</div>
               </>
             ) : !check.slot_error && <div className="muted small">No open times in the next 14 days.</div>}
-            <div className="small muted">Visitors can book once Status is Published and the page has a link (card on the right).</div>
+            <div className="small muted">Visitors can book once the page is published (Publish in the Booking link card).</div>
           </>
         )}
       </div>

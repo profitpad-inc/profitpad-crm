@@ -10,6 +10,7 @@ import { useApp } from '../lib/app-context';
 import { defaultSortDirection, displayName, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { AddLineModal } from '../components/AddLineModal';
+import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines';
 import { FileUploadButton } from '../components/FileUploadButton';
 import { ColumnPicker, associationColumnLabel, moveTo } from '../components/ColumnPicker';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
@@ -390,7 +391,24 @@ function ObjectTableFor({ object }: { object: string }) {
     );
   }
 
+  // after lines change (edited amount figures, deleted), their deals, quotes, ...
+  // are offered the new line totals as their amounts
+  async function offerForLines(ids: string[]) {
+    if (object !== 'lines' || ids.length === 0) return;
+    try {
+      const parents = await parentsOfLines(ids);
+      const n = await offerAmountUpdates(parents, (o) => objectByName.get(o)?.label_singular ?? o);
+      if (n) toast(n === 1 ? 'Amount updated' : `${n} amounts updated`);
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
+
   function recordSaved(updated: CrmRecord) {
+    const before = data?.results.find((r) => r.id === updated.id);
+    // only fields shown in the table can be edited here, so only those are compared
+    const changed = AMOUNT_FIELDS.some((f) => before && f in before.properties && String(before.properties[f] ?? '') !== String(updated.properties[f] ?? ''));
+    if (changed) void offerForLines([updated.id]);
     setData((prev) =>
       prev && { ...prev, results: prev.results.map((r) => (r.id === updated.id ? { ...r, properties: { ...r.properties, ...updated.properties } } : r)) }
     );
@@ -642,7 +660,11 @@ function ObjectTableFor({ object }: { object: string }) {
           schema={schema}
           ids={[...picked]}
           onClose={() => setBulk(null)}
-          onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`, false)}
+          onDone={(n, property) => {
+            const ids = [...picked];
+            bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`, false);
+            if (AMOUNT_FIELDS.includes(property)) void offerForLines(ids);
+          }}
         />
       )}
       {bulk === 'delete' && (
@@ -651,7 +673,11 @@ function ObjectTableFor({ object }: { object: string }) {
           schema={schema}
           ids={[...picked]}
           onClose={() => setBulk(null)}
-          onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`, true)}
+          onDone={(n) => {
+            const ids = [...picked];
+            bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`, true);
+            void offerForLines(ids);
+          }}
         />
       )}
       {showCreate && object === 'lines' && (
@@ -846,7 +872,7 @@ async function inChunks(ids: string[], send: (chunk: string[]) => Promise<unknow
 // (one value can't be on two records), as are ones nobody can edit.
 // Multi-choice dropdowns can add choices, take them away or replace them.
 function BulkEditModal({ object, schema, ids, onClose, onDone }: {
-  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
+  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number, property: string) => void;
 }) {
   const properties = useMemo(
     () => schema.properties.filter((p) => isEditable(p) && p.options.unique !== true).sort((a, b) => a.label.localeCompare(b.label)),
@@ -875,7 +901,7 @@ function BulkEditModal({ object, schema, ids, onClose, onDone }: {
           ...(multi ? { modes: { [property.api_name]: mode } } : {})
         })
       );
-      onDone(ids.length);
+      onDone(ids.length, property.api_name);
     } catch (err) {
       setSaving(false);
       setError((err as Error).message);

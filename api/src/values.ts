@@ -24,7 +24,11 @@ export function isWritable(prop: PropertyDef): boolean {
 export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coerced {
   // details.property lets the UI show the error under that property
   const fail = (why: string) => badRequest(`"${prop.api_name}": ${why}`, { property: prop.api_name });
-  if (input === null || input === undefined || input === '') return { value: null, newOptions: [] };
+  if (input === null || input === undefined || input === '' || (Array.isArray(input) && input.length === 0)) {
+    // dropdowns with a default value (status on quotes, invoices, forms) are never empty
+    if (prop.type === 'dropdown' && typeof prop.options.default_value === 'string') throw badRequest(`${prop.label} cannot be empty`, { property: prop.api_name });
+    return { value: null, newOptions: [] };
+  }
   const type = prop.type;
 
   if (type === 'text') {

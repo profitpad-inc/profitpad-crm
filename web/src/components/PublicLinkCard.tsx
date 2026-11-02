@@ -4,11 +4,16 @@ import { Copy, ExternalLink, Globe } from 'lucide-react';
 import { API_BASE, api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 
-// Record page card for quotes, invoices, forms and booking pages: the
-// customer-facing link (/p/quote/#key, /p/invoice/#key, /p/form/#key,
-// /p/book/#key), plus the embed snippet
-// for forms and booking pages. A booking page can also have an address the
-// user picks (slug, /p/book/#intro-call), used in its link and snippet.
+// Record page card for quotes, invoices, forms and booking pages: Publish
+// (quote to Sent, invoice to Open, form and booking page to Published, making
+// the link if there is none), the customer-facing link (/p/quote/#key,
+// /p/invoice/#key, /p/form/#key, /p/book/#key), plus the embed snippet for
+// forms and booking pages. Each can also have an address the user picks
+// (slug, /p/book/#intro-call), used in its link and snippet.
+const PUBLISHED: Record<string, string> = { quotes: 'sent', invoices: 'open', forms: 'published', booking_pages: 'published' };
+const PATH: Record<string, string> = { quotes: 'quote', invoices: 'invoice', forms: 'form', booking_pages: 'book' };
+const SLUG_EXAMPLE: Record<string, string> = { quotes: 'acme-roof-quote', invoices: 'acme-invoice-1042', forms: 'contact-us', booking_pages: 'intro-call' };
+
 export function PublicLinkCard({ object, record, onChanged }: {
   object: 'quotes' | 'invoices' | 'forms' | 'booking_pages'; record: CrmRecord; onChanged: (r: CrmRecord) => void;
 }) {
@@ -20,14 +25,17 @@ export function PublicLinkCard({ object, record, onChanged }: {
   useEffect(() => setSlug(savedSlug), [savedSlug]);
   const publicKey = typeof record.properties.public_key === 'string' ? record.properties.public_key : null;
   // what goes after the # in links and snippets: the slug when there is one
-  const key = (object === 'booking_pages' && savedSlug) || publicKey;
+  const key = savedSlug || publicKey;
   const status = Array.isArray(record.properties.status) ? record.properties.status[0] : record.properties.status;
   const isQuote = object === 'quotes';
   const isInvoice = object === 'invoices';
   // quotes and invoices: a link for one customer, no embed snippet
   const isDoc = isQuote || isInvoice;
   const isBooking = object === 'booking_pages';
-  const pageUrl = key ? `${window.location.origin}/p/${isQuote ? 'quote' : isInvoice ? 'invoice' : isBooking ? 'book' : 'form'}/#${key}` : null;
+  const pageUrl = key ? `${window.location.origin}/p/${PATH[object]}/#${key}` : null;
+  const kind = isQuote ? 'quote' : isInvoice ? 'invoice' : isBooking ? 'booking page' : 'form';
+  const isDraft = !status || status === 'draft';
+  const [busy, setBusy] = useState(false);
   const snippet = key && !isDoc
     ? `<div data-pcrm-${isBooking ? 'booking' : 'form'}="${key}"></div>\n<script src="${window.location.origin}/p/embed.js" async></script>`
     : null;
@@ -35,7 +43,7 @@ export function PublicLinkCard({ object, record, onChanged }: {
   async function saveSlug() {
     setError(null);
     try {
-      onChanged(await api<CrmRecord>('PATCH', `/v1/objects/booking_pages/${record.id}`, { properties: { slug: slug.trim().toLowerCase() || null } }));
+      onChanged(await api<CrmRecord>('PATCH', `/v1/objects/${object}/${record.id}`, { properties: { slug: slug.trim().toLowerCase() || null } }));
       toast(slug.trim() ? 'Address saved' : 'Address removed');
     } catch (err) {
       setError((err as Error).message);
@@ -55,6 +63,26 @@ export function PublicLinkCard({ object, record, onChanged }: {
     }
   }
 
+  // makes the link first when there is none, then sets the published status
+  async function publish() {
+    setError(null);
+    setBusy(true);
+    try {
+      let props = record.properties;
+      if (!publicKey && !savedSlug) {
+        const res = await api<{ public_key: string }>('POST', `/v1/objects/${object}/${record.id}/public-link`);
+        props = { ...props, public_key: res.public_key };
+        onChanged({ ...record, properties: props });
+      }
+      onChanged(await api<CrmRecord>('PATCH', `/v1/objects/${object}/${record.id}`, { properties: { status: PUBLISHED[object] } }));
+      toast(isQuote ? 'Quote sent' : isInvoice ? 'Invoice opened' : `${isBooking ? 'Booking page' : 'Form'} published`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function copy(text: string, what: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -65,11 +93,11 @@ export function PublicLinkCard({ object, record, onChanged }: {
     }
   }
 
-  const hint = isQuote
-    ? status === 'draft' || !status ? 'Customers can open the link once the quote status is Sent.' : null
-    : isInvoice
-    ? status !== 'open' && status !== 'paid' ? 'Customers can open the link once the invoice status is Open.' : null
-    : status !== 'published' ? `The ${isBooking ? 'booking page' : 'form'} works once its status is Published.` : null;
+  // drafts get the Publish button; other statuses that hide the page (void, archived, ...) say so
+  const live = isQuote ? !isDraft : isInvoice ? status === 'open' || status === 'paid' : status === 'published';
+  const hint = isDraft
+    ? `Customers can open the link once the ${kind} is published.`
+    : !live ? `Customers cannot open the link while the ${kind} is ${String(status).replace(/_/g, ' ')}.` : null;
 
   return (
     <div className="card public-link">
@@ -77,19 +105,24 @@ export function PublicLinkCard({ object, record, onChanged }: {
         <Globe size={16} strokeWidth={1.75} />
         <h3>{isDoc ? 'Customer link' : isBooking ? 'Booking link' : 'Public form'}</h3>
       </div>
-      {isBooking && (
-        <label className="field">
-          <span>Page address</span>
-          <div className="public-link-row">
-            <span className="muted small">/p/book/#</span>
-            <input value={slug} placeholder="intro-call" maxLength={60} aria-label="Page address"
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-              onKeyDown={(e) => e.key === 'Enter' && slug !== savedSlug && saveSlug()} />
-            {slug !== savedSlug && <button className="btn small" onClick={saveSlug}>Save</button>}
-          </div>
-        </label>
+      {isDraft && (
+        <div className="public-link-publish">
+          <span className="small muted">Draft</span>
+          <button className="btn primary small" onClick={publish} disabled={busy}>{busy ? 'Publishing…' : 'Publish'}</button>
+        </div>
       )}
-      {!key && <div className="muted small">{isDoc ? `No link yet. Make one to share this ${isQuote ? 'quote' : 'invoice'} with the customer.` : isBooking ? 'No link yet. Make one to share this booking page.' : 'No key yet. Make one to host or embed this form.'}</div>}
+      <label className="field">
+        <span>Page address</span>
+        <div className="public-link-row">
+          <span className="muted small">/p/{PATH[object]}/#</span>
+          <input value={slug} placeholder={SLUG_EXAMPLE[object]} maxLength={60} aria-label="Page address"
+            onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+            onKeyDown={(e) => e.key === 'Enter' && slug !== savedSlug && saveSlug()} />
+          {slug !== savedSlug && <button className="btn small" onClick={saveSlug}>Save</button>}
+        </div>
+        {isDoc && <div className="small muted">Optional. Anyone who knows or guesses this address can open the {kind}; leave it empty to share only the random link.</div>}
+      </label>
+      {!key && <div className="muted small">{isDoc ? `No link yet. Publish, or make one to share this ${kind} with the customer.` : isBooking ? 'No link yet. Publish, or make one to share this booking page.' : 'No key yet. Publish, or make one to host or embed this form.'}</div>}
       {pageUrl && (
         <div className="public-link-row">
           <input readOnly value={pageUrl} onFocus={(e) => e.target.select()} aria-label="Link" />
@@ -106,10 +139,10 @@ export function PublicLinkCard({ object, record, onChanged }: {
           </div>
         </>
       )}
-      {hint && key && <div className="small muted">{hint}</div>}
+      {hint && <div className="small muted">{hint}</div>}
       {error && <div className="error">{error}</div>}
       <div className="public-link-actions">
-        {!(isBooking && savedSlug) && (
+        {!savedSlug && (
           <button className="btn small" onClick={generate}>{publicKey ? (isDoc || isBooking ? 'New link' : 'New key') : (isDoc || isBooking ? 'Make link' : 'Make key')}</button>
         )}
         {snippet && <button className="btn small" onClick={() => copy(snippet, 'snippet')}>Copy snippet</button>}

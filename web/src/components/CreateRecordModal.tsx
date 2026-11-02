@@ -12,21 +12,30 @@ const PREFERRED: Record<string, string[]> = {
   tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'owner'],
   users: ['first_name', 'last_name', 'email', 'status'],
   // the builder, the link card and Status on the record page do the rest
-  forms: ['name', 'description']
+  forms: ['name', 'description'],
+  // the rest is filled in on the record page; they start as drafts
+  quotes: ['name', 'expiration_date'],
+  invoices: ['name', 'due_date']
 };
 // Values every new record of the object starts with, not asked.
 const STARTS_WITH: Record<string, Record<string, unknown>> = {
-  forms: { status: 'draft' }
+  forms: { status: 'draft' },
+  quotes: { status: 'draft' },
+  invoices: { status: 'draft' },
+  booking_pages: { status: 'draft' }
 };
 
 // associations: records the new one is linked to (a quote made from a deal).
 // copyLines: offers to copy that record's line items onto the new one.
-export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines }: {
+// startWith: values the new record takes without asking (a deal's amount and
+// currency); dropdown values this object does not offer are left out.
+export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines, startWith }: {
   object: ObjectDef;
   onClose: () => void;
   onCreated: (r: CrmRecord) => void;
   associations?: { object: string; id: string }[];
   copyLines?: { object: string; id: string; count: number; label: string };
+  startWith?: Record<string, unknown>;
 }) {
   const { me } = useApp();
   const editable = object.properties.filter((p) => isEditable(p) && p.api_name !== 'created_at');
@@ -50,6 +59,12 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
     setBusy(true);
     setError(null);
     const properties: Record<string, unknown> = { ...STARTS_WITH[object.api_name] };
+    for (const [k, v] of Object.entries(startWith ?? {})) {
+      const p = object.properties.find((x) => x.api_name === k && isEditable(x));
+      if (!p || v === null || v === undefined || v === '') continue;
+      if (p.type === 'dropdown' && !p.dropdown_options?.some((o) => o.row_status === 'active' && o.api_value === v)) continue;
+      properties[k] = v;
+    }
     for (const p of fields) {
       const v = values[p.api_name];
       if (v !== undefined && v !== '') properties[p.api_name] = fromInput(p, v);

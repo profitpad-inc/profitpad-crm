@@ -260,7 +260,7 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
         </div>
         <button className="btn primary push-right" onClick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save form'}</button>
       </div>
-      {status !== 'published' && <div className="muted small">The form is not live until its Status is Published.</div>}
+      {status !== 'published' && <div className="muted small">The form is not live until it is published (Publish in the Public form card).</div>}
       {error && <div className="error">{error}</div>}
       {saved && !dirty && <div className="muted small">{saved}</div>}
 
