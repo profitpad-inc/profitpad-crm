@@ -587,5 +587,30 @@ begin
   perform meta._test_check((select viewowner from pg_views where schemaname = 'view_data' and viewname = 'rls_things') = 'test_crm_view_reader', 'new objects get a view_data view');
 end $t$;
 
+
+-- 31. Custom view tooling (0035): option details, association names, error log
+do $t$
+begin
+  perform meta._test_check((select options ->> 'parent_property' from meta.pc_0002 where object_type_id = 'pc_0012' and api_name = 'stage') = 'pipeline', 'deal stage belongs to pipeline');
+  perform meta._test_check((select is_won and is_closed and probability = 1 from reporting.property_options where property = 'stage' and object_type_id = 'pc_0012' and api_value = 'closed_won'), 'closed_won is closed and won');
+  perform meta._test_check((select is_closed and not is_won from reporting.property_options where property = 'stage' and object_type_id = 'pc_0012' and api_value = 'closed_lost'), 'closed_lost is closed, not won');
+  perform meta._test_check((select not is_closed from view_data.property_options where property = 'stage' and object_type_id = 'pc_0012' and api_value = 'qualified'), 'open stages are not closed');
+
+  perform meta.set_option_details('deals', 'stage', 'qualified', '{"probability": 0.4, "parent_values": ["sales"]}');
+  perform meta._test_check((select probability = 0.4 and parent_values = '{sales}' from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id where p.object_type_id = 'pc_0012' and p.api_name = 'stage' and o.api_value = 'qualified'), 'set_option_details stores probability and parent values');
+  perform meta.set_option_details('deals', 'stage', 'qualified', '{"is_won": true}');
+  perform meta._test_check((select is_closed from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id where p.object_type_id = 'pc_0012' and p.api_name = 'stage' and o.api_value = 'qualified'), 'won implies closed');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"is_closed": false}')$$, 'always closed');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"probability": 2}')$$, 'from 0 to 1');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"parent_values": ["nope"]}')$$, 'has no option nope');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"colour": "red"}')$$, 'not an option detail');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'pipeline', 'sales', '{"parent_values": ["sales"]}')$$, 'no parent_property');
+  perform meta._test_expect_error($$select meta.update_property('deals', 'pipeline', null, null, '{"single_value": true, "parent_property": "pipeline"}')$$, 'another single-value dropdown');
+  perform meta._test_expect_error($$select meta.update_property('deals', 'pipeline', null, null, '{"single_value": true, "parent_property": "amount"}')$$, 'another single-value dropdown');
+
+  perform meta._test_check(exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'associations' and column_name = 'other_object'), 'associations carry object api_names');
+  perform meta._test_check(has_table_privilege('test_crm_api', 'ui.view_errors', 'insert'), 'the API can log view errors');
+end $t$;
+
 rollback;
 \echo all core tests passed

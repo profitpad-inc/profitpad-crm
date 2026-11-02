@@ -6,7 +6,7 @@ import * as z from 'zod/v4';
 import { pool, withTx } from './db.js';
 import { ApiError, fromPg } from './errors.js';
 import { authenticateOAuthToken, requireObjectPermission, requireScope, type Principal } from './auth.js';
-import { getRegistry, type ObjectDef } from './registry.js';
+import { getRegistry, type ObjectDef, type OptionDef } from './registry.js';
 import {
   assertAccessible, assertUserLinkable, createRecord, drainCalcQueue, getRecord, objectForWrite, searchRecords, updateRecord, visibleProperties
 } from './records.js';
@@ -18,7 +18,8 @@ import {
   addOption, createProperty, setPropertyArchived, testCalculation, updateOption, updateProperty
 } from './routes/schema.js';
 import {
-  createView, listViews, loadView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut, type ViewRow
+  createView, listViewErrors, listViews, loadView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut,
+  viewSummary, type ViewRow
 } from './views.js';
 import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { findIcons } from './icons.js';
@@ -56,6 +57,14 @@ async function run(fn: () => Promise<unknown>): Promise<CallToolResult> {
     return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: mapped.code, message: mapped.message, details: mapped.details }) }] };
   }
 }
+
+// pipeline-stage details, only where set, to keep describe_object short
+const optionDetails = (o: OptionDef) => ({
+  ...(o.parent_values.length ? { parent_values: o.parent_values } : {}),
+  ...(o.is_closed ? { is_closed: true } : {}),
+  ...(o.is_won ? { is_won: true } : {}),
+  ...(o.probability !== null ? { probability: o.probability } : {})
+});
 
 const canRead = (p: Principal, obj: ObjectDef) => !p.permissions || p.permissions.objects.get(obj.object_type_id)?.read === true;
 
@@ -119,8 +128,9 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
         description: pr.description ?? undefined,
         writable: isWritable(pr) && p.permissions?.propertyAccess.get(pr.pc_0002_id) !== 'read_only',
         options: pr.type === 'dropdown'
-          ? pr.dropdown_options.filter((o) => o.row_status === 'active').map((o) => ({ value: o.api_value, label: o.label }))
-          : undefined
+          ? pr.dropdown_options.filter((o) => o.row_status === 'active').map((o) => ({ value: o.api_value, label: o.label, ...optionDetails(o) }))
+          : undefined,
+        parent_property: (pr.options.parent_property as string | undefined) ?? undefined
       }))
     };
   }));
@@ -230,10 +240,13 @@ const SCHEMA_SOURCE = 'mcp';
 
 // After a draft is saved the model shows the preview link and asks; it does
 // not publish on its own.
-const draftSaved = (v: ViewRow) => ({
-  ...viewOut(v),
-  next_step: `Saved as a draft; nobody else sees it yet. Give the user this link to preview it: ${viewOut(v).draft_url} . Then ask whether to publish. Do not call publish_view unless they say yes.`
+const draftSaved = (v: ViewRow, withCode = false) => ({
+  ...(withCode ? viewOut(v) : viewSummary(v)),
+  next_step: `Saved as a draft; nobody else sees it yet. Give the user this link to preview it: ${viewOut(v).draft_url} . After they open it, get_view_runtime_errors shows anything that went wrong in their browser. Then ask whether to publish. Do not call publish_view unless they say yes.`
 });
+
+const editsArg = z.array(z.object({ old_str: z.string(), new_str: z.string() }))
+  .describe('Find-and-replace edits to the current draft source, applied in order; each old_str must match exactly one place (copy it from get_view, with enough surrounding code to be unique). Use instead of source for changes.');
 
 // Custom views and property changes, for connections with the schema scope
 // (admins who allowed it on the consent page). Every change goes through the
@@ -262,10 +275,22 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('get_view', {
     title: 'Get custom view',
-    description: 'One custom view with its code and queries, draft and published. To change the code or queries use save_view_draft, then publish_view.',
-    inputSchema: z.object({ view: viewArg }),
+    description: 'One custom view with its code and queries. code picks which version to include: draft (default), published, both or none. To change the code or queries use save_view_draft, then publish_view.',
+    inputSchema: z.object({ view: viewArg, code: z.enum(['draft', 'published', 'both', 'none']).optional() }),
     annotations: { readOnlyHint: true }
-  }, async ({ view }) => run(async () => viewOut(await loadView(pool, view))));
+  }, async ({ view, code }) => run(async () => {
+    const out: Record<string, unknown> = viewOut(await loadView(pool, view));
+    const which = code ?? 'draft';
+    if (which === 'none' || which === 'published') {
+      delete out.draft_source;
+      delete out.draft_queries;
+    }
+    if (which === 'none' || which === 'draft') {
+      delete out.source;
+      delete out.queries;
+    }
+    return out;
+  }));
 
   server.registerTool('create_view', {
     title: 'Create custom view',
@@ -283,13 +308,35 @@ function registerAdminTools(server: McpServer, p: Principal) {
     scopeChallenge: schemaChallenge
   }, async (args) => run(async () => draftSaved(await createView(p, args))));
 
+
   server.registerTool('save_view_draft', {
     title: 'Save custom view draft',
-    description: 'Changes a view\'s code and/or queries: replaces the draft (what is not given stays; send the whole source, not a diff). Checked first; errors come back to fix. The published version does not change until publish_view. Read view_guide first if you have not.',
-    inputSchema: z.object({ view: viewArg, source: z.string().optional(), queries: queriesArg.optional() }),
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    description: 'Changes a view\'s draft code and/or queries (what is not given stays). For the code send edits (find and replace, best for changes) or source (the whole module). For the queries send set_queries (add or replace by name) and remove_queries, or queries (all of them). Checked first; errors come back to fix, and nothing is saved then. Answers with a short summary; return_code: true also returns the saved code and queries. The published version does not change until publish_view. Read view_guide first if you have not.',
+    inputSchema: z.object({
+      view: viewArg,
+      edits: editsArg.optional(),
+      source: z.string().optional().describe('The whole TSX module; replaces the draft source'),
+      set_queries: queriesArg.optional().describe('Named queries to add or replace; the others stay'),
+      remove_queries: z.array(z.string()).optional().describe('Names of queries to remove'),
+      queries: queriesArg.optional().describe('Every query; replaces them all'),
+      return_code: z.boolean().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async ({ view, source, queries }) => run(async () => draftSaved(await saveDraft(p, view, { source, queries }))));
+  }, async ({ view, return_code, ...input }) => run(async () => draftSaved(await saveDraft(p, view, input), return_code)));
+
+  server.registerTool('get_view_runtime_errors', {
+    title: 'Get custom view runtime errors',
+    description: 'What went wrong when the view ran in someone\'s browser: crashes ("This view crashed"), uncaught errors, console errors and failed queries, newest first, with how often and at what frame width. By default the draft\'s errors since it was last saved. Errors are only reported when someone opens the view, so ask the user to open the draft_url first.',
+    inputSchema: z.object({
+      view: viewArg,
+      published: z.boolean().optional().describe('The published version\'s errors (since it was published) instead of the draft\'s'),
+      since: z.string().optional().describe('ISO date-time; overrides the default start'),
+      all: z.boolean().optional().describe('Everything kept (up to 200 per view), not just since the last save'),
+      limit: z.number().int().min(1).max(100).optional().describe('Default 20')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ view, ...opts }) => run(() => listViewErrors(p, view, opts)));
 
   server.registerTool('update_view_settings', {
     title: 'Update custom view settings',
@@ -429,21 +476,28 @@ function registerAdminTools(server: McpServer, p: Principal) {
     }, async ({ object, property }) => run(() => setPropertyArchived(p, object, property, archived, SCHEMA_SOURCE)));
   }
 
+  const detailsArgs = {
+    parent_values: z.array(z.string()).optional().describe('Values of the dropdown\'s parent_property this choice belongs to (e.g. the pipelines a stage is in); [] for all'),
+    is_closed: z.boolean().optional().describe('A closed stage (won or lost)'),
+    is_won: z.boolean().optional().describe('A won stage; also makes it closed'),
+    probability: z.number().min(0).max(1).nullable().optional().describe('Chance of winning, 0 to 1 (null clears)')
+  };
+
   server.registerTool('add_dropdown_option', {
     title: 'Add dropdown option',
-    description: 'Adds a choice to a dropdown property.',
-    inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string().describe('api_value'), label: z.string(), display_order: z.number().int().optional() }),
+    description: 'Adds a choice to a dropdown property. Stage-like dropdowns can also take parent_values, is_closed, is_won and probability (view_guide topic properties).',
+    inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string().describe('api_value'), label: z.string(), display_order: z.number().int().optional(), ...detailsArgs }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async ({ object, property, value, label, display_order }) => run(() => addOption(p, object, property, { api_value: value, label, display_order }, SCHEMA_SOURCE)));
+  }, async ({ object, property, value, ...b }) => run(() => addOption(p, object, property, { api_value: value, ...b }, SCHEMA_SOURCE)));
 
   server.registerTool('update_dropdown_option', {
     title: 'Update dropdown option',
-    description: 'Relabels or reorders a dropdown choice. Its value (api_value) cannot change.',
-    inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string(), label: z.string().optional(), display_order: z.number().int().optional() }),
+    description: 'Relabels or reorders a dropdown choice, or changes its stage details (parent_values, is_closed, is_won, probability). Its value (api_value) cannot change.',
+    inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string(), label: z.string().optional(), display_order: z.number().int().optional(), ...detailsArgs }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
-  }, async ({ object, property, value, label, display_order }) => run(() => updateOption(p, object, property, value, { label, display_order }, SCHEMA_SOURCE)));
+  }, async ({ object, property, value, ...b }) => run(() => updateOption(p, object, property, value, b, SCHEMA_SOURCE)));
 
   for (const archived of [true, false]) {
     server.registerTool(archived ? 'archive_dropdown_option' : 'unarchive_dropdown_option', {

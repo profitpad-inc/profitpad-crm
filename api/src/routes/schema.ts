@@ -113,28 +113,48 @@ export async function setPropertyArchived(p: Principal, objectKey: string, name:
   return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
 }
 
+// Pipeline-stage details on an option (migration 0035); undefined keys are left alone.
+export interface OptionDetails {
+  parent_values?: string[];
+  is_closed?: boolean;
+  is_won?: boolean;
+  probability?: number | null;
+}
+
+function pickDetails(b: OptionDetails): Record<string, unknown> | null {
+  const out = Object.fromEntries((['parent_values', 'is_closed', 'is_won', 'probability'] as const).filter((k) => b[k] !== undefined).map((k) => [k, b[k]]));
+  return Object.keys(out).length ? out : null;
+}
+
 export async function addOption(
-  p: Principal, objectKey: string, name: string, b: { api_value: string; label: string; display_order?: number; description?: string }, source?: string
+  p: Principal, objectKey: string, name: string,
+  b: { api_value: string; label: string; display_order?: number; description?: string } & OptionDetails, source?: string
 ) {
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
-  await withTx({ actor: p.actor, source }, (c) =>
-    c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null])
-  );
+  const details = pickDetails(b);
+  await withTx({ actor: p.actor, source }, async (c) => {
+    await c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null]);
+    if (details) await c.query('select meta.set_option_details($1, $2, $3, $4)', [obj.object_type_id, prop.api_name, b.api_value, JSON.stringify(details)]);
+  });
   return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
 }
 
 export async function updateOption(
   p: Principal, objectKey: string, name: string, value: string,
-  b: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' }, source?: string
+  b: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' } & OptionDetails, source?: string
 ) {
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
-  await withTx({ actor: p.actor, source }, (c) =>
-    c.query('select meta.update_option($1, $2, $3, $4, $5, $6, $7)', [
-      obj.object_type_id, prop.api_name, value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.row_status ?? null
-    ])
-  );
+  const details = pickDetails(b);
+  await withTx({ actor: p.actor, source }, async (c) => {
+    if (b.label !== undefined || b.display_order !== undefined || b.description !== undefined || b.row_status !== undefined || !details) {
+      await c.query('select meta.update_option($1, $2, $3, $4, $5, $6, $7)', [
+        obj.object_type_id, prop.api_name, value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.row_status ?? null
+      ]);
+    }
+    if (details) await c.query('select meta.set_option_details($1, $2, $3, $4)', [obj.object_type_id, prop.api_name, value, JSON.stringify(details)]);
+  });
   return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
 }
 
@@ -260,7 +280,7 @@ export async function schemaRoutes(app: FastifyInstance) {
   });
 
   // dropdown options
-  app.post<{ Params: { object: string; property: string }; Body: { api_value: string; label: string; display_order?: number; description?: string } }>(
+  app.post<{ Params: { object: string; property: string }; Body: { api_value: string; label: string; display_order?: number; description?: string } & OptionDetails }>(
     '/v1/schema/:object/properties/:property/options',
     async (req, reply) => {
       const out = await addOption(req.principal!, req.params.object, req.params.property, req.body ?? ({} as never));
@@ -271,7 +291,7 @@ export async function schemaRoutes(app: FastifyInstance) {
 
   app.patch<{
     Params: { object: string; property: string; value: string };
-    Body: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' };
+    Body: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' } & OptionDetails;
   }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
     return updateOption(req.principal!, req.params.object, req.params.property, req.params.value, req.body ?? {});
   });

@@ -5,7 +5,7 @@ import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
 import { MobileHeader } from '../components/MobileNav';
 import { Modal } from '../components/ui';
-import type { BridgeMethod, FromFrame, Params, ToFrame, ViewInit } from '../view-runtime/protocol';
+import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewInit } from '../view-runtime/protocol';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
 // sandboxed iframe (public/view-frame, opaque origin, no network); this page
@@ -69,6 +69,9 @@ export function CustomView() {
   const [view, setView] = useState<ViewPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState(400);
+  // fill views (export const frame = 'fill') get the visible height and scroll themselves
+  const [fill, setFill] = useState(false);
+  const [fillHeight, setFillHeight] = useState(400);
   const [frameKey, setFrameKey] = useState(0);
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -107,7 +110,53 @@ export function CustomView() {
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
+    setFill(false);
   }, [frameKey]);
+
+  // The view cannot see the CRM page scroll, so tell it where it is: how much
+  // of the frame is scrolled out of sight above, and how tall the visible area
+  // is (useViewport in the kit). Fill views get a fixed height instead.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!view || !frame) return;
+    const scroller = frame.closest('.main') ?? document.documentElement;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const area = scroller.getBoundingClientRect();
+      const top = Math.max(area.top, 0);
+      const bottom = Math.min(area.bottom, window.innerHeight);
+      if (fill) {
+        // from the frame's top (when scrolled to the top) to the bottom of the visible area
+        setFillHeight(Math.max(300, Math.floor(bottom - (frame.getBoundingClientRect().top + scroller.scrollTop))));
+        return;
+      }
+      const rect = frame.getBoundingClientRect();
+      send({ type: 'pcrm:viewport', viewport: { scrollTop: Math.max(0, Math.round(top - rect.top)), viewportHeight: Math.max(0, Math.round(bottom - top)) } });
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    scroller.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    const ro = new ResizeObserver(schedule);
+    ro.observe(scroller);
+    schedule();
+    return () => {
+      scroller.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [view, frameKey, fill, height]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // what went wrong in the frame goes to the API, where the view's builder
+  // (an admin's AI) reads it with get_view_runtime_errors
+  const reportErrors = useCallback((errors: RuntimeError[]) => {
+    const { slug: s, draft: d } = latest.current;
+    if (!s || !errors.length) return;
+    api('POST', `/v1/views/${encodeURIComponent(s)}/errors${d ? '?draft=1' : ''}`, { errors: errors.slice(0, 20) }).catch(() => undefined);
+  }, []);
 
   const confirmWrite = useCallback((change: { title: string; lines: string[] }) => {
     if (allowWrites.current) return Promise.resolve(true);
@@ -214,6 +263,10 @@ export function CustomView() {
           params: latest.current.params,
           view: { id: v.id, name: v.name, slug: v.slug, draft: v.draft }
         });
+      } else if (msg.type === 'pcrm:mode') {
+        setFill(msg.fill === true);
+      } else if (msg.type === 'pcrm:report') {
+        if (Array.isArray(msg.errors)) reportErrors(msg.errors);
       } else if (msg.type === 'pcrm:height') {
         setHeight(Math.max(200, Math.min(Number(msg.height) || 0, 100_000)));
       } else if (msg.type === 'pcrm:error') {
@@ -224,12 +277,15 @@ export function CustomView() {
             send({ type: 'pcrm:reply', id: msg.id, ok: true, value });
             if (msg.method === 'createRecord' || msg.method === 'updateRecord' || msg.method === 'linkRecords') toast();
           })
-          .catch((err: Error) => send({ type: 'pcrm:reply', id: msg.id, ok: false, error: { message: err.message, status: err instanceof ApiError ? err.status : undefined } }));
+          .catch((err: Error) => {
+            send({ type: 'pcrm:reply', id: msg.id, ok: false, error: { message: err.message, status: err instanceof ApiError ? err.status : undefined } });
+            if (msg.method === 'query') reportErrors([{ kind: 'query', message: err.message, detail: `query ${String(msg.args?.[0] ?? '')} with params ${JSON.stringify(msg.args?.[1] ?? {}).slice(0, 1000)}` }]);
+          });
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [me, runCall, send, toast]);
+  }, [me, runCall, send, toast, reportErrors]);
 
   return (
     <>
@@ -264,7 +320,7 @@ export function CustomView() {
             title={view.name ?? view.slug}
             src={FRAME_URL}
             sandbox="allow-scripts"
-            style={{ height }}
+            style={{ height: fill ? fillHeight : height }}
             onLoad={() => {
               frameLoads.current += 1;
               if (frameLoads.current > 1) setError('This view tried to open another page, so it was stopped.');

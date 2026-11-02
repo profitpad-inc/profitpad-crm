@@ -1,4 +1,4 @@
-import type { BridgeMethod, FromFrame, Params, ToFrame, ViewInit } from './protocol';
+import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, Viewport, ViewInit } from './protocol';
 
 // The frame's side of the bridge: calls go to the CRM page, which runs them
 // with the viewer's session (queries through the views API, record actions
@@ -32,7 +32,32 @@ let init: ViewInit | null = null;
 let params: Params = {};
 const listeners = new Set<() => void>();
 
+let viewport: Viewport = { scrollTop: 0, viewportHeight: window.innerHeight };
+const viewportListeners = new Set<() => void>();
+
 export const getInit = () => init;
+export const getViewport = () => viewport;
+export function subscribeViewport(fn: () => void): () => void {
+  viewportListeners.add(fn);
+  return () => viewportListeners.delete(fn);
+}
+
+// Errors go to the page in small batches (at most 30 different ones per
+// load), which logs them for the AI that built the view.
+const reported = new Set<string>();
+let batch: RuntimeError[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+export function report(kind: RuntimeError['kind'], message: string, detail?: string): void {
+  const key = `${kind}:${message}`;
+  if (!message || reported.has(key) || reported.size >= 30) return;
+  reported.add(key);
+  batch.push({ kind, message: message.slice(0, 2000), detail: detail?.slice(0, 4000), width: window.innerWidth });
+  flushTimer ??= setTimeout(() => {
+    post({ type: 'pcrm:report', errors: batch });
+    batch = [];
+    flushTimer = null;
+  }, 500);
+}
 export const getParams = () => params;
 export function subscribeParams(fn: () => void): () => void {
   listeners.add(fn);
@@ -49,6 +74,11 @@ export function listen(onInit: (msg: ViewInit) => void): void {
       init = msg;
       params = msg.params ?? {};
       onInit(msg);
+    } else if (msg.type === 'pcrm:viewport') {
+      const v = msg.viewport;
+      if (!v || (v.scrollTop === viewport.scrollTop && v.viewportHeight === viewport.viewportHeight)) return;
+      viewport = { scrollTop: Number(v.scrollTop) || 0, viewportHeight: Number(v.viewportHeight) || window.innerHeight };
+      viewportListeners.forEach((fn) => fn());
     } else if (msg.type === 'pcrm:params') {
       params = msg.params ?? {};
       listeners.forEach((fn) => fn());

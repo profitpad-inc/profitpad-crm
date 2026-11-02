@@ -1,6 +1,8 @@
-import { Component, useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
-import { call, getInit, getParams, subscribeParams } from './bridge';
-import type { Params } from './protocol';
+import {
+  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type ReactNode
+} from 'react';
+import { call, getInit, getParams, getViewport, report, subscribeParams, subscribeViewport } from './bridge';
+import type { Params, Viewport } from './protocol';
 
 // What views import from '@pcrm/view': data hooks, actions, layout and UI
 // pieces styled like the CRM, and formatters. Documented for the AI in
@@ -45,6 +47,46 @@ export function useQuery<Row = Record<string, any>>(name: string, params: Record
 // Values after the slug in the address: /view/#my-view?stage=won -> { stage: 'won' }
 export function useParams(): Params {
   return useSyncExternalStore(subscribeParams, getParams);
+}
+
+// Where the view is on screen. The frame grows to fit its content and the CRM
+// page scrolls, so the view cannot see its own scroll: scrollTop is how many
+// pixels of the view are scrolled out of sight above, viewportHeight how tall
+// the visible area is. The visible part of the view is therefore
+// scrollTop to scrollTop + viewportHeight. In a fill view (export const
+// frame = 'fill') it is the view's own scroll.
+const isFill = () => document.documentElement.classList.contains('v-fill');
+let ownViewport: Viewport = { scrollTop: 0, viewportHeight: window.innerHeight };
+function subscribeOwn(fn: () => void): () => void {
+  const update = () => {
+    const next = { scrollTop: window.scrollY, viewportHeight: window.innerHeight };
+    if (next.scrollTop === ownViewport.scrollTop && next.viewportHeight === ownViewport.viewportHeight) return;
+    ownViewport = next;
+    fn();
+  };
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  update();
+  return () => {
+    window.removeEventListener('scroll', update);
+    window.removeEventListener('resize', update);
+  };
+}
+
+export function useViewport(): Viewport {
+  const fill = isFill();
+  return useSyncExternalStore(fill ? subscribeOwn : subscribeViewport, fill ? () => ownViewport : getViewport);
+}
+
+// value, once it has stopped changing for ms (for search boxes that set
+// params or run queries)
+export function useDebounced<T>(value: T, ms = 300): T {
+  const [out, setOut] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setOut(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return out;
 }
 
 export function useMe() {
@@ -116,9 +158,16 @@ export const chartColors = ['var(--primary)', '#0e9f6e', '#d97706', '#7c3aed', '
 
 // ---- layout ---------------------------------------------------------------------------
 
-export function Page({ title, subtitle, actions, children }: { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
+// Every UI piece takes style and className, added to its own.
+interface Styled {
+  style?: CSSProperties;
+  className?: string;
+}
+const cx = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(' ');
+
+export function Page({ title, subtitle, actions, children, style, className }: { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode } & Styled) {
   return (
-    <div className="v-page">
+    <div className={cx('v-page', className)} style={style}>
       {(title || actions) && (
         <header className="v-page-head">
           <div>
@@ -134,21 +183,52 @@ export function Page({ title, subtitle, actions, children }: { title?: ReactNode
 }
 
 // columns: how many side by side on wide screens; one column on phones
-export function Grid({ columns = 2, gap = 12, children }: { columns?: number; gap?: number; children?: ReactNode }) {
-  return <div className="v-grid" style={{ '--v-cols': columns, gap } as CSSProperties}>{children}</div>;
+export function Grid({ columns = 2, gap = 12, children, style, className }: { columns?: number; gap?: number; children?: ReactNode } & Styled) {
+  return <div className={cx('v-grid', className)} style={{ '--v-cols': columns, gap, ...style } as CSSProperties}>{children}</div>;
 }
 
-export function Stack({ gap = 12, children }: { gap?: number; children?: ReactNode }) {
-  return <div className="v-stack" style={{ gap }}>{children}</div>;
+export function Stack({ gap = 12, children, style, className }: { gap?: number; children?: ReactNode } & Styled) {
+  return <div className={cx('v-stack', className)} style={{ gap, ...style }}>{children}</div>;
 }
 
-export function Row({ gap = 8, align = 'center', wrap = true, children }: { gap?: number; align?: CSSProperties['alignItems']; wrap?: boolean; children?: ReactNode }) {
-  return <div className="v-row" style={{ gap, alignItems: align, flexWrap: wrap ? 'wrap' : 'nowrap' }}>{children}</div>;
+export function Row({ gap = 8, align = 'center', wrap = true, children, style, className }: { gap?: number; align?: CSSProperties['alignItems']; wrap?: boolean; children?: ReactNode } & Styled) {
+  return <div className={cx('v-row', className)} style={{ gap, alignItems: align, flexWrap: wrap ? 'wrap' : 'nowrap', ...style }}>{children}</div>;
 }
 
-export function Card({ title, subtitle, actions, children }: { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
+// Keeps its children in view at the top while its parent element scrolls past
+// (column headers on a long board). Works in normal views, where the CRM page
+// scrolls and CSS position: sticky cannot, and in fill views. top: the gap
+// above it when stuck.
+export function Sticky({ top = 0, children, style, className }: { top?: number; children?: ReactNode } & Styled) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollTop } = useViewport();
+  const fill = isFill();
+  const [shift, setShift] = useState(0);
+  const [, setSize] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || fill) return;
+    const parent = el.parentElement;
+    const naturalTop = el.getBoundingClientRect().top + window.scrollY - shift;
+    const room = parent ? parent.getBoundingClientRect().bottom + window.scrollY - naturalTop - el.offsetHeight : 0;
+    const next = Math.round(Math.max(0, Math.min(scrollTop + top - naturalTop, room)));
+    if (next !== shift) setShift(next);
+  });
+  // re-measure when the content around it changes size
+  useEffect(() => {
+    const parent = ref.current?.parentElement;
+    if (!parent || fill) return;
+    const ro = new ResizeObserver(() => setSize((n) => n + 1));
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [fill]);
+  const stuck = fill ? { position: 'sticky' as const, top } : { position: 'relative' as const, transform: shift ? `translateY(${shift}px)` : undefined };
+  return <div ref={ref} className={cx('v-sticky', (fill || shift > 0) && 'stuck', className)} style={{ zIndex: 5, ...stuck, ...style }}>{children}</div>;
+}
+
+export function Card({ title, subtitle, actions, children, style, className }: { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode } & Styled) {
   return (
-    <section className="v-card">
+    <section className={cx('v-card', className)} style={style}>
       {(title || actions) && (
         <div className="v-card-head">
           <div>
@@ -163,9 +243,9 @@ export function Card({ title, subtitle, actions, children }: { title?: ReactNode
   );
 }
 
-export function Stat({ label, value, hint, tone }: { label: ReactNode; value: ReactNode; hint?: ReactNode; tone?: 'money' | 'danger' | 'muted' }) {
+export function Stat({ label, value, hint, tone, style, className }: { label: ReactNode; value: ReactNode; hint?: ReactNode; tone?: 'money' | 'danger' | 'muted' } & Styled) {
   return (
-    <div className="v-card v-stat">
+    <div className={cx('v-card v-stat', className)} style={style}>
       <div className="v-stat-label">{label}</div>
       <div className={`v-stat-value${tone ? ' tone-' + tone : ''}`}>{value}</div>
       {hint && <div className="muted small">{hint}</div>}
@@ -184,8 +264,8 @@ export interface Column<Row> {
 }
 
 export function Table<Row extends Record<string, any>>({
-  columns, rows, loading, error, onRowClick, selected, empty = 'Nothing to show', maxHeight
-}: {
+  columns, rows, loading, error, onRowClick, selected, empty = 'Nothing to show', maxHeight, style, className
+}: Styled & {
   columns: Column<Row>[];
   rows: Row[];
   loading?: boolean;
@@ -197,7 +277,7 @@ export function Table<Row extends Record<string, any>>({
 }) {
   if (error) return <ErrorBox error={error} />;
   return (
-    <div className="v-table-wrap" style={maxHeight ? { maxHeight } : undefined}>
+    <div className={cx('v-table-wrap', className)} style={{ ...(maxHeight ? { maxHeight } : {}), ...style }}>
       <table className="v-table">
         <thead>
           <tr>{columns.map((c) => <th key={c.key} style={{ textAlign: c.align ?? 'left', width: c.width }}>{c.label}</th>)}</tr>
@@ -224,9 +304,9 @@ export function Table<Row extends Record<string, any>>({
   );
 }
 
-export function Tabs({ tabs, value, onChange }: { tabs: { key: string; label: ReactNode }[]; value: string; onChange: (key: string) => void }) {
+export function Tabs({ tabs, value, onChange, style, className }: { tabs: { key: string; label: ReactNode }[]; value: string; onChange: (key: string) => void } & Styled) {
   return (
-    <div className="v-tabs" role="tablist">
+    <div className={cx('v-tabs', className)} style={style} role="tablist">
       {tabs.map((t) => (
         <button key={t.key} role="tab" aria-selected={t.key === value} className={t.key === value ? 'active' : ''} onClick={() => onChange(t.key)}>{t.label}</button>
       ))}
@@ -234,31 +314,59 @@ export function Tabs({ tabs, value, onChange }: { tabs: { key: string; label: Re
   );
 }
 
-export function Badge({ tone, children }: { tone?: 'primary' | 'money' | 'danger' | 'warning' | 'muted'; children?: ReactNode }) {
-  return <span className={`v-badge${tone ? ' tone-' + tone : ''}`}>{children}</span>;
+export function Badge({ tone, children, style, className }: { tone?: 'primary' | 'money' | 'danger' | 'warning' | 'muted'; children?: ReactNode } & Styled) {
+  return <span className={cx('v-badge', tone && 'tone-' + tone, className)} style={style}>{children}</span>;
 }
 
-export function Button({ variant, small, disabled, onClick, children, type = 'button' }: {
+export function Button({ variant, small, disabled, onClick, children, type = 'button', style, className }: {
   variant?: 'primary' | 'danger'; small?: boolean; disabled?: boolean; onClick?: () => void; children?: ReactNode; type?: 'button' | 'submit';
-}) {
-  return <button type={type} className={`v-btn${variant ? ' ' + variant : ''}${small ? ' small' : ''}`} disabled={disabled} onClick={onClick}>{children}</button>;
+} & Styled) {
+  return <button type={type} className={cx('v-btn', variant, small && 'small', className)} style={style} disabled={disabled} onClick={onClick}>{children}</button>;
 }
 
-export function TextInput({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'number' | 'date' | 'search' }) {
-  return <input className="v-input" type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />;
+// debounce (ms): onChange waits until typing stops; the box itself updates at once
+export function TextInput({ value, onChange, placeholder, type = 'text', debounce, style, className }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'number' | 'date' | 'search'; debounce?: number;
+} & Styled) {
+  const [text, setText] = useState(value);
+  const sent = useRef(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // a new value from outside (cleared, back button) replaces what is typed
+  useEffect(() => {
+    if (value !== sent.current) {
+      sent.current = value;
+      setText(value);
+    }
+  }, [value]);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  function change(v: string) {
+    setText(v);
+    if (timer.current) clearTimeout(timer.current);
+    const emit = () => {
+      sent.current = v;
+      onChange(v);
+    };
+    if (debounce && debounce > 0) timer.current = setTimeout(emit, debounce);
+    else emit();
+  }
+  return <input className={cx('v-input', className)} style={style} type={type} value={debounce ? text : value} placeholder={placeholder} onChange={(e) => change(e.target.value)} />;
 }
 
-export function Select({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
+export function Select({ value, onChange, options, placeholder, style, className }: {
+  value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string;
+} & Styled) {
   return (
-    <select className="v-input v-select" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className={cx('v-input v-select', className)} style={style} value={value} onChange={(e) => onChange(e.target.value)}>
       {placeholder !== undefined && <option value="">{placeholder}</option>}
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }
 
-export function RecordLink({ object, id, children }: { object: string; id: string; children?: ReactNode }) {
-  return <a className="v-link" href="#" onClick={(e) => { e.preventDefault(); openRecord(object, id); }}>{children}</a>;
+export function RecordLink({ object, id, children, style, className }: { object: string; id: string; children?: ReactNode } & Styled) {
+  return <a className={cx('v-link', className)} style={style} href="#" onClick={(e) => { e.preventDefault(); openRecord(object, id); }}>{children}</a>;
 }
 
 export function Loading({ label = 'Loading…' }: { label?: string }) {
@@ -278,6 +386,9 @@ export class ErrorBoundary extends Component<{ children?: ReactNode }, { error: 
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    report('crash', error.message, [error.stack, info.componentStack].filter(Boolean).join('\n'));
   }
   render() {
     if (this.state.error) return <div className="v-page"><ErrorBox error={`This view crashed: ${this.state.error.message}`} /></div>;

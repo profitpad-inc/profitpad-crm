@@ -189,6 +189,7 @@ export function PropertySettings() {
         <PropertyEditor
           object={object}
           property={editing === 'new' ? null : editing}
+          siblings={props ?? []}
           onClose={() => setEditing(null)}
           onSaved={async (message) => { setEditing(null); await changed(message); }}
         />
@@ -251,10 +252,31 @@ interface Choice {
   existing?: DropdownOption;
   // api_value follows the label until edited (new choices only)
   auto?: boolean;
+  // stage details: which parent values it belongs to (none = all), closed,
+  // won, chance of winning in percent ('' = not set)
+  parent_values: string[];
+  is_closed: boolean;
+  is_won: boolean;
+  percent: string;
 }
 
-function PropertyEditor({ object, property, onClose, onSaved }: {
-  object: string; property: Property | null; onClose: () => void; onSaved: (message: string) => Promise<void>;
+const choiceDetails = (c: Choice) => ({
+  parent_values: c.parent_values,
+  is_closed: c.is_closed || c.is_won,
+  is_won: c.is_won,
+  probability: c.percent.trim() === '' ? null : Number(c.percent) / 100
+});
+
+const hasDetails = (o: DropdownOption) => !!(o.parent_values?.length || o.is_closed || o.is_won || (o.probability ?? null) !== null);
+
+function sameDetails(c: Choice, o: DropdownOption): boolean {
+  const d = choiceDetails(c);
+  return [...d.parent_values].sort().join() === [...(o.parent_values ?? [])].sort().join()
+    && d.is_closed === !!o.is_closed && d.is_won === !!o.is_won && d.probability === (o.probability ?? null);
+}
+
+function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
+  object: string; property: Property | null; siblings: Property[]; onClose: () => void; onSaved: (message: string) => Promise<void>;
 }) {
   const isNew = property === null;
   const [label, setLabel] = useState(property?.label ?? '');
@@ -268,8 +290,18 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
   const [choices, setChoices] = useState<Choice[]>(
     [...(property?.dropdown_options ?? [])]
       .sort((a, b) => a.display_order - b.display_order)
-      .map((o) => ({ api_value: o.api_value, label: o.label, row_status: o.row_status, existing: o }))
+      .map((o) => ({
+        api_value: o.api_value, label: o.label, row_status: o.row_status, existing: o,
+        parent_values: o.parent_values ?? [], is_closed: !!o.is_closed, is_won: !!o.is_won,
+        percent: o.probability === null || o.probability === undefined ? '' : String(Math.round(o.probability * 1000) / 10)
+      }))
   );
+  // stage details on choices: shown when asked for or already in use
+  const [stages, setStages] = useState(() => !!property?.dropdown_options?.some(hasDetails));
+  // dropdowns this one can depend on: other active single-choice dropdowns
+  const parents = siblings.filter((s) => s.type === 'dropdown' && s.row_status === 'active' && s.options.single_value && s.api_name !== property?.api_name);
+  const parent = parents.find((s) => s.api_name === options.parent_property);
+  const parentChoices = (parent?.dropdown_options ?? []).filter((o) => o.row_status === 'active').sort((a, b) => a.display_order - b.display_order);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -309,7 +341,7 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
     const keep: Record<PropType, string[]> = {
       text: ['single_line', 'display', 'regex', 'regex_scope', 'json_only', 'unique', 'case_insensitive'],
       number: ['format', 'prefix', 'suffix', 'decimals', 'min', 'max', 'currency_code', 'currency_property'],
-      dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users', 'default_value'],
+      dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users', 'default_value', 'parent_property'],
       date: [],
       datetime: ['timezone'],
       file: ['max_files'],
@@ -320,13 +352,25 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
     if (!out.unique) delete out.case_insensitive;
     if (!out.regex) delete out.regex_scope;
     if (out.format !== 'currency') delete out.currency_code;
+    if (!out.single_value) delete out.parent_property;
     return cleanOptions(out);
   }
+
+  // what to send for a choice's details: its own while stage details are on,
+  // cleared when they were turned off
+  const detailsFor = (c: Choice) => (stages ? choiceDetails(c) : { parent_values: [], is_closed: false, is_won: false, probability: null });
+  const detailsChanged = (c: Choice) => !sameDetails({ ...c, ...(stages ? {} : { parent_values: [], is_closed: false, is_won: false, percent: '' }) }, c.existing!);
 
   async function save() {
     setBusy(true);
     setError(null);
     const base = `/v1/schema/${object}/properties`;
+    const bad = stages ? choices.find((c) => c.percent.trim() !== '' && !(Number(c.percent) >= 0 && Number(c.percent) <= 100)) : undefined;
+    if (bad) {
+      setError(`The chance of winning for ${bad.label || 'a choice'} must be a number from 0 to 100.`);
+      setBusy(false);
+      return;
+    }
     try {
       if (!property) {
         const body: Record<string, unknown> = {
@@ -340,6 +384,15 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
           body.calc_output_type = calcType;
         }
         await api('POST', base, body);
+        // choices start without details; add them one by one
+        if (type === 'dropdown' && stages) {
+          for (const c of choices) {
+            const d = choiceDetails(c);
+            if (d.parent_values.length || d.is_closed || d.probability !== null) {
+              await api('PATCH', `${base}/${encodeURIComponent(apiName.trim())}/options/${encodeURIComponent(c.api_value.trim())}`, d);
+            }
+          }
+        }
         await onSaved(`${label.trim()} created`);
         return;
       }
@@ -365,7 +418,7 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
         }
         for (const [i, c] of choices.entries()) {
           if (!c.existing) {
-            await api('POST', `${url}/options`, { api_value: c.api_value.trim(), label: c.label.trim(), display_order: i });
+            await api('POST', `${url}/options`, { api_value: c.api_value.trim(), label: c.label.trim(), display_order: i, ...(stages ? choiceDetails(c) : {}) });
             continue;
           }
           const o = c.existing;
@@ -373,6 +426,7 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
           if (c.label.trim() !== o.label) change.label = c.label.trim();
           if (o.display_order !== i) change.display_order = i;
           if (c.row_status !== o.row_status) change.row_status = c.row_status;
+          if (detailsChanged(c)) Object.assign(change, detailsFor(c));
           if (Object.keys(change).length) await api('PATCH', `${url}/options/${encodeURIComponent(o.api_value)}`, change);
         }
       }
@@ -556,6 +610,29 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
               <label><input type="checkbox" checked={bool('allow_user_add')} onChange={(e) => set('allow_user_add', e.target.checked)} /> API writes may add new choices</label>
               <label><input type="checkbox" checked={bool('auto_append_users')} onChange={(e) => set('auto_append_users', e.target.checked)} /> Fill choices with every active user</label>
             </div>
+            {bool('single_value') && (
+              <label className="field">
+                <span>Depends on</span>
+                <select value={str('parent_property')} onChange={(e) => {
+                  set('parent_property', e.target.value || undefined);
+                  // values of the old parent mean nothing under the new one
+                  setChoices((cs) => cs.map((c) => ({ ...c, parent_values: [] })));
+                }}>
+                  <option value="">Nothing</option>
+                  {parents.map((s) => <option key={s.api_name} value={s.api_name}>{s.label}</option>)}
+                </select>
+              </label>
+            )}
+            {bool('single_value') && (
+              <div className="checks">
+                <label>
+                  <input type="checkbox" checked={stages} onChange={(e) => setStages(e.target.checked)} /> Stage details: closed, won and chance of winning per choice
+                </label>
+                {!stages && property?.dropdown_options?.some(hasDetails) && (
+                  <p className="muted small child">Saving clears the stage details these choices have now.</p>
+                )}
+              </div>
+            )}
             <label className="field">
               <span>Default</span>
               <select value={str('default_value')} onChange={(e) => set('default_value', e.target.value)}>
@@ -589,11 +666,38 @@ function PropertyEditor({ object, property, onClose, onSaved }: {
                       </button>
                     ) : <span className="choice-new muted small">New</span>}
                     <button className="icon-btn" onClick={() => setChoices((cs) => cs.filter((_, j) => j !== i))} aria-label="Remove choice"><Trash2 size={14} /></button>
+                    {stages && bool('single_value') && (
+                      <div className="choice-details small">
+                        <label><input type="checkbox" checked={c.is_closed || c.is_won} disabled={c.is_won} onChange={(e) => updateChoice(i, { is_closed: e.target.checked })} /> Closed</label>
+                        <label><input type="checkbox" checked={c.is_won} onChange={(e) => updateChoice(i, { is_won: e.target.checked, is_closed: e.target.checked || c.is_closed })} /> Won</label>
+                        <label>
+                          Chance of winning
+                          <input type="number" min={0} max={100} step={1} value={c.percent} placeholder="--" onChange={(e) => updateChoice(i, { percent: e.target.value })} aria-label="Chance of winning in percent" />%
+                        </label>
+                        {parent && parentChoices.length > 0 && (
+                          <span className="choice-parents">
+                            <span className="muted">In {parent.label.toLowerCase()}:</span>
+                            {parentChoices.map((pc) => (
+                              <label key={pc.api_value}>
+                                <input
+                                  type="checkbox"
+                                  checked={c.parent_values.includes(pc.api_value)}
+                                  onChange={(e) => updateChoice(i, {
+                                    parent_values: e.target.checked ? [...c.parent_values, pc.api_value] : c.parent_values.filter((v) => v !== pc.api_value)
+                                  })}
+                                /> {pc.label}
+                              </label>
+                            ))}
+                            {c.parent_values.length === 0 && <span className="muted">(none ticked: all)</span>}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
               <div>
-                <button className="btn small" onClick={() => setChoices((cs) => [...cs, { api_value: '', label: '', row_status: 'active', auto: true }])}>
+                <button className="btn small" onClick={() => setChoices((cs) => [...cs, { api_value: '', label: '', row_status: 'active', auto: true, parent_values: [], is_closed: false, is_won: false, percent: '' }])}>
                   <Plus size={14} /> Add choice
                 </button>
               </div>

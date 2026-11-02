@@ -19,11 +19,12 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 2. Look at existing views with list_views and get_view; match their structure and look.
 3. Learn the data: view_guide topic "schema" (optionally for one object), or describe_object.
 4. Write and test each query with try_view_query until it returns what you expect.
-5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again.
+5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again. For changes, send save_view_draft edits (find and replace: [{"old_str", "new_str"}], each old_str matching exactly one place) instead of the whole source, and set_queries / remove_queries for single queries. Saves answer with a short summary; get_view shows the current draft code.
 6. run_view_query runs a saved draft query. Then give the user the draft_url from create_view / save_view_draft (/view/?draft=1#<slug>) so they can preview it, and ask whether to publish.
-7. publish_view only when the user says to publish. Never publish on your own, even for a small change: publishing replaces what everyone sees. Drafts never affect the published version.
-8. Give the view an icon for menus: a Lucide icon name (lucide.dev/icons) such as chart-column, set with create_view or update_view_settings. find_icons searches the names. Admins can also pick one on the view's page.
-9. To put a view in the sidebar, the admin adds a "Custom view" item in Settings, Navigation.
+7. After the user has opened the draft, get_view_runtime_errors lists what went wrong in their browser since the last save: crashes, uncaught errors, console errors and failed queries, with the frame width. Check it after every change the user tries; no errors listed only means nothing failed while someone had it open.
+8. publish_view only when the user says to publish. Never publish on your own, even for a small change: publishing replaces what everyone sees. Drafts never affect the published version.
+9. Give the view an icon for menus: a Lucide icon name (lucide.dev/icons) such as chart-column, set with create_view or update_view_settings. find_icons searches the names. Admins can also pick one on the view's page.
+10. To put a view in the sidebar, the admin adds a "Custom view" item in Settings, Navigation.
 
 ## What views can and cannot do
 - Read data only through the view's own queries (SQL over the view_data schema). Every query runs as the person viewing, with row-level security: they only ever see records their roles let them see, and a query that reads a property their roles hide is refused for them.
@@ -54,6 +55,8 @@ Anything else fails to save.
   - params must match the query's declared params (names and types); unknown params are refused. Missing params are null.
 - useParams() returns the address params: /view/#my-view?stage=won gives { stage: 'won' } (strings).
 - useMe() returns { id, name, is_admin } of the viewer.
+- useViewport() returns { scrollTop, viewportHeight }: how many pixels of the view are scrolled out of sight above, and how tall the visible area is. Visible part of the view: scrollTop to scrollTop + viewportHeight. Use it for infinite scroll (load more when scrollTop + viewportHeight nears the bottom) or anything that depends on what is on screen.
+- useDebounced(value, ms = 300) returns value once it has stopped changing for ms (search boxes).
 - useView() returns { id, name, slug, draft }.
 
 ## Actions (from @pcrm/view, all return promises)
@@ -65,17 +68,24 @@ Anything else fails to save.
 ## Errors and size
 - Show query errors (error is an Error or null); the ErrorBox and Table components do this for you.
 - If the component throws, the page shows "This view crashed" with the message.
-- The frame grows to fit the content; the CRM page scrolls. Do not set a fixed height on the page.`;
+- Crashes, uncaught errors, console.error calls and failed queries are reported to the CRM, and get_view_runtime_errors returns them (only while someone has the view open; console.error is a fine way to report something you want to see).
+
+## Scrolling and height
+- By default the frame grows to fit the content and the CRM page scrolls, not the view. Do not set a fixed height on the page, and do not give the whole view its own scroll area (two scrollbars). CSS position: sticky does not work here because the frame never scrolls: use the kit's <Sticky> (it follows useViewport) for headers that stay in view.
+- For a view that should fill the screen and scroll itself (a board with pinned column headers, a map, a split pane), add \`export const frame = 'fill'\` next to the default export. The frame is then exactly as tall as the visible part of the CRM page, the document scrolls inside the frame, and position: sticky, height: 100vh and window scroll events all behave normally. <Sticky> uses position: sticky there.`;
 
 const UI_KIT = `# UI kit (@pcrm/view)
 
 Use these instead of building your own, so views look like the rest of the CRM.
+
+Every component below also takes style and className, added to its own (style={{ minWidth: 220 }}), so adjust a kit piece rather than rebuilding it.
 
 ## Layout
 - <Page title subtitle actions>children</Page>: the page frame with padding. Use one per view, as the root.
 - <Grid columns={2|3|4} gap={12}>: side-by-side cells; one column on phones.
 - <Stack gap={12}>, <Row gap={8} align="center" wrap>: vertical and horizontal groups.
 - <Card title subtitle actions>children</Card>: a white box with a border and shadow.
+- <Sticky top={0}>children</Sticky>: stays in view at the top while its parent element scrolls past, then leaves with the parent (column headers of a long board or table). Give it a background so content passes under it, e.g. style={{ background: 'var(--page-background)' }}. Works whether or not the view is a fill view.
 
 ## Data display
 - <Stat label value hint tone="money"|"danger"|"muted" />: a KPI tile (a card of its own). tone colors the value: money is green (#1e7a4c), danger red (#b42318), muted grey; no tone is the normal text color. Use tone="money" for money amounts.
@@ -90,8 +100,8 @@ Use these instead of building your own, so views look like the rest of the CRM.
 - <RecordLink object id>text</RecordLink>: a link that opens a record.
 
 ## Inputs
-- <TextInput value onChange={(v) => ...} placeholder type="text"|"search"|"number"|"date" />
-- <Select value onChange options={[{ value, label }]} placeholder? />
+- <TextInput value onChange={(v) => ...} placeholder type="text"|"search"|"number"|"date" debounce={300} />: with debounce (ms), the box updates as you type but onChange waits until typing stops; use it when onChange sets params or runs a query.
+- <Select value onChange options={[{ value, label }]} placeholder? />: the caret sits 12px in from the right like other CRM selects; widen it with style={{ minWidth: 200 }}.
 - <Button variant="primary"|"danger" small disabled onClick>text</Button>
 
 ## Formatters
@@ -141,10 +151,15 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 - Base columns on every object: object_type_id, <code>_id, name, created_at, updated_at, merged_ids, row_status.
 - Single-value dropdowns are text (the api_value) plus <name>__label (the label). Multi-value dropdowns are text[] plus <name>__label (text[] of labels). Filter on the api_value, show the label.
 - owner is a dropdown of user ids (owner__label is the user's name).
-- associations: one row per link, seen from both sides: association_id, label_id, label, object_type_id, record_id, other_object_type_id, other_record_id, side, created_at. To get a company's contacts:
-  "select ct.pc_0010_id as id, ct.name from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object_type_id = 'pc_0011' and a.record_id = :company and a.other_object_type_id = 'pc_0010'"
+- users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name".
+- associations: one row per link, seen from both sides: association_id, label_id, label, object_type_id, record_id, other_object_type_id, other_record_id, side, created_at, object, other_object (the last two are api_names, like 'deals' and 'contacts'). It holds links between every pair of objects, so always filter both object and other_object; joining contacts on other_record_id without other_object = 'contacts' matches ids of unrelated records. A deal's contacts:
+  "select ct.pc_0010_id as id, ct.name from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' and a.record_id = :deal"
+  Contacts per deal, for a board: "select a.record_id as deal_id, string_agg(distinct ct.name, ', ') as contacts from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' group by a.record_id"
   Always join to the other object's view (as above) rather than counting association rows, so hidden records are not counted, and use count(distinct ...) since two records can be linked under more than one label.
-- objects, properties, property_options (object_type_id, property, api_value, label, display_order, row_status), association_labels, currencies: the CRM's setup. Order dropdown values by property_options.display_order.
+- objects, properties, property_options, association_labels, currencies: the CRM's setup. Order dropdown values by property_options.display_order.
+- property_options: object_type_id, property, api_value, label, display_order, row_status, parent_property, parent_values, is_closed, is_won, probability. Pipeline stages use the last five: deals.stage has parent_property 'pipeline', each stage lists the pipelines it belongs to in parent_values (empty means every pipeline), and is_closed / is_won / probability say what the stage means. Never hard-code stage values like 'closed_won' for won, lost or open: join property_options instead, so renamed or added stages stay right. Open pipeline:
+  "select d.currency, sum(d.amount) as open_amount from deals d join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where not s.is_closed group by d.currency"
+  Columns for one pipeline: "select api_value, label from property_options where object_type_id = 'pc_0012' and property = 'stage' and row_status = 'active' and (cardinality(parent_values) = 0 or :pipeline = any(parent_values)) order by display_order"
 - Property api_names with capitals or dots must be double-quoted: "favorite.color".`;
 
 const PROPERTIES = `# Property tools (admins)
@@ -166,7 +181,10 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 ## Types and options
 - text: single_line, display (plain, url, markdown, json, html), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
 - number: min, max, decimals (0 to 10), format (formatted, unformatted, currency, percentage), prefix, suffix, currency_code (fixed currency) or currency_property (a dropdown holding the currency).
-- dropdown: single_value, allow_user_add, auto_append_users (users as options), default_value (an option value; never empty). A yes/no is a single-value dropdown with options true and false.
+- dropdown: single_value, allow_user_add, auto_append_users (users as options), default_value (an option value; never empty), parent_property (another single-value dropdown on the same object that this one depends on, like stage on pipeline). A yes/no is a single-value dropdown with options true and false.
+
+## Stage details on options
+Dropdown options can carry details, set with add_dropdown_option or update_dropdown_option: parent_values (values of the dropdown's parent_property this option belongs to, e.g. the pipelines a stage is in; empty = all), is_closed, is_won (also makes it closed) and probability (0 to 1). describe_object shows them where set; views read them from view_data.property_options. Deal stages start with stage under pipeline, closed_won closed and won, closed_lost closed. Ask the admin before changing them: reports and views read them.
 - date (a calendar day), datetime (timezone display option), file (max_files).
 - calculation: calc_sql is one SQL expression over the current record r (a row of crm.<object>), output type text, number, date or datetime. It may read crm, reporting and integrations, must return one value per record, and must run in under 1 second. Try it with test_calculation first.`;
 
@@ -192,7 +210,14 @@ function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
     if (pr.type === 'dropdown') {
       line += `, also ${pr.api_name}__label`;
       const opts = pr.dropdown_options.filter((x) => x.row_status === 'active');
-      if (detailed && opts.length && !pr.options.auto_append_users) line += `; values: ${opts.slice(0, 40).map((x) => `${x.api_value} (${x.label})`).join(', ')}${opts.length > 40 ? ', ...' : ''}`;
+      if (pr.options.parent_property) line += `, depends on ${pr.options.parent_property}`;
+      const details = (x: (typeof opts)[number]) => [
+        x.parent_values.length ? `in ${x.parent_values.join('/')}` : '', x.is_won ? 'won' : x.is_closed ? 'closed' : '',
+        x.probability !== null ? `${Math.round(x.probability * 100)}%` : ''
+      ].filter(Boolean).join(', ');
+      if (detailed && opts.length && !pr.options.auto_append_users) {
+        line += `; values: ${opts.slice(0, 40).map((x) => `${x.api_value} (${[x.label, details(x)].filter(Boolean).join('; ')})`).join(', ')}${opts.length > 40 ? ', ...' : ''}`;
+      }
       if (pr.options.auto_append_users) line += '; values are user ids';
     }
     if (detailed && pr.description) line += `. ${pr.description}`;

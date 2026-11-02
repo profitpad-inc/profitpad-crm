@@ -4,7 +4,8 @@ import { badRequest } from '../errors.js';
 import { requireScope } from '../auth.js';
 import { ICON_NAMES } from '../icons.js';
 import {
-  canEditViews, createView, listViews, loadView, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut
+  canEditViews, createView, listViewErrors, listViews, loadView, logViewErrors, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery,
+  saveDraft, viewOut, type DraftInput
 } from '../views.js';
 
 type SlugParams = { slug: string };
@@ -57,7 +58,8 @@ export async function viewRoutes(app: FastifyInstance) {
     }
   );
 
-  app.put<{ Params: SlugParams; Body: { source?: string; queries?: unknown } }>('/v1/views/:slug/draft', async (req) => {
+  // source or edits (find and replace in the draft), queries or set_queries / remove_queries
+  app.put<{ Params: SlugParams; Body: DraftInput }>('/v1/views/:slug/draft', async (req) => {
     return viewOut(await saveDraft(req.principal!, req.params.slug, req.body ?? {}));
   });
 
@@ -69,6 +71,28 @@ export async function viewRoutes(app: FastifyInstance) {
   app.post<{ Params: SlugParams }>('/v1/views/:slug/revert', async (req) => {
     return viewOut(await revertDraft(req.principal!, req.params.slug));
   });
+
+  // What went wrong while the view ran in a browser, reported by the page
+  // hosting it (?draft=1 for the draft). Anyone who can open the view.
+  app.post<{ Params: SlugParams; Querystring: { draft?: string }; Body: { errors?: unknown } }>('/v1/views/:slug/errors', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    return logViewErrors(p, req.params.slug, isDraft(req.query), req.body?.errors);
+  });
+
+  // The reported errors (admins). Default: the draft's, since it was last saved.
+  app.get<{ Params: SlugParams; Querystring: { published?: string; since?: string; all?: string; limit?: string } }>(
+    '/v1/views/:slug/errors',
+    async (req) => {
+      const q = req.query;
+      return listViewErrors(req.principal!, req.params.slug, {
+        published: q.published === '1' || q.published === 'true',
+        since: q.since,
+        all: q.all === '1' || q.all === 'true',
+        limit: q.limit ? Number(q.limit) : undefined
+      });
+    }
+  );
 
   // Tries SQL that is not saved anywhere, with the caller's own access (for
   // building views). At most 50 rows.

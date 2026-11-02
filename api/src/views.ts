@@ -363,11 +363,61 @@ export async function checkDraft(source: string | null, queries: Queries): Promi
 
 const asText = (q: Queries) => JSON.stringify(q, null, 2);
 
-export async function saveDraft(p: Principal, idOrSlug: string, input: { source?: string; queries?: unknown }): Promise<ViewRow> {
+// One find-and-replace in the draft source: old_str must appear exactly once.
+export interface SourceEdit {
+  old_str: string;
+  new_str: string;
+}
+
+export function applyEdits(source: string, edits: SourceEdit[]): string {
+  if (!Array.isArray(edits) || edits.length === 0) throw badRequest('edits must be a list of {"old_str", "new_str"}');
+  let out = source;
+  edits.forEach((e, i) => {
+    const which = edits.length > 1 ? `edit ${i + 1}` : 'the edit';
+    if (!e || typeof e.old_str !== 'string' || typeof e.new_str !== 'string') throw badRequest(`${which} needs old_str and new_str (strings)`);
+    if (e.old_str === '') throw badRequest(`${which}: old_str is empty`);
+    const at = out.indexOf(e.old_str);
+    if (at < 0) throw badRequest(`${which}: old_str was not found in the draft source (earlier edits in this call are applied first). Copy it exactly from get_view, including spaces.`, { edit: i });
+    if (out.indexOf(e.old_str, at + 1) >= 0) throw badRequest(`${which}: old_str appears more than once in the draft source; include more of the surrounding code so it matches one place.`, { edit: i });
+    out = out.slice(0, at) + e.new_str + out.slice(at + e.old_str.length);
+  });
+  return out;
+}
+
+export interface DraftInput {
+  // the whole source, or edits to the current draft source (not both)
+  source?: string;
+  edits?: SourceEdit[];
+  // every query (replaces them all), or set_queries (adds or replaces the
+  // named ones) and remove_queries (names), keeping the rest
+  queries?: unknown;
+  set_queries?: unknown;
+  remove_queries?: string[];
+}
+
+export async function saveDraft(p: Principal, idOrSlug: string, input: DraftInput): Promise<ViewRow> {
   requireScope(p, 'schema');
   const v = await loadView(pool, idOrSlug);
-  const source = input.source !== undefined ? input.source : v.draft_source;
-  const queries = input.queries !== undefined ? parseQueries(input.queries) : parseQueries(v.draft_queries);
+  if (input.source !== undefined && input.edits !== undefined) throw badRequest('send either source or edits, not both');
+  if (input.queries !== undefined && (input.set_queries !== undefined || input.remove_queries !== undefined)) {
+    throw badRequest('send either queries (all of them) or set_queries / remove_queries, not both');
+  }
+  let source = v.draft_source;
+  if (input.source !== undefined) source = input.source;
+  else if (input.edits !== undefined) {
+    if (!v.draft_source) throw badRequest('the draft has no code yet; send the whole source');
+    source = applyEdits(v.draft_source, input.edits);
+  }
+  let queries: Queries;
+  if (input.queries !== undefined) queries = parseQueries(input.queries);
+  else {
+    queries = parseQueries(v.draft_queries);
+    for (const name of input.remove_queries ?? []) {
+      if (!queries[name]) throw badRequest(`the draft has no query "${name}" to remove`);
+      delete queries[name];
+    }
+    if (input.set_queries !== undefined) queries = parseQueries({ ...queries, ...parseQueries(input.set_queries) });
+  }
   await checkDraft(source, queries);
   await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
     c.query('update crm.pc_0055 set draft_source = $2, draft_queries = $3 where pc_0055_id = $1', [v.id, source, asText(queries)])
@@ -447,6 +497,108 @@ export function viewOut(v: ViewRow, withCode = true) {
     published_at: v.published_at,
     updated_at: v.updated_at,
     ...(withCode ? { draft_source: v.draft_source, draft_queries: parseQueries(v.draft_queries), source: v.source, queries: parseQueries(v.queries) } : {})
+  };
+}
+
+// A short answer after a save (the MCP sends the code only when asked).
+export function viewSummary(v: ViewRow) {
+  const queries = parseQueries(v.draft_queries);
+  return {
+    id: v.id,
+    name: v.name,
+    slug: v.slug,
+    status: v.status,
+    url: viewUrl(v.slug),
+    draft_url: viewUrl(v.slug, true),
+    unpublished_changes: hasUnpublishedChanges(v),
+    saved_at: v.updated_at,
+    draft_source_length: v.draft_source?.length ?? 0,
+    draft_queries: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { params: q.params }]))
+  };
+}
+
+// ---- runtime errors (migration 0035) ----------------------------------------------
+
+export const ERROR_KINDS = ['crash', 'error', 'console', 'query', 'start'] as const;
+export type ErrorKind = (typeof ERROR_KINDS)[number];
+const MAX_ERRORS_PER_POST = 20;
+const KEEP_ERRORS = 200;
+
+// What the page hosting a view reports when it runs: crashes, uncaught
+// errors, console.error, failed queries. The same message again within a day
+// counts up instead of adding a row; each view keeps its newest 200.
+export async function logViewErrors(
+  p: Principal, slug: string, draft: boolean, input: unknown
+): Promise<{ logged: number }> {
+  const v = await loadView(pool, slug);
+  if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');
+  if (!Array.isArray(input)) throw badRequest('errors must be a list');
+  const items = input.slice(0, MAX_ERRORS_PER_POST).flatMap((e) => {
+    if (!e || typeof e !== 'object') return [];
+    const { kind, message, detail, width } = e as Record<string, unknown>;
+    if (typeof kind !== 'string' || !(ERROR_KINDS as readonly string[]).includes(kind) || typeof message !== 'string' || !message.trim()) return [];
+    return [{
+      kind,
+      message: message.trim().slice(0, 2000),
+      detail: typeof detail === 'string' && detail.trim() ? detail.slice(0, 4000) : null,
+      width: typeof width === 'number' && Number.isFinite(width) ? Math.round(Math.min(Math.max(width, 0), 100_000)) : null
+    }];
+  });
+  const isDraft = draft || v.status !== 'published';
+  for (const e of items) {
+    const { rowCount } = await pool.query(
+      `update ui.view_errors set count = count + 1, last_seen_at = now(), detail = coalesce($5, detail), width = coalesce($6, width), user_id = $7
+       where id = (select id from ui.view_errors where view_id = $1 and draft = $2 and kind = $3 and message = $4
+                   and last_seen_at > now() - interval '1 day' order by last_seen_at desc limit 1)`,
+      [v.id, isDraft, e.kind, e.message, e.detail, e.width, p.userId]
+    );
+    if (!rowCount) {
+      await pool.query(
+        'insert into ui.view_errors (view_id, draft, kind, message, detail, width, user_id) values ($1, $2, $3, $4, $5, $6, $7)',
+        [v.id, isDraft, e.kind, e.message, e.detail, e.width, p.userId]
+      );
+    }
+  }
+  if (items.length) {
+    await pool.query(
+      `delete from ui.view_errors where view_id = $1 and id not in (select id from ui.view_errors where view_id = $1 order by last_seen_at desc limit ${KEEP_ERRORS})`,
+      [v.id]
+    );
+  }
+  return { logged: items.length };
+}
+
+// Errors for one view, newest first. By default only those seen since the
+// draft was last saved (draft) or since it was published (published).
+export async function listViewErrors(
+  p: Principal, slug: string, opts: { published?: boolean; since?: string; all?: boolean; limit?: number } = {}
+) {
+  requireScope(p, 'schema');
+  const v = await loadView(pool, slug);
+  const draft = !opts.published;
+  let since: Date | null = null;
+  if (opts.since) {
+    since = new Date(opts.since);
+    if (Number.isNaN(since.getTime())) throw badRequest('since must be a date and time, like 2026-11-02T10:00:00Z');
+  } else if (!opts.all) {
+    since = draft ? v.updated_at : v.published_at;
+  }
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  const { rows } = await pool.query(
+    `select e.kind, e.message, e.detail, e.width, e.count, e.first_seen_at, e.last_seen_at, u.name as seen_by
+     from ui.view_errors e left join crm.pc_0000 u on u.pc_0000_id = e.user_id
+     where e.view_id = $1 and e.draft = $2 and ($3::timestamptz is null or e.last_seen_at >= $3)
+     order by e.last_seen_at desc limit $4`,
+    [v.id, draft, since, limit]
+  );
+  return {
+    view: v.slug,
+    version: draft ? 'draft' : 'published',
+    since,
+    errors: rows,
+    note: rows.length
+      ? undefined
+      : `No errors reported${since ? ' since then' : ''}. Errors are reported only when someone opens the view in a browser: ask the user to open ${viewUrl(v.slug, draft)} (and to try what you changed), then check again.`
   };
 }
 

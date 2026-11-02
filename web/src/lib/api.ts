@@ -64,6 +64,11 @@ export interface DropdownOption {
   label: string;
   display_order: number;
   row_status: string;
+  // stage details (migration 0035)
+  parent_values?: string[];
+  is_closed?: boolean;
+  is_won?: boolean;
+  probability?: number | null;
 }
 
 export interface Property {
