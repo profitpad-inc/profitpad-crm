@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import {
   api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -41,6 +41,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const [appliedViewId, setAppliedViewId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const urlSearch = searchParams.get('s') ?? '';
+  // ?status=archived shows the recycle bin instead of the active records
+  const archived = searchParams.get('status') === 'archived';
   const [query, setQuery] = useState(urlSearch);
   const [debounced, setDebounced] = useState(query);
   const [data, setData] = useState<SearchResult | null>(null);
@@ -125,12 +127,22 @@ function ObjectTableFor({ object }: { object: string }) {
     setDebounced(urlSearch);
   }, [urlSearch]);
 
-  // switching views keeps the search
+  // switching views keeps the search and the active/archived choice
   function showView(id: number | undefined) {
     setSearchParams(() => {
       const next = new URLSearchParams();
       if (id !== undefined) next.set('view', String(id));
       if (debounced) next.set('s', debounced);
+      if (archived) next.set('status', 'archived');
+      return next;
+    });
+  }
+
+  function showArchived(on: boolean) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (on) next.set('status', 'archived');
+      else next.delete('status');
       return next;
     });
   }
@@ -162,6 +174,7 @@ function ObjectTableFor({ object }: { object: string }) {
       try {
         const res = await api<SearchResult>('POST', `/v1/objects/${object}/search`, {
           query: debounced || undefined,
+          status: archived ? 'archived' : undefined,
           sorts,
           limit: PAGE,
           after,
@@ -175,18 +188,18 @@ function ObjectTableFor({ object }: { object: string }) {
         setLoading(false);
       }
     },
-    [schema, activeViewId, appliedViewId, object, debounced, sorts, columnProperties, assocObjects, otherSchemas]
+    [schema, activeViewId, appliedViewId, object, debounced, archived, sorts, columnProperties, assocObjects, otherSchemas]
   );
 
   useEffect(() => {
     fetchPage();
   }, [fetchPage]);
 
-  // a new search, sort or view shows different records, so start over
+  // a new search, sort, view or the recycle bin shows different records, so start over
   useEffect(() => {
     setPicked(new Set());
     lastPicked.current = null;
-  }, [debounced, sorts, activeViewId]);
+  }, [debounced, archived, sorts, activeViewId]);
 
   const shown = data?.results ?? [];
   const pickedCount = shown.filter((r) => picked.has(r.id)).length;
@@ -211,6 +224,21 @@ function ObjectTableFor({ object }: { object: string }) {
       return next;
     });
     lastPicked.current = row;
+  }
+
+  const [restoring, setRestoring] = useState(false);
+  async function restorePicked() {
+    const ids = [...picked];
+    setRestoring(true);
+    setError(null);
+    try {
+      await inChunks(ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/restore`, { ids: chunk }));
+      bulkDone(ids.length === 1 ? 'Restored' : `${ids.length.toLocaleString()} restored`, true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRestoring(false);
+    }
   }
 
   function bulkDone(message: string, clear: boolean) {
@@ -508,12 +536,17 @@ function ObjectTableFor({ object }: { object: string }) {
       {picked.size > 0 ? (
         <div className="toolbar bulk-bar">
           <span className="bulk-count">{picked.size.toLocaleString()} selected</span>
-          {schema?.permissions.edit && (
+          {archived && schema?.permissions.delete && (
+            <button className="btn small" onClick={restorePicked} disabled={restoring}>
+              <RotateCcw size={14} /> {restoring ? 'Restoring…' : 'Restore all'}
+            </button>
+          )}
+          {!archived && schema?.permissions.edit && (
             <button className="btn small" onClick={() => setBulk('edit')}>
               <Pencil size={14} /> Edit all
             </button>
           )}
-          {schema?.permissions.delete && (
+          {!archived && schema?.permissions.delete && (
             <button className="btn small bulk-delete" onClick={() => setBulk('delete')}>
               <Trash2 size={14} /> Delete all
             </button>
@@ -532,6 +565,10 @@ function ObjectTableFor({ object }: { object: string }) {
               </button>
             )}
           </div>
+          <select value={archived ? 'archived' : 'active'} onChange={(e) => showArchived(e.target.value === 'archived')} aria-label="Which records">
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+          </select>
           {dirty && <span className="muted small">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
           <button className="btn" onClick={() => setShowColumns(true)}>
             <Columns3 size={16} /> Edit columns
@@ -613,7 +650,7 @@ function ObjectTableFor({ object }: { object: string }) {
                   }
                   const prop = schema.properties.find((p) => p.api_name === c.property);
                   if (!prop) return null;
-                  const editable = schema.permissions.edit && isEditable(prop);
+                  const editable = !archived && schema.permissions.edit && isEditable(prop);
                   const extra = [editable ? 'editable' : '', editing?.record.id === r.id && editing.property.api_name === prop.api_name ? 'editing' : ''].filter(Boolean);
                   if (i === 0 || prop.api_name === 'name') {
                     return (
@@ -635,7 +672,11 @@ function ObjectTableFor({ object }: { object: string }) {
           </tbody>
         </table>
         {data && data.results.length === 0 && !loading && (
-          <div className="empty">{debounced ? `No ${schema.label_plural.toLowerCase()} match "${debounced}".` : `No ${schema.label_plural.toLowerCase()} yet.`}</div>
+          <div className="empty">
+            {debounced
+              ? `No ${archived ? 'archived ' : ''}${schema.label_plural.toLowerCase()} match "${debounced}".`
+              : archived ? `No archived ${schema.label_plural.toLowerCase()}.` : `No ${schema.label_plural.toLowerCase()} yet.`}
+          </div>
         )}
         {loading && <div className="empty muted">Loading…</div>}
         {data?.next && !loading && (

@@ -71,7 +71,7 @@ const HIDDEN_PROPS: Record<string, string[]> = {
 export function RecordPage() {
   const { object = '', id = '' } = useParams();
   const navigate = useNavigate();
-  const { objects, objectByName } = useApp();
+  const { objects, objectByName, toast } = useApp();
   const [schema, setSchema] = useState<ObjectDef | null>(null);
   const [record, setRecord] = useState<CrmRecord | null>(null);
   const [associated, setAssociated] = useState<Associated[]>([]);
@@ -165,6 +165,11 @@ export function RecordPage() {
     navigate(`/objects/${object}`);
   }
 
+  async function restore() {
+    setRecord(await api<CrmRecord>('POST', `/v1/objects/${object}/${id}/restore`));
+    toast('Restored');
+  }
+
   if (error) return <div className="page"><div className="error">{error}</div></div>;
   if (!schema || !record) return <div className="page muted">Loading…</div>;
   const name = recordName(record);
@@ -198,10 +203,18 @@ export function RecordPage() {
               )}
             >
               {(close) => (
-                <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
+                record.row_status === 'archived'
+                  ? <button onClick={() => { close(); restore(); }}>Restore</button>
+                  : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
               )}
             </Menu>
           </div>
+          {record.row_status === 'archived' && (
+            <div className="record-archived">
+              <span className="small">This record is archived (in the recycle bin).</span>
+              {schema.permissions.delete && <button className="btn small" onClick={restore}>Restore</button>}
+            </div>
+          )}
           <div className="record-identity">
             {object === 'views' ? <ViewIconAvatar record={record} onChanged={setRecord} /> : <span className="record-avatar">{initials(name)}</span>}
             <div className="record-title">

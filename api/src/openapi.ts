@@ -222,6 +222,14 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
         responses: { 200: json({ type: 'object', properties: { archived: { type: 'integer' } } }), ...errors }
       }
     },
+    [`${base}/bulk/restore`]: {
+      post: {
+        tags: [tag], summary: 'Restore many records', operationId: `bulk_restore_${o.api_name}`,
+        description: 'Up to 500 archived records in one all-or-nothing transaction; they come back out of the recycle bin like /restore.',
+        requestBody: body({ type: 'object', required: ['ids'], properties: { ids: { type: 'array', maxItems: 500, items: { type: 'string' } } } }),
+        responses: { 200: json({ type: 'object', properties: { restored: { type: 'integer' } } }), ...errors }
+      }
+    },
     [`${base}/batch/read`]: {
       post: {
         tags: [tag], summary: 'Batch read', operationId: `batch_read_${o.api_name}`,

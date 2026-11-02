@@ -209,6 +209,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .searchbox:focus-within { border-color: var(--primary); outline: 2px solid color-mix(in srgb, var(--primary) 30%, transparent); }
 .toolbar .btn { margin-left: auto; }
 .toolbar .small + .btn { margin-left: 0; }
+.toolbar > select { width: auto; }
+.record-archived { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--danger) 8%, transparent); }
 
 /* table */
 /* table pages fill the window: header, tabs and toolbar stay put, only the table scrolls */

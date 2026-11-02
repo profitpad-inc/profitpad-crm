@@ -206,6 +206,22 @@ export async function recordRoutes(app: FastifyInstance) {
     return { archived: n };
   });
 
+  // Restores up to 500 archived records, all or nothing.
+  app.post<{ Params: ObjParams; Body: { ids?: string[] } }>('/v1/objects/:object/bulk/restore', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    const obj = await objectForWrite(req.params.object);
+    requireObjectPermission(p, obj, 'delete');
+    const ids = bulkIds(req.body?.ids);
+    await assertAccessible(pool, obj, p, ids, 'delete');
+    const n = await withTx({ actor: p.actor }, async (c) => {
+      const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, ids, 'active']);
+      return rows[0].n as number;
+    });
+    await drainCalcQueue(5);
+    return { restored: n };
+  });
+
   // Copies another record's active line items onto this one (a deal's lines
   // onto a new quote). Unique, read-only and calculated line properties start
   // blank; the product link is kept. Body {from_object, from_id}.
