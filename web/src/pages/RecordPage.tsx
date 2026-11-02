@@ -178,9 +178,11 @@ export function RecordPage() {
     .filter((o) => object !== 'lines' || o === 'products');
   const lineCount = associated.find((a) => a.object === 'lines')?.records.length ?? 0;
   const isUser = object === 'users';
+  // views link to nothing, so they have no association cards: no right column
+  const noRight = isUser || object === 'views';
 
   return (
-    <div className={`record-page${isUser ? ' two-col' : ''}`}>
+    <div className={`record-page${noRight ? ' two-col' : ''}`}>
       <aside className="record-left">
         <div className="record-head">
           <div className="record-head-bar">
@@ -235,7 +237,7 @@ export function RecordPage() {
             )}
           </section>
 
-          <aside className="record-right">
+          {!noRight && <aside className="record-right">
             {(object === 'quotes' || object === 'invoices' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
             {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
             {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
@@ -244,7 +246,7 @@ export function RecordPage() {
             {cards.map((o) => (
               <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} onChanged={refresh} />
             ))}
-          </aside>
+          </aside>}
         </>
       )}
     </div>

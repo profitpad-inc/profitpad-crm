@@ -564,6 +564,16 @@ begin
   perform meta._test_expect_error($$select meta.analyze_view_query('select 1 as x where pg_sleep(1) is null')$$, 'may not call');
   perform meta._test_expect_error($$select meta.analyze_view_query('with x as (delete from view_data.contacts returning *) select * from x')$$, 'invalid');
   perform meta._test_expect_error($$select meta.analyze_view_query('select name from nowhere')$$, 'invalid');
+  -- functions: an allowlist (0034)
+  perform meta._test_expect_error($$select meta.analyze_view_query('select set_config(''pcrm.access'', ''all'', true) as x')$$, 'may not call');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select current_setting(''pcrm.access'') as x')$$, 'may not call');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select version() as x')$$, 'may not call');
+  perform meta._test_expect_error($$select meta.analyze_view_query('select name from contacts where pg_sleep(0) is not null')$$, 'may not call');
+  v_info := meta.analyze_view_query($q$select to_char(date_trunc('month', created_at), 'YYYY-MM') as m, count(*) as n, sum(length(name)) as l,
+    row_number() over (order by count(*) desc) as r, string_agg(lower(coalesce(name, '')) || '!', ', ') as s,
+    max(created_at) - interval '1 day' as d, (count(*))::numeric / 2 as half, jsonb_build_object('n', count(*)) as j
+    from contacts where name ilike '%a%' and created_at >= current_date - 30 group by 1$q$);
+  perform meta._test_check(jsonb_array_length(v_info -> 'output') = 8, 'ordinary functions, operators, casts, aggregates and windows are allowed');
   perform meta._test_check(not exists (select 1 from pg_class where relname like '_view_probe_%'), 'no probe views left behind');
 
   -- properties still archive and delete with the policies and view_data views in place

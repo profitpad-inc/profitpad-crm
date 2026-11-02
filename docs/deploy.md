@@ -151,6 +151,7 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 - Once, as `n8n` (claude_admin cannot create roles): `psql -U n8n -d test_crm -v ON_ERROR_STOP=1 -f db/bootstrap/002_view_reader.sql` (creates `test_crm_view_reader`, granted to `test_crm_api`). 0030 refuses to run without it.
 - Apply 0030 (row-level security, `view_data`), 0031 (views object, seed views, the Reporting menu item) and 0032 (OAuth `schema` scope), then deploy the API (new dependencies `sucrase` and `lucide`, installed by the Docker build; keep `lucide` at the same version as `lucide-react` in `web/`) and the UI (the build now also writes `view-frame/index.html`; new dependency `recharts`).
+- Migration 0034 (function allowlist for view queries) after 0033; no other step.
 - Admins who connected an MCP client before this must reconnect and leave "Build custom views..." ticked to get the view and property tools.
 
 ## Notes

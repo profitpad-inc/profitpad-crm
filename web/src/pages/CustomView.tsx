@@ -4,6 +4,7 @@ import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
 import { MobileHeader } from '../components/MobileNav';
+import { Modal } from '../components/ui';
 import type { BridgeMethod, FromFrame, Params, ToFrame, ViewInit } from '../view-runtime/protocol';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
@@ -37,13 +38,29 @@ function parseHash(hash: string): { slug: string; params: Params } {
   return { slug, params };
 }
 
+// What a view asks to change, in words for the confirmation (values cut short)
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords', args: unknown[]): { title: string; lines: string[] } {
+  const short = (v: unknown) => {
+    const s = typeof v === 'string' ? v : JSON.stringify(v);
+    return s.length > 80 ? s.slice(0, 79) + '…' : s;
+  };
+  const props = (v: unknown) => {
+    const entries = Object.entries((v ?? {}) as Record<string, unknown>);
+    return [...entries.slice(0, 12).map(([k, x]) => `${k}: ${x === null ? '(cleared)' : short(x)}`), ...(entries.length > 12 ? [`and ${entries.length - 12} more`] : [])];
+  };
+  const obj = String(args[0] ?? '');
+  if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
+  if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
+  return { title: 'Link two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `to ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
+}
+
 function buildHash(slug: string, params: Params): string {
   const qs = new URLSearchParams(params).toString();
   return `#${slug}${qs ? `?${qs}` : ''}`;
 }
 
 export function CustomView() {
-  const { me, toast, reloadCustomViews } = useApp();
+  const { me, toast, reloadCustomViews, objectByName } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
   const mobile = useIsMobile();
@@ -55,6 +72,13 @@ export function CustomView() {
   const [frameKey, setFrameKey] = useState(0);
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
+  // a view's record changes wait for the viewer's yes (or "don't ask again"
+  // for this view while the page is open)
+  const [asking, setAsking] = useState<{ title: string; lines: string[]; resolve: (ok: boolean) => void } | null>(null);
+  const [dontAsk, setDontAsk] = useState(false);
+  const allowWrites = useRef(false);
+  // the frame loads once; a second load means the view navigated it away
+  const frameLoads = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // the latest values for the message handler, which is set up once per frame
   const latest = useRef({ slug, params, draft, view });
@@ -77,6 +101,25 @@ export function CustomView() {
       live = false;
     };
   }, [slug, draft, reloads]);
+
+  useEffect(() => {
+    allowWrites.current = false;
+  }, [slug]);
+  useEffect(() => {
+    frameLoads.current = 0;
+  }, [frameKey]);
+
+  const confirmWrite = useCallback((change: { title: string; lines: string[] }) => {
+    if (allowWrites.current) return Promise.resolve(true);
+    setDontAsk(false);
+    return new Promise<boolean>((resolve) => setAsking({ ...change, resolve }));
+  }, []);
+
+  function answer(ok: boolean) {
+    if (ok && dontAsk) allowWrites.current = true;
+    asking?.resolve(ok);
+    setAsking(null);
+  }
 
   // the draft bar's Publish and Revert to published (admins)
   async function draftAction(action: 'publish' | 'revert') {
@@ -136,6 +179,15 @@ export function CustomView() {
         return null;
       }
       case 'createRecord':
+      case 'updateRecord':
+      case 'linkRecords': {
+        const label = (o: string) => objectByName.get(o)?.label_plural ?? o;
+        if (!(await confirmWrite(describeChange(label, method, args)))) throw new Error('The viewer did not allow this change');
+        break;
+      }
+    }
+    switch (method) {
+      case 'createRecord':
         return api('POST', `/v1/objects/${str(args[0], 'object')}`, { properties: args[1] ?? {}, associations: args[2] ?? [] });
       case 'updateRecord':
         return api('PATCH', `/v1/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`, { properties: args[2] ?? {} });
@@ -143,7 +195,7 @@ export function CustomView() {
         return api('PUT', `/v1/objects/${str(args[0], 'object')}/${str(args[1], 'id')}/associations/${str(args[2], 'object')}/${str(args[3], 'id')}`, {});
     }
     throw new Error(`unknown call ${method}`);
-  }, [navigate, location.pathname, location.search]);
+  }, [navigate, location.pathname, location.search, objectByName, confirmWrite]);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent<FromFrame>) => {
@@ -213,9 +265,32 @@ export function CustomView() {
             src={FRAME_URL}
             sandbox="allow-scripts"
             style={{ height }}
+            onLoad={() => {
+              frameLoads.current += 1;
+              if (frameLoads.current > 1) setError('This view tried to open another page, so it was stopped.');
+            }}
           />
         )}
       </div>
+      {asking && (
+        <Modal
+          title="Allow this change?"
+          onClose={() => answer(false)}
+          footer={
+            <>
+              <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
+                <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} /> Don't ask again on this page
+              </label>
+              <button className="btn" onClick={() => answer(false)}>Don't allow</button>
+              <button className="btn primary" onClick={() => answer(true)}>Allow</button>
+            </>
+          }
+        >
+          <p className="muted small" style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to make this change as you:</p>
+          <p style={{ fontWeight: 500 }}>{asking.title}</p>
+          {asking.lines.length > 0 && <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{asking.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+        </Modal>
+      )}
     </>
   );
 }

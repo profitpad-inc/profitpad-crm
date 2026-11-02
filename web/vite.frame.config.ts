@@ -8,7 +8,10 @@ import react from '@vitejs/plugin-react';
 // serve it. It runs in a sandboxed iframe with an opaque origin, where 'self'
 // and module scripts are unreliable, so everything is inline: the script
 // (allowed by its hash), the styles and the fonts. 'unsafe-eval' runs the
-// view's compiled module; connect-src 'none' keeps view code off the network.
+// view's compiled module. Nothing may load from the network (connect-src and
+// img-src allow no hosts), so a view cannot send its data anywhere in a
+// request or an image URL; the page also stops a view that navigates its frame
+// (pages/CustomView.tsx), since CSP cannot forbid that.
 function singleHtml(): Plugin {
   return {
     name: 'pcrm-view-frame-html',
@@ -31,7 +34,7 @@ function singleHtml(): Plugin {
         "default-src 'none'",
         `script-src 'sha256-${hash}' 'unsafe-eval'`,
         "style-src 'unsafe-inline'",
-        "img-src data: blob: https:",
+        "img-src data: blob:",
         "font-src data:",
         "connect-src 'none'",
         "base-uri 'none'",
