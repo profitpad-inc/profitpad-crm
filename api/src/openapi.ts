@@ -176,6 +176,29 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
         responses: { 200: json({ type: 'object' }), ...errors }
       }
     },
+    [`${base}/bulk/update`]: {
+      post: {
+        tags: [tag], summary: 'Set the same values on many records', operationId: `bulk_update_${o.api_name}`,
+        description: 'Up to 500 records in one all-or-nothing transaction. Unique properties are refused. modes sets append, remove or replace (default) per multi-choice dropdown.',
+        requestBody: body({
+          type: 'object', required: ['ids', 'properties'],
+          properties: {
+            ids: { type: 'array', maxItems: 500, items: { type: 'string' } },
+            properties: ref(`${n}Input`),
+            modes: { type: 'object', additionalProperties: { type: 'string', enum: ['append', 'remove', 'replace'] } }
+          }
+        }),
+        responses: { 200: json({ type: 'object', properties: { updated: { type: 'integer' } } }), ...errors }
+      }
+    },
+    [`${base}/bulk/archive`]: {
+      post: {
+        tags: [tag], summary: 'Archive many records', operationId: `bulk_archive_${o.api_name}`,
+        description: 'Up to 500 records in one all-or-nothing transaction; they go to the recycle bin like DELETE.',
+        requestBody: body({ type: 'object', required: ['ids'], properties: { ids: { type: 'array', maxItems: 500, items: { type: 'string' } } } }),
+        responses: { 200: json({ type: 'object', properties: { archived: { type: 'integer' } } }), ...errors }
+      }
+    },
     [`${base}/batch/read`]: {
       post: {
         tags: [tag], summary: 'Batch read', operationId: `batch_read_${o.api_name}`,

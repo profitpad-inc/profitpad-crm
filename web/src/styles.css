@@ -1230,3 +1230,14 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .file-preview { display: block; max-width: 100%; max-height: 360px; border-radius: var(--radius-sm); background: var(--surface); }
 .file-public-head { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
 .file-card .btn.small { display: inline-flex; align-items: center; gap: 4px; }
+
+/* table: checkbox column and the bar shown while records are ticked */
+.grid th.pick-cell, .grid td.pick-cell { width: 40px; min-width: 40px; max-width: 40px; padding: 0 0 0 14px; }
+.grid .pick-cell input { display: block; margin: 0; cursor: pointer; }
+.grid tbody tr.picked td { background: color-mix(in srgb, var(--primary) 6%, var(--page-background)); }
+.table-page > .bulk-bar { flex-shrink: 0; min-height: 36px; }
+.bulk-bar .btn { margin-left: 0; }
+.bulk-bar .bulk-count { font-weight: 600; }
+.bulk-bar .bulk-delete { color: var(--danger); }
+.bulk-edit { display: flex; flex-direction: column; gap: 14px; }
+.bulk-edit .checks { max-height: 260px; overflow: auto; }

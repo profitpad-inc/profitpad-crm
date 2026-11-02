@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { pool, quoteIdent, type Db } from './db.js';
 import { badRequest, notFound } from './errors.js';
 import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode, type Principal } from './auth.js';
-import { activeProperties, getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
+import { activeProperties, getObject, getProperty, getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
 import { fromDb, isWritable, toDb } from './values.js';
 
@@ -349,6 +349,59 @@ export async function updateRecord(
   if (plan.columns.length === 0) return;
   const sets = plan.columns.map((c, i) => `${quoteIdent(c)} = $${i + 2}`).join(', ');
   await client.query(`update crm.${quoteIdent(obj.object_type_id)} set ${sets} where ${quoteIdent(obj.id_column)} = $1`, [id, ...plan.values]);
+}
+
+export type MultiMode = 'append' | 'remove' | 'replace';
+export const BULK_MAX = 500;
+
+// Sets the same values on many records (the table's "Edit all"), each through
+// updateRecord so access, hooks and checks match a single edit. Unique
+// properties are refused: one value can't be on two records. Multi-choice
+// dropdowns can add to (append) or take from (remove) each record's own
+// choices instead of replacing them.
+export async function bulkUpdateRecords(
+  client: pg.PoolClient,
+  obj: ObjectDef,
+  principal: Principal,
+  ids: string[],
+  properties: Record<string, unknown>,
+  modes: Record<string, MultiMode> = {}
+): Promise<void> {
+  requireObjectPermission(principal, obj, 'edit');
+  const merged: { key: string; prop: PropertyDef; mode: MultiMode; given: string[] }[] = [];
+  for (const [key, value] of Object.entries(properties)) {
+    const prop = getProperty(obj, key);
+    if (!prop) continue; // planWrite reports unknown names
+    if (prop.options.unique === true) throw badRequest(`"${prop.api_name}" is unique, so it can't be set on several records at once`, { property: prop.api_name });
+    const mode = modes[key] ?? 'replace';
+    if (!['append', 'remove', 'replace'].includes(mode)) throw badRequest(`mode for "${key}" must be append, remove or replace`, { property: prop.api_name });
+    if (mode === 'replace') continue;
+    if (prop.type !== 'dropdown' || isSingleValue(prop)) throw badRequest(`"${prop.api_name}" is not a multi-choice dropdown, so it can only be replaced`, { property: prop.api_name });
+    const given = Array.isArray(value) ? value.map(String) : typeof value === 'string' ? value.split(';').map((s) => s.trim()).filter(Boolean) : [];
+    merged.push({ key, prop, mode, given });
+  }
+  const current = new Map<string, Record<string, unknown>>();
+  if (merged.length > 0) {
+    const { rows } = await client.query(
+      `select ${quoteIdent(obj.id_column)} as id, ${merged.map((m) => quoteIdent(m.prop.api_name)).join(', ')}
+       from crm.${quoteIdent(obj.object_type_id)} where ${quoteIdent(obj.id_column)} = any ($1) for update`,
+      [ids]
+    );
+    for (const r of rows) current.set(r.id, r);
+  }
+  for (const id of ids) {
+    const props = { ...properties };
+    for (const m of merged) {
+      const had = (current.get(id)?.[m.prop.api_name] as string[] | null) ?? [];
+      props[m.key] = m.mode === 'append' ? [...new Set([...had, ...m.given])] : had.filter((v) => !m.given.includes(v));
+    }
+    try {
+      await updateRecord(client, obj, principal, id, props);
+    } catch (err) {
+      (err as Error).message = `record ${id}: ${(err as Error).message}`;
+      throw err;
+    }
+  }
 }
 
 // Ensures the caller may read, edit or delete every listed record

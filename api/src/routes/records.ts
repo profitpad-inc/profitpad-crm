@@ -3,8 +3,8 @@ import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { requireObjectPermission, requireScope } from '../auth.js';
 import {
-  assertAccessible, assertUserLinkable, batchReadRecords, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite, parseAssociationQuery,
-  searchRecords, updateRecord, type AssociationSpec
+  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, bulkUpdateRecords, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite,
+  parseAssociationQuery, searchRecords, updateRecord, type AssociationSpec, type MultiMode
 } from '../records.js';
 import type { SearchRequest } from '../search.js';
 
@@ -12,6 +12,13 @@ type ObjParams = { object: string };
 type RecParams = { object: string; id: string };
 
 const props = (q: { properties?: string }) => (q.properties ? q.properties.split(',').map((s) => s.trim()).filter(Boolean) : undefined);
+
+function bulkIds(ids: unknown): string[] {
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && id !== '')) throw badRequest('ids must be a list of record ids');
+  const unique = [...new Set(ids as string[])];
+  if (unique.length === 0 || unique.length > BULK_MAX) throw badRequest(`ids must have 1 to ${BULK_MAX} items`);
+  return unique;
+}
 
 export async function recordRoutes(app: FastifyInstance) {
   app.get<{ Params: ObjParams; Querystring: { limit?: string; after?: string; properties?: string; status?: 'active' | 'archived' } }>(
@@ -161,6 +168,40 @@ export async function recordRoutes(app: FastifyInstance) {
     });
     await drainCalcQueue(5);
     return { results };
+  });
+
+  // The same values on up to 500 records, all or nothing. modes picks append,
+  // remove or replace (default) per multi-choice dropdown; unique properties
+  // are refused.
+  app.post<{ Params: ObjParams; Body: { ids?: string[]; properties?: Record<string, unknown>; modes?: Record<string, MultiMode> } }>(
+    '/v1/objects/:object/bulk/update',
+    async (req) => {
+      const p = req.principal!;
+      requireScope(p, 'write');
+      const obj = await objectForWrite(req.params.object);
+      const ids = bulkIds(req.body?.ids);
+      const properties = req.body?.properties ?? {};
+      if (Object.keys(properties).length === 0) throw badRequest('properties must name at least one property');
+      await withTx({ actor: p.actor }, (c) => bulkUpdateRecords(c, obj, p, ids, properties, req.body?.modes ?? {}));
+      await drainCalcQueue(5);
+      return { updated: ids.length };
+    }
+  );
+
+  // Archives up to 500 records (recycle bin), all or nothing.
+  app.post<{ Params: ObjParams; Body: { ids?: string[] } }>('/v1/objects/:object/bulk/archive', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    const obj = await objectForWrite(req.params.object);
+    requireObjectPermission(p, obj, 'delete');
+    const ids = bulkIds(req.body?.ids);
+    await assertAccessible(pool, obj, p, ids, 'delete');
+    const n = await withTx({ actor: p.actor }, async (c) => {
+      const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, ids, 'archived']);
+      return rows[0].n as number;
+    });
+    await drainCalcQueue(5);
+    return { archived: n };
   });
 
   app.get<{ Params: RecParams; Querystring: { limit?: string; property?: string } }>('/v1/objects/:object/:id/history', async (req) => {

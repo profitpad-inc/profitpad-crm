@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -14,6 +14,7 @@ import { ColumnPicker, associationColumnLabel, moveTo } from '../components/Colu
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 
 const PAGE = 50;
+const BULK_CHUNK = 500; // the API's limit per bulk call
 const MIN_WIDTH = 60;
 const MAX_WIDTH = 1000;
 
@@ -50,6 +51,10 @@ function ObjectTableFor({ object }: { object: string }) {
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [sel, setSel] = useState<{ anchor: Cell; focus: Cell } | null>(null);
   const selecting = useRef(false);
+  // records ticked in the checkbox column, for Edit all and Delete all
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const lastPicked = useRef<number | null>(null);
+  const [bulk, setBulk] = useState<null | 'edit' | 'delete'>(null);
 
   const viewId = searchParams.get('view');
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
@@ -139,6 +144,44 @@ function ObjectTableFor({ object }: { object: string }) {
   useEffect(() => {
     fetchPage();
   }, [fetchPage]);
+
+  // a new search, sort or view shows different records, so start over
+  useEffect(() => {
+    setPicked(new Set());
+    lastPicked.current = null;
+  }, [debounced, sorts, activeViewId]);
+
+  const shown = data?.results ?? [];
+  const pickedCount = shown.filter((r) => picked.has(r.id)).length;
+  const allPicked = shown.length > 0 && pickedCount === shown.length;
+
+  function pickAll() {
+    setPicked(allPicked ? new Set() : new Set(shown.map((r) => r.id)));
+    lastPicked.current = null;
+  }
+
+  // shift-click ticks or unticks every row between this one and the last one clicked
+  function pickRow(e: React.MouseEvent<HTMLInputElement>, row: number) {
+    const on = e.currentTarget.checked;
+    const from = e.shiftKey && lastPicked.current !== null ? Math.min(lastPicked.current, row) : row;
+    const to = e.shiftKey && lastPicked.current !== null ? Math.max(lastPicked.current, row) : row;
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const r of shown.slice(from, to + 1)) {
+        if (on) next.add(r.id);
+        else next.delete(r.id);
+      }
+      return next;
+    });
+    lastPicked.current = row;
+  }
+
+  function bulkDone(message: string, clear: boolean) {
+    setBulk(null);
+    if (clear) setPicked(new Set());
+    toast(message);
+    fetchPage();
+  }
 
   // persist column/sort changes to the view when the user may edit it
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -408,22 +451,35 @@ function ObjectTableFor({ object }: { object: string }) {
         </button>
       </div>
 
-      <div className="toolbar">
-        <div className="searchbox">
-          <Search size={16} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${schema.label_plural.toLowerCase()}`}
-            title={`Searches ${schema.search_properties.map((n) => schema.properties.find((p) => p.api_name === n)?.label.toLowerCase() ?? n).join(', ')}`} />
-          {query && (
-            <button className="icon-btn" onClick={() => setQuery('')} aria-label="Clear search">
-              <X size={14} />
-            </button>
-          )}
+      {picked.size > 0 ? (
+        <div className="toolbar bulk-bar">
+          <span className="bulk-count">{picked.size.toLocaleString()} selected</span>
+          <button className="btn small" onClick={() => setBulk('edit')}>
+            <Pencil size={14} /> Edit all
+          </button>
+          <button className="btn small bulk-delete" onClick={() => setBulk('delete')}>
+            <Trash2 size={14} /> Delete all
+          </button>
+          <button className="btn small" onClick={() => setPicked(new Set())}>Clear selection</button>
         </div>
-        {dirty && <span className="muted small">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
-        <button className="btn" onClick={() => setShowColumns(true)}>
-          <Columns3 size={16} /> Edit columns
-        </button>
-      </div>
+      ) : (
+        <div className="toolbar">
+          <div className="searchbox">
+            <Search size={16} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${schema.label_plural.toLowerCase()}`}
+              title={`Searches ${schema.search_properties.map((n) => schema.properties.find((p) => p.api_name === n)?.label.toLowerCase() ?? n).join(', ')}`} />
+            {query && (
+              <button className="icon-btn" onClick={() => setQuery('')} aria-label="Clear search">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {dirty && <span className="muted small">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
+          <button className="btn" onClick={() => setShowColumns(true)}>
+            <Columns3 size={16} /> Edit columns
+          </button>
+        </div>
+      )}
 
       {error && <div className="error">{error}</div>}
 
@@ -431,6 +487,19 @@ function ObjectTableFor({ object }: { object: string }) {
         <table className="grid">
           <thead>
             <tr>
+              <th className="pick-cell">
+                <input
+                  type="checkbox"
+                  aria-label={`Select all ${shown.length.toLocaleString()} shown`}
+                  title={`Select all ${shown.length.toLocaleString()} shown`}
+                  checked={allPicked}
+                  disabled={shown.length === 0}
+                  ref={(el) => {
+                    if (el) el.indeterminate = pickedCount > 0 && !allPicked;
+                  }}
+                  onChange={pickAll}
+                />
+              </th>
               {columns.map((c, i) => {
                 if (c.type === 'association') {
                   const other = objectByName.get(c.object);
@@ -470,7 +539,10 @@ function ObjectTableFor({ object }: { object: string }) {
           </thead>
           <tbody>
             {data?.results.map((r, ri) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={picked.has(r.id) ? 'picked' : undefined}>
+                <td className="pick-cell">
+                  <input type="checkbox" aria-label={`Select ${recordName(r)}`} checked={picked.has(r.id)} onChange={() => undefined} onClick={(e) => pickRow(e, ri)} />
+                </td>
                 {columns.map((c, i) => {
                   if (c.type === 'association') {
                     const other = objectByName.get(c.object);
@@ -526,6 +598,24 @@ function ObjectTableFor({ object }: { object: string }) {
           rect={editing.rect}
           onClose={() => setEditing((cur) => (cur === editing ? null : cur))}
           onSaved={recordSaved}
+        />
+      )}
+      {bulk === 'edit' && (
+        <BulkEditModal
+          object={object}
+          schema={schema}
+          ids={[...picked]}
+          onClose={() => setBulk(null)}
+          onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`, false)}
+        />
+      )}
+      {bulk === 'delete' && (
+        <BulkDeleteModal
+          object={object}
+          schema={schema}
+          ids={[...picked]}
+          onClose={() => setBulk(null)}
+          onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`, true)}
         />
       )}
       {showCreate && (
@@ -688,6 +778,147 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
       )}
     </div>,
     document.body
+  );
+}
+
+type MultiMode = 'append' | 'remove' | 'replace';
+
+// Sends ids to a bulk endpoint 500 at a time. Each call is all or nothing, so
+// an error partway leaves the earlier calls' records changed; the message
+// says how many.
+async function inChunks(ids: string[], send: (chunk: string[]) => Promise<unknown>): Promise<void> {
+  for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+    try {
+      await send(ids.slice(i, i + BULK_CHUNK));
+    } catch (err) {
+      if (i === 0) throw err;
+      throw new Error(`${i.toLocaleString()} of ${ids.length.toLocaleString()} records were changed, then: ${(err as Error).message}`);
+    }
+  }
+}
+
+// Sets one property on every ticked record. Unique properties are left out
+// (one value can't be on two records), as are ones nobody can edit.
+// Multi-choice dropdowns can add choices, take them away or replace them.
+function BulkEditModal({ object, schema, ids, onClose, onDone }: {
+  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
+}) {
+  const properties = useMemo(
+    () => schema.properties.filter((p) => isEditable(p) && p.options.unique !== true).sort((a, b) => a.label.localeCompare(b.label)),
+    [schema]
+  );
+  const [name, setName] = useState('');
+  const [draft, setDraft] = useState('');
+  const [mode, setMode] = useState<MultiMode>('append');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const property = properties.find((p) => p.api_name === name);
+  const multi = property?.type === 'dropdown' && property.options.single_value !== true;
+  const value = property ? fromInput(property, draft) : null;
+  const ready = !!property && !saving && (!multi || mode === 'replace' || value !== null);
+  const noun = ids.length === 1 ? 'record' : 'records';
+
+  async function save() {
+    if (!property || !ready) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await inChunks(ids, (chunk) =>
+        api('POST', `/v1/objects/${object}/bulk/update`, {
+          ids: chunk,
+          properties: { [property.api_name]: value },
+          ...(multi ? { modes: { [property.api_name]: mode } } : {})
+        })
+      );
+      onDone(ids.length);
+    } catch (err) {
+      setSaving(false);
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Edit ${ids.length.toLocaleString()} ${noun}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={save} disabled={!ready}>{saving ? 'Saving…' : `Update ${ids.length.toLocaleString()} ${noun}`}</button>
+        </>
+      }
+    >
+      <div className="bulk-edit">
+        <label className="field">
+          <span>Property</span>
+          <select value={name} autoFocus onChange={(e) => { setName(e.target.value); setDraft(''); setMode('append'); setError(null); }}>
+            <option value="">Choose a property</option>
+            {properties.map((p) => (
+              <option key={p.api_name} value={p.api_name}>{p.label}</option>
+            ))}
+          </select>
+        </label>
+        {multi && (
+          <label className="field">
+            <span>How to change it</span>
+            <select value={mode} onChange={(e) => setMode(e.target.value as MultiMode)}>
+              <option value="append">Add these choices to what each record has</option>
+              <option value="remove">Remove these choices from each record</option>
+              <option value="replace">Replace each record's choices with these</option>
+            </select>
+          </label>
+        )}
+        {property && (
+          <div className="field">
+            <span>{multi ? 'Choices' : 'New value'}</span>
+            <PropertyInput key={property.api_name} property={property} value={draft} onChange={setDraft} />
+          </div>
+        )}
+        {property && value === null && (!multi || mode === 'replace') && (
+          <p className="muted small">Left empty, this clears {property.label.toLowerCase()} on every selected record.</p>
+        )}
+        <p className="muted small">Unique properties can't be set on several records at once, so they aren't listed.</p>
+        {error && <div className="error">{error}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+// Deleting from the table archives, like the record page: the records go to
+// the recycle bin rather than being removed for good.
+function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
+  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const label = (ids.length === 1 ? schema.label_singular : schema.label_plural).toLowerCase();
+
+  async function remove() {
+    setSaving(true);
+    setError(null);
+    try {
+      await inChunks(ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/archive`, { ids: chunk }));
+      onDone(ids.length);
+    } catch (err) {
+      setSaving(false);
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Delete ${ids.length.toLocaleString()} ${label}?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn danger" onClick={remove} disabled={saving}>{saving ? 'Deleting…' : `Delete ${ids.length.toLocaleString()} ${label}`}</button>
+        </>
+      }
+    >
+      <p>The selected {label} are archived (moved to the recycle bin), not removed for good.</p>
+      {error && <div className="error">{error}</div>}
+    </Modal>
   );
 }
 
