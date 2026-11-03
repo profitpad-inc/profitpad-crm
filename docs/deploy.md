@@ -178,6 +178,17 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 - Apply 0042 together with the API and UI deploy: the new API sends `{batch_id, events: [...]}` and needs the `batch_max` and `batch_id` columns. Receivers (n8n flows) must read `events` (an array) instead of one event per POST.
 
+## 17. render_view: the headless browser (migration 0046 for the integration examples that ship with it)
+
+`deploy/docker-compose.yml` now has a second service, `renderer` (container `test-crm-renderer`, image built from `deploy/renderer/Dockerfile`: `mcr.microsoft.com/playwright:v1.64.1-noble` running `playwright run-server` on port 3000). It sits only on `renderer_net`, an internal network with no way out to the internet; the API joins it too and connects with `RENDERER_WS_URL=ws://test-crm-renderer:3000/` (set in the compose file). Chromium gets `shm_size: 512m` and the container `mem_limit: 1g`; the API renders at most 2 views at once.
+
+1. Apply `0046_integration_examples.sql` (`./db/migrate.sh`).
+2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/` (builds and starts both containers; the first renderer build pulls the Playwright base image, which is large).
+3. The API loads the view frame from `${UI_URL}/view-frame/index.html` (GitHub Pages), so the UI must be deployed with the same frame version; `VIEW_FRAME_URL` or `VIEW_FRAME_FILE` override it.
+4. Check: `docker logs test-crm-renderer` shows `Listening on ws://0.0.0.0:3000/`; then ask Claude to `render_view` a view.
+
+Keep `playwright-core` in `api/package.json` and the renderer image on the same version: the client refuses a server of another version. Locally, `RENDERER_LOCAL=1` launches Chromium in the API process (`npx playwright-core install chromium` once), or run `npx playwright@1.64.1 run-server --port 3456` and set `RENDERER_WS_URL=ws://127.0.0.1:3456/`.
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

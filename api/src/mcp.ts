@@ -22,6 +22,7 @@ import {
   viewSummary, publishState, sourceExcerpt, type ViewRow
 } from './views.js';
 import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
+import { renderView } from './render.js';
 import { findIcons } from './icons.js';
 import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, updateIntegration, type AdminIntegration
@@ -351,6 +352,35 @@ function registerAdminTools(server: McpServer, p: Principal) {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
   }, async ({ view, return_code, ...input }) => run(async () => draftSaved(await saveDraft(p, view, input), return_code)));
+
+  server.registerTool('render_view', {
+    title: 'Render custom view',
+    description: 'Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look. Nothing is changed while rendering: record changes and integration calls are refused (listed in not_run), and clicks are not simulated. screenshot: false returns the report only (cheaper).',
+    inputSchema: z.object({
+      view: viewArg,
+      width: z.number().int().min(320).max(2400).optional().describe('Screen width in pixels (default 1280; 390 for a phone)'),
+      height: z.number().int().min(300).max(2000).optional().describe('Screen height (default 800)'),
+      scroll_y: z.number().int().min(0).max(100000).optional().describe('Scroll down this many pixels before the screenshot'),
+      params: z.record(z.string(), z.string()).optional().describe('Address params, as in /view/#slug?stage=won'),
+      full_page: z.boolean().optional().describe('The whole page instead of one screen (grow views; at most 8000px tall)'),
+      screenshot: z.boolean().optional().describe('false: only the report'),
+      styles: z.boolean().optional().describe('Add each box\'s font size, line height and weight'),
+      published: z.boolean().optional().describe('Render the published version instead of the draft')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ view, ...opts }) => {
+    try {
+      const { image, report } = await renderView(p, view, opts);
+      return {
+        content: [
+          ...(image ? [{ type: 'image' as const, data: image, mimeType: 'image/png' }] : []),
+          { type: 'text' as const, text: JSON.stringify(report) }
+        ]
+      };
+    } catch (err) {
+      return run(() => Promise.reject(err));
+    }
+  });
 
   server.registerTool('get_view_runtime_errors', {
     title: 'Get custom view runtime errors',

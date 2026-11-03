@@ -18,13 +18,35 @@ services:
       # from /srv/test_crm_files (location /_pcrm_files/)
       FILES_DIR: /data/files
       FILES_ACCEL_PREFIX: /_pcrm_files/
+      # the headless browser for render_view (the renderer service below)
+      RENDERER_WS_URL: ws://test-crm-renderer:3000/
     volumes:
       - /srv/test_crm_files:/data/files
     ports:
       - "127.0.0.1:3100:3100"
     networks:
       - n8n_net
+      - renderer_net
+    depends_on:
+      - renderer
+
+  # Headless Chromium that renders custom view drafts for the MCP's
+  # render_view. Reachable only by the API on renderer_net, which has no way
+  # out to the internet; the API also blocks every request the page makes.
+  renderer:
+    build: ./renderer
+    image: profitpad-crm-renderer
+    container_name: test-crm-renderer
+    restart: unless-stopped
+    init: true
+    # Chromium needs more shared memory than Docker's 64 MB default
+    shm_size: 512m
+    mem_limit: 1g
+    networks:
+      - renderer_net
 
 networks:
   n8n_net:
     external: true
+  renderer_net:
+    internal: true
