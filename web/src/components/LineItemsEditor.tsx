@@ -80,6 +80,8 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  // rows whose unit price was raised to the minimum on leaving the box
+  const [raised, setRaised] = useState<Record<number, string>>({});
   const gridRef = useRef<HTMLDivElement>(null);
   const parentLabel = (objectByName.get(parent.object)?.label_singular ?? parent.object).toLowerCase();
   const withAmount = AMOUNT_PARENTS.includes(parent.object);
@@ -372,9 +374,19 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
                             inputMode="decimal"
                             value={row.price}
                             aria-label={`Unit price, line ${r + 1}`}
-                            onChange={(e) => patch(row.key, { price: e.target.value })}
+                            onChange={(e) => {
+                              patch(row.key, { price: e.target.value });
+                              setRaised(({ [row.key]: _, ...rest }) => rest);
+                            }}
+                            onBlur={() => {
+                              if (isBlank(row) || !priceTooLow(row)) return;
+                              const min = money(minPrice(row), currency);
+                              patch(row.key, { price: minPrice(row)!.toFixed(2) });
+                              setRaised((m) => ({ ...m, [row.key]: `Raised to ${min}, 1 cent above cost` }));
+                            }}
                             onKeyDown={(e) => e.key === 'Enter' && !e.metaKey && !e.ctrlKey && nextLine(r)}
                           />
+                          {raised[row.key] && <span className="le-note" role="status">{raised[row.key]}</span>}
                         </div>
                       </>
                     )}
@@ -585,6 +597,7 @@ function CustomLineModal({ row, currency, onClose, onSave }: {
   const [cost, setCost] = useState(row?.cost ?? '');
   const [customizations, setCustomizations] = useState(row?.customizations ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [raised, setRaised] = useState('');
 
   function pick(p: Picked) {
     setProduct(p);
@@ -663,7 +676,19 @@ function CustomLineModal({ row, currency, onClose, onSave }: {
         </label>
         <label className="field">
           <span>Unit price</span>
-          <input inputMode="decimal" placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} />
+          <input
+            inputMode="decimal"
+            placeholder="0.00"
+            value={price}
+            onChange={(e) => { setPrice(e.target.value); setRaised(''); }}
+            onBlur={() => {
+              // only a typed price is raised; an empty one is caught on save
+              if (!price.trim() || num(price) === null || !priceTooLow({ cost, price })) return;
+              setPrice(minPrice({ cost })!.toFixed(2));
+              setRaised(`Raised to ${money(minPrice({ cost }), currency)}, 1 cent above cost`);
+            }}
+          />
+          {raised && <span className="small le-note-inline" role="status">{raised}</span>}
           {hint(product?.price ?? null)}
           {err('price')}
         </label>

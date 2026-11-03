@@ -377,6 +377,8 @@
 .le-in.le-search { text-align: left; }
 .le-in.invalid { border-color: var(--danger); }
 .le-qty { position: relative; display: block; }
+.le-note { display: block; margin-top: 3px; font-size: 11px; line-height: 1.3; color: var(--warn); text-align: right; }
+.le-note-inline { color: var(--warn); }
 .le-uom { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted-text); pointer-events: none; }
 .le-row .faint-btn { opacity: 0.6; }
 .le-row .faint-btn:hover { opacity: 1; }
