@@ -160,6 +160,12 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 - Needs `CALENDAR_TOKEN_KEY` (already set for calendars) to store secret headers.
 - Optional: to call an n8n on the same Docker network over http (for example `http://<n8n container name>:5678/webhook/...`), set `INTEGRATION_PRIVATE_HOSTS=<that host name>` in `deploy/.env` (comma separated). Without it, integration URLs must be https on a public address, such as n8n's public webhook URL.
 
+## 13. Webhooks (migration 0038)
+
+- Apply 0038, then deploy the API and the UI. The worker runs inside the API container; nothing else to start.
+- Needs `CALENDAR_TOKEN_KEY` (already set) for the signing secrets and secret headers.
+- Endpoints follow the same address rules as view integrations: https on a public address, or a host listed in `INTEGRATION_PRIVATE_HOSTS` (for an n8n on the same Docker network).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

@@ -24,6 +24,10 @@ import {
 import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { findIcons } from './icons.js';
 import { listIntegrations } from './integrations.js';
+import {
+  createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
+  updateEndpoint, updateSubscription
+} from './webhooks.js';
 
 // MCP server (Streamable HTTP at /mcp) for AI clients such as Claude. Callers
 // need an OAuth access token issued for this resource (oauth.ts); it acts as
@@ -43,7 +47,7 @@ Records are addressed by object api_name and record id. You act as the signed-in
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also manage webhooks (endpoints that receive record events, and their subscriptions): they send CRM data to outside addresses, so confirm the URL and what will be sent with the admin before creating or changing an endpoint or subscription, and before deleting one.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -519,6 +523,116 @@ function registerAdminTools(server: McpServer, p: Principal) {
       scopeChallenge: schemaChallenge
     }, async ({ object, property, value }) => run(() => updateOption(p, object, property, value, { row_status: archived ? 'archived' : 'active' }, SCHEMA_SOURCE)));
   }
+
+  // ---- webhooks ----
+
+  const endpointIdArg = z.number().int().describe('Webhook endpoint id from list_webhooks');
+  const subscriptionIdArg = z.number().int().describe('Webhook subscription id from list_webhooks');
+  const subscriptionFields = {
+    event: z.enum(EVENT_NAMES).describe(Object.entries(EVENTS).map(([k, v]) => `${k}: ${v}`).join('. ')),
+    properties: z.array(z.string()).optional().describe('Property api_names (describe_object). Required for property_changed and property_cleared (fires when any of them changes); optional for updated (fires only when one of them changes).'),
+    target_object: z.string().nullable().optional().describe('Association events: the other object api_name (omit for any object)'),
+    label_id: z.string().nullable().optional().describe('Association events: one association label id (omit for any label)'),
+    filter_groups: filterGroupsArg.describe('WHERE conditions on the record, same format as search_records: filters in a group are ANDed, groups ORed. E.g. [{"filters": [{"property": "first_name", "operator": "contains", "value": "chris"}]}]. Checked against the record as it is when the event is processed.'),
+    description: z.string().nullable().optional().describe('What this subscription is for'),
+    enabled: z.boolean().optional()
+  };
+
+  server.registerTool('list_webhooks', {
+    title: 'List webhooks',
+    description: 'Lists webhook endpoints (name, url, enabled, delivery health) with their subscriptions (object, event, properties, filters and a summary in words). Secrets are never shown.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(() => listEndpoints(p)));
+
+  server.registerTool('create_webhook_endpoint', {
+    title: 'Create webhook endpoint',
+    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs. Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings, Webhooks. Then add subscriptions with create_webhook_subscription.',
+    inputSchema: z.object({
+      name: z.string(),
+      url: z.string(),
+      description: z.string().optional(),
+      secret_header: z.string().optional().describe('Optional header sent with every delivery, e.g. X-Webhook-Secret for n8n header auth'),
+      secret_value: z.string().optional().describe('The value of secret_header'),
+      enabled: z.boolean().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async (b) => run(() => createEndpoint(p, b)));
+
+  server.registerTool('update_webhook_endpoint', {
+    title: 'Update webhook endpoint',
+    description: 'Changes an endpoint\'s name, url, description, secret header or enabled (a disabled endpoint keeps its pending deliveries until enabled again). Fields not given stay; secret_header null removes it.',
+    inputSchema: z.object({
+      endpoint_id: endpointIdArg,
+      name: z.string().optional(),
+      url: z.string().optional(),
+      description: z.string().nullable().optional(),
+      secret_header: z.string().nullable().optional(),
+      secret_value: z.string().optional(),
+      enabled: z.boolean().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ endpoint_id, ...b }) => run(() => updateEndpoint(p, endpoint_id, b)));
+
+  server.registerTool('delete_webhook_endpoint', {
+    title: 'Delete webhook endpoint',
+    description: 'Deletes an endpoint with its subscriptions and delivery log. Ask the admin first; update_webhook_endpoint with enabled false pauses it instead.',
+    inputSchema: z.object({ endpoint_id: endpointIdArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ endpoint_id }) => run(async () => {
+    await deleteEndpoint(p, endpoint_id);
+    return { deleted: endpoint_id };
+  }));
+
+  server.registerTool('test_webhook_endpoint', {
+    title: 'Test webhook endpoint',
+    description: 'Sends a test event ({"event": "test", ...}, signed like real ones) to an endpoint now and reports the answer.',
+    inputSchema: z.object({ endpoint_id: endpointIdArg }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ endpoint_id }) => run(() => testEndpoint(p, endpoint_id)));
+
+  server.registerTool('create_webhook_subscription', {
+    title: 'Create webhook subscription',
+    description: 'Subscribes an endpoint to one event on one object (any object from list_objects, including forms, form_submissions, views and users). Add one subscription per object and event. Each delivery carries the event, record_id, the record\'s current values and the change (changes, change, association or merged_ids). The answer\'s summary describes it in words; check it matches what the admin asked for.',
+    inputSchema: z.object({ endpoint_id: endpointIdArg, object: objectArg, ...subscriptionFields }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async (b) => run(() => createSubscription(p, b)));
+
+  server.registerTool('update_webhook_subscription', {
+    title: 'Update webhook subscription',
+    description: 'Changes a subscription\'s event, properties, target_object, label_id, filter_groups (the full list; [] removes the filters), description or enabled. Its endpoint and object cannot change.',
+    inputSchema: z.object({ subscription_id: subscriptionIdArg, ...subscriptionFields, event: subscriptionFields.event.optional() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ subscription_id, ...b }) => run(() => updateSubscription(p, subscription_id, b)));
+
+  server.registerTool('delete_webhook_subscription', {
+    title: 'Delete webhook subscription',
+    description: 'Deletes a subscription; its endpoint stays. Ask the admin first.',
+    inputSchema: z.object({ subscription_id: subscriptionIdArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ subscription_id }) => run(async () => {
+    await deleteSubscription(p, subscription_id);
+    return { deleted: subscription_id };
+  }));
+
+  server.registerTool('list_webhook_deliveries', {
+    title: 'List webhook deliveries',
+    description: 'Recent deliveries, newest first: event, object, record_id, status (pending, succeeded, failed), attempts and the last error. Use it to check a subscription fires and the endpoint accepts it.',
+    inputSchema: z.object({
+      endpoint_id: z.number().int().optional(),
+      subscription_id: z.number().int().optional(),
+      status: z.enum(['pending', 'succeeded', 'failed', 'cancelled']).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      before: z.number().int().optional().describe('next_before from the previous page')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async (q) => run(() => listDeliveries(p, q)));
 
   server.registerTool('test_calculation', {
     title: 'Test calculation',

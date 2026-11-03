@@ -24,6 +24,8 @@ import { BRAND_PATHS, brandRoutes } from './brand.js';
 import { fileRoutes, startFileSweeper } from './files.js';
 import { viewRoutes } from './routes/views.js';
 import { integrationRoutes } from './routes/integrations.js';
+import { webhookRoutes } from './routes/webhooks.js';
+import { startWebhookWorker } from './webhooks.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -198,6 +200,7 @@ export async function buildApp() {
   await app.register(fileRoutes);
   await app.register(viewRoutes);
   await app.register(integrationRoutes);
+  await app.register(webhookRoutes);
   return app;
 }
 
@@ -220,9 +223,11 @@ function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
 const app = await buildApp();
 const worker = startCalcWorker(app.log);
 const stopFileSweeper = startFileSweeper(app.log);
+const stopWebhooks = startWebhookWorker(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
+  stopWebhooks();
   await app.close();
   await pool.end();
   process.exit(0);

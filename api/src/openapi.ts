@@ -171,6 +171,52 @@ function viewPaths(): Record<string, Schema> {
   };
 }
 
+// Webhooks (webhooks.ts, routes/webhooks.ts)
+function webhookPaths(): Record<string, Schema> {
+  const tags = ['Webhooks'];
+  const id = { name: 'id', in: 'path', required: true, schema: { type: 'integer' } };
+  const events = ['created', 'updated', 'merged', 'archived', 'restored', 'association_added', 'association_removed', 'property_changed', 'property_cleared'];
+  const endpoint = { type: 'object', properties: { name: { type: 'string', maxLength: 100 }, description: { type: 'string', nullable: true }, url: { type: 'string' }, secret_header: { type: 'string', nullable: true, description: 'Optional header sent with every delivery, e.g. for n8n header auth' }, secret_value: { type: 'string', writeOnly: true }, enabled: { type: 'boolean' } } };
+  const subscription = { type: 'object', properties: {
+    endpoint_id: { type: 'integer', description: 'Create only' },
+    object: { type: 'string', description: 'Object api_name, e.g. contacts (create only)' },
+    event: { type: 'string', enum: events },
+    properties: { type: 'array', items: { type: 'string' }, description: 'property_changed / property_cleared: the properties watched (required). updated: optional, fire only when one of them changes.' },
+    target_object: { type: 'string', nullable: true, description: 'Association events: the other object (null = any)' },
+    label_id: { type: 'string', nullable: true, description: 'Association events: one association label (null = any)' },
+    filter_groups: { type: 'array', maxItems: 5, items: { type: 'object', properties: { filters: { type: 'array', items: ref('Filter') } } }, description: 'Same as search: filters in a group are ANDed, groups are ORed. Checked against the record when the event is processed (seconds after the change)' },
+    description: { type: 'string', nullable: true },
+    enabled: { type: 'boolean' }
+  } };
+  const delivery = 'Deliveries are POSTed as JSON {id, event, object, object_type_id, record_id, occurred_at, changed_by, source, subscription_id, endpoint_id, attempt, record (current values), changes | change | association | merged_ids}. Headers: X-PCRM-Event, X-PCRM-Event-Id (same on retries), X-PCRM-Delivery-Attempt, X-PCRM-Signature t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>. A 2xx answer within 10 seconds is success; otherwise retried after 1, 5, 30, 120, 360, 720 and 1440 minutes, then failed. Kept 30 days.';
+  return {
+    '/v1/webhooks/events': { get: { tags, summary: 'Event types', operationId: 'list_webhook_events', responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/webhooks/endpoints': {
+      get: { tags, summary: 'Endpoints with their subscriptions (admin)', description: 'Never returns secrets. ' + delivery, operationId: 'list_webhook_endpoints', responses: { 200: json({ type: 'object' }), ...errors } },
+      post: { tags, summary: 'Add an endpoint (admin)', description: 'Admins (a browser session needs a sign-in within 4 hours; OAuth tokens need the schema scope). url must be https on a public address (hosts in INTEGRATION_PRIVATE_HOSTS may use http and private addresses). The answer holds signing_secret, shown only here (Settings can reveal it later).', operationId: 'create_webhook_endpoint', requestBody: body({ ...endpoint, required: ['name', 'url'] }), responses: { 201: json({ type: 'object' }), ...errors } }
+    },
+    '/v1/webhooks/endpoints/{id}': {
+      get: { tags, summary: 'An endpoint (admin)', operationId: 'get_webhook_endpoint', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } },
+      patch: { tags, summary: 'Change an endpoint (admin)', description: 'Fields not sent stay. secret_header null removes the header. A disabled endpoint keeps its pending deliveries and sends them once enabled.', operationId: 'update_webhook_endpoint', parameters: [id], requestBody: body(endpoint), responses: { 200: json({ type: 'object' }), ...errors } },
+      delete: { tags, summary: 'Delete an endpoint (admin)', description: 'Also deletes its subscriptions and deliveries.', operationId: 'delete_webhook_endpoint', parameters: [id], responses: { 204: { description: 'Deleted' }, ...errors } }
+    },
+    '/v1/webhooks/endpoints/{id}/secret': { post: { tags, summary: 'Reveal the signing secret (admin)', description: 'People only, not OAuth tokens. Logged.', operationId: 'reveal_webhook_secret', parameters: [id], responses: { 200: json({ type: 'object', properties: { signing_secret: { type: 'string' } } }), ...errors } } },
+    '/v1/webhooks/endpoints/{id}/rotate-secret': { post: { tags, summary: 'Replace the signing secret (admin)', description: 'The old secret stops at once.', operationId: 'rotate_webhook_secret', parameters: [id], responses: { 200: json({ type: 'object', properties: { signing_secret: { type: 'string' } } }), ...errors } } },
+    '/v1/webhooks/endpoints/{id}/test': { post: { tags, summary: 'Send a test event (admin)', description: 'Posts {id, event: "test", ...} now, signed like real deliveries; not stored.', operationId: 'test_webhook_endpoint', parameters: [id], responses: { 200: json({ type: 'object', properties: { ok: { type: 'boolean' }, status: { type: 'integer', nullable: true }, response_ms: { type: 'integer' }, error: { type: 'string', nullable: true } } }), ...errors } } },
+    '/v1/webhooks/subscriptions': {
+      get: { tags, summary: 'Subscriptions (admin)', operationId: 'list_webhook_subscriptions', parameters: [{ name: 'endpoint_id', in: 'query', required: false, schema: { type: 'integer' } }], responses: { 200: json({ type: 'object' }), ...errors } },
+      post: { tags, summary: 'Subscribe an endpoint to an event (admin)', description: 'One object and event per subscription; add several for more. Every object is supported. summary in the answer describes it in words.', operationId: 'create_webhook_subscription', requestBody: body({ ...subscription, required: ['endpoint_id', 'object', 'event'] }), responses: { 201: json({ type: 'object' }), ...errors } }
+    },
+    '/v1/webhooks/subscriptions/{id}': {
+      patch: { tags, summary: 'Change a subscription (admin)', description: 'endpoint_id and object cannot change.', operationId: 'update_webhook_subscription', parameters: [id], requestBody: body(subscription), responses: { 200: json({ type: 'object' }), ...errors } },
+      delete: { tags, summary: 'Delete a subscription (admin)', operationId: 'delete_webhook_subscription', parameters: [id], responses: { 204: { description: 'Deleted' }, ...errors } }
+    },
+    '/v1/webhooks/deliveries': { get: { tags, summary: 'Deliveries, newest first (admin)', description: delivery, operationId: 'list_webhook_deliveries', parameters: ['endpoint_id', 'subscription_id', 'before'].map((name) => ({ name, in: 'query', required: false, schema: { type: 'integer' } })).concat([{ name: 'status', in: 'query', required: false, schema: { type: 'string', enum: ['pending', 'succeeded', 'failed', 'cancelled'] } } as never, { name: 'limit', in: 'query', required: false, schema: { type: 'integer', maximum: 200 } } as never]), responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/webhooks/deliveries/{id}': { get: { tags, summary: 'A delivery with its payload (admin)', operationId: 'get_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/webhooks/deliveries/{id}/retry': { post: { tags, summary: 'Send a failed delivery again (admin)', operationId: 'retry_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } }
+  };
+}
+
 const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
 const toObjectParam = { name: 'toObject', in: 'path', required: true, description: 'Object api_name or code', schema: { type: 'string' } };
 const toIdParam = { name: 'toId', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
@@ -464,6 +510,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     '/v1/public/forms/{key}/submissions': { post: { tags: ['Public pages'], security: [], summary: 'Submit a form', description: 'No authentication. The browser\'s Origin must be the UI or a website in Settings → Embed domains (403 otherwise). Body {values, page_url?, _hp, _elapsed}: values are checked against the form definition; _hp is a hidden field that must stay empty and _elapsed the milliseconds since the form was shown. Limited to 10 per minute per IP and 32 KB.', operationId: 'public_submit_form', parameters: [publicKeyParam], requestBody: body({ type: 'object', required: ['values'], properties: { values: { type: 'object' }, page_url: { type: 'string' }, _hp: { type: 'string' }, _elapsed: { type: 'number' } } }), responses: { 201: json({ type: 'object' }), ...errors } } },
     ...oauthPaths(),
     ...viewPaths(),
+    ...webhookPaths(),
     '/v1/view-integrations/{table}': { get: { tags: ['View integrations'], summary: 'Read an integration table', operationId: 'read_integration', parameters: [{ name: 'table', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
   for (const o of objects) Object.assign(paths, recordPaths(o));

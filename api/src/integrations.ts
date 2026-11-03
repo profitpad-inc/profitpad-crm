@@ -94,7 +94,7 @@ export async function listIntegrations(p: Principal) {
   return all.filter((i) => canUse(p, i)).map(publicOut);
 }
 
-function checkUrl(raw: unknown): string {
+export function checkUrl(raw: unknown): string {
   if (typeof raw !== 'string' || !raw.trim()) throw badRequest('url is required');
   let url: URL;
   try {
@@ -223,7 +223,7 @@ function rateLimit(p: Principal, key: string): void {
 // dns.lookup that refuses private addresses unless the host is listed in
 // INTEGRATION_PRIVATE_HOSTS; used for the connection itself, so a second DNS
 // answer cannot swap one in.
-function guardedLookup(hostname: string, options: { all?: boolean }, callback: (...args: any[]) => void) {
+export function guardedLookup(hostname: string, options: { all?: boolean }, callback: (...args: any[]) => void) {
   lookup(hostname, { all: true }, (err, addresses: LookupAddress[]) => {
     if (err) return callback(err);
     const allowPrivate = privateHosts.has(hostname.toLowerCase());

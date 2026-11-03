@@ -240,6 +240,14 @@ const EVENT_LABELS: Record<string, string> = {
   'payments.connected': 'Stripe account created',
   'payments.onboarding_link': 'Stripe setup opened',
   'payments.removed': 'Stripe removed',
+  'webhook.endpoint_created': 'Webhook endpoint added',
+  'webhook.endpoint_updated': 'Webhook endpoint changed',
+  'webhook.endpoint_deleted': 'Webhook endpoint deleted',
+  'webhook.secret_revealed': 'Webhook secret revealed',
+  'webhook.secret_rotated': 'Webhook secret replaced',
+  'webhook.subscription_created': 'Webhook subscription added',
+  'webhook.subscription_updated': 'Webhook subscription changed',
+  'webhook.subscription_deleted': 'Webhook subscription deleted',
   export: 'Records exported'
 };
 
