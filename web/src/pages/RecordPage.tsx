@@ -4,7 +4,7 @@ import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVe
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
-import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
+import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
@@ -70,6 +70,34 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries']
 };
 
+// Every active record linked to one record, grouped by object, with the
+// name properties (and, for activities, the stream's properties).
+async function loadLinked(object: string, id: string, codeToName: Map<string, string>): Promise<Associated[]> {
+  const res = await api<{ results: Link_[] }>('GET', `/v1/objects/${object}/${id}/associations`);
+  const byObject = new Map<string, Map<string, (string | null)[]>>();
+  for (const l of res.results) {
+    const name = codeToName.get(l.object_type_id);
+    if (!name) continue;
+    const m = byObject.get(name) ?? new Map();
+    m.set(l.record_id, [...(m.get(l.record_id) ?? []), l.label]);
+    byObject.set(name, m);
+  }
+  return Promise.all(
+    [...byObject].map(async ([name, ids]) => {
+      const s = await getSchema(name);
+      const wanted = new Set([...nameProperties(s.properties), ...(ACTIVITY_PROPS[name] ?? [])]);
+      const props = s.properties.filter((p) => wanted.has(p.api_name)).map((p) => p.api_name);
+      const all = [...ids.keys()];
+      const records: CrmRecord[] = [];
+      for (let i = 0; i < all.length; i += 100) {
+        const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: all.slice(i, i + 100), properties: props });
+        records.push(...r.results);
+      }
+      return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
+    })
+  );
+}
+
 export function RecordPage() {
   const { object = '', id = '' } = useParams();
   const navigate = useNavigate();
@@ -85,31 +113,9 @@ export function RecordPage() {
   const codeToName = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o.api_name])), [objects]);
 
   const loadAssociations = useCallback(async () => {
-    const res = await api<{ results: Link_[] }>('GET', `/v1/objects/${object}/${id}/associations`);
-    const byObject = new Map<string, Map<string, (string | null)[]>>();
-    for (const l of res.results) {
-      const name = codeToName.get(l.object_type_id);
-      if (!name) continue;
-      const m = byObject.get(name) ?? new Map();
-      m.set(l.record_id, [...(m.get(l.record_id) ?? []), l.label]);
-      byObject.set(name, m);
-    }
-    const groups = await Promise.all(
-      [...byObject].map(async ([name, ids]) => {
-        const s = await getSchema(name);
-        const wanted = new Set([...nameProperties(s.properties), ...(ACTIVITY_PROPS[name] ?? [])]);
-        const props = s.properties.filter((p) => wanted.has(p.api_name)).map((p) => p.api_name);
-        const all = [...ids.keys()];
-        const records: CrmRecord[] = [];
-        for (let i = 0; i < all.length; i += 100) {
-          const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: all.slice(i, i + 100), properties: props });
-          records.push(...r.results);
-        }
-        return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
-      })
-    );
-    setAssociated(groups);
+    setAssociated(await loadLinked(object, id, codeToName));
   }, [object, id, codeToName]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -414,6 +420,14 @@ function activityTime(object: string, r: CrmRecord): string {
   return String(t ?? p.created_at ?? '');
 }
 
+// What the activity search looks through: title, body, people and answers.
+function searchText(object: string, r: CrmRecord): string {
+  const p = r.properties;
+  const answers = object === 'form_submissions' ? answersOf(r).map((a) => `${a.label} ${a.value}`).join(' ') : '';
+  return [p.name, p.subject, plain(p.body), p.from_address, p.to_addresses, p.responder_name, p.responder_email, answers]
+    .filter((v) => v !== null && v !== undefined).map(String).join(' ');
+}
+
 function plain(text: unknown): string {
   if (typeof text !== 'string') return '';
   // email bodies are HTML; show text only (never inject it as markup)
@@ -433,7 +447,7 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
 }
 
 function ActivityStream({ object, id, record, associated, onChanged, schema }: { object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef }) {
-  const { objectByName } = useApp();
+  const { objectByName, toast } = useApp();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const linksTo = objectByName.get(object)?.links_to ?? [];
@@ -446,6 +460,9 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
   const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes);
   const go = (search: string) => navigate({ search }, { replace: true });
   const [note, setNote] = useState('');
+  const [search, setSearch] = useState('');
+  const [kind, setKind] = useState('');
+  const [days, setDays] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -462,12 +479,27 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
     return typeof at === 'string' ? [{ object: 'quotes', record: q, at, quoteResponse: true }] : [];
   });
 
-  const items = [
+  const allItems = [
     ...associated
       .filter((a) => (ACTIVITY_OBJECTS as readonly string[]).includes(a.object) && (tab === 'activity' || tab === a.object))
       .flatMap((a) => a.records.map((r) => ({ object: a.object, record: r.record, at: activityTime(a.object, r.record), quoteResponse: false }))),
     ...quoteEvents
   ].sort((x, y) => y.at.localeCompare(x.at));
+
+  // the type filter is for the Activity tab; the other tabs are one type already
+  const kindFilter = tab === 'activity' ? kind : '';
+  const filtered = !!(search.trim() || kindFilter || days);
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const since = days ? Date.now() - Number(days) * 86400000 : null;
+  const items = allItems.filter((x) => {
+    if (kindFilter && (x.quoteResponse ? 'quotes' : x.object) !== kindFilter) return false;
+    if (since !== null && !(x.at && localDate(x.at).getTime() >= since)) return false;
+    if (words.length === 0) return true;
+    const text = searchText(x.object, x.record).toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+  const kinds = [...new Set(allItems.map((x) => (x.quoteResponse ? 'quotes' : x.object)))];
+  const clearFilters = () => { setSearch(''); setKind(''); setDays(''); };
 
   async function addNote() {
     if (!note.trim()) return;
@@ -495,7 +527,16 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
     scrolledTo.current = openedKey;
     document.getElementById(`activity-${openedKey}`)?.scrollIntoView({ block: 'center' });
   }, [openedKey, openedListed]);
-  const openedInitial = opened ? associated.find((a) => a.object === opened.object)?.records.find((r) => r.record.id === opened.id)?.record : undefined;
+
+  // a copied link opens the activity in its own tab, whichever tab it was copied from
+  async function copyLink(o: string, rid: string) {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}${searchFor(o as Tab, o, rid)}`);
+      toast('Link copied');
+    } catch {
+      toast('Could not copy the link');
+    }
+  }
 
   return (
     <div className="activity">
@@ -523,7 +564,31 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
         <ChangeHistory object={object} id={id} schema={schema} />
       ) : (
         <div className="timeline">
-          {items.length === 0 && (
+          {allItems.length > 0 && (
+            <div className="field-row history-filters">
+              <input type="search" className="activity-search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search activity" />
+              {tab === 'activity' && kinds.length > 1 && (
+                <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Type">
+                  <option value="">Every type</option>
+                  {kinds.map((k) => <option key={k} value={k}>{k === 'quotes' ? 'Quote responses' : objectByName.get(k)?.label_plural ?? k}</option>)}
+                </select>
+              )}
+              <select value={days} onChange={(e) => setDays(e.target.value)} aria-label="Time">
+                <option value="">Any time</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="365">Last 12 months</option>
+              </select>
+              {filtered && <button className="btn small" onClick={clearFilters}>Clear</button>}
+            </div>
+          )}
+          {items.length === 0 && filtered && allItems.length > 0 && (
+            <EmptyState icon={<Inbox size={18} />} title="Nothing matches these filters" action={<button className="btn small" onClick={clearFilters}>Clear filters</button>}>
+              Try other words, another type or a longer time.
+            </EmptyState>
+          )}
+          {allItems.length === 0 && (
             <EmptyState icon={<Inbox size={18} />} title={tab === 'activity' ? 'No activity yet' : `No ${(objectByName.get(tab)?.label_plural ?? '').toLowerCase()} yet`}>
               {tab === 'activity'
                 ? `Calls, emails, notes and tasks linked to this ${schema.label_singular.toLowerCase()} show here, newest first.`
@@ -563,36 +628,48 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
             }
             const title = o === 'emails' ? (p.subject as string) || 'Email' : o === 'notes' ? 'Note' : displayName(p, r.id);
             const body = plain(o === 'tasks' ? p.body : p.body);
+            const key = `${o}-${r.id}`;
+            const open = openedKey === key;
+            const toggle = () => go(open ? searchFor(tab, null) : searchFor(tab, o, r.id));
             return (
-              <Link key={`${o}-${r.id}`} id={`activity-${o}-${r.id}`} to={{ search: searchFor(tab, o, r.id) }} replace
-                className={`activity-item${openedKey === `${o}-${r.id}` ? ' selected' : ''}`}>
+              // collapsed, the whole entry opens it (unless text is being selected); open, only the head closes it
+              <div key={key} id={`activity-${key}`} className={`activity-item${open ? ' open' : ''}`}
+                onClick={open ? undefined : () => { if (!window.getSelection()?.toString()) toggle(); }}>
                 <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
                 <div className="activity-body">
                   <div className="activity-head">
-                    <strong>{title}</strong>
-                    <span className="activity-kind push-right">{objectByName.get(o)?.label_singular}</span>
-                    {at && <time className="ledger-time" dateTime={at}>{timeOf(at)}</time>}
+                    <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); toggle(); }}>
+                      <ChevronRight size={14} className="activity-chevron" aria-hidden="true" />
+                      <strong>{title}</strong>
+                    </button>
+                    {open ? (
+                      <span className="activity-actions push-right">
+                        <button className="btn small" onClick={() => copyLink(o, r.id)}><Link2 size={14} /> Copy link</button>
+                        <Link className="btn small" to={`/objects/${o}/${r.id}`} aria-label={`Open ${(objectByName.get(o)?.label_singular ?? o).toLowerCase()}`}>
+                          <span className="btn-label">Open</span> <ArrowRight size={14} />
+                        </Link>
+                      </span>
+                    ) : (
+                      <span className="activity-kind push-right">{objectByName.get(o)?.label_singular}</span>
+                    )}
+                    {at && <time className="ledger-time" dateTime={at}>{open ? when(at) : timeOf(at)}</time>}
                   </div>
-                  {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
-                  {body && <div className="activity-text">{body.length > 400 ? `${body.slice(0, 400)}…` : body}</div>}
-                  {o === 'form_submissions' && <Answers record={r} limit={6} />}
+                  {open ? (
+                    <ActivityExpanded object={o} id={r.id} initial={r} page={{ object, id }} onPageLinkChanged={onChanged} />
+                  ) : (
+                    <>
+                      {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
+                      {body && <div className="activity-text">{body.length > 400 ? `${body.slice(0, 400)}…` : body}</div>}
+                      {o === 'form_submissions' && <Answers record={r} limit={6} />}
+                    </>
+                  )}
                 </div>
-              </Link>
+              </div>
             );
           })}
             </LedgerDay>
           ))}
         </div>
-      )}
-      {opened && (
-        <ActivityDetail
-          key={openedKey}
-          object={opened.object}
-          id={opened.id}
-          initial={openedInitial}
-          link={`${window.location.origin}${window.location.pathname}${searchFor(opened.object as Tab, opened.object, opened.id)}`}
-          onClose={() => go(searchFor(tab, null))}
-        />
       )}
     </div>
   );
@@ -620,9 +697,10 @@ function HtmlBody({ html }: { html: string }) {
   );
 }
 
-function ActivityDetail({ object, id, initial, link, onClose }: { object: string; id: string; initial?: CrmRecord; link: string; onClose: () => void }) {
-  const { objectByName, toast } = useApp();
-  const [record, setRecord] = useState<CrmRecord | null>(initial ?? null);
+// An activity opened in place in the stream: the whole body, its fields and
+// what it is linked to.
+function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { object: string; id: string; initial: CrmRecord; page: { object: string; id: string }; onPageLinkChanged: () => Promise<void> }) {
+  const [record, setRecord] = useState<CrmRecord>(initial);
   const [props, setProps] = useState<Property[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -640,66 +718,184 @@ function ActivityDetail({ object, id, initial, link, onClose }: { object: string
     };
   }, [object, id]);
 
-  async function copy() {
+  const p = record.properties;
+  const body = typeof p.body === 'string' ? p.body.trim() : '';
+  const fields = (ACTIVITY_PROPS[object] ?? [])
+    .filter((name) => !DETAIL_SKIP.has(name))
+    .map((name) => props.find((x) => x.api_name === name))
+    .filter((x): x is Property => !!x);
+  const empty = (v: unknown) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+
+  return (
+    <div className="activity-expanded">
+      {error && <div className="error">{error}</div>}
+      {object === 'form_submissions' ? (
+        <Answers record={record} />
+      ) : body ? (
+        /<[a-z][\s\S]*>/i.test(body) ? <HtmlBody html={body} /> : <div className="activity-plain">{body}</div>
+      ) : (
+        <div className="muted small">{object === 'calls' ? 'No call notes' : 'No body'}</div>
+      )}
+      {fields.length > 0 && (
+        <dl className="activity-fields">
+          {fields.map((f) => (
+            <div key={f.api_name}>
+              <dt>{f.label}</dt>
+              <dd>{empty(p[f.api_name]) ? <span className="muted">--</span> : displayValue(f, p[f.api_name])}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <div className="activity-foot">
+        <ActivityLinks object={object} id={id} page={page} onPageLinkChanged={onPageLinkChanged} />
+      </div>
+    </div>
+  );
+}
+
+// "N associations": a popover listing every record the activity is linked to.
+// Selected shows the current links; each object searches its records, and a
+// checkbox links or unlinks one. Links the system makes cannot be changed here.
+function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string; id: string; page: { object: string; id: string }; onPageLinkChanged: () => Promise<void> }) {
+  const { objects, objectByName } = useApp();
+  const codeToName = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o.api_name])), [objects]);
+  const [groups, setGroups] = useState<Associated[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [only, setOnly] = useState('');
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<CrmRecord[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const reload = useCallback(() => loadLinked(object, id, codeToName).then(setGroups), [object, id, codeToName]);
+  useEffect(() => {
+    reload().catch(() => setGroups([]));
+  }, [reload]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // an object picked on the left: search its records
+  useEffect(() => {
+    setResults(null);
+    if (!open || !only) return;
+    let cancelled = false;
+    const h = setTimeout(async () => {
+      try {
+        const s = await getSchema(only);
+        const res = await api<SearchResult>('POST', `/v1/objects/${only}/search`, { query: search.trim() || undefined, limit: 20, properties: nameProperties(s.properties) });
+        if (!cancelled) setResults(res.results);
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(h);
+    };
+  }, [open, only, search]);
+
+  const meta = objectByName.get(object);
+  const systemLinks = meta?.system_links ?? [];
+  const linkable = (meta?.links_to ?? [])
+    .filter((o) => objectByName.has(o))
+    .map((o) => ({ object: o, label: objectByName.get(o)?.label_plural ?? o }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const linked = (o: string) => groups?.find((g) => g.object === o)?.records.map((r) => r.record) ?? [];
+  const total = (groups ?? []).reduce((n, g) => n + g.records.length, 0);
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const secondary = (r: CrmRecord) => {
+    const v = r.properties.email ?? r.properties.domain;
+    return typeof v === 'string' && v && v !== recordName(r) ? v : null;
+  };
+  const matches = (r: CrmRecord) => words.every((w) => `${recordName(r)} ${secondary(r) ?? ''}`.toLowerCase().includes(w));
+
+  // Selected: the current links by object. An object: its linked records that
+  // match first, then search results not yet linked.
+  const shown = only
+    ? [{
+        object: only,
+        label: objectByName.get(only)?.label_plural ?? only,
+        records: [...linked(only).filter(matches), ...(results ?? []).filter((r) => !linked(only).some((l) => l.id === r.id) && !(only === object && r.id === id))]
+      }]
+    : linkable
+        .map((l) => ({ ...l, records: linked(l.object).filter(matches) }))
+        .filter((g) => g.records.length > 0);
+
+  async function toggle(other: string, targetId: string, isLinked: boolean) {
+    const key = `${other}-${targetId}`;
+    setBusy(key);
+    setError(null);
     try {
-      await navigator.clipboard.writeText(link);
-      toast('Link copied');
-    } catch {
-      toast('Could not copy the link');
+      await api(isLinked ? 'DELETE' : 'PUT', `/v1/objects/${object}/${id}/associations/${other}/${targetId}`, isLinked ? undefined : {});
+      await reload();
+      // the stream on this page lists the activity only while it links here
+      if (other === page.object && targetId === page.id) await onPageLinkChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
     }
   }
 
-  const label = objectByName.get(object)?.label_singular ?? object;
-  const p = record?.properties ?? {};
-  const title = !record ? label : object === 'emails' ? (p.subject as string) || 'Email' : object === 'notes' ? 'Note' : displayName(p, record.id);
-  const body = typeof p.body === 'string' ? p.body.trim() : '';
-  const at = record ? activityTime(object, record) : '';
-  const meta = (ACTIVITY_PROPS[object] ?? [])
-    .filter((name) => !DETAIL_SKIP.has(name))
-    .map((name) => ({ prop: props.find((x) => x.api_name === name), value: p[name] }))
-    .filter((m): m is { prop: Property; value: unknown } => !!m.prop && m.value !== null && m.value !== undefined && m.value !== '');
-
+  if (groups === null) return <span className="muted small">Loading associations…</span>;
   return (
-    <Modal
-      title={title}
-      onClose={onClose}
-      wide
-      className="activity-detail"
-      actions={
-        <>
-          <button className="btn small" onClick={copy}><Link2 size={14} /> Copy link</button>
-          <Link className="btn small" to={`/objects/${object}/${id}`} aria-label={`Open ${label.toLowerCase()}`}><span className="btn-label">Open {label.toLowerCase()}</span> <ArrowRight size={14} /></Link>
-        </>
-      }
-    >
-      {error && <div className="error">{error}</div>}
-      {!record && !error && <TableSkeleton rows={3} />}
-      {record && (
-        <>
-          <div className="activity-detail-meta muted small">
-            {label}{at && <>, {when(at)}</>}
+    <div className="activity-links" ref={ref}>
+      <button className="activity-links-trigger" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {total} association{total === 1 ? '' : 's'} <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="activity-links-pop" role="dialog" aria-label="Associations">
+          <nav className="activity-links-nav">
+            <button className={only === '' ? 'active' : ''} onClick={() => setOnly('')}><span>Selected</span><span className="num">{total}</span></button>
+            {linkable.map((l) => (
+              <button key={l.object} className={only === l.object ? 'active' : ''} onClick={() => setOnly(l.object)}>
+                <span>{l.label}</span><span className="num">{linked(l.object).length}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="activity-links-list">
+            <input type="search" placeholder={only ? `Search ${(objectByName.get(only)?.label_plural ?? only).toLowerCase()}` : 'Search current associations'}
+              value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search associations" autoFocus />
+            {error && <div className="error">{error}</div>}
+            {only && results === null && <TableSkeleton rows={3} />}
+            {shown.length === 0 || (only && results !== null && shown[0].records.length === 0) ? (
+              <div className="muted small">{!only && total === 0 && !words.length ? 'Not linked to anything yet. Pick an object to link one.' : 'No matches.'}</div>
+            ) : shown.map((g) => {
+              const editable = !systemLinks.includes(g.object);
+              return (
+                <div key={g.object} className="activity-links-group">
+                  <div className="activity-links-head">{g.label}</div>
+                  {g.records.map((r) => {
+                    const isLinked = linked(g.object).some((l) => l.id === r.id);
+                    return (
+                      <div key={r.id} className="activity-links-row">
+                        <input type="checkbox" checked={isLinked} disabled={!editable || busy === `${g.object}-${r.id}`}
+                          onChange={() => toggle(g.object, r.id, isLinked)}
+                          aria-label={`${isLinked ? 'Unlink' : 'Link'} ${recordName(r)}`}
+                          title={editable ? undefined : 'Set by the system'} />
+                        <Link to={`/objects/${g.object}/${r.id}`}>{recordName(r)}</Link>
+                        {secondary(r) && <span className="muted small">{secondary(r)}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
-          {object === 'form_submissions' ? (
-            <SubmissionAnswers record={record} />
-          ) : (
-            <>
-              {meta.length > 0 && (
-                <dl className="answers compact">
-                  {meta.map(({ prop, value }) => (
-                    <div key={prop.api_name}><dt>{prop.label}</dt><dd>{displayValue(prop, value)}</dd></div>
-                  ))}
-                </dl>
-              )}
-              {body ? (
-                /<[a-z][\s\S]*>/i.test(body) ? <HtmlBody html={body} /> : <div className="activity-plain">{body}</div>
-              ) : (
-                <EmptyState compact title={object === 'calls' ? 'No call notes' : 'No body'} />
-              )}
-            </>
-          )}
-        </>
+        </div>
       )}
-    </Modal>
+    </div>
   );
 }
 

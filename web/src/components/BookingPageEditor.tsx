@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CalendarCheck, CircleAlert, Clock, Plus, Trash2 } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
@@ -313,6 +313,17 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   const [rows, setRows] = useState<Row[]>(() => rowsOf(stored ?? DEFAULT));
   const [zone, setZone] = useState(str(record.properties.timezone) || browserZone());
   const [dirty, setDirty] = useState(!stored || !record.properties.timezone);
+  // the save bar shows a shadow only while it is pinned over the hours; the marker just after it is on screen when
+  // the bar sits at the end of its section
+  const [barPinned, setBarPinned] = useState(false);
+  const barObserver = useRef<IntersectionObserver | null>(null);
+  const barEnd = useCallback((el: HTMLDivElement | null) => {
+    barObserver.current?.disconnect();
+    barObserver.current = null;
+    if (!el) return;
+    barObserver.current = new IntersectionObserver(([e]) => setBarPinned(!e.isIntersecting));
+    barObserver.current.observe(el);
+  }, []);
   const [forms, setForms] = useState<{ id: string; name: string; published: boolean }[]>([]);
   const [check, setCheck] = useState<Check | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -415,21 +426,16 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
 
   return (
     <div className="ed-sheet booking-editor">
-      <header className="ed-head">
-        <div className="ed-head-text">
-          <h2>Booking page</h2>
-        </div>
-      </header>
       {error && <div className="ed-notices"><div className="error">{error}</div></div>}
 
       <section className="ed-section bk-status">
         <div className="ed-section-head">
-          <h3>Taking bookings</h3>
+          <h3>{check && check.problems.length > 0 ? 'Not taking bookings' : 'Taking bookings'}</h3>
         </div>
         {!check && <p className="ed-hint">Checking…</p>}
         {check && check.problems.length > 0 && (
           <>
-            <p>Not yet. To publish this page:</p>
+            <p>To publish this page:</p>
             <ul className="bk-todo">
               {check.problems.map((p) => <li key={p}><CircleAlert size={15} aria-hidden="true" /><span>{p}</span></li>)}
             </ul>
@@ -540,10 +546,11 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           </div>
         </div>
 
-        <div className={`ed-savebar${dirty ? ' dirty' : ''}`}>
+        <div className={`ed-savebar${dirty ? ' dirty' : ''}${dirty && barPinned ? ' pinned' : ''}`}>
           <span className="ed-savebar-note" role="status">{dirty ? (stored ? 'Unsaved changes to the hours' : 'Hours not saved yet') : 'Hours saved'}</span>
           <button className="btn primary" onClick={saveHours} disabled={!dirty || saving}>Save hours</button>
         </div>
+        <div className="ed-savebar-end" ref={barEnd} aria-hidden="true" />
       </section>
     </div>
   );

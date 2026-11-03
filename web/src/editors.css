@@ -172,7 +172,11 @@
   background: color-mix(in srgb, var(--page-background) 92%, transparent); backdrop-filter: blur(6px);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
-.ed-savebar.dirty { position: sticky; bottom: 0; box-shadow: 0 -8px 24px rgba(24, 32, 43, 0.08); }
+.ed-savebar.dirty { position: sticky; bottom: 0; }
+/* shadow only while pinned over content (BookingPageEditor watches the marker just after the bar) */
+.ed-savebar.pinned { box-shadow: 0 -8px 24px rgba(24, 32, 43, 0.08); }
+.ed-section:has(> .ed-savebar-end) { position: relative; }
+.ed-savebar-end { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; pointer-events: none; }
 /* on wide screens the record page's middle column is the scroller, and sticky stops at its bottom padding */
 @media (min-width: 768px) {
   .record-page .record-middle .ed-savebar.dirty { bottom: -40px; }

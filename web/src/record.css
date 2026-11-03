@@ -124,16 +124,60 @@
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .activity-status { margin-top: 4px; }
-.record-page .activity-item.selected { background: color-mix(in srgb, var(--surface) 60%, var(--page-background)); }
+.record-page .activity-item { cursor: pointer; }
+.record-page .activity-item.open {
+  cursor: auto; position: relative; z-index: 1; margin: 6px 0; padding: 12px 16px 12px 10px;
+  background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop);
+}
+.record-page .activity-item.open:hover { background: var(--page-background); }
+/* above the sticky day headings only while the associations popover is open */
+.record-page .activity-item.open:has(.activity-links-pop) { z-index: 3; }
+.record-page .activity-item.open:hover .activity-icon { box-shadow: 0 0 0 3px var(--page-background); }
+.activity-toggle {
+  display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.activity-chevron { flex-shrink: 0; align-self: center; color: var(--muted-text); transition: transform 0.15s; }
+.activity-item.open .activity-chevron { transform: rotate(90deg); }
+.activity-actions { display: inline-flex; gap: 6px; align-self: center; }
 
-/* Activity detail (opened from the stream) */
-.activity-detail .modal-head { gap: 12px; }
-.activity-detail .modal-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.activity-detail .modal-body { display: flex; flex-direction: column; gap: 14px; }
-.activity-detail .answers { margin-top: 0; }
-.activity-detail .submission h2 { font-size: 16px; }
+/* Activity opened in place */
+.activity-expanded { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.activity-expanded .answers { margin-top: 0; }
 .activity-html { display: block; width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
 .activity-plain { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.activity-fields {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 20px; margin: 0;
+  padding-top: 12px; border-top: 1px solid var(--hairline);
+}
+.activity-fields dt { font-size: 12px; color: var(--muted-text); margin-bottom: 2px; }
+.activity-fields dd { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.activity-foot { display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--hairline); }
+
+/* The associations popover on an opened activity */
+.activity-links { position: relative; }
+.activity-links-trigger { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--text); cursor: pointer; }
+.activity-links-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; display: grid; grid-template-columns: 170px minmax(0, 1fr);
+  width: min(520px, calc(100vw - 48px)); max-height: 340px; background: var(--page-background);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); overflow: hidden;
+}
+.activity-links-nav { display: flex; flex-direction: column; padding: 6px; border-right: 1px solid var(--border); overflow: auto; }
+.activity-links-nav button {
+  display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border: 0; border-radius: var(--radius-sm);
+  background: none; font: inherit; font-size: 13px; text-align: left; color: var(--text); cursor: pointer;
+}
+.activity-links-nav button:hover { background: var(--surface); }
+.activity-links-nav button.active { background: var(--surface); font-weight: 600; }
+.activity-links-nav .num { color: var(--muted-text); }
+.activity-links-list { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; overflow: auto; }
+.activity-links-list input { font-size: 13px; padding: 6px 10px; }
+.activity-links-head { font-size: 12px; font-weight: 600; color: var(--muted-text); margin-bottom: 2px; }
+.activity-links-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; margin: 0 -6px; border-radius: var(--radius-sm); font-size: 13.5px; }
+.activity-links-row:hover { background: var(--surface); }
+.activity-links-row input[type="checkbox"] { flex-shrink: 0; width: auto; margin: 0; }
+.activity-links-row a { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-links-row .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .record-page .timeline > .empty-state { margin-top: 4px; }
 .record-page .timeline > .table-skeleton { margin-top: 4px; }
 
@@ -155,6 +199,7 @@
   border: 1px solid var(--border); color: var(--muted-text); background: var(--page-background);
 }
 .record-page .history-filters { gap: 8px; margin-bottom: 14px; }
+.record-page .history-filters .activity-search { flex: 1 1 180px; width: auto; min-width: 0; font-size: 13px; padding: 5px 10px; border-radius: var(--radius); }
 .record-page .history-filters select {
   flex: 0 1 auto; width: auto; max-width: 100%; min-width: 0; font-size: 13px;
   padding: 5px 30px 5px 10px; background-position: right 10px center; border-radius: var(--radius);
@@ -320,11 +365,13 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
   .record-page .record-right { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: start; }
 }
 @media (max-width: 767px) {
-  .activity-detail .modal-actions .btn-label { display: none; }
+  .activity-actions .btn-label { display: none; }
+  .activity-links-pop { grid-template-columns: 1fr; max-height: 60vh; }
+  .activity-links-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
   .record-page .record-middle { padding: 16px 16px 32px; }
   .record-page .ledger-day { position: static; }
   .record-page .record-identity h1 { font-size: 19px; }
-  .record-page .history-filters select { flex: 1 1 100%; }
+  .record-page .history-filters select, .record-page .history-filters .activity-search { flex: 1 1 100%; }
   .record-page .activity > .tabs { gap: 16px; }
 }
 
