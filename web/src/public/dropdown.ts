@@ -6,13 +6,17 @@ import { el } from './public-api';
 // answers, prefills, custom HTML and validation work on it as before; a
 // field-like face opens a list of its options under it. Picking sets the
 // select's value and fires input and change. Code that sets the value itself
-// calls refresh(). Lists longer than 10 get a search box.
+// calls refresh(). Lists longer than 10 get a search box, which matches
+// anywhere in a choice, across slashes and underscores ("van" finds
+// America/Vancouver), with choices that have a word starting with it first.
+// A select that is not on the page yet is wrapped all the same: place the
+// returned element instead of the select.
 //
 // Divs, not buttons, so a website's own button styles cannot reach them.
 // Styled by DROPDOWN_CSS (part of FORM_CSS); the face is styled by the page
 // like its other fields (.pcrm-dd-face).
 
-export interface Dropdown { refresh: () => void }
+export interface Dropdown { refresh: () => void; element: HTMLElement }
 
 const SEARCH_FROM = 11;
 
@@ -43,6 +47,9 @@ export const DROPDOWN_CSS = `
 
 const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 let counter = 0;
+
+// lower case, with slashes and underscores read as spaces
+const words = (s: string) => s.toLowerCase().replace(/[/_]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 // face: what the closed dropdown shows instead of the picked option's text
 export function enhanceSelect(select: HTMLSelectElement, opts: { face?: (select: HTMLSelectElement) => string } = {}): Dropdown {
@@ -80,8 +87,12 @@ export function enhanceSelect(select: HTMLSelectElement, opts: { face?: (select:
   };
 
   const draw = () => {
-    const q = search.value.trim().toLowerCase();
-    shown = [...select.options].filter((o) => !q || (o.textContent ?? '').toLowerCase().includes(q));
+    const q = words(search.value);
+    const all = [...select.options];
+    if (q) {
+      const hits = all.map((o) => ({ o, w: ` ${words(`${o.textContent ?? ''} ${o.value}`)}` })).filter((h) => h.w.includes(q));
+      shown = [...hits.filter((h) => h.w.includes(` ${q}`)), ...hits.filter((h) => !h.w.includes(` ${q}`))].map((h) => h.o);
+    } else shown = all;
     options.replaceChildren(...shown.map((o, i) => {
       const row = el('div', { class: `pcrm-dd-opt${i === active ? ' pcrm-dd-active' : ''}`, role: 'option', 'aria-selected': String(o.selected), 'aria-disabled': o.disabled ? 'true' : undefined },
         el('span', {}, o.textContent || ' '));
@@ -179,5 +190,5 @@ export function enhanceSelect(select: HTMLSelectElement, opts: { face?: (select:
   select.addEventListener('change', refresh);
 
   refresh();
-  return { refresh };
+  return { refresh, element: box };
 }

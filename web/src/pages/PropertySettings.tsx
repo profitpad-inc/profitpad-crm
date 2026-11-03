@@ -339,9 +339,13 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   const parentChoices = (parent?.dropdown_options ?? []).filter((o) => o.record_status === 'active').sort((a, b) => a.display_order - b.display_order);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // closing asks first, so the work isn't lost by accident
+  // once something is edited, closing asks first so the work isn't lost by accident;
+  // until then Escape, clicking outside, X and Cancel just close
+  const snapshot = JSON.stringify({ label, apiName, description, type, options, calcSql, calcType, choices, stages });
+  const [initial] = useState(snapshot);
+  const dirty = snapshot !== initial;
   const [confirmClose, setConfirmClose] = useState(false);
-  const requestClose = () => setConfirmClose(true);
+  const requestClose = () => (dirty ? setConfirmClose(true) : onClose());
   // choices get a colour swatch once the dropdown shows colours
   const colored = options.color_display === 'dot' || options.color_display === 'pill';
 
@@ -535,8 +539,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     <>
     <Modal
       wide
-      locked
-      title={property ? `Edit ${property.label}` : 'Create property'}
+      locked={dirty}
+      title={property ?`Edit ${property.label}` : 'Create property'}
       onClose={requestClose}
       footer={
         <>

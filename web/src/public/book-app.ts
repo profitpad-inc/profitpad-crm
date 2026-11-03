@@ -283,7 +283,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     new ResizeObserver(fade).observe(timeList);
 
     const zoneSelect = el('select', { 'aria-label': 'Time zone' }, ...[...new Set([tz, ...zones()])].map((z) => el('option', { value: z, selected: z === tz }, z.replace(/_/g, ' '))));
-    enhanceSelect(zoneSelect);
+    const zonePicker = enhanceSelect(zoneSelect);
     zoneSelect.addEventListener('change', async () => {
       tz = zoneSelect.value;
       await loadMonth();
@@ -312,7 +312,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       el('div', { class: 'bk-grid' }, ...cells),
       manageKey ? backLink('Keep the current time', showManage) : page.form_before ? backLink('Change your details', showBefore) : null
     ], el('div', { class: 'bk-side-col' },
-      el('div', { class: 'bk-tz' }, 'Times are shown in', zoneSelect),
+      el('div', { class: 'bk-tz' }, 'Times are shown in', zonePicker.element),
       lengths,
       pickedDay ? el('div', { class: 'bk-day' },
         el('strong', { class: 'bk-day-title' }, longDate(new Date(times[0]))),
