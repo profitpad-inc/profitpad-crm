@@ -549,11 +549,12 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('create_webhook_endpoint', {
     title: 'Create webhook endpoint',
-    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs. Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings, Webhooks. Then add subscriptions with create_webhook_subscription.',
+    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs, batched: events within 50 ms of each other go in one POST {batch_id, events: [...]}, up to batch_max (default 10, 1 to 1000). Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings, Webhooks. Then add subscriptions with create_webhook_subscription.',
     inputSchema: z.object({
       name: z.string(),
       url: z.string(),
       description: z.string().optional(),
+      batch_max: z.number().int().min(1).max(1000).optional().describe('Most events per POST (default 10). 1 sends every event on its own.'),
       secret_header: z.string().optional().describe('Optional header sent with every delivery, e.g. X-Webhook-Secret for n8n header auth'),
       secret_value: z.string().optional().describe('The value of secret_header'),
       enabled: z.boolean().optional()
@@ -564,12 +565,13 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_webhook_endpoint', {
     title: 'Update webhook endpoint',
-    description: 'Changes an endpoint\'s name, url, description, secret header or enabled (a disabled endpoint keeps its pending deliveries until enabled again). Fields not given stay; secret_header null removes it.',
+    description: 'Changes an endpoint\'s name, url, description, batch_max, secret header or enabled (a disabled endpoint keeps its pending deliveries until enabled again). Fields not given stay; secret_header null removes it.',
     inputSchema: z.object({
       endpoint_id: endpointIdArg,
       name: z.string().optional(),
       url: z.string().optional(),
       description: z.string().nullable().optional(),
+      batch_max: z.number().int().min(1).max(1000).optional().describe('Most events per POST, 1 to 1000'),
       secret_header: z.string().nullable().optional(),
       secret_value: z.string().optional(),
       enabled: z.boolean().optional()
@@ -591,7 +593,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('test_webhook_endpoint', {
     title: 'Test webhook endpoint',
-    description: 'Sends a test event ({"event": "test", ...}, signed like real ones) to an endpoint now and reports the answer.',
+    description: 'Sends a test batch with one event ({"batch_id", "events": [{"event": "test", ...}]}, signed like real ones) to an endpoint now and reports the answer.',
     inputSchema: z.object({ endpoint_id: endpointIdArg }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     scopeChallenge: schemaChallenge

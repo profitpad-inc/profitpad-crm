@@ -6,14 +6,17 @@ pg.types.setTypeParser(1082, (v) => v);
 
 // Connects as claude_admin (password from ~/.pgpass) and immediately drops
 // into test_crm_api, so every query runs with the API's limited privileges.
-export const pool = new pg.Pool({
+const config: pg.ClientConfig = {
   host: process.env.PGHOST ?? 'localhost',
   port: Number(process.env.PGPORT ?? 5433),
   user: process.env.PGUSER ?? 'claude_admin',
   database: process.env.PGDATABASE ?? 'test_crm',
-  max: Number(process.env.PGPOOL_MAX ?? 10),
   options: "-c role=test_crm_api -c statement_timeout=30000 -c timezone=UTC"
-});
+};
+export const pool = new pg.Pool({ ...config, max: Number(process.env.PGPOOL_MAX ?? 10) });
+
+// A connection of its own, outside the pool, for LISTEN (the webhook worker).
+export const newClient = () => new pg.Client(config);
 
 export type Db = pg.PoolClient | pg.Pool;
 

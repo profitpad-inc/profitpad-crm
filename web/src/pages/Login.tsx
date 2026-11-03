@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE, api, type Me } from '../lib/api';
 import { LogoMark } from '../components/Logo';
+import { openSignInPopup, watchSignIn } from '../lib/reauth';
 
 // Set by the API's callback as ?auth_error=...
 const AUTH_ERRORS: Record<string, string> = {
@@ -51,12 +52,29 @@ function MicrosoftMark() {
   );
 }
 
-// reauth: shown over the app when an admin change needs a fresh sign-in;
-// signing in comes back to the same page.
-export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me: Me) => void; reauth?: boolean; onCancel?: () => void }) {
+// reauth: shown over the app when an admin change needs a fresh sign-in.
+// The sign-in runs in a popup (lib/reauth.ts) so the page underneath keeps
+// what was typed; when it reports back, onSignedIn and the change is sent
+// again. If the browser blocks the popup, the whole page signs in instead.
+export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) => void; reauth?: boolean; onCancel?: () => void }) {
   const [error, setError] = useState<string | null>(takeAuthError);
   const [config, setConfig] = useState<{ google: boolean; microsoft: boolean }>({ google: false, microsoft: false });
   const [checking, setChecking] = useState(true);
+  // reauth: the popup is open and we are waiting for it
+  const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => {
+    if (!reauth) return;
+    return watchSignIn((m) => {
+      if (m.type === 'signed-in') {
+        onSignedIn();
+        return;
+      }
+      setWaiting(false);
+      const base = (m.error && AUTH_ERRORS[m.error]) ?? AUTH_ERRORS.google_failed;
+      setError(m.detail ? `${base} (${m.detail})` : base);
+    });
+  }, [reauth, onSignedIn]);
 
   useEffect(() => {
     api<{ google?: boolean; microsoft?: boolean }>('GET', '/v1/auth/config', undefined, null)
@@ -66,8 +84,19 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me: Me) =
   }, []);
 
   const returnTo = window.location.pathname + window.location.search;
-  const googleHref = `${API_BASE}/v1/auth/google/start?return_to=${encodeURIComponent(returnTo)}`;
-  const msHref = `${API_BASE}/v1/auth/microsoft/start?return_to=${encodeURIComponent(returnTo)}`;
+  const href = (provider: 'google' | 'microsoft', to: string) => `${API_BASE}/v1/auth/${provider}/start?return_to=${encodeURIComponent(to)}`;
+  const googleHref = href('google', returnTo);
+  const msHref = href('microsoft', returnTo);
+  // reauth: sign in in a popup that comes back to /signed-in.html; a blocked
+  // popup falls through to the link (the whole page signs in)
+  const popup = (provider: 'google' | 'microsoft') => (e: React.MouseEvent) => {
+    if (!reauth) return;
+    if (openSignInPopup(href(provider, '/signed-in.html'))) {
+      e.preventDefault();
+      setError(null);
+      setWaiting(true);
+    }
+  };
 
   if (checking) return <div className="splash">Loading…</div>;
 
@@ -78,17 +107,25 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me: Me) =
       <div className="login-card">
         <div className="wordmark"><LogoMark size={22} /><b>ProfitPad</b></div>
         <h1>{reauth ? 'Confirm it\u2019s you' : 'Log in to ProfitPad CRM'}</h1>
-        {reauth && <p className="muted">Changes to access (roles, API keys, sharing rules, other people{'\u2019'}s sessions) need a sign-in within the last 4 hours. Sign in again, then repeat the change.</p>}
+        {reauth && !waiting && (
+          <p className="muted">
+            Admin changes (roles, API keys, sharing rules, webhooks, integrations, other people{'\u2019'}s sessions) need a sign-in within the
+            last 4 hours. Sign in again in the window that opens; your change is saved once you have, and nothing on this page is lost.
+          </p>
+        )}
+        {reauth && waiting && (
+          <p className="muted">Finish signing in in the window that opened. If you closed it, choose a sign-in button again.</p>
+        )}
         {hasAny ? (
           <div className="login-actions">
             {config.google && (
-              <a className="btn sso-btn google-btn" href={googleHref}>
+              <a className="btn sso-btn google-btn" href={googleHref} onClick={popup('google')}>
                 <GoogleMark />
                 Log in with Google
               </a>
             )}
             {config.microsoft && (
-              <a className="btn sso-btn ms-btn" href={msHref}>
+              <a className="btn sso-btn ms-btn" href={msHref} onClick={popup('microsoft')}>
                 <MicrosoftMark />
                 Log in with Microsoft
               </a>

@@ -2,7 +2,7 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import type { FastifyRequest } from 'fastify';
-import { pool, quoteIdent } from './db.js';
+import { newClient, pool, quoteIdent } from './db.js';
 import { ApiError, badRequest, forbidden, notFound } from './errors.js';
 import { noneHidden, type Principal } from './auth.js';
 import { activeProperties, getProperty, getRegistry, type ObjectDef, type Registry } from './registry.js';
@@ -40,16 +40,25 @@ const NOT_PROPERTIES = new Set(['row_status', 'merged_ids', 'merged_into_id', 'a
 const HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
 const RESERVED_HEADERS = new Set([
   'host', 'content-type', 'content-length', 'user-agent', 'connection', 'transfer-encoding',
-  'x-pcrm-signature', 'x-pcrm-event', 'x-pcrm-event-id', 'x-pcrm-delivery-attempt'
+  'x-pcrm-signature', 'x-pcrm-event', 'x-pcrm-event-id', 'x-pcrm-delivery-attempt', 'x-pcrm-batch-id', 'x-pcrm-event-count'
 ]);
 const TIMEOUT_MS = 10_000;
 const MAX_PAYLOAD = 256_000;
+// a batch closes this long after its first event, or when it reaches the endpoint's batch_max
+const BATCH_WINDOW_MS = 50;
+// and never grows past this many bytes of events (split into more POSTs instead)
+const MAX_BATCH_BYTES = 5_000_000;
 // property values a subscription may send with each delivery
 const MAX_SEND_PROPERTIES = 3;
 // minutes to wait after each failed attempt; a delivery is given up after the last
 const RETRY_MINUTES = [1, 5, 30, 120, 360, 720, 1440];
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
 const KEEP_DAYS = 30;
+// sends at once across all endpoints; a slow receiver never holds up the others
+const MAX_IN_FLIGHT = 32;
+// fallback check for due retries and a lost LISTEN connection; new changes
+// arrive by NOTIFY webhook_outbox (0041) the moment they commit
+const POLL_MS = 500;
 
 // ---- access -------------------------------------------------------------------
 
@@ -82,6 +91,7 @@ interface EndpointRow {
   secret_header: string | null;
   secret_value: Buffer | null;
   enabled: boolean;
+  batch_max: number;
   created_by: string | null;
   created_at: Date;
   updated_by: string | null;
@@ -100,6 +110,7 @@ const endpointOut = (e: EndpointRow) => ({
   secret_header: e.secret_header,
   has_secret: e.secret_value !== null,
   enabled: e.enabled,
+  batch_max: e.batch_max,
   created_by: e.created_by,
   created_at: e.created_at,
   updated_by: e.updated_by,
@@ -131,6 +142,7 @@ export interface EndpointInput {
   secret_header?: unknown;
   secret_value?: unknown;
   enabled?: unknown;
+  batch_max?: unknown;
 }
 
 function readEndpoint(input: EndpointInput, creating: boolean): Record<string, unknown> {
@@ -149,6 +161,12 @@ function readEndpoint(input: EndpointInput, creating: boolean): Record<string, u
   if (input.enabled !== undefined) {
     if (typeof input.enabled !== 'boolean') throw badRequest('enabled must be true or false');
     out.enabled = input.enabled;
+  }
+  if (input.batch_max !== undefined) {
+    if (!Number.isInteger(input.batch_max) || (input.batch_max as number) < 1 || (input.batch_max as number) > 1000) {
+      throw badRequest('batch_max must be a whole number from 1 to 1000 (events per POST)');
+    }
+    out.batch_max = input.batch_max;
   }
   if (input.secret_header !== undefined) {
     if (input.secret_header === null || input.secret_header === '') {
@@ -510,6 +528,7 @@ export async function deleteSubscription(p: Principal, id: unknown, req?: Fastif
 const deliveryOut = (reg: Registry, d: Record<string, any>, withPayload: boolean) => ({
   id: Number(d.id),
   event_id: d.event_id,
+  batch_id: d.batch_id,
   endpoint_id: Number(d.endpoint_id),
   subscription_id: d.subscription_id === null ? null : Number(d.subscription_id),
   event: d.event,
@@ -602,13 +621,19 @@ export async function getDelivery(p: Principal, id: unknown) {
 // Sends a failed or cancelled delivery again (soon, by the worker).
 export async function retryDelivery(p: Principal, id: unknown) {
   requireAdmin(p);
+  // the failed events sent with it come back too; they are batched again
   const { rows } = await pool.query(
-    `update auth.webhook_deliveries set status = 'pending', next_attempt_at = now(), attempts = least(attempts, $2)
-     where id = $1 and status in ('failed', 'cancelled') returning *`,
+    `update auth.webhook_deliveries d set status = 'pending', next_attempt_at = now(), attempts = least(d.attempts, $2), batch_id = null
+     from auth.webhook_deliveries x
+     where x.id = $1 and x.status in ('failed', 'cancelled')
+       and d.status in ('failed', 'cancelled') and (d.id = x.id or (x.batch_id is not null and d.batch_id = x.batch_id))
+     returning d.*`,
     [Number(id), MAX_ATTEMPTS - 1]
   );
-  if (!rows[0]) throw badRequest('only failed or cancelled deliveries can be retried');
-  return deliveryOut(await getRegistry(), rows[0], false);
+  const row = rows.find((r) => Number(r.id) === Number(id));
+  if (!row) throw badRequest('only failed or cancelled deliveries can be retried');
+  wakeWorker();
+  return { ...deliveryOut(await getRegistry(), row, false), retried: rows.length };
 }
 
 // ---- sending -------------------------------------------------------------------
@@ -618,7 +643,7 @@ interface Answer {
   body: string;
 }
 
-function post(endpoint: EndpointRow, body: string, eventName: string, eventId: string, attempt: number): Promise<Answer> {
+function post(endpoint: EndpointRow, body: string, batchId: string, count: number, attempt: number): Promise<Answer> {
   const url = new URL(endpoint.url);
   const t = Math.floor(Date.now() / 1000);
   const signature = createHmac('sha256', open(endpoint.signing_secret)).update(`${t}.${body}`).digest('hex');
@@ -626,8 +651,8 @@ function post(endpoint: EndpointRow, body: string, eventName: string, eventId: s
     'content-type': 'application/json',
     'content-length': String(Buffer.byteLength(body)),
     'user-agent': 'ProfitPad-CRM-Webhooks/1.0',
-    'x-pcrm-event': eventName,
-    'x-pcrm-event-id': eventId,
+    'x-pcrm-batch-id': batchId,
+    'x-pcrm-event-count': String(count),
     'x-pcrm-delivery-attempt': String(attempt),
     'x-pcrm-signature': `t=${t},v1=${signature}`
   };
@@ -651,11 +676,13 @@ function post(endpoint: EndpointRow, body: string, eventName: string, eventId: s
   });
 }
 
-async function attempt(endpoint: EndpointRow, payload: Record<string, unknown>, eventName: string, eventId: string, n: number) {
-  const body = JSON.stringify({ ...payload, attempt: n });
+// Every POST is a batch, also with one event: {batch_id, endpoint_id,
+// attempt, sent_at, events}. The same batch_id and events on every retry.
+async function attempt(endpoint: EndpointRow, batchId: string, events: unknown[], n: number) {
+  const body = JSON.stringify({ batch_id: batchId, endpoint_id: Number(endpoint.id), attempt: n, sent_at: new Date().toISOString(), events });
   const started = Date.now();
   try {
-    const answer = await post(endpoint, body, eventName, eventId, n);
+    const answer = await post(endpoint, body, batchId, events.length, n);
     const ok = answer.status >= 200 && answer.status < 300;
     return { ok, status: answer.status, ms: Date.now() - started, error: ok ? null : `HTTP ${answer.status}${answer.body ? `: ${answer.body.slice(0, 300)}` : ''}` };
   } catch (err) {
@@ -676,25 +703,90 @@ async function noteEndpoint(id: string, ok: boolean, error: string | null) {
 export async function testEndpoint(p: Principal, id: unknown) {
   requireAdmin(p);
   const e = await loadEndpoint(id);
-  const eventId = randomUUID();
-  const result = await attempt(e, {
-    id: eventId, event: 'test', endpoint_id: Number(e.id), occurred_at: new Date().toISOString(),
+  const result = await attempt(e, randomUUID(), [{
+    id: randomUUID(), event: 'test', endpoint_id: Number(e.id), occurred_at: new Date().toISOString(),
     message: 'A test event from ProfitPad CRM. Real events carry object, record_id, record and the change.'
-  }, 'test', eventId, 1);
+  }], 1);
   await noteEndpoint(e.id, result.ok, result.error);
   return { ok: result.ok, status: result.status, response_ms: result.ms, error: result.error };
 }
 
-// Claims due deliveries for two minutes (a crash mid-send just retries them),
-// sends them a few at a time, and records each outcome.
-async function sendDue(): Promise<number> {
+let inFlight = 0;
+
+// Puts waiting deliveries (no batch_id yet) into batches, per endpoint in id
+// order: a batch is closed when it holds batch_max events (or MAX_BATCH_BYTES),
+// or BATCH_WINDOW_MS after its first event was queued. Returns how long until
+// the next open batch closes, or null when none is waiting.
+async function formBatches(): Promise<number | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const { rows } = await client.query<{ id: string; endpoint_id: string; batch_max: number; bytes: number; left_ms: number }>(
+      `select d.id, d.endpoint_id, e.batch_max, octet_length(d.payload::text) as bytes,
+              extract(epoch from (d.created_at + make_interval(secs => $1::float8 / 1000) - clock_timestamp())) * 1000 as left_ms
+       from auth.webhook_deliveries d join auth.webhook_endpoints e on e.id = d.endpoint_id
+       where d.status = 'pending' and d.batch_id is null and e.enabled
+       order by d.endpoint_id, d.id
+       limit 20000
+       for update of d skip locked`,
+      [BATCH_WINDOW_MS]
+    );
+    let next: number | null = null;
+    const batches: string[][] = [];
+    const close = (chunk: typeof rows) => batches.push(chunk.map((r) => r.id));
+    for (let i = 0; i < rows.length;) {
+      const endpoint = rows[i].endpoint_id;
+      let chunk: typeof rows = [];
+      let bytes = 0;
+      for (; i < rows.length && rows[i].endpoint_id === endpoint; i++) {
+        const r = rows[i];
+        if (chunk.length && bytes + r.bytes > MAX_BATCH_BYTES) {
+          close(chunk);
+          chunk = [];
+          bytes = 0;
+        }
+        chunk.push(r);
+        bytes += r.bytes;
+        if (chunk.length >= r.batch_max) {
+          close(chunk);
+          chunk = [];
+          bytes = 0;
+        }
+      }
+      if (!chunk.length) continue;
+      // the open batch closes BATCH_WINDOW_MS after its first event
+      if (chunk[0].left_ms <= 0) close(chunk);
+      else next = Math.min(next ?? Infinity, chunk[0].left_ms);
+    }
+    for (const ids of batches) {
+      await client.query('update auth.webhook_deliveries set batch_id = $2, next_attempt_at = now() where id = any($1)', [ids, randomUUID()]);
+    }
+    await client.query('commit');
+    return next;
+  } catch (err) {
+    await client.query('rollback').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Claims due batches (a 2-minute lease, so a crash just retries them) and
+// starts sending them without waiting: the worker goes straight back to new
+// changes. Each finished send wakes the worker for anything still due.
+async function sendDue(log: { error: (o: unknown, m: string) => void }): Promise<number> {
+  const room = MAX_IN_FLIGHT - inFlight;
+  if (room <= 0) return 0;
+  // the re-check of next_attempt_at in the update keeps two workers from taking the same batch
   const { rows } = await pool.query(
-    `update auth.webhook_deliveries d set next_attempt_at = now() + interval '2 minutes'
-     where d.id in (
-       select x.id from auth.webhook_deliveries x join auth.webhook_endpoints e on e.id = x.endpoint_id
-       where x.status = 'pending' and x.next_attempt_at <= now() and e.enabled
-       order by x.next_attempt_at limit 50 for update of x skip locked)
-     returning d.*`
+    `with due as (
+       select x.batch_id from auth.webhook_deliveries x join auth.webhook_endpoints e on e.id = x.endpoint_id
+       where x.status = 'pending' and x.batch_id is not null and x.next_attempt_at <= now() and e.enabled
+       group by x.batch_id order by min(x.next_attempt_at) limit $1)
+     update auth.webhook_deliveries d set next_attempt_at = now() + interval '2 minutes'
+     from due where d.batch_id = due.batch_id and d.status = 'pending' and d.next_attempt_at <= now()
+     returning d.*`,
+    [room]
   );
   if (!rows.length) return 0;
   const endpoints = new Map<string, EndpointRow>();
@@ -702,24 +794,34 @@ async function sendDue(): Promise<number> {
   const { rows: es } = await pool.query('select * from auth.webhook_endpoints where id = any($1)', [ids]);
   for (const e of es) endpoints.set(String(e.id), e);
 
-  const queue = [...rows];
-  const workers = Array.from({ length: Math.min(8, queue.length) }, async () => {
-    for (let d = queue.shift(); d; d = queue.shift()) {
-      const e = endpoints.get(String(d.endpoint_id));
-      if (!e) continue;
-      const n = d.attempts + 1;
-      const r = await attempt(e, d.payload, d.event, d.event_id, n);
-      const done = r.ok || n >= MAX_ATTEMPTS;
-      await pool.query(
-        `update auth.webhook_deliveries set attempts = $2, status = $3, next_attempt_at = now() + make_interval(mins => $4),
-           last_attempt_at = now(), last_status = $5, last_error = $6, response_ms = $7 where id = $1`,
-        [d.id, n, r.ok ? 'succeeded' : done ? 'failed' : 'pending', done ? 0 : RETRY_MINUTES[n - 1], r.status, r.error, r.ms]
-      );
-      await noteEndpoint(e.id, r.ok, r.error);
-    }
-  });
-  await Promise.all(workers);
-  return rows.length;
+  const batches = new Map<string, Record<string, any>[]>();
+  for (const r of rows) batches.set(r.batch_id, [...(batches.get(r.batch_id) ?? []), r]);
+  for (const [batchId, list] of batches) {
+    const e = endpoints.get(String(list[0].endpoint_id));
+    if (!e) continue;
+    list.sort((a, b) => Number(a.id) - Number(b.id));
+    inFlight++;
+    deliver(e, batchId, list)
+      .catch((err) => log.error(err, `webhook batch ${batchId} could not be recorded`))
+      .finally(() => {
+        inFlight--;
+        wakeWorker();
+      });
+  }
+  return batches.size;
+}
+
+async function deliver(e: EndpointRow, batchId: string, list: Record<string, any>[]): Promise<void> {
+  // events retried with different counts (Retry) share the highest
+  const n = Math.max(...list.map((d) => d.attempts)) + 1;
+  const r = await attempt(e, batchId, list.map((d) => d.payload), n);
+  const done = r.ok || n >= MAX_ATTEMPTS;
+  await pool.query(
+    `update auth.webhook_deliveries set attempts = $2, status = $3, next_attempt_at = now() + make_interval(mins => $4),
+       last_attempt_at = now(), last_status = $5, last_error = $6, response_ms = $7 where batch_id = $1 and status = 'pending'`,
+    [batchId, n, r.ok ? 'succeeded' : done ? 'failed' : 'pending', done ? 0 : RETRY_MINUTES[n - 1], r.status, r.error, r.ms]
+  );
+  await noteEndpoint(e.id, r.ok, r.error);
 }
 
 // ---- turning history into events ----------------------------------------------------
@@ -932,27 +1034,92 @@ async function sweep(): Promise<void> {
   await pool.query(`delete from auth.webhook_deliveries where created_at < now() - make_interval(days => $1) and status <> 'pending'`, [KEEP_DAYS]);
 }
 
-// Every 2 seconds: outbox to deliveries, then send what is due. Hourly:
-// forget deliveries older than 30 days.
+// Runs at once on NOTIFY webhook_outbox (a subscribed change committed), when
+// a send finishes or a delivery is retried, and every half second as a fallback:
+// outbox to deliveries, deliveries to batches, then start what is due. Hourly: forget deliveries
+// older than 30 days.
+let wakeWorker: () => void = () => undefined;
+
 export function startWebhookWorker(log: { error: (o: unknown, m: string) => void }) {
   let running = false;
-  const tick = setInterval(async () => {
-    if (running) return;
+  let again = false;
+  let stopped = false;
+  const run = async () => {
+    if (running) {
+      again = true;
+      return;
+    }
     running = true;
     try {
-      while ((await processOutbox(log)) > 0) {
-        // keep going while there is a backlog
-      }
-      await sendDue();
+      do {
+        again = false;
+        while ((await processOutbox(log)) > 0) {
+          // keep going while there is a backlog
+        }
+        const wait = await formBatches();
+        if (wait !== null) wakeAfter(wait);
+        await sendDue(log);
+      } while (again && !stopped);
     } catch (err) {
       log.error(err, 'webhook worker failed');
     } finally {
       running = false;
     }
-  }, 2000);
+  };
+  wakeWorker = () => {
+    if (!stopped) void run();
+  };
+  // runs again when the next open batch closes (one timer, the soonest wins)
+  let batchTimer: NodeJS.Timeout | null = null;
+  let batchAt = Infinity;
+  const wakeAfter = (ms: number) => {
+    const at = Date.now() + Math.max(1, Math.ceil(ms));
+    if (batchTimer && at >= batchAt) return;
+    if (batchTimer) clearTimeout(batchTimer);
+    batchAt = at;
+    batchTimer = setTimeout(() => {
+      batchTimer = null;
+      batchAt = Infinity;
+      wakeWorker();
+    }, at - Date.now());
+  };
+  const tick = setInterval(wakeWorker, POLL_MS);
   const hourly = setInterval(() => sweep().catch((err) => log.error(err, 'webhook cleanup failed')), 3600_000);
+
+  // LISTEN on a connection of its own; reconnects after a second if lost
+  let listener: ReturnType<typeof newClient> | null = null;
+  let reconnect: NodeJS.Timeout | null = null;
+  const listen = async () => {
+    const client = newClient();
+    let failed = false;
+    const fail = (err: unknown) => {
+      if (failed) return;
+      failed = true;
+      log.error(err, 'webhook listener lost its connection; reconnecting');
+      if (listener === client) listener = null;
+      client.end().catch(() => undefined);
+      if (!stopped) reconnect = setTimeout(listen, 1000);
+    };
+    client.on('error', fail);
+    client.on('notification', () => wakeWorker());
+    try {
+      await client.connect();
+      await client.query('listen webhook_outbox');
+      if (stopped) return void client.end().catch(() => undefined);
+      listener = client;
+      wakeWorker();
+    } catch (err) {
+      fail(err);
+    }
+  };
+  void listen();
+
   return () => {
+    stopped = true;
     clearInterval(tick);
     clearInterval(hourly);
+    if (batchTimer) clearTimeout(batchTimer);
+    if (reconnect) clearTimeout(reconnect);
+    listener?.end().catch(() => undefined);
   };
 }

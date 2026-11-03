@@ -170,6 +170,14 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 - Apply 0040, then deploy the API and the UI. Subscriptions made before it send no property values until up to 3 are chosen (the user chose this over sending every property).
 
+## 15. Faster webhooks (migration 0041)
+
+- Apply 0041, then deploy the API. The API keeps one extra Postgres connection open for `LISTEN webhook_outbox` (outside its pool). Until 0041 is applied the new API still sends, from its half-second fallback check.
+
+## 16. Webhook batches (migration 0042)
+
+- Apply 0042 together with the API and UI deploy: the new API sends `{batch_id, events: [...]}` and needs the `batch_max` and `batch_id` columns. Receivers (n8n flows) must read `events` (an array) instead of one event per POST.
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signed in</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; color: #1b2430; background: #f6f7f9; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+    @media (prefers-color-scheme: dark) { body { color: #e6e9ee; background: #14181f; } }
+  </style>
+</head>
+<body>
+  <p id="msg">Signed in. You can close this window.</p>
+  <script>
+    // End of the "Confirm it's you" sign-in popup (web/src/lib/reauth.ts):
+    // tells the CRM tab how it went, then closes. BroadcastChannel because
+    // Google's and Microsoft's pages cut window.opener on the way back.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var error = q.get('auth_error');
+      var message = { type: error ? 'failed' : 'signed-in', error: error, detail: q.get('auth_detail') };
+      try { new BroadcastChannel('pcrm-auth').postMessage(message); } catch (e) {}
+      try { localStorage.setItem('pcrm-auth', JSON.stringify(Object.assign({ at: Date.now() }, message))); } catch (e) {}
+      if (error) document.getElementById('msg').textContent = 'Sign-in did not finish. You can close this window and try again.';
+      setTimeout(function () { window.close(); }, error ? 2500 : 300);
+    })();
+  </script>
+</body>
+</html>

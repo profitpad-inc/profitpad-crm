@@ -39,6 +39,7 @@ interface Endpoint {
   secret_header: string | null;
   has_secret: boolean;
   enabled: boolean;
+  batch_max: number;
   created_by: string | null;
   last_success_at: string | null;
   last_failure_at: string | null;
@@ -51,6 +52,7 @@ interface Endpoint {
 interface Delivery {
   id: number;
   event_id: string;
+  batch_id: string | null;
   endpoint_id: number;
   subscription_id: number | null;
   event: string;
@@ -90,12 +92,13 @@ interface EndpointDraft {
   description: string;
   url: string;
   enabled: boolean;
+  batch_max: string;
   secret_header: string;
   secret_value: string;
   had_secret: boolean;
 }
 
-const EMPTY_ENDPOINT: EndpointDraft = { editing: null, name: '', description: '', url: '', enabled: true, secret_header: '', secret_value: '', had_secret: false };
+const EMPTY_ENDPOINT: EndpointDraft = { editing: null, name: '', description: '', url: '', enabled: true, batch_max: '10', secret_header: '', secret_value: '', had_secret: false };
 
 interface SubscriptionDraft {
   editing: number | null;
@@ -143,7 +146,7 @@ export function WebhookSettings() {
   }
 
   function saveEndpoint(d: EndpointDraft) {
-    const body: Record<string, unknown> = { name: d.name, description: d.description, url: d.url, enabled: d.enabled };
+    const body: Record<string, unknown> = { name: d.name, description: d.description, url: d.url, enabled: d.enabled, batch_max: Number(d.batch_max) };
     const header = d.secret_header.trim();
     if (!header) {
       if (d.had_secret) body.secret_header = null;
@@ -175,6 +178,7 @@ export function WebhookSettings() {
 
   const d = endpointDraft;
   const secretMissing = !!d && !!d.secret_header.trim() && !d.secret_value && !d.had_secret;
+  const batchOk = !!d && /^\d+$/.test(d.batch_max) && Number(d.batch_max) >= 1 && Number(d.batch_max) <= 1000;
 
   return (
     <section>
@@ -182,7 +186,8 @@ export function WebhookSettings() {
       <p className="muted">
         Endpoints receive record events as JSON POSTs, such as an n8n webhook that runs when a contact's stage is set. Each endpoint has
         subscriptions: an object, an event (created, updated, merged, archived, restored, an association added or removed, a property
-        populated, changed or cleared), optional WHERE conditions on the record and up to 3 property values to send. Every delivery is
+        populated, changed or cleared), optional WHERE conditions on the record and up to 3 property values to send. Events within 50 ms of each other are sent
+        together in one POST (<code>{"{"}batch_id, events: [...]{"}"}</code>), up to each endpoint's batch size. Every POST is
         signed with the endpoint's secret in <code>X-PCRM-Signature</code> (<code>t=&lt;unix time&gt;,v1=&lt;HMAC-SHA256 of "t.body"&gt;</code>).
         Failed deliveries are retried for about a day, and the sent log below keeps 30 days. An admin's AI can add and change webhooks through the MCP server.
       </p>
@@ -223,8 +228,13 @@ export function WebhookSettings() {
                 placeholder={d.had_secret ? 'Unchanged' : ''} onChange={(e) => setEndpointDraft({ ...d, secret_value: e.target.value })} />
             </label>
           </div>
+          <label className="field">Most events per POST
+            <input type="number" min={1} max={1000} step={1} required value={d.batch_max} style={{ width: 120 }}
+              onChange={(e) => setEndpointDraft({ ...d, batch_max: e.target.value })} />
+            <span className="muted small">Events within 50 ms of each other are sent together as one batch, up to this many (1 to 1000). 1 sends each event on its own.</span>
+          </label>
           <div className="field-row">
-            <button className="btn primary" type="submit" disabled={!d.name.trim() || !d.url.trim() || secretMissing}>{d.editing ? 'Save' : 'Add endpoint'}</button>
+            <button className="btn primary" type="submit" disabled={!d.name.trim() || !d.url.trim() || secretMissing || !batchOk}>{d.editing ? 'Save' : 'Add endpoint'}</button>
             <button className="btn" type="button" onClick={() => setEndpointDraft(null)}>Cancel</button>
           </div>
         </form>
@@ -242,6 +252,7 @@ export function WebhookSettings() {
               <strong>{e.name}</strong>
               {!e.enabled && <span className="pill" style={{ marginLeft: 6 }}>Off</span>}
               <div className="small" style={{ wordBreak: 'break-all' }}>{e.url}{e.has_secret && <span className="muted"> · with {e.secret_header}</span>}</div>
+              <div className="muted small">{e.batch_max === 1 ? 'Sends each event on its own' : `Batches of up to ${e.batch_max} events`}</div>
               {e.description && <div className="muted small">{e.description}</div>}
               <div className="muted small" style={{ marginTop: 4 }}>
                 Last 7 days: {e.deliveries.succeeded_7d} delivered, {e.deliveries.failed_7d} failed{e.deliveries.pending ? `, ${e.deliveries.pending} waiting` : ''}
@@ -256,7 +267,7 @@ export function WebhookSettings() {
             </div>
             <span className="field-row" style={{ alignSelf: 'flex-start' }}>
               <button className="btn small" onClick={() => setEndpointDraft({
-                editing: e.id, name: e.name, description: e.description ?? '', url: e.url, enabled: e.enabled,
+                editing: e.id, name: e.name, description: e.description ?? '', url: e.url, enabled: e.enabled, batch_max: String(e.batch_max),
                 secret_header: e.secret_header ?? '', secret_value: '', had_secret: e.has_secret
               })}>Edit</button>
               <button className="btn small" onClick={() => sendTest(e)}>Send test</button>
@@ -607,6 +618,7 @@ function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?:
                   <span style={{ color: color(r.status) }}>{r.status === 'pending' ? 'waiting' : r.status === 'succeeded' ? 'delivered' : r.status}</span>
                   {r.attempts > 0 && ` · ${r.attempts} ${r.attempts === 1 ? 'try' : 'tries'}`}
                   {r.last_status !== null && ` · HTTP ${r.last_status}`}
+                  {r.batch_id && <span className="muted" title={`Sent in batch ${r.batch_id}`}> · batch {r.batch_id.slice(0, 8)}</span>}
                   {r.status === 'pending' && r.next_attempt_at && r.attempts > 0 && <div className="muted">next try {when(r.next_attempt_at)}</div>}
                   {r.last_error && r.status !== 'succeeded' && <div style={{ color: 'var(--danger)' }}>{r.last_error}</div>}
                   {payload?.id === r.id && <pre className="small" style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{payload.text}</pre>}

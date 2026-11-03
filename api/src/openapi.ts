@@ -176,7 +176,7 @@ function webhookPaths(): Record<string, Schema> {
   const tags = ['Webhooks'];
   const id = { name: 'id', in: 'path', required: true, schema: { type: 'integer' } };
   const events = ['created', 'updated', 'merged', 'archived', 'restored', 'association_added', 'association_removed', 'property_changed', 'property_cleared'];
-  const endpoint = { type: 'object', properties: { name: { type: 'string', maxLength: 100 }, description: { type: 'string', nullable: true }, url: { type: 'string' }, secret_header: { type: 'string', nullable: true, description: 'Optional header sent with every delivery, e.g. for n8n header auth' }, secret_value: { type: 'string', writeOnly: true }, enabled: { type: 'boolean' } } };
+  const endpoint = { type: 'object', properties: { name: { type: 'string', maxLength: 100 }, description: { type: 'string', nullable: true }, url: { type: 'string' }, secret_header: { type: 'string', nullable: true, description: 'Optional header sent with every delivery, e.g. for n8n header auth' }, secret_value: { type: 'string', writeOnly: true }, enabled: { type: 'boolean' }, batch_max: { type: 'integer', minimum: 1, maximum: 1000, default: 10, description: 'Most events per POST' } } };
   const subscription = { type: 'object', properties: {
     endpoint_id: { type: 'integer', description: 'Create only' },
     object: { type: 'string', description: 'Object api_name, e.g. contacts (create only)' },
@@ -185,11 +185,11 @@ function webhookPaths(): Record<string, Schema> {
     send_properties: { type: 'array', items: { type: 'string' }, maxItems: 3, description: 'Up to 3 properties whose current values are sent with every delivery in record.properties. Empty (default) sends none.' },
     target_object: { type: 'string', nullable: true, description: 'Association events: the other object (null = any)' },
     label_id: { type: 'string', nullable: true, description: 'Association events: one association label (null = any)' },
-    filter_groups: { type: 'array', maxItems: 5, items: { type: 'object', properties: { filters: { type: 'array', items: ref('Filter') } } }, description: 'Same as search: filters in a group are ANDed, groups are ORed. Checked against the record when the event is processed (seconds after the change)' },
+    filter_groups: { type: 'array', maxItems: 5, items: { type: 'object', properties: { filters: { type: 'array', items: ref('Filter') } } }, description: 'Same as search: filters in a group are ANDed, groups are ORed. Checked against the record when the event is processed (normally milliseconds after the change)' },
     description: { type: 'string', nullable: true },
     enabled: { type: 'boolean' }
   } };
-  const delivery = 'Deliveries are POSTed as JSON {id, event, object, object_type_id, record_id, occurred_at, changed_by, source, subscription_id, endpoint_id, attempt, record ({id, object_type_id, row_status, properties} with the current values of the subscription send_properties only), changes | change | association | merged_ids}. Headers: X-PCRM-Event, X-PCRM-Event-Id (same on retries), X-PCRM-Delivery-Attempt, X-PCRM-Signature t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>. A 2xx answer within 10 seconds is success; otherwise retried after 1, 5, 30, 120, 360, 720 and 1440 minutes, then failed. Kept 30 days.';
+  const delivery = 'Events are POSTed in batches: the events for one endpoint within 50 ms of the first, up to the endpoint batch_max (default 10, 1 to 1000; at most 5 MB per POST), as JSON {batch_id, endpoint_id, attempt, sent_at, events: [...]}, also when there is one event. Each event is {id (the same on retries, for de-duplication), event, object, object_type_id, record_id, occurred_at, changed_by, source, subscription_id, endpoint_id, attempt, record ({id, object_type_id, row_status, properties} with the current values of the subscription send_properties only), changes | change | association | merged_ids}. Each row in the log is one event; batch_id groups them. Headers: X-PCRM-Batch-Id (same on retries), X-PCRM-Event-Count, X-PCRM-Delivery-Attempt, X-PCRM-Signature t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>. A 2xx answer within 10 seconds is success; otherwise the whole batch is retried after 1, 5, 30, 120, 360, 720 and 1440 minutes, then failed. Kept 30 days.';
   return {
     '/v1/webhooks/events': { get: { tags, summary: 'Event types', operationId: 'list_webhook_events', responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/webhooks/endpoints': {
@@ -222,7 +222,7 @@ function webhookPaths(): Record<string, Schema> {
       { name: 'limit', in: 'query', required: false, schema: { type: 'integer', maximum: 200 } } as never
     ]), responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/webhooks/deliveries/{id}': { get: { tags, summary: 'A delivery with its payload (admin)', operationId: 'get_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } },
-    '/v1/webhooks/deliveries/{id}/retry': { post: { tags, summary: 'Send a failed delivery again (admin)', operationId: 'retry_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } }
+    '/v1/webhooks/deliveries/{id}/retry': { post: { tags, summary: 'Send a failed delivery again (admin)', description: 'The failed events of its batch come back too and are batched again; the answer says how many (retried).', operationId: 'retry_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
 }
 

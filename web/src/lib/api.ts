@@ -1,3 +1,5 @@
+import { requestReauth } from './reauth';
+
 // Thin client for the CRM API. The UI authenticates via the HttpOnly session
 // cookie set after Google sign-in (sent with credentials: 'include').
 
@@ -13,6 +15,10 @@ export class ApiError extends Error {
 export const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown, _unused?: unknown): Promise<T> {
+  return send<T>(method, path, body, false);
+}
+
+async function send<T>(method: string, path: string, body: unknown, retried: boolean): Promise<T> {
   const res = await fetch(API_BASE + path, {
     method,
     credentials: 'include',
@@ -25,14 +31,13 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   const text = await res.text();
   const data = text && res.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text;
   if (!res.ok) {
-    // admin changes need a recent sign-in; the app shows a "confirm it's you" sign-in
-    if (data?.error === 'reauth_required') window.dispatchEvent(new Event(REAUTH_EVENT));
+    // admin changes need a recent sign-in: the app asks for one over the page
+    // (the check runs before anything is written), then sends this again
+    if (data?.error === 'reauth_required' && !retried && (await requestReauth())) return send<T>(method, path, body, true);
     throw new ApiError(res.status, data?.message ?? res.statusText, data?.error, data?.details);
   }
   return data as T;
 }
-
-export const REAUTH_EVENT = 'pcrm:reauth-required';
 
 // ---- types ----------------------------------------------------------------
 
