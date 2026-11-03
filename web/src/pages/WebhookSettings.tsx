@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from '../components/FilterBuilder';
 import { Menu } from '../components/ui';
 import { CopyField, EditPanel, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
+import { Select } from '../components/Select';
 
 // Settings → Webhooks (admins, migration 0038): endpoints that receive record
 // events as signed JSON POSTs, their subscriptions (object, event, optional
@@ -437,29 +438,29 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
       {error && <div className="error">{error}</div>}
       <div className="field-row">
         <label>Object
-          <select value={d.object} disabled={!!d.editing}
-            onChange={(e) => onChange({ ...d, object: e.target.value, properties: [], send_properties: [], label_id: '', target_object: '', filter_groups: [] })}>
+          <Select value={d.object} disabled={!!d.editing}
+            onChange={(v) => onChange({ ...d, object: v, properties: [], send_properties: [], label_id: '', target_object: '', filter_groups: [] })}>
             {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
-          </select>
+          </Select>
         </label>
         <label>When
-          <select value={d.event} onChange={(e) => onChange({ ...d, event: e.target.value as EventName })}>
+          <Select value={d.event} onChange={(v) => onChange({ ...d, event: v as EventName })}>
             {(Object.keys(EVENT_LABELS) as EventName[]).map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}
-          </select>
+          </Select>
         </label>
         {isAssociation && (
           <>
             <label>Linked to
-              <select value={d.target_object} onChange={(e) => onChange({ ...d, target_object: e.target.value, label_id: '' })}>
+              <Select value={d.target_object} onChange={(v) => onChange({ ...d, target_object: v, label_id: '' })}>
                 <option value="">Any object</option>
                 {(self?.links_to ?? []).map((n) => <option key={n} value={n}>{objectByName.get(n)?.label_plural ?? n}</option>)}
-              </select>
+              </Select>
             </label>
             <label>Label
-              <select value={d.label_id} onChange={(e) => onChange({ ...d, label_id: e.target.value })}>
+              <Select value={d.label_id} onChange={(v) => onChange({ ...d, label_id: v })}>
                 <option value="">Any label</option>
                 {pairLabels.map((l) => <option key={l.id} value={l.id}>{labelText(l)}</option>)}
-              </select>
+              </Select>
             </label>
           </>
         )}
@@ -480,10 +481,10 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
                 </span>
               );
             })}
-            <select className="role-add" value="" onChange={(e) => e.target.value && onChange({ ...d, properties: [...d.properties, e.target.value] })}>
+            <Select className="role-add" value="" onChange={(v) => v && onChange({ ...d, properties: [...d.properties, v] })}>
               <option value="">Add a property</option>
               {properties.filter((p) => !d.properties.includes(p.api_name)).map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
-            </select>
+            </Select>
           </div>
         </div>
       )}
@@ -501,10 +502,10 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
               );
             })}
             {d.send_properties.length < MAX_SEND_PROPERTIES && (
-              <select className="role-add" value="" onChange={(e) => e.target.value && onChange({ ...d, send_properties: [...d.send_properties, e.target.value] })}>
+              <Select className="role-add" value="" onChange={(v) => v && onChange({ ...d, send_properties: [...d.send_properties, v] })}>
                 <option value="">Add a property</option>
                 {properties.filter((p) => !d.send_properties.includes(p.api_name)).map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
-              </select>
+              </Select>
             )}
           </div>
           {d.send_properties.length === 0 && <div className="muted small">Without any, deliveries carry the record ID and the change but no property values.</div>}
@@ -601,26 +602,26 @@ function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?:
   return (
     <div className="delivery-log">
       <div className="settings-toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
+        <Select value={status} onChange={(v) => setStatus(v)} aria-label="Status">
           <option value="">Every status</option>
           <option value="pending">Waiting</option>
           <option value="succeeded">Delivered</option>
           <option value="failed">Failed</option>
-        </select>
+        </Select>
         {all && (
           <>
-            <select value={endpointId} onChange={(e) => setEndpointId(e.target.value)} aria-label="Endpoint">
+            <Select value={endpointId} onChange={(v) => setEndpointId(v)} aria-label="Endpoint">
               <option value="">Every endpoint</option>
               {endpoints?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-            <select value={event} onChange={(e) => setEvent(e.target.value)} aria-label="Event">
+            </Select>
+            <Select value={event} onChange={(v) => setEvent(v)} aria-label="Event">
               <option value="">Every event</option>
               {(Object.keys(EVENT_LABELS) as EventName[]).map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}
-            </select>
-            <select value={object} onChange={(e) => { setObject(e.target.value); setRecordId(''); }} aria-label="Object">
+            </Select>
+            <Select value={object} onChange={(v) => { setObject(v); setRecordId(''); }} aria-label="Object">
               <option value="">Every object</option>
               {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
-            </select>
+            </Select>
             {object && <input className="input-narrow" value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="Record ID" aria-label="Record ID" />}
             <label className="small">From <input type="date" value={since} min={oldest} max={today} onChange={(e) => setSince(e.target.value)} /></label>
             <label className="small">To <input type="date" value={until} min={oldest} max={today} onChange={(e) => setUntil(e.target.value)} /></label>

@@ -65,7 +65,7 @@
 .ed-rows > .ed-row:last-child { padding-bottom: 0; }
 .ed-row-label { font-weight: 500; font-size: 13px; color: var(--text); }
 .ed-row-control { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
-.ed-row-control > input, .ed-row-control > select, .ed-row-control > textarea { width: 100%; max-width: 420px; }
+.ed-row-control > input, .ed-row-control > .select-face, .ed-row-control > textarea { width: 100%; max-width: 420px; }
 @container editor (min-width: 560px) {
   .ed-row { grid-template-columns: 180px minmax(0, 1fr); gap: 20px; align-items: start; }
   .ed-row-label { padding-top: 8px; }
@@ -84,12 +84,11 @@
 .ed-add-bar { display: flex; gap: 8px; flex-wrap: wrap; }
 .ed-add { position: relative; display: inline-flex; align-items: center; flex: 1 1 150px; min-width: 0; }
 .ed-add > svg { position: absolute; left: 10px; color: var(--primary); pointer-events: none; }
-.ed-sheet .ed-add select {
+.ed-sheet .ed-add .select-face {
   padding-left: 30px; font-weight: 500; color: var(--primary); cursor: pointer;
   background-color: var(--primary-soft); border-color: var(--primary-line);
 }
-.ed-sheet .ed-add select:hover { border-color: var(--primary); }
-.ed-sheet .ed-add select option { color: var(--text); font-weight: 400; background: var(--page-background); }
+.ed-sheet .ed-add .select-face:hover { border-color: var(--primary); }
 
 /* form fields: an ordered list with hairlines; the number is the field's place on the form */
 .ed-items { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -130,11 +129,11 @@
 .ed-group { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: var(--radius); background: var(--page-background); border: 1px solid var(--hairline); }
 .ed-group-title { font-size: 13px; font-weight: 600; }
 .ed-group-rest { font-weight: 400; color: var(--muted-text); }
-.ed-group > input, .ed-group > select { max-width: 320px; }
+.ed-group > input, .ed-group > .select-face { max-width: 320px; }
 .ed-group-add { align-self: flex-start; margin-left: -8px; color: var(--primary); }
 .ed-condition { display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 8px 10px; border-radius: var(--radius-sm); background: var(--surface); }
 .ed-condition-line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.ed-condition-line select, .ed-condition-line input { width: auto; min-width: 0; max-width: 220px; flex: 0 1 auto; }
+.ed-condition-line .select-face, .ed-condition-line input { width: auto; min-width: 0; max-width: 220px; flex: 0 1 auto; }
 .ed-condition-remove { margin-left: auto; }
 .ed-condition .ed-options { padding: 0 2px 2px; }
 

@@ -15,10 +15,10 @@ import { ViewCode } from '../components/ViewCode';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
-import { AddLineModal } from '../components/AddLineModal';
+import { LineItemsEditor } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
-import { SearchSelect } from '../components/SearchSelect';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
+import { Select } from '../components/Select';
 import '../record.css';
 
 interface Link_ {
@@ -568,18 +568,18 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
             <div className="field-row history-filters">
               <input type="search" className="activity-search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search activity" />
               {tab === 'activity' && kinds.length > 1 && (
-                <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Type">
+                <Select value={kind} onChange={(v) => setKind(v)} aria-label="Type">
                   <option value="">Every type</option>
                   {kinds.map((k) => <option key={k} value={k}>{k === 'quotes' ? 'Quote responses' : objectByName.get(k)?.label_plural ?? k}</option>)}
-                </select>
+                </Select>
               )}
-              <select value={days} onChange={(e) => setDays(e.target.value)} aria-label="Time">
+              <Select value={days} onChange={(v) => setDays(v)} aria-label="Time">
                 <option value="">Any time</option>
                 <option value="7">Last 7 days</option>
                 <option value="30">Last 30 days</option>
                 <option value="90">Last 90 days</option>
                 <option value="365">Last 12 months</option>
-              </select>
+              </Select>
               {filtered && <button className="btn small" onClick={clearFilters}>Clear</button>}
             </div>
           )}
@@ -978,18 +978,18 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
     <div className="timeline">
       {facets && (
         <div className="field-row history-filters">
-          <select value={property} onChange={(e) => setProperty(e.target.value)} aria-label="Property or association">
+          <Select value={property} onChange={(v) => setProperty(v)} aria-label="Property or association">
             <option value="">Every property and association</option>
             {[...facets.properties].sort((a, b) => propRank(a) - propRank(b) || propLabel(a).localeCompare(propLabel(b))).map((name) => <option key={name} value={name}>{propLabel(name)}</option>)}
-          </select>
-          <select value={changedBy} onChange={(e) => setChangedBy(e.target.value)} aria-label="Changed by">
+          </Select>
+          <Select value={changedBy} onChange={(v) => setChangedBy(v)} aria-label="Changed by">
             <option value="">Anyone</option>
             {facets.changed_by.map((c) => <option key={c.changed_by} value={c.changed_by}>{c.name ? `${c.name} (${c.changed_by})` : c.changed_by}</option>)}
-          </select>
-          <select value={via} onChange={(e) => setVia(e.target.value)} aria-label="Made through">
+          </Select>
+          <Select value={via} onChange={(v) => setVia(v)} aria-label="Made through">
             <option value="">Any way</option>
             {facets.via.map((v) => <option key={v} value={v}>{VIA_LABELS[v]}</option>)}
-          </select>
+          </Select>
         </div>
       )}
       {error && <div className="error">{error}</div>}
@@ -1111,10 +1111,10 @@ function UserRoles({ userId }: { userId: string }) {
           </span>
         ))}
         {me.is_admin && available.length > 0 && (
-          <select className="role-add" value="" aria-label="Add a role" onChange={(e) => run(() => api('POST', `/v1/roles/${e.target.value}/assignments`, { user_id: userId }))}>
+          <Select className="role-add" value="" aria-label="Add a role" onChange={(v) => run(() => api('POST', `/v1/roles/${v}/assignments`, { user_id: userId }))}>
             <option value="">Add role…</option>
             {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+          </Select>
         )}
       </div>
     </div>
@@ -1345,10 +1345,10 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
         )}
       </div>
       {dialog === 'line' && (
-        <AddLineModal
+        <LineItemsEditor
           parent={{ object: self, id: selfId }}
           onClose={() => setDialog(null)}
-          onCreated={() => { setDialog(null); onChanged(); }}
+          onSaved={() => { setDialog(null); onChanged(); }}
         />
       )}
       {dialog === 'create' && createSchema && (
@@ -1503,9 +1503,10 @@ function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: stri
       ) : (
         <div className="card-add">
           <div className="card-empty">Not on any record yet. Pick one to add this line item to.</div>
-          <SearchSelect
+          <Select
             value={target}
-            ariaLabel="Kind of record"
+            search
+            aria-label="Kind of record"
             options={parentObjects.map((o) => ({ value: o, label: objectByName.get(o)?.label_singular ?? o }))}
             onChange={(v) => { setTarget(v); setQ(''); }}
           />

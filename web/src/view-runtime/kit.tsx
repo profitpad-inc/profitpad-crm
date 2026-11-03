@@ -3,6 +3,7 @@ import {
 } from 'react';
 import { call, getInit, getParams, getViewport, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, Viewport } from './protocol';
+import { Select as Dropdown } from '../components/Select';
 
 // What views import from '@pcrm/view': data hooks, actions, layout and UI
 // pieces styled like the CRM, and formatters. Documented for the AI in
@@ -394,10 +395,13 @@ export function Select({ value, onChange, options, placeholder, small, style, cl
   value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string; small?: boolean;
 } & Styled) {
   return (
-    <select className={cx('v-input v-select', small && 'small', className)} style={style} value={value} onChange={(e) => onChange(e.target.value)}>
-      {placeholder !== undefined && <option value="">{placeholder}</option>}
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <Dropdown
+      className={cx('v-input v-select', small && 'small', className)}
+      style={style}
+      value={value}
+      onChange={onChange}
+      options={placeholder !== undefined ? [{ value: '', label: placeholder }, ...options] : options}
+    />
   );
 }
 

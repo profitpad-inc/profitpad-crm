@@ -20,6 +20,7 @@ import { PaymentSettings } from './PaymentSettings';
 import { PropertySettings } from './PropertySettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
+import { Select } from '../components/Select';
 import '../settings.css';
 
 // who sees a page: everyone, signed-in users (not bare API keys), or admins
@@ -569,14 +570,14 @@ function NavSettings() {
       title="Navigation menus"
       description={<>The default menu is shown to everyone without their own. Pick a user to give them their own menu.{navSource === 'user' && ' Your own menu overrides the default.'}</>}
       actions={
-        <select value={target} onChange={(e) => pickTarget(e.target.value)} aria-label="Menu to edit">
+        <Select value={target} onChange={(v) => pickTarget(v)} aria-label="Menu to edit">
           <option value="default">Default menu (everyone)</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.name}{menus.some((m) => m.scope === 'user' && m.user_id === u.id) ? ' (own menu)' : ''}
             </option>
           ))}
-        </select>
+        </Select>
       }
     >
       <SettingsSection
@@ -592,10 +593,10 @@ function NavSettings() {
         <BottomBarPreview left={bottomLeft} items={bottom} />
         <div className="setting-rows">
           <SettingRow label="Left button" htmlFor="bottom-left">
-            <select id="bottom-left" value={bottomLeft} onChange={(e) => setBottomLeft(e.target.value as 'menu' | 'home')}>
+            <Select id="bottom-left" value={bottomLeft} onChange={(v) => setBottomLeft(v as 'menu' | 'home')}>
               <option value="menu">Menu (opens the full menu)</option>
               <option value="home">Home</option>
-            </select>
+            </Select>
           </SettingRow>
           <SettingRow label="Links" hint="Add links with Add an item below, choosing Mobile hotbar.">
             {bottom.length === 0 ? <span className="muted">No links between the left button and Search.</span> : (
@@ -611,10 +612,9 @@ function NavSettings() {
         <div className="nav-add">
           <label className="field">
             <span>Where</span>
-            <select
+            <Select
               value={adding.section ?? ''}
-              onChange={(e) => {
-                const v = e.target.value;
+              onChange={(v) => {
                 const section = v === '' ? null : v === 'bottom' ? 'bottom' : Number(v);
                 // dividers and sections cannot go in the hotbar, nor Home (that is the Left button setting)
                 setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section' || a.type === 'home') ? 'object' : a.type }));
@@ -623,43 +623,43 @@ function NavSettings() {
               <option value="">Sidebar</option>
               {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Sidebar, in section "{it.label}"</option>)}
               <option value="bottom">Mobile hotbar</option>
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span>Type</span>
-            <select value={adding.type} onChange={(e) => setAdding((a) => ({ ...a, type: e.target.value, view: '' }))}>
+            <Select value={adding.type} onChange={(v) => setAdding((a) => ({ ...a, type: v, view: '' }))}>
               <option value="object">Object</option>
               <option value="view">Saved view</option>
               {adding.section !== 'bottom' && <option value="home">Home</option>}
               <option value="custom_view">Custom view</option>
               {adding.section !== 'bottom' && <option value="divider">Divider</option>}
               {adding.section === null && <option value="section">Section</option>}
-            </select>
+            </Select>
           </label>
           {(adding.type === 'object' || adding.type === 'view') && (
             <label className="field">
               <span>Object</span>
-              <select value={adding.object} onChange={(e) => setAdding((a) => ({ ...a, object: e.target.value, view: '' }))}>
+              <Select value={adding.object} onChange={(v) => setAdding((a) => ({ ...a, object: v, view: '' }))}>
                 {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
-              </select>
+              </Select>
             </label>
           )}
           {adding.type === 'view' && (
             <label className="field">
               <span>View</span>
-              <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
+              <Select value={adding.view} onChange={(v) => setAdding((a) => ({ ...a, view: v }))}>
                 <option value="">Choose a view</option>
                 {(views[adding.object] ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}{v.shared ? '' : ' (personal)'}</option>)}
-              </select>
+              </Select>
             </label>
           )}
           {adding.type === 'custom_view' && (
             <label className="field">
               <span>View</span>
-              <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
+              <Select value={adding.view} onChange={(v) => setAdding((a) => ({ ...a, view: v }))}>
                 <option value="">Choose a view</option>
                 {customViews.map((v) => <option key={v.slug} value={v.slug}>{v.name ?? v.slug}{v.status === 'published' ? '' : ' (draft)'}</option>)}
-              </select>
+              </Select>
             </label>
           )}
           {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (

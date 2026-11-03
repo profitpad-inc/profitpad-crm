@@ -111,7 +111,7 @@ Types you can import for your own maps and props (types are stripped, not checke
 Sizes: Button, TextInput and Select are 34px tall, or 28px with small, so controls of the same size line up in a Row or in Page actions (which takes inputs as well as buttons: <Page actions={<><TextInput small .../><Button small>Send</Button></>}>). Mix sizes only on purpose. Text is 14px (12px small).
 
 - <TextInput value onChange={(v) => ...} placeholder type="text"|"search"|"number"|"date" debounce={300} small />: with debounce (ms), the box updates as you type but onChange waits until typing stops; use it when onChange sets params or runs a query.
-- <Select value onChange options={[{ value, label }]} placeholder? small />: the caret sits 12px in from the right like other CRM selects; widen it with style={{ minWidth: 200 }}.
+- <Select value onChange options={[{ value, label }]} placeholder? small />: the CRM's dropdown. It opens a menu-style list like every other dropdown in the CRM (a check beside the current choice, a search box from 11 choices, arrow keys, Enter and Escape), never the browser's own list. onChange gets the picked value as a string. Widen it with style={{ minWidth: 200 }}. Never write a raw <select> in a view: use Select for every single choice.
 - <Button variant="primary"|"danger" small disabled onClick>text</Button>
 
 ## Formatters

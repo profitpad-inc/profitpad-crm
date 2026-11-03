@@ -15,6 +15,7 @@ import { FileUploadButton } from '../components/FileUploadButton';
 import { ColumnPicker, associationColumnLabel, moveTo } from '../components/ColumnPicker';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { EmptyState, TableSkeleton } from '../components/settings';
+import { Select } from '../components/Select';
 import '../table.css';
 
 const PAGE = 50;
@@ -867,8 +868,8 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
   }, [object, record, property, onClose, onSaved]);
 
   useEffect(() => {
-    // the date calendar is rendered on <body>, so clicks in it count as inside
-    const outside = (e: Event) => !boxRef.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.flatpickr-calendar');
+    // the date calendar and dropdown lists are rendered on <body>, so clicks in them count as inside
+    const outside = (e: Event) => !boxRef.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.flatpickr-calendar, .select-menu');
     const onDown = (e: MouseEvent) => {
       if (outside(e)) commit();
     };
@@ -999,21 +1000,21 @@ function BulkEditModal({ object, schema, ids, onClose, onDone }: {
       <div className="bulk-edit">
         <label className="field">
           <span>Property</span>
-          <select value={name} autoFocus onChange={(e) => { setName(e.target.value); setDraft(''); setMode('append'); setError(null); }}>
+          <Select value={name} autoFocus onChange={(v) => { setName(v); setDraft(''); setMode('append'); setError(null); }}>
             <option value="">Choose a property</option>
             {properties.map((p) => (
               <option key={p.api_name} value={p.api_name}>{p.label}</option>
             ))}
-          </select>
+          </Select>
         </label>
         {multi && (
           <label className="field">
             <span>How to change it</span>
-            <select value={mode} onChange={(e) => setMode(e.target.value as MultiMode)}>
+            <Select value={mode} onChange={(v) => setMode(v as MultiMode)}>
               <option value="append">Add these choices to what each record has</option>
               <option value="remove">Remove these choices from each record</option>
               <option value="replace">Replace each record's choices with these</option>
-            </select>
+            </Select>
           </label>
         )}
         {property && (

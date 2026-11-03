@@ -3,6 +3,7 @@ import { Cable, Plus } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
+import { Select } from '../components/Select';
 
 // Settings → View integrations (admins, migration 0036): outside endpoints such as
 // n8n webhooks that custom views send data to with callIntegration(key, data).
@@ -155,10 +156,10 @@ export function IntegrationSettings() {
             </label>
             <label>
               Who can use it
-              <select value={d.audience} onChange={(e) => setDraft({ ...d, audience: e.target.value as Draft['audience'] })}>
+              <Select value={d.audience} onChange={(v) => setDraft({ ...d, audience: v as Draft['audience'] })}>
                 <option value="admins">Admins</option>
                 <option value="everyone">Everyone who can open the view</option>
-              </select>
+              </Select>
             </label>
           </div>
           <label>Address (the webhook URL)

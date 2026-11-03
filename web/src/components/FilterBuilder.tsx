@@ -2,6 +2,7 @@ import { Plus, X } from 'lucide-react';
 import type { Filter, FilterGroup, ObjectDef, Property } from '../lib/api';
 import { optionLabel, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
+import { Select } from './Select';
 
 // Conditions on an object's properties in the API's filter format: groups are
 // OR'ed, filters inside a group AND'ed. Used by sharing rules (Settings →
@@ -145,13 +146,13 @@ function FilterRow({ schema, filter, onChange, onRemove }: { schema: ObjectDef; 
 
   return (
     <div className="filter-row">
-      <select value={filter.property} aria-label="Property" onChange={(e) => setProperty(e.target.value)}>
+      <Select value={filter.property} aria-label="Property" onChange={(v) => setProperty(v)}>
         {!prop && <option value={filter.property}>{filter.property} (no longer exists)</option>}
         {props.map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
-      </select>
-      <select value={filter.operator} aria-label="Condition" onChange={(e) => setOperator(e.target.value)}>
+      </Select>
+      <Select value={filter.operator} aria-label="Condition" onChange={(v) => setOperator(v)}>
         {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      </Select>
       {op?.input === 'single' && prop && (inputType(prop) === 'date' || inputType(prop) === 'datetime-local' ? (
         <DatePicker key={inputType(prop)} value={shownValue} onChange={setValue} withTime={inputType(prop) === 'datetime-local'} ariaLabel="Value" />
       ) : (
@@ -169,10 +170,10 @@ function FilterRow({ schema, filter, onChange, onRemove }: { schema: ObjectDef; 
             </span>
           ))}
           {remaining.length > 0 && (
-            <select className="role-add" value="" aria-label="Add a value" onChange={(e) => onChange({ ...filter, values: [...values, e.target.value] })}>
+            <Select className="role-add" value="" aria-label="Add a value" onChange={(v) => onChange({ ...filter, values: [...values, v] })}>
               <option value="">Add value…</option>
               {remaining.map((o) => <option key={o.api_value} value={o.api_value}>{o.label}</option>)}
-            </select>
+            </Select>
           )}
         </div>
       )}

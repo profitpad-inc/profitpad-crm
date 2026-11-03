@@ -6,6 +6,7 @@ import { nameProperties, recordName } from '../lib/display';
 import { Menu, Modal } from '../components/ui';
 import { EmptyState, SettingsPage, TableSkeleton } from '../components/settings';
 import { ColorPicker } from '../components/ColorPicker';
+import { Select } from '../components/Select';
 
 // Admin page for an object's properties. Every change goes through the
 // /v1/schema endpoints, so the database (meta.* functions) enforces the
@@ -144,27 +145,27 @@ export function PropertySettings() {
         Deleting an archived property removes it and all its values for good.
       </>}
       actions={<>
-        <select value={object} onChange={(e) => setObject(e.target.value)} aria-label="Object">
+        <Select value={object} onChange={(v) => setObject(v)} aria-label="Object">
           {sorted.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
-        </select>
+        </Select>
         <button className="btn primary" onClick={() => setEditing('new')} disabled={!object}><Plus size={14} /> Create property</button>
       </>}
     >
       {error && <div className="error">{error}</div>}
       <div className="settings-toolbar">
         <input type="search" placeholder="Search properties" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search properties" />
-        <select value={status} onChange={(e) => setStatus(e.target.value as 'active' | 'archived')} aria-label="Which properties">
+        <Select value={status} onChange={(v) => setStatus(v as 'active' | 'archived')} aria-label="Which properties">
           <option value="active">Active</option>
           <option value="archived">Archived ({archivedCount})</option>
-        </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Type">
+        </Select>
+        <Select value={typeFilter} onChange={(v) => setTypeFilter(v)} aria-label="Type">
           <option value="">All types</option>
           {types.map((t) => <option key={t} value={t}>{TYPE_LABELS[t] ?? t}</option>)}
-        </select>
-        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} aria-label="Source">
+        </Select>
+        <Select value={sourceFilter} onChange={(v) => setSourceFilter(v)} aria-label="Source">
           <option value="">All sources</option>
           {['Built in', 'Custom', 'System'].map((v) => <option key={v} value={v}>{v}</option>)}
-        </select>
+        </Select>
         {props && <span className="muted small">{shown.length} {shown.length === 1 ? 'property' : 'properties'}</span>}
       </div>
       {!props && !error && <TableSkeleton rows={6} />}
@@ -491,10 +492,10 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       <div className="field-row">
         <label className="field">
           <span>Format</span>
-          <select value={str('format')} onChange={(e) => set('format', e.target.value)}>
+          <Select value={str('format')} onChange={(v) => set('format', v)}>
             <option value="">Default</option>
             {NUMBER_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
+          </Select>
         </label>
         {str('format') === 'currency' && type === 'number' && (
           <label className="field">
@@ -570,9 +571,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           {property ? (
             <input value={typeLabel(property)} disabled />
           ) : (
-            <select value={type} onChange={(e) => setType(e.target.value as PropType)}>
+            <Select value={type} onChange={(v) => setType(v as PropType)}>
               {NEW_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-            </select>
+            </Select>
           )}
         </label>
         {locked && <p className="muted small">This is a system property: only its label and description can be changed.</p>}
@@ -581,10 +582,10 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           <>
             <label className="field">
               <span>Shown as</span>
-              <select value={str('display')} onChange={(e) => set('display', e.target.value)}>
+              <Select value={str('display')} onChange={(v) => set('display', v)}>
                 <option value="">Plain text</option>
                 {TEXT_DISPLAYS.filter((d) => d.value !== 'plain').map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
+              </Select>
             </label>
             <div className="checks">
               <label><input type="checkbox" checked={bool('single_line')} onChange={(e) => set('single_line', e.target.checked)} /> Single line (no line breaks)</label>
@@ -602,10 +603,10 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
               {str('regex') && (
                 <label className="field">
                   <span>Checked</span>
-                  <select value={str('regex_scope') || 'all'} onChange={(e) => set('regex_scope', e.target.value === 'all' ? undefined : e.target.value)}>
+                  <Select value={str('regex_scope') || 'all'} onChange={(v) => set('regex_scope', v === 'all' ? undefined : v)}>
                     <option value="all">Everywhere</option>
                     <option value="ui">In the app only</option>
-                  </select>
+                  </Select>
                 </label>
               )}
             </div>
@@ -632,9 +633,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           <>
             <label className="field">
               <span>Result type</span>
-              <select value={calcType} onChange={(e) => setCalcType(e.target.value as typeof calcType)}>
+              <Select value={calcType} onChange={(v) => setCalcType(v as typeof calcType)}>
                 {(['number', 'text', 'date', 'datetime'] as const).map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span>SQL expression (the current record is <code>r</code>)</span>
@@ -666,14 +667,14 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
             {bool('single_value') && (
               <label className="field">
                 <span>Depends on</span>
-                <select value={str('parent_property')} onChange={(e) => {
-                  set('parent_property', e.target.value || undefined);
+                <Select value={str('parent_property')} onChange={(v) => {
+                  set('parent_property', v || undefined);
                   // values of the old parent mean nothing under the new one
                   setChoices((cs) => cs.map((c) => ({ ...c, parent_values: [] })));
                 }}>
                   <option value="">Nothing</option>
                   {parents.map((s) => <option key={s.api_name} value={s.api_name}>{s.label}</option>)}
-                </select>
+                </Select>
               </label>
             )}
             {bool('single_value') && (
@@ -688,20 +689,20 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
             )}
             <label className="field">
               <span>Default</span>
-              <select value={str('default_value')} onChange={(e) => set('default_value', e.target.value)}>
+              <Select value={str('default_value')} onChange={(v) => set('default_value', v)}>
                 <option value="">None (the value can be empty)</option>
                 {choices.filter((c) => c.existing && c.record_status !== 'archived').map((c) => (
                   <option key={c.api_value} value={c.api_value}>{c.label}: new records start with it, never empty</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span>Colours</span>
-              <select value={str('color_display') || 'none'} onChange={(e) => set('color_display', e.target.value)}>
+              <Select value={str('color_display') || 'none'} onChange={(v) => set('color_display', v)}>
                 <option value="none">None</option>
                 {bool('single_value') && <option value="dot">Dot</option>}
                 <option value="pill">Pill</option>
-              </select>
+              </Select>
             </label>
             <div className="field">
               <span>Choices</span>
@@ -730,18 +731,18 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                     <button className="icon-btn" onClick={() => setChoices((cs) => cs.filter((_, j) => j !== i))} aria-label="Remove choice"><Trash2 size={14} /></button>
                     {stages && bool('single_value') && (
                       <div className="choice-details small">
-                        <select
+                        <Select
                           value={outcomeOf(c)}
                           aria-label="Stage outcome"
-                          onChange={(e) => {
-                            const o = e.target.value as Outcome;
+                          onChange={(v) => {
+                            const o = v as Outcome;
                             updateChoice(i, { is_closed: o !== 'open', is_won: o === 'won', percent: o === 'won' ? '100' : o === 'lost' ? '0' : '' });
                           }}
                         >
                           <option value="open">Open</option>
                           <option value="won">Closed won</option>
                           <option value="lost">Closed lost</option>
-                        </select>
+                        </Select>
                         <label>
                           Chance of winning
                           <input

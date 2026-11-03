@@ -5,6 +5,7 @@ import { API_BASE, type Property } from '../lib/api';
 import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegions } from '../public/phone-regions';
 import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
+import { Select } from './Select';
 
 // locked: Escape and clicks outside do nothing; only the X (or the footer's
 // own buttons) close it.
@@ -122,12 +123,12 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
       // a dropdown with a default (status on quotes, invoices, forms) is never empty
       const fallback = typeof property.options.default_value === 'string' ? property.options.default_value : null;
       return (
-        <select value={value || fallback || ''} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur}>
+        <Select value={value || fallback || ''} onChange={onChange} autoFocus={autoFocus} onBlur={blur}>
           {fallback === null && <option value="">None</option>}
           {options.map((o) => (
             <option key={o.api_value} value={o.api_value}>{o.label}</option>
           ))}
-        </select>
+        </Select>
       );
     }
     const selected = new Set(value.split(';').filter(Boolean));
@@ -203,20 +204,18 @@ export function PhoneInput({ value, onChange, autoFocus, onCommit }: {
       }}
     >
       {regions && (
-        // shows the flag; the invisible select on top opens the named list
-        <div className="phone-country">
-          <span className="phone-country-face" aria-hidden="true">{regionShort(picked)}</span>
-          <select
-            value={region}
-            aria-label="Country"
-            onChange={(e) => {
-              setRegion(e.target.value);
-              emit(text, regions.regions.find((r) => r.region === e.target.value));
-            }}
-          >
-            {regions.regions.map((r) => <option key={r.region} value={r.region}>{regionLabel(r)}</option>)}
-          </select>
-        </div>
+        // the closed picker shows the flag; the open list has the names
+        <Select
+          className="phone-country"
+          value={region}
+          face={regionShort(picked)}
+          aria-label="Country"
+          options={regions.regions.map((r) => ({ value: r.region, label: regionLabel(r) }))}
+          onChange={(v) => {
+            setRegion(v);
+            emit(text, regions.regions.find((r) => r.region === v));
+          }}
+        />
       )}
       <input
         type="tel"

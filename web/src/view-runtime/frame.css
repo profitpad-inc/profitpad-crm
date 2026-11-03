@@ -107,6 +107,21 @@ a:hover, .v-link:hover { text-decoration: underline; }
 }
 .v-input.small { height: 28px; padding: 0 8px; font-size: 12px; }
 .v-select.small { padding-right: 26px; background-position: right 8px center; }
+/* the open list of a Select (components/Select.tsx, shared with the CRM) */
+.v-select { display: flex; align-items: center; text-align: left; white-space: nowrap; cursor: pointer; }
+.v-select .select-face-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.select-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 160px; max-width: min(420px, calc(100vw - 16px)); padding: 4px;
+  background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 6px 20px rgba(24, 32, 43, 0.12), 0 1px 3px rgba(24, 32, 43, 0.08); }
+.select-menu .select-search { flex: none; height: 30px; margin-bottom: 4px; font: inherit; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--page-background); }
+.select-menu .select-search:focus { outline: none; border-color: var(--primary); }
+.select-options { overflow-y: auto; min-height: 0; }
+.select-options button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; border: 0; background: none; font: inherit; color: var(--text);
+  text-align: left; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; }
+.select-options button.active { background: var(--surface); }
+.select-options button.selected { font-weight: 500; }
+.select-options button svg { flex: none; color: var(--primary); }
+.select-options button:disabled { opacity: 0.5; cursor: default; }
+.select-none { margin: 0; padding: 7px 10px; color: var(--muted-text); }
 
 /* ScrollX: a header that stays at the top above a body that scrolls sideways */
 .v-scrollx-head { overflow: hidden; background: var(--page-background); }

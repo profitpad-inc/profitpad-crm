@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
+import { Select } from '../components/Select';
 
 // Settings -> Payments (admins): the Stripe account customers pay into, and
 // the Interac e-Transfer details shown on quote and invoice pages
@@ -150,10 +151,10 @@ export function PaymentSettings() {
               <div className="field-row">
                 <label className="field">
                   <span>Country</span>
-                  <select value={setup.country} onChange={(e) => setSetup({ ...setup, country: e.target.value })}>
+                  <Select value={setup.country} onChange={(v) => setSetup({ ...setup, country: v })}>
                     <option value="CA">Canada</option>
                     <option value="US">United States</option>
-                  </select>
+                  </Select>
                 </label>
                 <label className="field grow">
                   <span>Business name</span>
@@ -230,11 +231,11 @@ export function PaymentSettings() {
       <SettingsSection title="Canadian pre-authorized debit">
         <div className="setting-rows">
           <SettingRow label="Debits are for" hint="Part of the debit agreement customers accept when they pay from a Canadian bank account." htmlFor="debit-type">
-            <select id="debit-type" value={draft.debit_transaction_type}
-              onChange={(e) => setDraft({ ...draft, debit_transaction_type: e.target.value as Settings['debit_transaction_type'] })}>
+            <Select id="debit-type" value={draft.debit_transaction_type}
+              onChange={(v) => setDraft({ ...draft, debit_transaction_type: v as Settings['debit_transaction_type'] })}>
               <option value="business">Business purposes</option>
               <option value="personal">Personal purposes</option>
-            </select>
+            </Select>
           </SettingRow>
         </div>
       </SettingsSection>

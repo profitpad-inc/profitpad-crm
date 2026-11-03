@@ -37,7 +37,7 @@
 .edit-panel .field-row { gap: 12px; }
 .edit-panel .field-row > label, .edit-panel .field-row > .field { flex: 1 1 180px; }
 .edit-panel label { display: grid; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted-text); }
-.edit-panel label > input, .edit-panel label > select, .edit-panel label > textarea { color: var(--text); font-weight: 400; }
+.edit-panel label > input, .edit-panel label > .select-face, .edit-panel label > textarea { color: var(--text); font-weight: 400; }
 .edit-panel label.check, label.check { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text); }
 .edit-panel .field-row > label.check { flex: 0 0 auto; align-self: flex-end; min-height: 36px; }
 .edit-panel .narrow { flex: 0 0 120px !important; }

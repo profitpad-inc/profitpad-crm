@@ -6,6 +6,7 @@ import { OPERATORS, type Condition, type FieldType } from '../public/conditions'
 import { formHtml, injectFormCss, renderForm } from '../public/form-renderer';
 import { parseQueryParams } from '../public/public-api';
 import { EmptyState, StatusPill } from './settings';
+import { Select } from './Select';
 import '../editors.css';
 
 // Form builder on a form's record page. Edits the form's definition (see
@@ -320,21 +321,21 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
               {(['contacts', 'tickets'] as FormObject[]).map((o) => (
                 <span key={o} className="ed-add">
                   <Plus size={14} aria-hidden="true" />
-                  <select value="" onChange={(e) => e.target.value && addProperty(o, e.target.value)} aria-label={`Add ${OBJECT_LABEL[o].toLowerCase()} property`}>
+                  <Select value="" onChange={(v) => v && addProperty(o, v)} aria-label={`Add ${OBJECT_LABEL[o].toLowerCase()} property`}>
                     <option value="">{OBJECT_LABEL[o]} property</option>
                     {formProperties(schemas[o]).filter((p) => !used.has(`${o}.${p.api_name}`)).map((p) => (
                       <option key={p.api_name} value={p.api_name}>{p.label}</option>
                     ))}
-                  </select>
+                  </Select>
                 </span>
               ))}
               <span className="ed-add">
                 <Plus size={14} aria-hidden="true" />
-                <select value="" onChange={(e) => e.target.value && addQuestion(e.target.value)} aria-label="Add a question">
+                <Select value="" onChange={(v) => v && addQuestion(v)} aria-label="Add a question">
                   <option value="">Question</option>
                   {QUESTION_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
                   <option value="from_url">Hidden field (from the URL)</option>
-                </select>
+                </Select>
               </span>
             </div>
 
@@ -451,11 +452,11 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
           {!contactEmail && (
             <label className="field">
               <span>Shown on the form</span>
-              <select value={visibility} onChange={(e) => setVisibility(e.target.value as Visibility)}>
+              <Select value={visibility} onChange={(v) => setVisibility(v as Visibility)}>
                 <option value="asked">Yes, ask it</option>
                 <option value="url">No, hidden: filled from the page URL</option>
                 {f.property && property && <option value="fixed">No, hidden: always set to a fixed value</option>}
-              </select>
+              </Select>
             </label>
           )}
 
@@ -483,8 +484,8 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
             {!f.property && (
               <label className="field">
                 <span>Type</span>
-                <select value={f.type} onChange={(e) => {
-                  const type = e.target.value as FieldType;
+                <Select value={f.type} onChange={(v) => {
+                  const type = v as FieldType;
                   const needsOptions = type === 'select' || type === 'multiselect';
                   const text = type === 'text' || type === 'textarea';
                   onChange({
@@ -494,7 +495,7 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
                   });
                 }}>
                   {QUESTION_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-                </select>
+                </Select>
               </label>
             )}
             {visibility !== 'fixed' && (
@@ -523,10 +524,10 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
           {f.property && property?.type === 'text' && property.options.single_line !== true && visibility !== 'fixed' && (
             <label className="field">
               <span>Answer box</span>
-              <select value={f.type} onChange={(e) => onChange({ type: e.target.value as FieldType })}>
+              <Select value={f.type} onChange={(v) => onChange({ type: v as FieldType })}>
                 <option value="text">Single line</option>
                 <option value="textarea">Multiple lines</option>
-              </select>
+              </Select>
             </label>
           )}
 
@@ -614,12 +615,12 @@ function FormatEditor({ field: f, locked, onChange }: { field: Field; locked: bo
     <div className="ed-format">
       <label className="field">
         <span>Validate field format</span>
-        <select value={f.format ?? ''} disabled={locked} onChange={(e) => {
-          const format = (e.target.value || undefined) as Format | undefined;
+        <Select value={f.format ?? ''} disabled={locked} onChange={(v) => {
+          const format = (v || undefined) as Format | undefined;
           onChange({ format, ...(format === 'regex' ? {} : { pattern: undefined, pattern_message: undefined }) });
         }}>
           {FORMATS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
-        </select>
+        </Select>
       </label>
       {locked && <p className="ed-hint">The contact email is always checked as an email address.</p>}
       {f.format === 'regex' && (
@@ -649,10 +650,10 @@ function FormatEditor({ field: f, locked, onChange }: { field: Field; locked: bo
 function HiddenValue({ field: f, property, onChange }: { field: Field; property: Property; onChange: (v: unknown) => void }) {
   if (f.type === 'select') {
     return (
-      <select value={typeof f.value === 'string' ? f.value : ''} onChange={(e) => onChange(e.target.value || undefined)} aria-label="Fixed value">
+      <Select value={typeof f.value === 'string' ? f.value : ''} onChange={(v) => onChange(v || undefined)} aria-label="Fixed value">
         <option value="">Choose a value…</option>
         {(f.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      </Select>
     );
   }
   if (f.type === 'multiselect') {
@@ -690,21 +691,21 @@ function ConditionRow({ condition: c, sources, onChange, onRemove }: {
   return (
     <div className="ed-condition">
       <div className="ed-condition-line">
-        <select value={c.field} onChange={(e) => {
-          const s = sources.find((x) => x.name === e.target.value)!;
+        <Select value={c.field} onChange={(v) => {
+          const s = sources.find((x) => x.name === v)!;
           onChange({ field: s.name, operator: OPERATORS[s.type]![0].op, ...(s.options ? { value: [] } : {}) });
         }} aria-label="Field">
           {!source && <option value={c.field}>(missing field)</option>}
           {sources.map((s) => <option key={s.name} value={s.name}>{s.label}{s.from_url ? ' (from URL)' : ''}</option>)}
-        </select>
-        <select value={c.operator} onChange={(e) => {
-          const op = e.target.value as Condition['operator'];
+        </Select>
+        <Select value={c.operator} onChange={(v) => {
+          const op = v as Condition['operator'];
           const list = op === 'is_any_of' || op === 'is_none_of';
           const date = op === 'is_before' || op === 'is_after' || op === 'is_on';
           onChange({ field: c.field, operator: op, ...(list ? { value: chosen } : date ? { value: typeof c.value === 'string' ? c.value : '' } : {}) });
         }} aria-label="Operator">
           {ops.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
-        </select>
+        </Select>
         {needsDate && <input type="date" value={typeof c.value === 'string' ? c.value : ''} onChange={(e) => onChange({ ...c, value: e.target.value })} aria-label="Date" />}
         <button className="icon-btn ed-condition-remove" onClick={onRemove} aria-label="Remove condition"><X size={14} /></button>
       </div>

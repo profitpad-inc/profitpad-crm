@@ -4,6 +4,7 @@ import { CalendarDays } from 'lucide-react';
 import { API_BASE, api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
+import { Select } from '../components/Select';
 import '../booking.css';
 
 // Settings -> Calendars: the user's Google and Microsoft calendars for the
@@ -163,10 +164,10 @@ export function CalendarSettings() {
                     </div>
                     <label className="field cal-write">
                       <span>Add new meetings to</span>
-                      <select value={c.write_calendar_id ?? ''} onChange={(e) => patch(c, { write_calendar_id: e.target.value || null })}>
+                      <Select value={c.write_calendar_id ?? ''} onChange={(v) => patch(c, { write_calendar_id: v || null })}>
                         <option value="">Main calendar</option>
                         {c.calendars.filter((cal) => cal.can_write && !cal.primary).map((cal) => <option key={cal.id} value={cal.id}>{cal.name}</option>)}
-                      </select>
+                      </Select>
                     </label>
                   </>
                 )}

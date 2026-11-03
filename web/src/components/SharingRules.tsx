@@ -4,6 +4,7 @@ import { api, getSchema, type AssociationLabel, type FilterGroup, type ObjectDef
 import { useApp } from '../lib/app-context';
 import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from './FilterBuilder';
 import { EmptyState, SettingsSection } from './settings';
+import { Select } from './Select';
 
 // Settings → Roles: sharing rules widen which records a role's users see (or
 // edit) beyond their own or their team's: records of one object that match
@@ -264,14 +265,14 @@ function RuleEditor({ roleId, draft, setDraft, schema, onSave }: {
       </label>
       <div className="rule-sentence">
         <span>Let this role</span>
-        <select value={draft.access} aria-label="Access" onChange={(e) => setDraft({ ...draft, access: e.target.value as Access })}>
+        <Select value={draft.access} aria-label="Access" onChange={(v) => setDraft({ ...draft, access: v as Access })}>
           <option value="read">view</option>
           <option value="edit">view and edit</option>
-        </select>
+        </Select>
         <span>every</span>
-        <select value={draft.object} aria-label="Object" onChange={(e) => setObject(e.target.value)}>
+        <Select value={draft.object} aria-label="Object" onChange={(v) => setObject(v)}>
           {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_singular}</option>)}
-        </select>
+        </Select>
         <span>where</span>
       </div>
       {schema ? (
@@ -293,10 +294,10 @@ function RuleEditor({ roleId, draft, setDraft, schema, onSave }: {
                     {row.label}
                   </label>
                   {access !== null && (
-                    <select value={access} aria-label={`${row.label} access`} onChange={(e) => setRow(row, e.target.value as Access)}>
+                    <Select value={access} aria-label={`${row.label} access`} onChange={(v) => setRow(row, v as Access)}>
                       <option value="read">view only</option>
                       <option value="edit">view and edit</option>
-                    </select>
+                    </Select>
                   )}
                 </div>
               );

@@ -13,7 +13,7 @@ import { Modal, PropertyInput, fromInput, isEditable, toInput } from './ui';
 // amount to the new total of its lines.
 const LINE_FIELDS = ['name', 'sku', 'quantity', 'uom', 'unit_price', 'unit_cost', 'discount'];
 // product property -> line property
-const FROM_PRODUCT: [string, string][] = [['name', 'name'], ['sku', 'sku'], ['price', 'unit_price'], ['cost', 'unit_cost'], ['uom', 'uom']];
+const FROM_PRODUCT: [string, string][] = [['name', 'name'], ['sku', 'sku'], ['unit_price', 'unit_price'], ['unit_cost', 'unit_cost'], ['uom', 'uom']];
 
 export function AddLineModal({ parent, onClose, onCreated }: {
   parent?: { object: string; id: string };
@@ -63,7 +63,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
     ...LINE_FIELDS.map((n) => editable.find((p) => p.api_name === n)).filter((p): p is Property => !!p),
     ...editable.filter((p) => !p.is_base && !LINE_FIELDS.includes(p.api_name))
   ];
-  const priceProp = products?.properties.find((p) => p.api_name === 'price');
+  const priceProp = products?.properties.find((p) => p.api_name === 'unit_price');
 
   function pickProduct(r: CrmRecord) {
     setProduct(r);
@@ -155,7 +155,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
             <div className="line-product-main">
               <div className="line-product-name">{String(product.properties.name ?? product.id)}</div>
               <div className="small muted">
-                {[product.properties.sku, priceProp && product.properties.price != null ? formatValue(priceProp, product.properties.price) : null].filter(Boolean).join(', ')}
+                {[product.properties.sku, priceProp && product.properties.unit_price != null ? formatValue(priceProp, product.properties.unit_price) : null].filter(Boolean).join(', ')}
               </div>
             </div>
             <button className="icon-btn push-right" onClick={() => setProduct(null)} aria-label="Pick another product"><X size={16} /></button>
@@ -166,7 +166,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
             {results.map((r) => (
               <button key={r.id} className="card-pick" onClick={() => pickProduct(r)}>
                 <span className="card-pick-name">{String(r.properties.name ?? r.id)}</span>
-                {priceProp && r.properties.price != null && <span className="muted">{formatValue(priceProp, r.properties.price)}</span>}
+                {priceProp && r.properties.unit_price != null && <span className="muted">{formatValue(priceProp, r.properties.unit_price)}</span>}
               </button>
             ))}
             {results.length === 0 && <div className="muted small">No products found.</div>}

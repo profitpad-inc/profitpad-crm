@@ -1,5 +1,5 @@
 /* Meeting booker in the CRM: the booking page editor's own pieces (its sheet, sections and rows are in editors.css),
-   the searchable select (components/SearchSelect.tsx, used anywhere) and Settings -> Calendars leftovers. */
+   and Settings -> Calendars leftovers. */
 
 /* taking bookings */
 .bk-status > p:not(.ed-hint) { font-size: 14px; }
@@ -66,7 +66,7 @@
 .bk-to { color: var(--muted-text); font-size: 13px; }
 .bk-time { position: relative; display: inline-flex; align-items: center; }
 .bk-time svg { position: absolute; left: 10px; pointer-events: none; color: var(--muted-text); }
-.bk-time select { width: 136px; padding-left: 32px; }
+.bk-time .select-face { width: 136px; padding-left: 32px; }
 .bk-days-select { width: 160px; }
 .bk-ranges { display: flex; flex-direction: column; gap: 8px; }
 .bk-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -83,25 +83,8 @@
   .bk-window:last-of-type { border-bottom: 0; padding-bottom: 0; }
 }
 @media (max-width: 400px) {
-  .bk-time select { width: 124px; }
+  .bk-time .select-face { width: 124px; }
 }
-
-/* searchable select (components/SearchSelect.tsx) */
-.search-select { position: relative; display: inline-block; }
-.search-select-face { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; font: inherit; color: var(--text);
-  background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px 7px 10px; cursor: pointer; text-align: left; }
-.search-select-face:focus-visible, .search-select-face[aria-expanded=true] { outline: 2px solid var(--primary); outline-offset: -1px; }
-.search-select-face svg { color: var(--muted-text); flex: none; }
-.search-select-pop { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; max-width: 280px;
-  background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-pop); overflow: hidden; }
-.search-select-search { position: relative; padding: 8px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.search-select-search input { width: 100%; padding-right: 30px; }
-.search-select-search svg { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); color: var(--muted-text); pointer-events: none; }
-.search-select-pop ul { list-style: none; margin: 0; padding: 4px 0; max-height: 260px; overflow-y: auto; }
-.search-select-pop li { padding: 8px 14px; cursor: pointer; }
-.search-select-pop li.active { background: var(--surface); }
-.search-select-pop li.selected { color: var(--primary); font-weight: 600; }
-.search-select-none { color: var(--muted-text); cursor: default; }
 
 /* Settings -> Calendars (most of its styling is in settings.css) */
 .cal-calendars { display: flex; flex-direction: column; gap: 4px; }

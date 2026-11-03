@@ -4,7 +4,7 @@ import { CalendarCheck, CircleAlert, Clock, Plus, Trash2 } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { DatePicker } from './DatePicker';
-import { SearchSelect } from './SearchSelect';
+import { Select } from './Select';
 import '../editors.css';
 import '../booking.css';
 
@@ -75,10 +75,10 @@ function TimeSelect({ value, onChange, after, label }: { value: string; onChange
   return (
     <span className="bk-time">
       <Clock size={15} aria-hidden="true" />
-      <select value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}>
+      <Select value={value} aria-label={label} onChange={(v) => onChange(v)}>
         {!options.includes(value) && <option value={value}>{timeLabel(value)}</option>}
         {options.map((t) => <option key={t} value={t}>{timeLabel(t)}</option>)}
-      </select>
+      </Select>
     </span>
   );
 }
@@ -408,11 +408,11 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
       <div className="ed-row">
         <label className="ed-row-label" htmlFor={id}>{label}</label>
         <div className="ed-row-control">
-          <select id={id} value={value} disabled={saving} onChange={(e) => save({ [key]: e.target.value || null })}>
+          <Select id={id} value={value} disabled={saving} onChange={(v) => save({ [key]: v || null })}>
             <option value="">None</option>
             {forms.map((f) => <option key={f.id} value={f.id}>{f.name}{f.published ? '' : ' (not published)'}</option>)}
             {value && !forms.some((f) => f.id === value) && <option value={value}>Form {value}</option>}
-          </select>
+          </Select>
           <div className="bk-form-links">
             {value && <Link to={`/objects/forms/${value}`}>Open form</Link>}
             <button className="bk-link" disabled={saving} onClick={() => createForm(key, label)}><Plus size={12} /> Create a new form</button>
@@ -484,10 +484,10 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           <div className="ed-row">
             <label className="ed-row-label" htmlFor="bk-zone">Time zone</label>
             <div className="ed-row-control">
-              <select id="bk-zone" value={zone} onChange={(e) => { setZone(e.target.value); setDirty(true); }}>
+              <Select id="bk-zone" value={zone} onChange={(v) => { setZone(v); setDirty(true); }}>
                 {!zoneList.includes(zone) && <option value={zone}>{zone}</option>}
                 {zoneList.map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
-              </select>
+              </Select>
               <ZoneClock zone={zone} />
             </div>
           </div>
@@ -500,7 +500,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           <div className="bk-windows">
             {rows.map((r, i) => (
               <div className="bk-window" key={i}>
-                <SearchSelect className="bk-days-select" ariaLabel="Days" value={r.days} options={DAY_SETS} onChange={(v) => setRow(i, { ...r, days: v as DaySet })} />
+                <Select className="bk-days-select" search aria-label="Days" value={r.days} options={DAY_SETS} onChange={(v) => setRow(i, { ...r, days: v as DaySet })} />
                 <span className="bk-times">
                   <TimeSelect value={r.start} label="From" onChange={(v) => setRow(i, { ...r, start: v, end: toMin(r.end) > toMin(v) ? r.end : hourAfter(v) })} />
                   <span className="bk-to">to</span>

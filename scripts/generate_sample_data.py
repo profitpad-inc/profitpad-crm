@@ -218,7 +218,7 @@ class Generator:
         # commerce
         self.create("products", [{"name": "%s %s" % (p, random.choice(["Pro", "Mini", "XL", "Classic", "Plus"])),
                                   "sku": "SKU-%s-%03d" % (RUN.upper(), i), "description": sentence(6),
-                                  "price": money(5, 900), "active": random.choice(["true", "true", "false"])}
+                                  "unit_price": money(5, 900), "active": random.choice(["true", "true", "false"])}
                                  for i, p in enumerate(PRODUCTS[:COUNTS["products"]])])
 
         self.create("quotes", [{"name": "Quote Q-%s-%03d" % (RUN.upper(), i),

@@ -1,6 +1,7 @@
 import { el, publicApi, PublicApiError, queryParamsFromLocation, type FormField, type PhoneResult, type PublicForm } from './public-api';
 import { visibleFields } from './conditions';
 import { CARET, composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegion } from './phone-regions';
+import { DROPDOWN_CSS, enhanceSelect, type Dropdown } from './dropdown';
 
 // Renders a published form into a container and submits it. Shared by the
 // hosted page (/p/form/), embed.js and the builder's preview, so it uses plain
@@ -28,23 +29,18 @@ export const FORM_CSS = `
 .pcrm-form .pcrm-req { color: #b42318; margin-left: 3px; }
 .pcrm-form input[type=text], .pcrm-form input[type=email], .pcrm-form input[type=tel], .pcrm-form input[type=url], .pcrm-form input[type=number],
 .pcrm-form input[type=date], .pcrm-form input[type=datetime-local],
-.pcrm-form select, .pcrm-form textarea { display: block; width: 100%; max-width: none; height: auto; min-height: 42px; font: inherit; line-height: 1.4; color: inherit;
+.pcrm-form select, .pcrm-form .pcrm-dd-face, .pcrm-form textarea { display: block; width: 100%; max-width: none; height: auto; min-height: 42px; font: inherit; line-height: 1.4; color: inherit;
   background-color: var(--pcrm-field); border: 1px solid var(--pcrm-border); border-radius: 8px; padding: 10px 12px; margin: 0; box-shadow: none;
   transition: border-color .15s, box-shadow .15s; }
-.pcrm-form select:not([multiple]) { -webkit-appearance: none; appearance: none; padding-right: 36px;
+.pcrm-form select:not([multiple]), .pcrm-form .pcrm-dd-face { -webkit-appearance: none; appearance: none; padding-right: 36px;
   background-image: ${CARET}; background-repeat: no-repeat; background-position: right 14px center; background-size: 12px; }
-.pcrm-form input:hover, .pcrm-form select:hover, .pcrm-form textarea:hover { border-color: color-mix(in srgb, var(--pcrm-text) 30%, var(--pcrm-border)); }
+.pcrm-form input:hover, .pcrm-form select:hover, .pcrm-form .pcrm-dd-face:hover, .pcrm-form textarea:hover { border-color: color-mix(in srgb, var(--pcrm-text) 30%, var(--pcrm-border)); }
 .pcrm-form input::placeholder, .pcrm-form textarea::placeholder { color: var(--pcrm-muted); opacity: 1; }
 .pcrm-form textarea { min-height: 112px; resize: vertical; }
 .pcrm-form .pcrm-phone { display: flex; gap: 6px; }
 .pcrm-form .pcrm-phone input { flex: 1; min-width: 0; }
-.pcrm-form .pcrm-country { position: relative; flex: none; }
-.pcrm-form .pcrm-country-face { display: flex; align-items: center; height: 100%; min-height: 42px; white-space: nowrap; background-color: var(--pcrm-field); border: 1px solid var(--pcrm-border);
-  border-radius: 8px; padding: 9px 36px 9px 12px; background-image: ${CARET}; background-repeat: no-repeat; background-position: right 14px center; background-size: 12px; }
-.pcrm-form .pcrm-country select { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; opacity: 0; cursor: pointer; }
-.pcrm-form .pcrm-country:hover .pcrm-country-face { border-color: color-mix(in srgb, var(--pcrm-text) 30%, var(--pcrm-border)); }
-.pcrm-form .pcrm-country:focus-within .pcrm-country-face { border-color: var(--pcrm-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pcrm-primary) 22%, transparent); }
-.pcrm-form input:focus, .pcrm-form select:focus, .pcrm-form textarea:focus { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pcrm-primary);
+.pcrm-form .pcrm-phone .pcrm-dd { flex: none; }
+.pcrm-form input:focus, .pcrm-form select:focus, .pcrm-form .pcrm-dd-face:focus, .pcrm-form textarea:focus { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pcrm-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pcrm-primary) 22%, transparent); }
 .pcrm-form .pcrm-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; font-size: 15px; line-height: 1.45; margin: 0; cursor: pointer; }
 .pcrm-form .pcrm-check input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 28px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px;
@@ -59,7 +55,7 @@ export const FORM_CSS = `
 .pcrm-form .pcrm-check input:disabled { opacity: 0.5; cursor: default; }
 .pcrm-form .pcrm-check input { margin-top: 3px; }
 .pcrm-form .pcrm-choices { display: flex; flex-direction: column; gap: 8px; }
-.pcrm-form .pcrm-invalid input, .pcrm-form .pcrm-invalid select, .pcrm-form .pcrm-invalid textarea, .pcrm-form .pcrm-invalid .pcrm-country-face,
+.pcrm-form .pcrm-invalid input, .pcrm-form .pcrm-invalid select, .pcrm-form .pcrm-invalid textarea, .pcrm-form .pcrm-invalid .pcrm-dd-face,
 .pcrm-form input.pcrm-invalid, .pcrm-form select.pcrm-invalid, .pcrm-form textarea.pcrm-invalid { border-color: #b42318; }
 .pcrm-form .pcrm-error { color: #b42318; font-size: 13px; line-height: 1.4; }
 .pcrm-form .pcrm-error:empty { display: none; }
@@ -73,7 +69,7 @@ export const FORM_CSS = `
 .pcrm-form .pcrm-done { padding: 16px 18px; border-radius: 8px; background: #ecfdf3; border-left: 3px solid #17b26a; color: #05603a; white-space: pre-line; }
 .pcrm-form .pcrm-muted { color: var(--pcrm-muted); }
 @media (prefers-reduced-motion: reduce) { .pcrm-form *, .pcrm-form *::before, .pcrm-form *::after { transition: none !important; } }
-`;
+${DROPDOWN_CSS}`;
 
 // target: the page, or a shadow root (embedded booking pages)
 export function injectFormCss(target: Document | ShadowRoot = document): void {
@@ -262,6 +258,8 @@ export function renderForm(container: HTMLElement, opts: {
   }
   form.noValidate = true;
   form.removeAttribute('action');
+  // every single-choice select opens the CRM's dropdown list
+  const dropdowns: Dropdown[] = [...form.querySelectorAll('select')].filter((s) => !s.multiple).map((s) => enhanceSelect(s));
 
   // where each field shows, hides and reports errors
   const wrappers = new Map<string, HTMLElement[]>();
@@ -269,7 +267,7 @@ export function renderForm(container: HTMLElement, opts: {
   for (const f of asked) {
     const controls = controlsNamed(form, f.name);
     const wrapper = form.querySelector<HTMLElement>(`[data-field="${f.name}"]`) ?? controls[0]?.closest<HTMLElement>('.pcrm-field');
-    const parts = wrapper ? [wrapper] : [...controls, ...controls.flatMap((c) => (c.id ? [...form.querySelectorAll<HTMLElement>(`label[for="${c.id}"]`)] : []))];
+    const parts = wrapper ? [wrapper] : [...controls.map((c) => c.closest<HTMLElement>('.pcrm-dd') ?? c), ...controls.flatMap((c) => (c.id ? [...form.querySelectorAll<HTMLElement>(`label[for="${c.id}"]`)] : []))];
     wrappers.set(f.name, parts);
     let error = form.querySelector<HTMLElement>(`[data-error="${f.name}"]`);
     if (!error) {
@@ -294,19 +292,19 @@ export function renderForm(container: HTMLElement, opts: {
     const v = opts.initialValues?.[f.name] ?? fromParams(params, f);
     if (v !== undefined) prefill(form, f, v);
   }
+  for (const d of dropdowns) d.refresh();
   const urlValues = Object.fromEntries(fromUrl.map((f) => [f.name, fromParams(params, f)]).filter(([, v]) => !isEmpty(v)));
 
   // Country pickers in front of phone inputs (added once the region list
   // arrives; until then numbers without + are read as the API's default).
   const phoneFields = asked.filter((f) => f.format === 'phone');
   const pickers = new Map<string, HTMLSelectElement>();
-  // the closed picker shows the flag; the open list has the names
-  const faces = new Map<string, HTMLElement>();
+  const pickerFaces = new Map<string, Dropdown>();
   const setRegion = (name: string, region: string) => {
     const select = pickers.get(name);
     if (!select) return;
     select.value = region;
-    faces.get(name)!.textContent = regionShort(regionList.find((r) => r.region === region));
+    pickerFaces.get(name)!.refresh();
   };
   let regionList: PhoneRegion[] = [];
   const regionOf = (name: string) => regionList.find((r) => r.region === pickers.get(name)?.value);
@@ -373,12 +371,12 @@ export function renderForm(container: HTMLElement, opts: {
         if (!input || pickers.has(f.name)) continue;
         const select = el('select', { class: 'pcrm-phone-country', 'aria-label': `${f.label} country` },
           ...regions.map((r) => el('option', { value: r.region }, regionLabel(r))));
-        const face = el('span', { class: 'pcrm-country-face', 'aria-hidden': 'true' });
         const box = el('div', { class: 'pcrm-phone' });
         input.before(box);
-        box.append(el('div', { class: 'pcrm-country' }, face, select), input);
+        box.append(select, input);
         pickers.set(f.name, select);
-        faces.set(f.name, face);
+        // the closed picker shows the flag; the open list has the names
+        pickerFaces.set(f.name, enhanceSelect(select, { face: (s) => regionShort(regionList.find((r) => r.region === s.value)) }));
         setRegion(f.name, regionForNumber(input.value, regions, fallback) ?? fallback);
         select.addEventListener('change', () => {
           setRegion(f.name, select.value);

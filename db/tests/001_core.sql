@@ -406,8 +406,8 @@ begin
   insert into crm.pc_0012 (name) values ('Line deal 2') returning pc_0012_id into v_deal2;
   insert into crm.pc_0022 (name) values ('Line quote') returning pc_0022_id into v_quote;
   insert into crm.pc_0010 (name) values ('Line contact') returning pc_0010_id into v_contact;
-  insert into crm.pc_0021 (name, price) values ('P1', 10) returning pc_0021_id into v_p1;
-  insert into crm.pc_0021 (name, price) values ('P2', 20) returning pc_0021_id into v_p2;
+  insert into crm.pc_0021 (name, unit_price) values ('P1', 10) returning pc_0021_id into v_p1;
+  insert into crm.pc_0021 (name, unit_price) values ('P2', 20) returning pc_0021_id into v_p2;
   insert into crm.pc_0020 (name, quantity, unit_price) values ('L1', 2, 10) returning pc_0020_id into v_l1;
   insert into crm.pc_0020 (name, quantity, unit_price) values ('L2', 1, 5) returning pc_0020_id into v_l2;
   insert into crm.pc_0020 (name) values ('Loose') returning pc_0020_id into v_l3;

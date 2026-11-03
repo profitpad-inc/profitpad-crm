@@ -82,11 +82,11 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 32px; }
 .pp-respond { display: flex; flex-direction: column; gap: 14px; margin-top: 28px; max-width: 520px; }
 .pp-respond > h2 { margin: 0 0 2px; }
 .pp-respond label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 14px; }
-.pp-respond input, .pp-respond textarea, .bk-reason textarea, .bk-tz select { font: inherit; font-weight: 400; color: var(--text);
+.pp-respond input, .pp-respond textarea, .bk-reason textarea, .bk-tz .pcrm-dd-face { font: inherit; font-weight: 400; color: var(--text);
   background: var(--page-background); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; transition: border-color .15s; }
-.pp-respond input:hover, .pp-respond textarea:hover, .bk-reason textarea:hover, .bk-tz select:hover { border-color: color-mix(in srgb, var(--text) 30%, var(--border)); }
+.pp-respond input:hover, .pp-respond textarea:hover, .bk-reason textarea:hover, .bk-tz .pcrm-dd-face:hover { border-color: color-mix(in srgb, var(--text) 30%, var(--border)); }
 .pp-respond textarea { min-height: 96px; resize: vertical; }
-.pp-respond input:focus, .pp-respond textarea:focus, .bk-reason textarea:focus, .bk-tz select:focus {
+.pp-respond input:focus, .pp-respond textarea:focus, .bk-reason textarea:focus, .bk-tz .pcrm-dd-face:focus {
   outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 0; border-color: var(--primary); }
 .pp-respond .pp-actions { margin-top: 4px; }
 .pp-error { color: #b42318; font-size: 14px; }

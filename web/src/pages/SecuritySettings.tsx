@@ -5,6 +5,7 @@ import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName } from '../lib/display';
 import { CopyField, EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton, type Tone } from '../components/settings';
+import { Select } from '../components/Select';
 
 // Admin pages for API keys and the security log (migration 0019).
 
@@ -123,16 +124,16 @@ export function ApiKeySettings() {
             <label>Name<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required maxLength={63} /></label>
             <label>
               User
-              <select value={draft.user_id} onChange={(e) => setDraft({ ...draft, user_id: e.target.value })} required>
+              <Select value={draft.user_id} onChange={(v) => setDraft({ ...draft, user_id: v })}>
                 <option value="">Choose a user</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              </Select>
             </label>
             <label>
               Expires after
-              <select value={draft.days} onChange={(e) => setDraft({ ...draft, days: Number(e.target.value) })}>
+              <Select value={draft.days} onChange={(v) => setDraft({ ...draft, days: Number(v) })}>
                 {EXPIRY_DAYS.map((d) => <option key={d} value={d}>{d} days</option>)}
-              </select>
+              </Select>
             </label>
           </div>
           <div className="scope-boxes" role="group" aria-label="Scopes">
@@ -150,10 +151,10 @@ export function ApiKeySettings() {
         </EditPanel>
       )}
       <div className="settings-toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value as 'active' | 'all')} aria-label="Which keys">
+        <Select value={status} onChange={(v) => setStatus(v as 'active' | 'all')} aria-label="Which keys">
           <option value="active">Active keys</option>
           <option value="all">All keys</option>
-        </select>
+        </Select>
       </div>
       {!keys && !error && <TableSkeleton rows={3} />}
       {keys && keys.length === 0 && (
@@ -303,9 +304,9 @@ export function SecurityLog() {
       description="Sign-ins, ended sessions, API keys, role and sharing changes, settings and exports. Entries cannot be edited or removed."
     >
       <div className="settings-toolbar">
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter events">
+        <Select value={filter} onChange={(v) => setFilter(v)} aria-label="Filter events">
           {EVENT_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-        </select>
+        </Select>
       </div>
       {error && <div className="error">{error}</div>}
       {!loaded && !error && <TableSkeleton rows={6} />}

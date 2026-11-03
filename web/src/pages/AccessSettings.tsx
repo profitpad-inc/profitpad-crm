@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { displayName, initials } from '../lib/display';
 import { SharingRules } from '../components/SharingRules';
 import { EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { Select } from '../components/Select';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -142,15 +143,15 @@ export function UserSettings() {
                           </span>
                         ))}
                         {available.length > 0 && (
-                          <select
+                          <Select
                             className="role-add"
                             value=""
                             aria-label={`Add a role for ${u.name}`}
-                            onChange={(e) => run(() => api('POST', `/v1/roles/${e.target.value}/assignments`, { user_id: u.id }))}
+                            onChange={(v) => run(() => api('POST', `/v1/roles/${v}/assignments`, { user_id: u.id }))}
                           >
                             <option value="">Add role</option>
                             {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                          </select>
+                          </Select>
                         )}
                       </div>
                     </td>
@@ -292,9 +293,9 @@ export function RoleSettings() {
                   {!draft.is_admin && (
                     <label className="field">
                       <span>Which records can people with this role see?</span>
-                      <select value={draft.record_access} onChange={(e) => setDraft({ ...draft, record_access: e.target.value as Role['record_access'] })}>
+                      <Select value={draft.record_access} onChange={(v) => setDraft({ ...draft, record_access: v as Role['record_access'] })}>
                         {RECORD_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      </Select>
                       {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
                     </label>
                   )}
