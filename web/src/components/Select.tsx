@@ -8,7 +8,8 @@ import { createPortal } from 'react-dom';
 //
 // Choices come from `options` or from <option> children (inside fragments or
 // <optgroup>s too), so it reads like a native <select>. Lists longer than 10
-// get a search box. Keyboard: arrows, Home/End, Enter, Escape, and typing a
+// get a search box, which matches labels, and puts a choice whose value is
+// exactly the search (any case, so "on" finds Ontario's ON) first. Keyboard: arrows, Home/End, Enter, Escape, and typing a
 // letter jumps to the next choice starting with it. onBlur fires when focus
 // leaves both the button and the open list, like a native select's blur.
 
@@ -53,7 +54,8 @@ export function Select({ value: raw, onChange, options, children, id, className,
   const open = rect !== null;
   const searchable = search ?? all.length >= SEARCH_FROM;
   const q = query.trim().toLowerCase();
-  const shown = q ? all.filter((o) => o.label.toLowerCase().includes(q)) : all;
+  const exact = q ? all.filter((o) => o.value.toLowerCase() === q) : [];
+  const shown = q ? [...exact, ...all.filter((o) => !exact.includes(o) && o.label.toLowerCase().includes(q))] : all;
 
   const close = () => setRect(null);
   const openList = () => {
