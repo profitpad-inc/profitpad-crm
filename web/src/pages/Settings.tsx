@@ -476,6 +476,9 @@ function NavSettings() {
   const [adding, setAdding] = useState<{ section: number | null | 'bottom'; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
   // which + Add picker is open, under the sidebar or under the hotbar
   const [picker, setPicker] = useState<'sidebar' | 'bottom' | null>(null);
+  // a short note by the hotbar's + Add when it is clicked with the hotbar full
+  const [fullNote, setFullNote] = useState(false);
+  const fullNoteTimer = useRef<number | undefined>(undefined);
   // the row being dragged and where it would land
   const dragFrom = useRef<Spot | null>(null);
   const [dropAt, setDropAt] = useState<Spot | null>(null);
@@ -743,18 +746,28 @@ function NavSettings() {
       ) : undefined));
 
   const addButton = (where: 'sidebar' | 'bottom') => {
-    const full = where === 'bottom' && bottom.length >= BOTTOM_MAX;
+    const full = where === 'bottom' && bottom.length >= BOTTOM_MAX && picker !== where;
+    // a full hotbar's button stays clickable (looking disabled) so a click can say why nothing opens
     return (
-      <button
-        type="button"
-        className="btn small nav-add-btn"
-        aria-expanded={picker === where}
-        disabled={full && picker !== where}
-        title={full ? `The mobile hotbar holds at most ${BOTTOM_MAX} links` : undefined}
-        onClick={() => (picker === where ? setPicker(null) : openPicker(where))}
-      >
-        <Plus size={14} /> Add
-      </button>
+      <span className="nav-add-btn">
+        <button
+          type="button"
+          className={`btn small${full ? ' looks-disabled' : ''}`}
+          aria-expanded={picker === where}
+          aria-disabled={full || undefined}
+          onClick={() => {
+            if (full) {
+              setFullNote(true);
+              window.clearTimeout(fullNoteTimer.current);
+              fullNoteTimer.current = window.setTimeout(() => setFullNote(false), 3000);
+            } else if (picker === where) setPicker(null);
+            else openPicker(where);
+          }}
+        >
+          <Plus size={14} /> Add
+        </button>
+        {full && fullNote && <span className="nav-add-note" role="status">Max {BOTTOM_MAX} links. Remove one to add another.</span>}
+      </span>
     );
   };
 
@@ -781,10 +794,10 @@ function NavSettings() {
         <Select value={adding.type} onChange={(v) => setAdding((a) => ({ ...a, type: v, view: '' }))}>
           <option value="object">Object</option>
           <option value="view">Saved view</option>
-          {where !== 'bottom' && <option value="home">Home</option>}
           <option value="custom_view">Custom view</option>
           {where !== 'bottom' && <option value="divider">Divider</option>}
           {adding.section === null && <option value="section">Section</option>}
+          {where !== 'bottom' && <option value="home">Home</option>}
         </Select>
       </label>
       {(adding.type === 'object' || adding.type === 'view') && (
