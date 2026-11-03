@@ -287,7 +287,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     zoneSelect.addEventListener('change', async () => {
       tz = zoneSelect.value;
       await loadMonth();
-      pickedDay = null;
+      if (pickedDay && !slotsByDay.has(pickedDay)) pickedDay = [...slotsByDay.keys()].filter(inMonth).sort()[0] ?? null;
       drawPicker();
     });
 
