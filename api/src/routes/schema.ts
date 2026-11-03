@@ -39,7 +39,7 @@ export function propertyOut(p: PropertyDef, principal?: Principal) {
     is_base: p.is_base,
     is_native: p.is_native,
     read_only: p.read_only || p.type === 'calculation' || (!!principal && propertyAccess(principal, p) === 'read_only'),
-    row_status: p.row_status
+    record_status: p.record_status
   };
 }
 
@@ -71,7 +71,7 @@ export interface PropertyInput {
 export async function createProperty(p: Principal, objectKey: string, b: PropertyInput, source?: string) {
   requireScope(p, 'schema');
   const obj = await getObject(objectKey);
-  await withTx({ actor: p.actor, source }, (c) =>
+  await withTx({ principal: p, source }, (c) =>
     c.query(
       `select meta.create_property(p_object => $1, p_api_name => $2, p_label => $3, p_type => $4, p_options => $5,
          p_description => $6, p_dropdown_options => $7, p_calc_sql => $8, p_calc_output_type => $9)`,
@@ -89,7 +89,7 @@ export async function updateProperty(
 ) {
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
-  await withTx({ actor: p.actor, source }, async (c) => {
+  await withTx({ principal: p, source }, async (c) => {
     if (b.label !== undefined || b.description !== undefined || b.options !== undefined) {
       await c.query('select meta.update_property($1, $2, $3, $4, $5)', [
         obj.object_type_id, prop.api_name, b.label ?? null, b.description ?? null, b.options ? JSON.stringify(b.options) : null
@@ -107,7 +107,7 @@ export async function updateProperty(
 export async function setPropertyArchived(p: Principal, objectKey: string, name: string, archived: boolean, source?: string) {
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
-  await withTx({ actor: p.actor, source }, (c) =>
+  await withTx({ principal: p, source }, (c) =>
     c.query(archived ? 'select meta.archive_property($1, $2)' : 'select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name])
   );
   return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
@@ -134,7 +134,7 @@ export async function addOption(
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
   const details = pickDetails(b);
-  await withTx({ actor: p.actor, source }, async (c) => {
+  await withTx({ principal: p, source }, async (c) => {
     await c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null]);
     if (details) await c.query('select meta.set_option_details($1, $2, $3, $4)', [obj.object_type_id, prop.api_name, b.api_value, JSON.stringify(details)]);
   });
@@ -143,15 +143,15 @@ export async function addOption(
 
 export async function updateOption(
   p: Principal, objectKey: string, name: string, value: string,
-  b: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' } & OptionDetails, source?: string
+  b: { label?: string; display_order?: number; description?: string; record_status?: 'active' | 'archived' } & OptionDetails, source?: string
 ) {
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
   const details = pickDetails(b);
-  await withTx({ actor: p.actor, source }, async (c) => {
-    if (b.label !== undefined || b.display_order !== undefined || b.description !== undefined || b.row_status !== undefined || !details) {
+  await withTx({ principal: p, source }, async (c) => {
+    if (b.label !== undefined || b.display_order !== undefined || b.description !== undefined || b.record_status !== undefined || !details) {
       await c.query('select meta.update_option($1, $2, $3, $4, $5, $6, $7)', [
-        obj.object_type_id, prop.api_name, value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.row_status ?? null
+        obj.object_type_id, prop.api_name, value, b.label ?? null, b.display_order ?? null, b.description ?? null, b.record_status ?? null
       ]);
     }
     if (details) await c.query('select meta.set_option_details($1, $2, $3, $4)', [obj.object_type_id, prop.api_name, value, JSON.stringify(details)]);
@@ -182,7 +182,7 @@ export async function schemaRoutes(app: FastifyInstance) {
   app.get('/v1/schema', async (req) => {
     requireScope(req.principal!, 'read');
     const reg = await getRegistry();
-    return { results: reg.objects.filter((o) => o.row_status === 'active').map(objectOut) };
+    return { results: reg.objects.filter((o) => o.record_status === 'active').map(objectOut) };
   });
 
   app.get<{ Params: { object: string } }>('/v1/schema/:object', async (req) => {
@@ -192,7 +192,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     return {
       ...objectOut(obj),
       permissions: callerPermissions(p, obj),
-      properties: obj.properties.filter((pr) => pr.row_status === 'active').map((pr) => propertyOut(pr, p))
+      properties: obj.properties.filter((pr) => pr.record_status === 'active').map((pr) => propertyOut(pr, p))
     };
   });
 
@@ -200,7 +200,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'schema');
     const b = req.body ?? ({} as never);
-    const code = await withTx({ actor: p.actor }, async (c) => {
+    const code = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query('select meta.create_object($1, $2, $3, $4) as code', [b.api_name, b.label_singular, b.label_plural, b.description ?? null]);
       return rows[0].code as string;
     });
@@ -213,7 +213,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'schema');
     const obj = await getObject(req.params.object);
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.set_search_properties($1, $2)', [obj.object_type_id, req.body?.search_properties ?? null]));
+    await withTx({ principal: p }, (c) => c.query('select meta.set_search_properties($1, $2)', [obj.object_type_id, req.body?.search_properties ?? null]));
     return objectOut(await getObject(obj.object_type_id));
   });
 
@@ -224,7 +224,7 @@ export async function schemaRoutes(app: FastifyInstance) {
       requireScope(p, 'schema');
       const obj = await getObject(req.params.object);
       const b = req.body ?? {};
-      await withTx({ actor: p.actor }, (c) =>
+      await withTx({ principal: p }, (c) =>
         c.query('select meta.update_object($1, $2, $3, $4)', [obj.object_type_id, b.label_singular ?? null, b.label_plural ?? null, b.description ?? null])
       );
       return objectOut(await getObject(obj.object_type_id));
@@ -235,7 +235,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     requireScope(req.principal!, 'read');
     const obj = await getObject(req.params.object);
     const all = req.query.include_archived === 'true';
-    return { results: obj.properties.filter((p) => all || p.row_status === 'active').map((pr) => propertyOut(pr)) };
+    return { results: obj.properties.filter((p) => all || p.record_status === 'active').map((pr) => propertyOut(pr)) };
   });
 
   app.get<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property', async (req) => {
@@ -276,7 +276,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'admin');
     const [obj, prop] = await findProperty(req.params.object, req.params.property);
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.delete_property($1, $2, $3)', [obj.object_type_id, prop.api_name, req.body?.confirm ?? null]));
+    await withTx({ principal: p }, (c) => c.query('select meta.delete_property($1, $2, $3)', [obj.object_type_id, prop.api_name, req.body?.confirm ?? null]));
     reply.code(204);
   });
 
@@ -292,7 +292,7 @@ export async function schemaRoutes(app: FastifyInstance) {
 
   app.patch<{
     Params: { object: string; property: string; value: string };
-    Body: { label?: string; display_order?: number; description?: string; row_status?: 'active' | 'archived' } & OptionDetails;
+    Body: { label?: string; display_order?: number; description?: string; record_status?: 'active' | 'archived' } & OptionDetails;
   }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
     return updateOption(req.principal!, req.params.object, req.params.property, req.params.value, req.body ?? {});
   });
@@ -301,7 +301,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'schema');
     const [obj, prop] = await findProperty(req.params.object, req.params.property);
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.delete_option($1, $2, $3)', [obj.object_type_id, prop.api_name, req.params.value]));
+    await withTx({ principal: p }, (c) => c.query('select meta.delete_option($1, $2, $3)', [obj.object_type_id, prop.api_name, req.params.value]));
     return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
   });
 
@@ -317,7 +317,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     const { rows } = await pool.query(
       `select pc_0004_id as id, from_object_type, to_object_type, label, inverse_label, is_default, is_symmetric, category,
               max_to_per_from, max_from_per_to
-       from meta.pc_0004 where row_status = 'active' and ($1::text is null or $1 in (from_object_type, to_object_type))
+       from meta.pc_0004 where record_status = 'active' and ($1::text is null or $1 in (from_object_type, to_object_type))
        order by from_object_type, to_object_type, label nulls first`,
       [code]
     );
@@ -331,7 +331,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     requireScope(p, 'schema');
     const b = req.body ?? ({} as never);
     if (!b.from_object || !b.to_object) throw badRequest('from_object and to_object are required');
-    const id = await withTx({ actor: p.actor }, async (c) => {
+    const id = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query('select meta.create_association_label($1, $2, $3, $4, $5, $6, $7) as id', [
         b.from_object, b.to_object, b.label, b.inverse_label ?? null, b.is_symmetric ?? false, b.max_to_per_from ?? null, b.max_from_per_to ?? null
       ]);

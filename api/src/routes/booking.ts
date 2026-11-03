@@ -139,7 +139,7 @@ function pageFromRow(r: Record<string, unknown>): BookingPage {
 async function loadPage(db: Db, where: 'key' | 'id', value: string): Promise<BookingPage | null> {
   const { rows } = await db.query(
     `select b.*, u.name as host_name from crm.pc_0054 b left join crm.pc_0000 u on u.pc_0000_id = b.host[1]
-     where ${where === 'key' ? '(b.public_key = $1 or lower(b.slug) = lower($1))' : 'b.pc_0054_id = $1'} and b.row_status = 'active'
+     where ${where === 'key' ? '(b.public_key = $1 or lower(b.slug) = lower($1))' : 'b.pc_0054_id = $1'} and b.record_status = 'active'
      ${where === 'key' ? 'order by b.public_key = $1 desc limit 1' : ''}`,
     [value]
   );
@@ -149,7 +149,7 @@ async function loadPage(db: Db, where: 'key' | 'id', value: string): Promise<Boo
 async function loadForm(db: Db, id: string | null): Promise<BookingForm | null> {
   if (!id) return null;
   const { rows } = await db.query(
-    `select pc_0052_id as id, name, html, definition from crm.pc_0052 where pc_0052_id = $1 and row_status = 'active' and status @> '{published}'`,
+    `select pc_0052_id as id, name, html, definition from crm.pc_0052 where pc_0052_id = $1 and record_status = 'active' and status @> '{published}'`,
     [id]
   );
   if (!rows[0]) return null;
@@ -210,7 +210,7 @@ onWrite('booking_pages', async (client, properties, existing) => {
     const v = out[key];
     if (v === undefined || v === null || v === '') continue;
     if (typeof v !== 'string' || !FORM_ID_RE.test(v)) throw badRequest(`${key} must be a form id`, { property: key });
-    const { rows } = await client.query("select 1 from crm.pc_0052 where pc_0052_id = $1 and row_status = 'active'", [v]);
+    const { rows } = await client.query("select 1 from crm.pc_0052 where pc_0052_id = $1 and record_status = 'active'", [v]);
     if (!rows.length) throw badRequest(`form ${v} not found`, { property: key });
   }
   // checked when the page is being published; later edits are checked when visitors use it
@@ -251,7 +251,7 @@ async function hostBusy(db: Db, host: string, from: Date, to: Date, fresh: boole
   }
   const { rows } = await db.query(
     `select started_at, coalesce(ended_at, started_at + make_interval(secs => coalesce(duration_seconds, 1800))) as ended_at
-     from crm.pc_0030 where owner @> array[$1]::text[] and status @> '{scheduled}' and row_status = 'active'
+     from crm.pc_0030 where owner @> array[$1]::text[] and status @> '{scheduled}' and record_status = 'active'
        and started_at < $3 and coalesce(ended_at, started_at + interval '1 day') > $2`,
     [host, from, to]
   );
@@ -269,7 +269,7 @@ async function bookedPerDay(db: Db, page: BookingPage, from: Date, to: Date, exc
   const { rows } = await db.query(
     `select c.started_at from crm.associations_both a join crm.pc_0030 c on c.pc_0030_id = a.other_record_id
      where a.object_type_id = 'pc_0054' and a.record_id = $1 and a.other_object_type_id = 'pc_0030'
-       and c.row_status = 'active' and c.status @> '{scheduled}' and c.started_at >= $2::timestamptz - interval '1 day' and c.started_at < $3::timestamptz + interval '1 day'
+       and c.record_status = 'active' and c.status @> '{scheduled}' and c.started_at >= $2::timestamptz - interval '1 day' and c.started_at < $3::timestamptz + interval '1 day'
        and c.pc_0030_id <> $4`,
     [page.id, from, to, excludeCall]
   );
@@ -344,7 +344,7 @@ async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> 
             c.meeting_url, c.calendar_provider, c.calendar_event_id, c.calendar_id, c.calendar_connection_id,
             (select a.other_record_id from crm.associations_both a
              where a.object_type_id = 'pc_0030' and a.record_id = c.pc_0030_id and a.other_object_type_id = 'pc_0054' limit 1) as page_id
-     from crm.pc_0030 c where c.manage_key = $1 and c.row_status = 'active'${lock ? ' for update' : ''}`,
+     from crm.pc_0030 c where c.manage_key = $1 and c.record_status = 'active'${lock ? ' for update' : ''}`,
     [key]
   );
   const r = rows[0];

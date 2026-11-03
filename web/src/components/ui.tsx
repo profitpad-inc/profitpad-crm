@@ -6,16 +6,19 @@ import { composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionSho
 import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 
-export function Modal({ title, onClose, children, footer, wide }: {
-  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean;
+// locked: Escape and clicks outside do nothing; only the X (or the footer's
+// own buttons) close it.
+export function Modal({ title, onClose, children, footer, wide, locked }: {
+  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; locked?: boolean;
 }) {
   useEffect(() => {
+    if (locked) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, locked]);
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <div className="overlay" onMouseDown={locked ? undefined : onClose}>
       <div className={`modal${wide ? ' wide' : ''}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
@@ -110,7 +113,7 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
   };
   const blur = () => onCommit?.();
   if (property.type === 'dropdown') {
-    const options = (property.dropdown_options ?? []).filter((o) => o.row_status === 'active' || value.split(';').includes(o.api_value));
+    const options = (property.dropdown_options ?? []).filter((o) => o.record_status === 'active' || value.split(';').includes(o.api_value));
     if (property.options.single_value === true) {
       // a dropdown with a default (status on quotes, invoices, forms) is never empty
       const fallback = typeof property.options.default_value === 'string' ? property.options.default_value : null;
@@ -158,7 +161,7 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
 }
 
 export function isEditable(p: Property): boolean {
-  if (p.row_status !== 'active' || p.type === 'calculation' || p.type === 'file') return false;
+  if (p.record_status !== 'active' || p.type === 'calculation' || p.type === 'file') return false;
   if (p.is_base) return p.api_name === 'name' || p.api_name === 'created_at';
   return !p.read_only;
 }

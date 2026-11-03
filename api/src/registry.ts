@@ -8,7 +8,7 @@ export interface ObjectDef {
   label_plural: string;
   kind: 'system' | 'native' | 'custom';
   description: string | null;
-  row_status: string;
+  record_status: string;
   search_properties: string[];
   // objects this one may be linked to (meta.association_allowed), and those
   // among them that only the system links (meta.association_system_only)
@@ -23,7 +23,7 @@ export interface OptionDef {
   api_value: string;
   label: string;
   display_order: number;
-  row_status: string;
+  record_status: string;
   // option details (0035), for pipeline stages and the like
   parent_values: string[];
   is_closed: boolean;
@@ -47,7 +47,7 @@ export interface PropertyDef {
   is_base: boolean;
   is_native: boolean;
   read_only: boolean;
-  row_status: string;
+  record_status: string;
   dropdown_options: OptionDef[];
 }
 
@@ -67,23 +67,23 @@ export async function getRegistry(): Promise<Registry> {
   if (cached && cached.version === version) return cached;
 
   const [objects, properties, options] = await Promise.all([
-    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.row_status, o.search_properties,
+    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
                                and meta.association_allowed(o.object_type_id, x.object_type_id) order by x.object_type_id) as links_to,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
                                and meta.association_system_only(o.object_type_id, x.object_type_id) order by x.object_type_id) as system_links
                 from meta.pc_0001 o where o.schema_name = 'crm' and o.object_type_id <> 'pc_0005' order by o.object_type_id`),
     pool.query(`select pc_0002_id, object_type_id, api_name, label, description, type, options, calc_sql, calc_output_type,
-                       calc_last_error, is_base, is_native, read_only, row_status
+                       calc_last_error, is_base, is_native, read_only, record_status
                 from meta.pc_0002 order by object_type_id, is_base desc, pc_0002_id`),
-    pool.query(`select property_id, api_value, label, display_order, row_status, parent_values, is_closed, is_won, probability, color from meta.pc_0003 order by property_id, display_order, api_value`)
+    pool.query(`select property_id, api_value, label, display_order, record_status, parent_values, is_closed, is_won, probability, color from meta.pc_0003 order by property_id, display_order, api_value`)
   ]);
 
   const optionsByProp = new Map<string, OptionDef[]>();
   for (const o of options.rows) {
     const list = optionsByProp.get(o.property_id) ?? [];
     list.push({
-      api_value: o.api_value, label: o.label, display_order: o.display_order, row_status: o.row_status,
+      api_value: o.api_value, label: o.label, display_order: o.display_order, record_status: o.record_status,
       parent_values: o.parent_values, is_closed: o.is_closed, is_won: o.is_won, probability: o.probability === null ? null : Number(o.probability),
       color: o.color
     });
@@ -128,5 +128,5 @@ export function isSingleValue(prop: PropertyDef): boolean {
 }
 
 export function activeProperties(obj: ObjectDef): PropertyDef[] {
-  return obj.properties.filter((p) => p.row_status === 'active');
+  return obj.properties.filter((p) => p.record_status === 'active');
 }

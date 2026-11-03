@@ -119,10 +119,10 @@ export function PropertySettings() {
   const sorted = useMemo(() => [...objects].sort((a, b) => a.label_plural.localeCompare(b.label_plural)), [objects]);
   const q = query.trim().toLowerCase();
   const shown = (props ?? [])
-    .filter((p) => p.row_status === status)
+    .filter((p) => p.record_status === status)
     .filter((p) => !q || p.label.toLowerCase().includes(q) || p.api_name.toLowerCase().includes(q))
     .sort((a, b) => a.label.localeCompare(b.label));
-  const archivedCount = (props ?? []).filter((p) => p.row_status === 'archived').length;
+  const archivedCount = (props ?? []).filter((p) => p.record_status === 'archived').length;
   const base = `/v1/schema/${object}/properties`;
 
   return (
@@ -167,10 +167,10 @@ export function PropertySettings() {
                       {(close) => (
                         <>
                           <button onClick={() => { close(); setEditing(p); }}>Edit</button>
-                          {!p.is_base && p.row_status === 'active' && (
+                          {!p.is_base && p.record_status === 'active' && (
                             <button onClick={() => { close(); run(() => api('POST', `${base}/${encodeURIComponent(p.api_name)}/archive`), `${p.label} archived`); }}>Archive</button>
                           )}
-                          {p.row_status === 'archived' && (
+                          {p.record_status === 'archived' && (
                             <>
                               <button onClick={() => { close(); run(() => api('POST', `${base}/${encodeURIComponent(p.api_name)}/unarchive`), `${p.label} restored`); }}>Unarchive</button>
                               <button className="danger" onClick={() => { close(); setDeleting(p); }}>Delete permanently</button>
@@ -248,7 +248,7 @@ function DeleteProperty({ property, onClose, onDelete, onDeleted }: {
 interface Choice {
   api_value: string;
   label: string;
-  row_status: string;
+  record_status: string;
   // set for choices that already exist on the property
   existing?: DropdownOption;
   // api_value follows the label until edited (new choices only)
@@ -298,7 +298,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     [...(property?.dropdown_options ?? [])]
       .sort((a, b) => a.display_order - b.display_order)
       .map((o) => ({
-        api_value: o.api_value, label: o.label, row_status: o.row_status, existing: o,
+        api_value: o.api_value, label: o.label, record_status: o.record_status, existing: o,
         parent_values: o.parent_values ?? [], is_closed: !!o.is_closed, is_won: !!o.is_won,
         percent: o.probability === null || o.probability === undefined ? '' : String(Math.round(o.probability * 1000) / 10),
         color: o.color ?? null
@@ -307,11 +307,14 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   // stage details on choices: shown when asked for or already in use
   const [stages, setStages] = useState(() => !!property?.dropdown_options?.some(hasDetails));
   // dropdowns this one can depend on: other active single-choice dropdowns
-  const parents = siblings.filter((s) => s.type === 'dropdown' && s.row_status === 'active' && s.options.single_value && s.api_name !== property?.api_name);
+  const parents = siblings.filter((s) => s.type === 'dropdown' && s.record_status === 'active' && s.options.single_value && s.api_name !== property?.api_name);
   const parent = parents.find((s) => s.api_name === options.parent_property);
-  const parentChoices = (parent?.dropdown_options ?? []).filter((o) => o.row_status === 'active').sort((a, b) => a.display_order - b.display_order);
+  const parentChoices = (parent?.dropdown_options ?? []).filter((o) => o.record_status === 'active').sort((a, b) => a.display_order - b.display_order);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // closing asks first, so the work isn't lost by accident
+  const [confirmClose, setConfirmClose] = useState(false);
+  const requestClose = () => setConfirmClose(true);
   // choices get a colour swatch once the dropdown shows colours
   const colored = options.color_display === 'dot' || options.color_display === 'pill';
 
@@ -442,7 +445,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           const change: Record<string, unknown> = {};
           if (c.label.trim() !== o.label) change.label = c.label.trim();
           if (o.display_order !== i) change.display_order = i;
-          if (c.row_status !== o.row_status) change.row_status = c.row_status;
+          if (c.record_status !== o.record_status) change.record_status = c.record_status;
           if (detailsChanged(c)) Object.assign(change, detailsFor(c));
           if (c.color !== (o.color ?? null)) change.color = c.color;
           if (Object.keys(change).length) await api('PATCH', `${url}/options/${encodeURIComponent(o.api_value)}`, change);
@@ -502,13 +505,15 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   );
 
   return (
+    <>
     <Modal
       wide
+      locked
       title={property ? `Edit ${property.label}` : 'Create property'}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={requestClose}>Cancel</button>
           <button className="btn primary" onClick={save} disabled={busy || !label.trim() || !apiName.trim()}>{isNew ? 'Create' : 'Save'}</button>
         </>
       }
@@ -659,7 +664,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
               <span>Default</span>
               <select value={str('default_value')} onChange={(e) => set('default_value', e.target.value)}>
                 <option value="">None (the value can be empty)</option>
-                {choices.filter((c) => c.existing && c.row_status !== 'archived').map((c) => (
+                {choices.filter((c) => c.existing && c.record_status !== 'archived').map((c) => (
                   <option key={c.api_value} value={c.api_value}>{c.label}: new records start with it, never empty</option>
                 ))}
               </select>
@@ -667,9 +672,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
             <label className="field">
               <span>Colours</span>
               <select value={str('color_display') || 'none'} onChange={(e) => set('color_display', e.target.value)}>
-                <option value="none">No colour</option>
-                {bool('single_value') && <option value="dot">Large dot left of the choice</option>}
-                <option value="pill">Pill around each choice</option>
+                <option value="none">None</option>
+                {bool('single_value') && <option value="dot">Dot</option>}
+                <option value="pill">Pill</option>
               </select>
             </label>
             <div className="field">
@@ -677,7 +682,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
               <div className="choice-list">
                 {choices.length === 0 && <div className="muted small">No choices yet.</div>}
                 {choices.map((c, i) => (
-                  <div key={c.existing?.api_value ?? `new-${i}`} className={`choice-row${c.row_status === 'archived' ? ' archived' : ''}`}>
+                  <div key={c.existing?.api_value ?? `new-${i}`} className={`choice-row${c.record_status === 'archived' ? ' archived' : ''}`}>
                     {colored && <ColorPicker value={c.color} onChange={(color) => updateChoice(i, { color })} label={`Colour for ${c.label || 'this choice'}`} />}
                     <input value={c.label} maxLength={63} placeholder="Label" onChange={(e) => updateChoice(i, { label: e.target.value })} aria-label="Choice label" />
                     <input
@@ -692,8 +697,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                     <button className="icon-btn" onClick={() => moveChoice(i, -1)} disabled={i === 0} aria-label="Move up"><ArrowUp size={14} /></button>
                     <button className="icon-btn" onClick={() => moveChoice(i, 1)} disabled={i === choices.length - 1} aria-label="Move down"><ArrowDown size={14} /></button>
                     {c.existing ? (
-                      <button className="btn small" onClick={() => updateChoice(i, { row_status: c.row_status === 'archived' ? 'active' : 'archived' })}>
-                        {c.row_status === 'archived' ? 'Unarchive' : 'Archive'}
+                      <button className="btn small" onClick={() => updateChoice(i, { record_status: c.record_status === 'archived' ? 'active' : 'archived' })}>
+                        {c.record_status === 'archived' ? 'Unarchive' : 'Archive'}
                       </button>
                     ) : <span className="choice-new muted small">New</span>}
                     <button className="icon-btn" onClick={() => setChoices((cs) => cs.filter((_, j) => j !== i))} aria-label="Remove choice"><Trash2 size={14} /></button>
@@ -744,7 +749,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                 ))}
               </div>
               <div>
-                <button className="btn small" onClick={() => setChoices((cs) => [...cs, { api_value: '', label: '', row_status: 'active', auto: true, parent_values: [], is_closed: false, is_won: false, percent: '', color: null }])}>
+                <button className="btn small" onClick={() => setChoices((cs) => [...cs, { api_value: '', label: '', record_status: 'active', auto: true, parent_values: [], is_closed: false, is_won: false, percent: '', color: null }])}>
                   <Plus size={14} /> Add choice
                 </button>
               </div>
@@ -759,6 +764,21 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       </div>
       {error && <div className="error">{error}</div>}
     </Modal>
+    {confirmClose && (
+      <Modal
+        title={isNew ? 'Discard this property?' : 'Discard your changes?'}
+        onClose={() => setConfirmClose(false)}
+        footer={
+          <>
+            <button className="btn" onClick={() => setConfirmClose(false)} autoFocus>Keep editing</button>
+            <button className="btn danger" onClick={onClose}>Discard</button>
+          </>
+        }
+      >
+        <p>{isNew ? "The property hasn't been created yet. Closing now loses what you've entered." : 'Closing now loses any changes you haven\'t saved.'}</p>
+      </Modal>
+    )}
+    </>
   );
 }
 

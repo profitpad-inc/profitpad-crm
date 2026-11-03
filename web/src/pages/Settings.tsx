@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { DEFAULT_THEME, THEME_FIELDS, type Theme } from '../lib/theme';
+import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme } from '../lib/theme';
 import { displayName, initials } from '../lib/display';
 import { RoleSettings, UserSettings } from './AccessSettings';
 import { ApiKeySettings, SecurityLog } from './SecuritySettings';
@@ -82,8 +82,9 @@ function Account() {
 }
 
 function ThemeSettings() {
-  const { theme, setTheme } = useApp();
+  const { theme, setTheme, dropdownColors, setDropdownColors } = useApp();
   const [draft, setDraft] = useState<Theme>(theme);
+  const [colors, setColors] = useState<string[]>(dropdownColors);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,10 +94,17 @@ function ThemeSettings() {
     setSaved(null);
   }
 
+  function updateColor(i: number, hex: string) {
+    setColors((cs) => cs.map((c, j) => (j === i ? hex.toLowerCase() : c)));
+    setSaved(null);
+  }
+
   async function save() {
     setError(null);
     try {
       await api('PUT', '/v1/ui/settings/theme', draft);
+      await api('PUT', '/v1/ui/settings/dropdown_colors', { colors });
+      setDropdownColors(colors);
       setSaved('Saved for everyone.');
     } catch (err) {
       setError((err as Error).message);
@@ -116,9 +124,20 @@ function ThemeSettings() {
           </label>
         ))}
       </div>
+      <h3>Default dropdown colours</h3>
+      <p className="muted">The 16 colours offered when giving a dropdown choice a colour. Choices that already have a colour keep it.</p>
+      <div className="theme-grid dropdown-color-grid">
+        {colors.map((c, i) => (
+          <label key={i} className="color-field">
+            <input type="color" value={c} onChange={(e) => updateColor(i, e.target.value)} />
+            <span>{dropdownColorName(c, i)}</span>
+            <HexInput value={c} onChange={(hex) => updateColor(i, hex)} />
+          </label>
+        ))}
+      </div>
       {error && <div className="error">{error}</div>}
       <div className="actions">
-        <button className="btn" onClick={() => update(DEFAULT_THEME)}>Reset to defaults</button>
+        <button className="btn" onClick={() => { update(DEFAULT_THEME); setColors(defaultDropdownColors()); }}>Reset to defaults</button>
         <button className="btn primary" onClick={save}>Save theme</button>
         {saved && <span className="muted small">{saved}</span>}
       </div>

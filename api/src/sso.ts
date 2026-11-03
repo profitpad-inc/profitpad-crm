@@ -86,7 +86,7 @@ async function findUser(provider: 'google' | 'microsoft', sub: string, linkEmail
   if (!linkEmail) return { error: 'no_verified_email' };
   const email = linkEmail;
   const { rows: users } = await pool.query(
-    `select pc_0000_id as id, ${USER_CAN_SIGN_IN('u')} as ok from crm.pc_0000 u where lower(email) = lower($1) and row_status = 'active'`,
+    `select pc_0000_id as id, ${USER_CAN_SIGN_IN('u')} as ok from crm.pc_0000 u where lower(email) = lower($1) and record_status = 'active'`,
     [email]
   );
   if (users.length !== 1) return { error: 'no_user' };

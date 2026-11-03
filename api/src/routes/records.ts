@@ -20,6 +20,24 @@ function bulkIds(ids: unknown): string[] {
   return unique;
 }
 
+const HISTORY_VIA = ['crm_ui', 'api', 'mcp', 'calculation', 'other'];
+
+// A record's history rows ($1 object, $2 record id) without hidden
+// properties ($3), each with how it came in. Rows from before migration 0043
+// have no channel: API key and MCP rows are still known from the actor and
+// source; a user's change through the CRM or with their own key is not.
+const HISTORY_ROWS = `with h as (
+  select h.*, case
+      when h.source = 'calculation' then 'calculation'
+      when h.channel is not null then h.channel
+      when h.source = 'mcp' then 'mcp'
+      when h.changed_by like 'api:%' then 'api'
+      else 'other'
+    end as via
+  from meta.record_history h
+  where h.object_type_id = $1 and h.record_id = $2 and h.property <> all ($3::text[])
+)`;
+
 export async function recordRoutes(app: FastifyInstance) {
   app.get<{ Params: ObjParams; Querystring: { limit?: string; after?: string; properties?: string; status?: 'active' | 'archived' } }>(
     '/v1/objects/:object',
@@ -71,7 +89,7 @@ export async function recordRoutes(app: FastifyInstance) {
       requireScope(p, 'write');
       const obj = await objectForWrite(req.params.object);
       for (const a of req.body?.associations ?? []) await assertUserLinkable(obj, a.object);
-      const id = await withTx({ actor: p.actor }, (c) => createRecord(c, obj, p, req.body?.properties ?? {}, req.body?.associations ?? []));
+      const id = await withTx({ principal: p }, (c) => createRecord(c, obj, p, req.body?.properties ?? {}, req.body?.associations ?? []));
       await drainCalcQueue();
       reply.code(201);
       return getRecord(pool, obj, p, id);
@@ -82,7 +100,7 @@ export async function recordRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
-    await withTx({ actor: p.actor }, (c) => updateRecord(c, obj, p, req.params.id, req.body?.properties ?? {}));
+    await withTx({ principal: p }, (c) => updateRecord(c, obj, p, req.params.id, req.body?.properties ?? {}));
     await drainCalcQueue();
     return getRecord(pool, obj, p, req.params.id);
   });
@@ -94,7 +112,7 @@ export async function recordRoutes(app: FastifyInstance) {
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'delete');
     await assertAccessible(pool, obj, p, [req.params.id], 'delete');
-    const n = await withTx({ actor: p.actor }, async (c) => {
+    const n = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, [req.params.id], 'archived']);
       return rows[0].n as number;
     });
@@ -108,7 +126,7 @@ export async function recordRoutes(app: FastifyInstance) {
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'delete');
     await assertAccessible(pool, obj, p, [req.params.id], 'delete');
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.set_record_status($1, $2, $3)', [obj.object_type_id, [req.params.id], 'active']));
+    await withTx({ principal: p }, (c) => c.query('select meta.set_record_status($1, $2, $3)', [obj.object_type_id, [req.params.id], 'active']));
     return getRecord(pool, obj, p, req.params.id);
   });
 
@@ -117,7 +135,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireScope(p, 'admin');
     const obj = await objectForWrite(req.params.object);
     if (req.body?.confirm !== req.params.id) throw badRequest('permanent deletion cannot be undone; send {"confirm": "<record id>"}');
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.delete_record($1, $2)', [obj.object_type_id, req.params.id]));
+    await withTx({ principal: p }, (c) => c.query('select meta.delete_record($1, $2)', [obj.object_type_id, req.params.id]));
     reply.code(204);
   });
 
@@ -129,7 +147,7 @@ export async function recordRoutes(app: FastifyInstance) {
     const { winner_id, loser_id } = req.body ?? ({} as { winner_id: string; loser_id: string });
     if (!winner_id || !loser_id) throw badRequest('winner_id and loser_id are required');
     await assertAccessible(pool, obj, p, [winner_id, loser_id], 'delete');
-    await withTx({ actor: p.actor, source: 'merge' }, (c) => c.query('select meta.merge_records($1, $2, $3)', [obj.object_type_id, winner_id, loser_id]));
+    await withTx({ principal: p, source: 'merge' }, (c) => c.query('select meta.merge_records($1, $2, $3)', [obj.object_type_id, winner_id, loser_id]));
     await drainCalcQueue();
     return getRecord(pool, obj, p, winner_id);
   });
@@ -148,7 +166,7 @@ export async function recordRoutes(app: FastifyInstance) {
     if (!['create', 'update', 'upsert'].includes(mode)) throw badRequest('mode must be create, update or upsert');
     if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > 100) throw badRequest('inputs must have 1 to 100 items');
     if (mode === 'upsert' && !id_property) throw badRequest('upsert needs id_property');
-    const results = await withTx({ actor: p.actor }, async (c) => {
+    const results = await withTx({ principal: p }, async (c) => {
       const out: { id: string; action: 'created' | 'updated' }[] = [];
       for (const [i, input] of inputs.entries()) {
         try {
@@ -184,7 +202,7 @@ export async function recordRoutes(app: FastifyInstance) {
       const ids = bulkIds(req.body?.ids);
       const properties = req.body?.properties ?? {};
       if (Object.keys(properties).length === 0) throw badRequest('properties must name at least one property');
-      await withTx({ actor: p.actor }, (c) => bulkUpdateRecords(c, obj, p, ids, properties, req.body?.modes ?? {}));
+      await withTx({ principal: p }, (c) => bulkUpdateRecords(c, obj, p, ids, properties, req.body?.modes ?? {}));
       await drainCalcQueue(5);
       return { updated: ids.length };
     }
@@ -198,7 +216,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireObjectPermission(p, obj, 'delete');
     const ids = bulkIds(req.body?.ids);
     await assertAccessible(pool, obj, p, ids, 'delete');
-    const n = await withTx({ actor: p.actor }, async (c) => {
+    const n = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, ids, 'archived']);
       return rows[0].n as number;
     });
@@ -214,7 +232,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireObjectPermission(p, obj, 'delete');
     const ids = bulkIds(req.body?.ids);
     await assertAccessible(pool, obj, p, ids, 'delete');
-    const n = await withTx({ actor: p.actor }, async (c) => {
+    const n = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, ids, 'active']);
       return rows[0].n as number;
     });
@@ -241,7 +259,7 @@ export async function recordRoutes(app: FastifyInstance) {
     requireObjectPermission(p, lines, 'create');
     await assertAccessible(pool, obj, p, [req.params.id], 'edit');
     await assertAccessible(pool, from, p, [from_id]);
-    const ids = await withTx({ actor: p.actor, source: 'copy' }, async (c) => {
+    const ids = await withTx({ principal: p, source: 'copy' }, async (c) => {
       const { rows } = await c.query('select meta.copy_lines($1, $2, $3, $4) as ids', [from.object_type_id, from_id, obj.object_type_id, req.params.id]);
       return rows[0].ids as string[];
     });
@@ -249,21 +267,50 @@ export async function recordRoutes(app: FastifyInstance) {
     return { copied: ids.length, ids };
   });
 
-  app.get<{ Params: RecParams; Querystring: { limit?: string; property?: string } }>('/v1/objects/:object/:id/history', async (req) => {
+  // Each row says how the change came in (via): crm_ui, api, mcp,
+  // calculation, or other (public pages, jobs, imports by SQL, and rows from
+  // before migration 0043 that cannot be told apart). Filters: property
+  // ('association' for links), changed_by (an actor such as user:<id>), via.
+  // facets lists the values each filter can take for this record.
+  app.get<{ Params: RecParams; Querystring: { limit?: string; property?: string; changed_by?: string; via?: string } }>('/v1/objects/:object/:id/history', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'read');
     await assertAccessible(pool, obj, p, [req.params.id]);
     const limit = Math.min(Number(req.query.limit ?? 100), 1000);
-    const { rows } = await pool.query(
-      `select property, old_value, new_value, changed_at, changed_by, source from meta.record_history
-       where object_type_id = $1 and record_id = $2 and ($3::text is null or property = $3)
-       order by changed_at desc, id desc limit ${limit}`,
-      [obj.object_type_id, req.params.id, req.query.property ?? null]
-    );
+    const via = req.query.via ?? null;
+    if (via !== null && !HISTORY_VIA.includes(via)) throw badRequest(`via must be one of ${HISTORY_VIA.join(', ')}`);
     const hidden = new Set(obj.properties.filter((pr) => p.permissions?.propertyAccess.get(pr.pc_0002_id) === 'hidden').map((pr) => pr.api_name));
-    return { results: rows.filter((r) => !hidden.has(r.property)) };
+    const params = [obj.object_type_id, req.params.id, [...hidden]];
+    const [{ rows }, facets] = await Promise.all([
+      pool.query(
+        `${HISTORY_ROWS}
+         select h.property, h.old_value, h.new_value, h.changed_at, h.changed_by, h.source, h.via,
+           u.name as changed_by_name, k.id::text as api_key_id, k.name as api_key_name
+         from h
+         left join crm.pc_0000 u on h.changed_by = 'user:' || u.pc_0000_id
+         left join lateral (
+           select k.id, k.name from auth.api_keys k
+           where k.id = h.api_key_id or (h.api_key_id is null and h.changed_by = 'api:' || k.key_prefix)
+           order by k.id desc limit 1
+         ) k on true
+         where ($4::text is null or h.property = $4) and ($5::text is null or h.changed_by = $5) and ($6::text is null or h.via = $6)
+         order by h.changed_at desc, h.id desc limit ${limit}`,
+        [...params, req.query.property ?? null, req.query.changed_by ?? null, via]
+      ),
+      pool.query(
+        `${HISTORY_ROWS}
+         select
+           (select coalesce(array_agg(distinct property order by property), '{}') from h) as properties,
+           (select coalesce(jsonb_agg(jsonb_build_object('changed_by', a.changed_by, 'name', u.name) order by coalesce(u.name, a.changed_by)), '[]')
+              from (select distinct changed_by from h where changed_by is not null) a
+              left join crm.pc_0000 u on a.changed_by = 'user:' || u.pc_0000_id) as changed_by,
+           (select coalesce(array_agg(distinct via order by via), '{}') from h) as via`,
+        params
+      )
+    ]);
+    return { results: rows, facets: facets.rows[0] };
   });
 
   app.get<{ Params: RecParams; Querystring: { to_object?: string } }>('/v1/objects/:object/:id/associations', async (req) => {
@@ -293,7 +340,7 @@ export async function recordRoutes(app: FastifyInstance) {
       requireObjectPermission(p, obj, 'edit');
       await assertAccessible(pool, obj, p, [req.params.id], 'edit');
       await assertAccessible(pool, to, p, [req.params.toId]);
-      const id = await withTx({ actor: p.actor }, async (c) => {
+      const id = await withTx({ principal: p }, async (c) => {
         const { rows } = await c.query('select meta.associate($1, $2, $3, $4, $5) as id', [
           obj.object_type_id, req.params.id, to.object_type_id, req.params.toId, req.body?.label_id ?? null
         ]);
@@ -314,7 +361,7 @@ export async function recordRoutes(app: FastifyInstance) {
       await assertUserLinkable(obj, to.api_name);
       requireObjectPermission(p, obj, 'edit');
       await assertAccessible(pool, obj, p, [req.params.id], 'edit');
-      const removed = await withTx({ actor: p.actor }, async (c) => {
+      const removed = await withTx({ principal: p }, async (c) => {
         const { rows } = await c.query('select meta.dissociate($1, $2, $3, $4, $5) as n', [
           obj.object_type_id, req.params.id, to.object_type_id, req.params.toId, req.query.label_id ?? null
         ]);

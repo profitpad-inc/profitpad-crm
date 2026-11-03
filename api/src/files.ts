@@ -70,16 +70,16 @@ interface FileRow {
   checksum: string | null;
   status: string[] | null;
   public_token: string | null;
-  row_status: string;
+  record_status: string;
   created_by: string | null;
   created_at: Date;
 }
 
-const FILE_COLUMNS = `pc_0050_id as id, name, mime_type, size_bytes, storage_key, checksum, status, public_token, row_status, created_by, created_at`;
+const FILE_COLUMNS = `pc_0050_id as id, name, mime_type, size_bytes, storage_key, checksum, status, public_token, record_status, created_by, created_at`;
 
 async function loadFile(db: Db, id: string): Promise<FileRow | null> {
   if (!HEX_ID.test(id)) return null;
-  const { rows } = await db.query(`select ${FILE_COLUMNS} from crm.pc_0050 where pc_0050_id = $1 and row_status in ('active', 'archived')`, [id]);
+  const { rows } = await db.query(`select ${FILE_COLUMNS} from crm.pc_0050 where pc_0050_id = $1 and record_status in ('active', 'archived')`, [id]);
   return rows[0] ?? null;
 }
 
@@ -94,7 +94,7 @@ function fileOut(f: FileRow, req: FastifyRequest) {
     status: f.status?.[0] ?? null,
     checksum: f.checksum,
     public_url: f.public_token ? publicUrl(req, f) : null,
-    row_status: f.row_status,
+    record_status: f.record_status,
     created_at: f.created_at.toISOString()
   };
 }
@@ -121,16 +121,16 @@ export async function canAccessFile(db: Db, p: Principal, fileId: string, mode: 
   }
   const registry = await getRegistry();
   for (const obj of registry.objects) {
-    if (obj.row_status !== 'active' || !p.permissions.objects.get(obj.object_type_id)?.[mode]) continue;
+    if (obj.record_status !== 'active' || !p.permissions.objects.get(obj.object_type_id)?.[mode]) continue;
     for (const prop of obj.properties) {
-      if (prop.type !== 'file' || prop.row_status !== 'active') continue;
+      if (prop.type !== 'file' || prop.record_status !== 'active') continue;
       const access = propertyAccess(p, prop);
       if (access === 'hidden' || (mode === 'edit' && access === 'read_only')) continue;
       const params: unknown[] = [[fileId]];
       const filter = recordFilter(p, obj, params, 't', mode);
       const { rows } = await db.query(
         `select 1 from crm.${quoteIdent(obj.object_type_id)} t
-         where t.${quoteIdent(prop.api_name)} @> $1::text[] and t.row_status in ('active', 'archived') and ${filter} limit 1`,
+         where t.${quoteIdent(prop.api_name)} @> $1::text[] and t.record_status in ('active', 'archived') and ${filter} limit 1`,
         params
       );
       if (rows.length > 0) return true;
@@ -149,7 +149,7 @@ async function fileFor(db: Db, p: Principal, id: string, mode: Exclude<AccessMod
 onFilePropertyWrite(async (db, p, ids, property) => {
   for (const id of ids) {
     const f = await loadFile(db, id);
-    const ok = f && isReady(f) && f.row_status === 'active' && (f.created_by === p.actor || (await canAccessFile(db, p, id, 'read')));
+    const ok = f && isReady(f) && f.record_status === 'active' && (f.created_by === p.actor || (await canAccessFile(db, p, id, 'read')));
     if (!ok) throw badRequest(`"${property}": file ${id} not found or not fully uploaded`, { property });
   }
 });
@@ -236,7 +236,7 @@ async function publicFile(token: string): Promise<FileRow | null> {
     return hit.file;
   }
   const { rows } = await pool.query(
-    `select ${FILE_COLUMNS} from crm.pc_0050 where public_token = $1 and row_status = 'active' and status @> '{ready}'`,
+    `select ${FILE_COLUMNS} from crm.pc_0050 where public_token = $1 and record_status = 'active' and status @> '{ready}'`,
     [token]
   );
   const file: FileRow | null = rows[0] ?? null;
@@ -333,7 +333,7 @@ export async function fileRoutes(app: FastifyInstance) {
       requireObjectPermission(p, await getObject('files'), 'create');
     }
 
-    const id = await withTx({ actor: p.actor }, async (c) => {
+    const id = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query(
         `insert into crm.pc_0050 (name, mime_type, size_bytes, status) values ($1, $2, $3, '{uploading}') returning pc_0050_id as id`,
         [b.name, contentType, size]
@@ -432,7 +432,7 @@ export async function fileRoutes(app: FastifyInstance) {
   const raw = async (req: FastifyRequest<{ Params: { id: string }; Querystring: { d?: string; exp?: string; sig?: string } }>, reply: FastifyReply) => {
     if (!signatureOk(req.params.id, req.query)) throw new ApiError(403, 'this file link is invalid or has expired', 'forbidden');
     const f = await loadFile(pool, req.params.id);
-    if (!f || !isReady(f) || f.row_status !== 'active') throw notFound('file not found');
+    if (!f || !isReady(f) || f.record_status !== 'active') throw notFound('file not found');
     const maxAge = Math.max(0, Number(req.query.exp) - Math.floor(Date.now() / 1000));
     return sendFile(req, reply, f, req.query.d === '0', `private, max-age=${maxAge}`);
   };
@@ -444,10 +444,10 @@ export async function fileRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'write');
     const f = await fileFor(pool, p, req.params.id, 'edit');
-    if (!isReady(f) || f.row_status !== 'active') throw new ApiError(409, 'only uploaded, active files can have a public link', 'conflict');
+    if (!isReady(f) || f.record_status !== 'active') throw new ApiError(409, 'only uploaded, active files can have a public link', 'conflict');
     if (!f.public_token) {
       f.public_token = randomBytes(16).toString('base64url');
-      await withTx({ actor: p.actor }, (c) => c.query('update crm.pc_0050 set public_token = $2 where pc_0050_id = $1', [f.id, f.public_token]));
+      await withTx({ principal: p }, (c) => c.query('update crm.pc_0050 set public_token = $2 where pc_0050_id = $1', [f.id, f.public_token]));
     }
     return fileOut(f, req);
   });
@@ -458,7 +458,7 @@ export async function fileRoutes(app: FastifyInstance) {
     const f = await fileFor(pool, p, req.params.id, 'edit');
     forgetPublic(f);
     if (f.public_token) {
-      await withTx({ actor: p.actor }, (c) => c.query('update crm.pc_0050 set public_token = null where pc_0050_id = $1', [f.id]));
+      await withTx({ principal: p }, (c) => c.query('update crm.pc_0050 set public_token = null where pc_0050_id = $1', [f.id]));
     }
     f.public_token = null;
     return fileOut(f, req);
@@ -482,7 +482,7 @@ export async function fileRoutes(app: FastifyInstance) {
 async function sweep(): Promise<void> {
   const { rows: stale } = await pool.query(
     `select pc_0050_id as id from crm.pc_0050
-     where status @> '{uploading}' and row_status <> 'deleted' and row_created_at < now() - make_interval(hours => $1)`,
+     where status @> '{uploading}' and record_status <> 'deleted' and row_created_at < now() - make_interval(hours => $1)`,
     [UPLOAD_TTL_HOURS]
   );
   for (const { id } of stale) {
@@ -502,7 +502,7 @@ async function sweep(): Promise<void> {
   }
   for (let i = 0; i < onDisk.length; i += 1000) {
     const batch = onDisk.slice(i, i + 1000);
-    const { rows } = await pool.query(`select pc_0050_id as id from crm.pc_0050 where pc_0050_id = any ($1) and row_status <> 'deleted'`, [batch.map((b) => b.id)]);
+    const { rows } = await pool.query(`select pc_0050_id as id from crm.pc_0050 where pc_0050_id = any ($1) and record_status <> 'deleted'`, [batch.map((b) => b.id)]);
     const live = new Set(rows.map((r) => r.id as string));
     for (const b of batch) if (!live.has(b.id) && !busy.has(b.id)) await rm(b.file, { force: true });
   }

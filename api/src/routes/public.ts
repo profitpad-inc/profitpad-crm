@@ -50,7 +50,7 @@ export function checkKey(key: string): string {
   return key;
 }
 // SQL that finds a record by its random key or its slug; a key match wins.
-const byKey = `(public_key = $1 or lower(slug) = lower($1)) and row_status = 'active'`;
+const byKey = `(public_key = $1 or lower(slug) = lower($1)) and record_status = 'active'`;
 const keyFirst = 'order by public_key = $1 desc nulls last limit 1';
 
 // ---- allowed origins ---------------------------------------------------------
@@ -282,7 +282,7 @@ async function linkedParts(table: 'pc_0022' | 'pc_0023', id: string) {
     (
       await pool.query(
         `select ${select} from crm.associations_both a
-         join crm.${otherType} o on o.${idCol} = a.other_record_id and o.row_status = 'active'
+         join crm.${otherType} o on o.${idCol} = a.other_record_id and o.record_status = 'active'
          where a.object_type_id = $1 and a.record_id = $2 and a.other_object_type_id = $3
          order by o.${idCol}`,
         [table, id, otherType]
@@ -453,9 +453,9 @@ export async function publicRoutes(app: FastifyInstance) {
       const name = text(b.name, 'name', 200, true)!;
       const signature = readSignature(b.signature_png);
       const obj = await getObject('quotes');
-      await withTx({ actor: p.actor }, async (client) => {
+      await withTx({ principal: p }, async (client) => {
         const { rows } = await client.query(
-          "select status[1] as status from crm.pc_0022 where pc_0022_id = $1 and row_status = 'active' for update",
+          "select status[1] as status from crm.pc_0022 where pc_0022_id = $1 and record_status = 'active' for update",
           [req.params.id]
         );
         if (!rows[0]) throw notFound('quote not found');
@@ -546,7 +546,7 @@ export async function publicRoutes(app: FastifyInstance) {
       requireScope(p, 'write');
       const obj = await getObject(object);
       const key = newKey();
-      await withTx({ actor: p.actor }, (client) => updateRecord(client, obj, p, req.params.id, { public_key: key }));
+      await withTx({ principal: p }, (client) => updateRecord(client, obj, p, req.params.id, { public_key: key }));
       return { public_key: key };
     });
   }
@@ -558,7 +558,7 @@ export async function publicRoutes(app: FastifyInstance) {
     requireScope(p, 'write');
     const definition = await readDefinition(req.body, true);
     const obj = await getObject('forms');
-    await withTx({ actor: p.actor }, (client) => updateRecord(client, obj, p, req.params.id, { definition: JSON.stringify(definition) }));
+    await withTx({ principal: p }, (client) => updateRecord(client, obj, p, req.params.id, { definition: JSON.stringify(definition) }));
     return definition;
   });
 }

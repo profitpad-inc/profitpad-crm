@@ -373,7 +373,7 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
     const other = objectByName.get(l.from_object_type === self?.object_type_id ? l.to_object_type : l.from_object_type);
     return `${own ?? 'Default'}${target ? '' : ` (${other?.label_singular ?? ''})`}`;
   };
-  const properties = schema ? schema.properties.filter((p) => p.row_status === 'active').sort((a, b) => a.label.localeCompare(b.label)) : [];
+  const properties = schema ? schema.properties.filter((p) => p.record_status === 'active').sort((a, b) => a.label.localeCompare(b.label)) : [];
   const filtersOk = d.filter_groups.length === 0 || (!!schema && filtersComplete(d.filter_groups, schema));
   const canSave = !!schema && filtersOk && (!PROPERTY_EVENTS.includes(d.event) || d.properties.length > 0);
 

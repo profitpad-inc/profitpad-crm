@@ -198,7 +198,7 @@ async function paymentForSession(
 async function paymentByIntent(client: pg.PoolClient, piId: string | null): Promise<string | null> {
   if (!piId) return null;
   const { rows } = await client.query(
-    "select pc_0024_id as id from crm.pc_0024 where stripe_payment_intent_id = $1 and row_status = 'active' for update",
+    "select pc_0024_id as id from crm.pc_0024 where stripe_payment_intent_id = $1 and record_status = 'active' for update",
     [piId]
   );
   return rows[0]?.id ?? null;
@@ -376,9 +376,9 @@ export async function paymentRoutes(app: FastifyInstance) {
       const p = req.principal!;
       requireScope(p, 'write');
       const obj = await getObject('payments');
-      await withTx({ actor: p.actor, source: 'payments' }, async (client) => {
+      await withTx({ principal: p, source: 'payments' }, async (client) => {
         const { rows } = await client.query(
-          "select status[1] as status, method[1] as method from crm.pc_0024 where pc_0024_id = $1 and row_status = 'active' for update",
+          "select status[1] as status, method[1] as method from crm.pc_0024 where pc_0024_id = $1 and record_status = 'active' for update",
           [req.params.id]
         );
         if (!rows[0]) throw notFound('payment not found');

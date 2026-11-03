@@ -82,7 +82,7 @@ function parse(raw: unknown): Definition {
 // Same rule as formProperty in api/src/forms.ts.
 function formProperties(schema: ObjectDef | undefined): Property[] {
   return (schema?.properties ?? []).filter((p) =>
-    p.row_status === 'active' && !p.read_only && (!p.is_base || p.api_name === 'name') &&
+    p.record_status === 'active' && !p.read_only && (!p.is_base || p.api_name === 'name') &&
     ['text', 'number', 'dropdown', 'date', 'datetime'].includes(p.type) && p.options.auto_append_users !== true);
 }
 
@@ -95,7 +95,7 @@ function typeFor(p: Property): FieldType {
 }
 
 const optionsOf = (p: Property) =>
-  (p.dropdown_options ?? []).filter((o) => o.row_status === 'active').sort((a, b) => a.display_order - b.display_order).map((o) => ({ value: o.api_value, label: o.label }));
+  (p.dropdown_options ?? []).filter((o) => o.record_status === 'active').sort((a, b) => a.display_order - b.display_order).map((o) => ({ value: o.api_value, label: o.label }));
 
 function slug(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^(\d)/, 'q_$1').slice(0, 50) || 'question';

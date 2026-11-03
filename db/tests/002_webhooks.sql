@@ -31,9 +31,9 @@ begin
   insert into crm.pc_0011 (name) values ('Acme');
   if exists (select 1 from meta.webhook_outbox where object_type_id = 'pc_0011') then raise exception 'unsubscribed objects are not captured'; end if;
 
-  -- archiving shows as a row_status change
+  -- archiving shows as a record_status change
   perform meta.set_record_status('contacts', array[v_contact], 'archived');
-  if not exists (select 1 from meta.webhook_outbox where record_id = v_contact and property = 'row_status' and new_value = '"archived"') then
+  if not exists (select 1 from meta.webhook_outbox where record_id = v_contact and property = 'record_status' and new_value = '"archived"') then
     raise exception 'archive is captured';
   end if;
 

@@ -13,7 +13,7 @@ export interface Coerced {
 }
 
 export function isWritable(prop: PropertyDef): boolean {
-  if (prop.row_status !== 'active') return false;
+  if (prop.record_status !== 'active') return false;
   if (prop.is_base) return prop.api_name === 'name' || prop.api_name === 'created_at';
   return !prop.read_only && prop.type !== 'calculation';
 }
@@ -77,8 +77,8 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
       const opt = prop.dropdown_options.find((o) => o.api_value === v);
       if (!opt) {
         if (prop.options.allow_user_add === true && /^[A-Za-z0-9._]{1,63}$/.test(v)) newOptions.push(v);
-        else throw fail(`"${v}" is not one of: ${prop.dropdown_options.filter((o) => o.row_status === 'active').map((o) => o.api_value).join(', ')}`);
-      } else if (opt.row_status !== 'active' && !current.has(v)) {
+        else throw fail(`"${v}" is not one of: ${prop.dropdown_options.filter((o) => o.record_status === 'active').map((o) => o.api_value).join(', ')}`);
+      } else if (opt.record_status !== 'active' && !current.has(v)) {
         throw fail(`option "${v}" is archived`);
       }
     }

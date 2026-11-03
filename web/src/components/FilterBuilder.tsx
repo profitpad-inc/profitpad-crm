@@ -59,7 +59,7 @@ export function operatorsFor(p: Property): OperatorDef[] {
 }
 
 export function filterableProperties(schema: ObjectDef): Property[] {
-  return schema.properties.filter((p) => p.row_status === 'active').sort((a, b) => a.label.localeCompare(b.label));
+  return schema.properties.filter((p) => p.record_status === 'active').sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function emptyFilter(schema: ObjectDef): Filter {
@@ -141,7 +141,7 @@ function FilterRow({ schema, filter, onChange, onRemove }: { schema: ObjectDef; 
   const shownValue = filter.value === undefined || filter.value === null ? ''
     : prop && valueType(prop) === 'datetime' ? String(filter.value).slice(0, 16) : String(filter.value);
   const values = (filter.values ?? []).map(String);
-  const remaining = prop?.dropdown_options?.filter((o) => o.row_status === 'active' && !values.includes(o.api_value)) ?? [];
+  const remaining = prop?.dropdown_options?.filter((o) => o.record_status === 'active' && !values.includes(o.api_value)) ?? [];
 
   return (
     <div className="filter-row">

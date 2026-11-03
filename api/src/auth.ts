@@ -46,6 +46,9 @@ export interface Principal {
   session?: { id: string; signedInAt: Date };
   // set for an OAuth access token: the app and the user's grant to it
   oauth?: { clientId: string; clientName: string; grantId: number; expiresAt: Date };
+  // set where the route knows better than the credential (the MCP server);
+  // otherwise channelOf in db.ts works it out
+  channel?: 'crm_ui' | 'api' | 'mcp';
 }
 
 declare module 'fastify' {
@@ -111,7 +114,7 @@ export function sessionEndsAt(isAdmin: boolean, createdAt: Date, lastSeenAt: Dat
 // A user may sign in and act only while their record is active (not archived,
 // merged or deleted) and their Status is not "deactivated". `u` is crm.pc_0000.
 // meta.has_active_admin() (migration 0011) repeats this rule in SQL.
-export const USER_CAN_SIGN_IN = (u: string) => `${u}.row_status = 'active' and not coalesce(${u}.status, '{}') @> '{deactivated}'`;
+export const USER_CAN_SIGN_IN = (u: string) => `${u}.record_status = 'active' and not coalesce(${u}.status, '{}') @> '{deactivated}'`;
 
 export function readCookie(req: FastifyRequest, name: string): string | null {
   for (const part of (req.headers.cookie ?? '').split(';')) {
@@ -350,7 +353,7 @@ async function loadSharingRules(db: Db, roleIds: unknown[]): Promise<SharingRule
   const rules: SharingRule[] = [];
   for (const r of rows) {
     const anchor = registry.byKey.get(r.object_type_id);
-    if (!anchor || anchor.row_status !== 'active') continue;
+    if (!anchor || anchor.record_status !== 'active') continue;
     rules.push({ id: Number(r.id), name: r.name, anchor, filterGroups: r.filter_groups, access: r.access, associations: r.associations });
   }
   return rules;
@@ -425,7 +428,7 @@ export function sharingClauses(rules: SharingRule[], obj: ObjectDef, params: unk
       out.push(
         `exists (select 1 from crm.associations_both ${sa} join crm.${quoteIdent(a.object_type_id)} ${s} on ${s}.${quoteIdent(a.id_column)} = ${sa}.other_record_id
          where ${sa}.object_type_id = $${n - 1} and ${sa}.record_id = ${alias}.${quoteIdent(obj.id_column)}
-           and ${sa}.other_object_type_id = $${n}${label} and ${s}.row_status = 'active' and ${clause})`
+           and ${sa}.other_object_type_id = $${n}${label} and ${s}.record_status = 'active' and ${clause})`
       );
     }
   }

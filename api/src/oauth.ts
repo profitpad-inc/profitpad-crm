@@ -678,7 +678,7 @@ export async function oauthRoutes(app: FastifyInstance) {
     const admin = p.permissions === null;
     const scopes: OAuthScope[] = a.scopes.filter((s) => s === 'read' || (s === 'write' && body.allow_write === 'yes') || (s === 'schema' && admin && body.allow_schema === 'yes'));
     const code = random();
-    const grantId = await withTx({ actor: p.actor, source: 'oauth' }, async (db) => {
+    const grantId = await withTx({ principal: p, source: 'oauth' }, async (db) => {
       const { rows } = await db.query(
         `insert into auth.oauth_grants (user_id, client_id, scopes) values ($1, $2, $3)
          on conflict (user_id, client_id) where revoked_at is null do update set scopes = excluded.scopes, updated_at = now()
@@ -769,7 +769,7 @@ export async function oauthRoutes(app: FastifyInstance) {
       requireScope(p, 'admin');
       requireRecentSignIn(p);
     }
-    await withTx({ actor: p.actor }, async (db) => {
+    await withTx({ principal: p }, async (db) => {
       await db.query('update auth.oauth_grants set revoked_at = now(), revoked_by = $2 where id = $1', [req.params.id, p.actor]);
       await db.query('update auth.oauth_tokens set revoked_at = now() where grant_id = $1 and revoked_at is null', [req.params.id]);
     });

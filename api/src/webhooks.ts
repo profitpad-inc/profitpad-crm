@@ -35,7 +35,7 @@ export const EVENT_NAMES = Object.keys(EVENTS) as [WebhookEvent, ...WebhookEvent
 const PROPERTY_EVENTS = new Set<string>(['property_changed', 'property_cleared']);
 const ASSOCIATION_EVENTS = new Set<string>(['association_added', 'association_removed']);
 // history rows that are not property values
-const NOT_PROPERTIES = new Set(['row_status', 'merged_ids', 'merged_into_id', 'association']);
+const NOT_PROPERTIES = new Set(['record_status', 'merged_ids', 'merged_into_id', 'association']);
 
 const HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
 const RESERVED_HEADERS = new Set([
@@ -386,7 +386,7 @@ export interface SubscriptionInput {
 function subscribableObject(reg: Registry, key: unknown, field: string): ObjectDef {
   if (typeof key !== 'string' || !key) throw badRequest(`${field} is required (an object api_name such as contacts)`);
   const obj = reg.byKey.get(key);
-  if (!obj || obj.row_status !== 'active') throw badRequest(`${field}: unknown object "${key}"`);
+  if (!obj || obj.record_status !== 'active') throw badRequest(`${field}: unknown object "${key}"`);
   return obj;
 }
 
@@ -400,12 +400,12 @@ async function checkSubscription(reg: Registry, s: Omit<SubscriptionRow, 'id' | 
   if (s.send_properties.length > MAX_SEND_PROPERTIES) throw badRequest(`send_properties: at most ${MAX_SEND_PROPERTIES} properties`);
   for (const name of [...s.properties, ...s.send_properties]) {
     const prop = getProperty(obj, name);
-    if (!prop || prop.row_status !== 'active' || prop.api_name === obj.id_column) throw badRequest(`${obj.api_name} has no property "${name}"`);
+    if (!prop || prop.record_status !== 'active' || prop.api_name === obj.id_column) throw badRequest(`${obj.api_name} has no property "${name}"`);
   }
   if (!ASSOCIATION_EVENTS.has(s.event) && (s.target_object_type_id || s.label_id)) throw badRequest('target_object and label_id only apply to association events');
   if (s.label_id) {
     const { rows } = await pool.query(
-      `select 1 from meta.pc_0004 where pc_0004_id = $1 and row_status = 'active'
+      `select 1 from meta.pc_0004 where pc_0004_id = $1 and record_status = 'active'
          and ((from_object_type = $2 and ($3::text is null or to_object_type = $3)) or (to_object_type = $2 and ($3::text is null or from_object_type = $3)))`,
       [s.label_id, s.object_type_id, s.target_object_type_id]
     );
@@ -859,7 +859,7 @@ function eventsFor(reg: Registry, sub: SubscriptionRow, obj: ObjectDef, rows: Ou
   const first = rows[0];
   const id = first.record_id;
   const created = rows.some((r) => r.property === 'created_at' && r.old_value === null);
-  const status = rows.find((r) => r.property === 'row_status');
+  const status = rows.find((r) => r.property === 'record_status');
   const values = rows.filter((r) => !NOT_PROPERTIES.has(r.property));
   const one = (extra: Record<string, unknown> = {}, recordId = id): PendingEvent[] => [{ sub, obj, recordId, first, extra }];
   switch (sub.event) {

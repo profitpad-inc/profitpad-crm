@@ -1,4 +1,5 @@
 import pg from 'pg';
+import type { Principal } from './auth.js';
 
 // numeric -> string (converted at the edge), date -> 'YYYY-MM-DD' string
 pg.types.setTypeParser(1700, (v) => v);
@@ -20,21 +21,32 @@ export const newClient = () => new pg.Client(config);
 
 export type Db = pg.PoolClient | pg.Pool;
 
-export interface TxContext {
-  actor: string;
-  source?: string;
+// Either a fixed actor (jobs, public pages) or the caller's principal, whose
+// actor, channel and API key then go into the history too.
+export type TxContext = ({ actor: string; principal?: undefined } | { principal: Principal; actor?: undefined }) & { source?: string };
+
+// How a principal's changes came in: the CRM itself (browser session), the
+// MCP server, or the API (an API key, or an OAuth app calling /v1). Fixed
+// principals (public pages, booking, payments) have none.
+export function channelOf(p: Principal): 'crm_ui' | 'api' | 'mcp' | null {
+  if (p.channel) return p.channel;
+  if (p.session) return 'crm_ui';
+  if (p.keyId !== null || p.oauth) return 'api';
+  return null;
 }
 
-// Runs fn in a transaction with crm.actor / crm.source set, so triggers record
-// who made each change in meta.record_history.
+// Runs fn in a transaction with crm.actor / crm.source (and crm.channel /
+// crm.api_key_id for a principal) set, so triggers record who made each
+// change in meta.record_history.
 export async function withTx<T>(ctx: TxContext, fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query('begin');
-    await client.query("select set_config('crm.actor', $1, true), set_config('crm.source', $2, true)", [
-      ctx.actor,
-      ctx.source ?? 'api'
-    ]);
+    const p = ctx.principal;
+    await client.query(
+      "select set_config('crm.actor', $1, true), set_config('crm.source', $2, true), set_config('crm.channel', $3, true), set_config('crm.api_key_id', $4, true)",
+      [p ? p.actor : ctx.actor, ctx.source ?? 'api', (p && channelOf(p)) ?? '', p?.keyId != null ? String(p.keyId) : '']
+    );
     const result = await fn(client);
     await client.query('commit');
     return result;

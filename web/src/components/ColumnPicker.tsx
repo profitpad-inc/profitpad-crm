@@ -40,7 +40,7 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
 
   const available = useMemo(() => {
     const props: { column: Column; label: string; group: string }[] = schema.properties
-      .filter((p) => p.row_status === 'active' && p.api_name !== 'object_type_id' && p.api_name !== 'merged_ids')
+      .filter((p) => p.record_status === 'active' && p.api_name !== 'object_type_id' && p.api_name !== 'merged_ids')
       .map((p) => ({ column: { type: 'property', property: p.api_name } as Column, label: p.label, group: 'Properties' }));
     const assoc: { column: Column; label: string; group: string }[] = [];
     for (const other of objects) {

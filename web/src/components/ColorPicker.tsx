@@ -1,35 +1,18 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { Menu } from './ui';
+import { useApp } from '../lib/app-context';
+import { dropdownColorName } from '../lib/theme';
 
-// The 16 preset colours offered for dropdown choices. Any other #rrggbb can
-// be picked with the custom colour input.
-export const PRESET_COLORS: { value: string; name: string }[] = [
-  { value: '#ef4444', name: 'Red' },
-  { value: '#f97316', name: 'Orange' },
-  { value: '#f59e0b', name: 'Amber' },
-  { value: '#eab308', name: 'Yellow' },
-  { value: '#84cc16', name: 'Lime' },
-  { value: '#22c55e', name: 'Green' },
-  { value: '#10b981', name: 'Emerald' },
-  { value: '#14b8a6', name: 'Teal' },
-  { value: '#06b6d4', name: 'Cyan' },
-  { value: '#0ea5e9', name: 'Sky' },
-  { value: '#3b82f6', name: 'Blue' },
-  { value: '#6366f1', name: 'Indigo' },
-  { value: '#8b5cf6', name: 'Violet' },
-  { value: '#d946ef', name: 'Fuchsia' },
-  { value: '#ec4899', name: 'Pink' },
-  { value: '#6b7280', name: 'Gray' }
-];
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
-// A swatch button that opens the preset colours, a custom colour and "No
+// A swatch button that opens the portal's 16 dropdown colours (Settings, Theme), a custom colour and "No
 // colour". value is #rrggbb (lowercase) or null.
 export function ColorPicker({ value, onChange, label = 'Colour' }: { value: string | null; onChange: (v: string | null) => void; label?: string }) {
+  const { dropdownColors } = useApp();
   const [text, setText] = useState(value ?? '');
-  const custom = value !== null && !PRESET_COLORS.some((c) => c.value === value);
+  const custom = value !== null && !dropdownColors.includes(value);
   return (
     <Menu
       trigger={(open) => (
@@ -38,7 +21,7 @@ export function ColorPicker({ value, onChange, label = 'Colour' }: { value: stri
           className={`color-swatch trigger${value ? '' : ' none'}`}
           style={value ? { background: value } : undefined}
           onClick={() => { setText(value ?? ''); open(); }}
-          aria-label={`${label}: ${value ? PRESET_COLORS.find((c) => c.value === value)?.name ?? value : 'none'}`}
+          aria-label={`${label}: ${value ? (dropdownColors.includes(value) ? dropdownColorName(value, dropdownColors.indexOf(value)) : value) : 'none'}`}
           title={label}
         />
       )}
@@ -46,17 +29,17 @@ export function ColorPicker({ value, onChange, label = 'Colour' }: { value: stri
       {(close) => (
         <div className="color-menu">
           <div className="color-grid">
-            {PRESET_COLORS.map((c) => (
+            {dropdownColors.map((c, i) => (
               <button
-                key={c.value}
+                key={i}
                 type="button"
                 className="color-swatch"
-                style={{ background: c.value }}
-                title={c.name}
-                aria-label={c.name}
-                onClick={() => { onChange(c.value); close(); }}
+                style={{ background: c }}
+                title={dropdownColorName(c, i)}
+                aria-label={dropdownColorName(c, i)}
+                onClick={() => { onChange(c); close(); }}
               >
-                {c.value === value && <Check size={14} color="#fff" strokeWidth={3} />}
+                {c === value && <Check size={14} color="#fff" strokeWidth={3} />}
               </button>
             ))}
           </div>

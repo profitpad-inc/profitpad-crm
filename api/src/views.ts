@@ -297,7 +297,7 @@ const VIEW_COLUMNS = `pc_0055_id as id, name, slug, icon, description, status[1]
 
 export async function loadView(db: Db, slugOrId: string): Promise<ViewRow> {
   const { rows } = await db.query(
-    `select ${VIEW_COLUMNS} from crm.pc_0055 where (lower(slug) = lower($1) or pc_0055_id = $1) and row_status = 'active'`,
+    `select ${VIEW_COLUMNS} from crm.pc_0055 where (lower(slug) = lower($1) or pc_0055_id = $1) and record_status = 'active'`,
     [slugOrId]
   );
   if (!rows[0]) throw notFound(`no view "${slugOrId}"`);
@@ -305,7 +305,7 @@ export async function loadView(db: Db, slugOrId: string): Promise<ViewRow> {
 }
 
 export async function listViews(p: Principal): Promise<ViewRow[]> {
-  const { rows } = await pool.query(`select ${VIEW_COLUMNS} from crm.pc_0055 where row_status = 'active' order by lower(name), pc_0055_id`);
+  const { rows } = await pool.query(`select ${VIEW_COLUMNS} from crm.pc_0055 where record_status = 'active' order by lower(name), pc_0055_id`);
   return (rows as ViewRow[]).filter((v) => canOpen(p, v, false));
 }
 
@@ -419,7 +419,7 @@ export async function saveDraft(p: Principal, idOrSlug: string, input: DraftInpu
     if (input.set_queries !== undefined) queries = parseQueries({ ...queries, ...parseQueries(input.set_queries) });
   }
   await checkDraft(source, queries);
-  await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
+  await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, (c) =>
     c.query('update crm.pc_0055 set draft_source = $2, draft_queries = $3 where pc_0055_id = $1', [v.id, source, asText(queries)])
   );
   return loadView(pool, v.id);
@@ -431,7 +431,7 @@ export async function publishView(p: Principal, idOrSlug: string): Promise<ViewR
   if (!v.draft_source) throw badRequest('the draft has no code to publish');
   const queries = parseQueries(v.draft_queries);
   await checkDraft(v.draft_source, queries);
-  await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
+  await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, (c) =>
     c.query(
       `update crm.pc_0055 set source = draft_source, queries = draft_queries, status = '{published}', published_at = now()
        where pc_0055_id = $1`,
@@ -446,7 +446,7 @@ export async function revertDraft(p: Principal, idOrSlug: string): Promise<ViewR
   requireScope(p, 'schema');
   const v = await loadView(pool, idOrSlug);
   if (v.status !== 'published' || !v.source) throw badRequest('this view has never been published, so there is nothing to go back to');
-  await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, (c) =>
+  await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, (c) =>
     c.query('update crm.pc_0055 set draft_source = source, draft_queries = queries where pc_0055_id = $1', [v.id])
   );
   return loadView(pool, v.id);
@@ -461,7 +461,7 @@ export async function createView(
   const queries = parseQueries(input.queries ?? {});
   await checkDraft(input.source ?? null, queries);
   const obj = (await getRegistry()).byKey.get('views')!;
-  const id = await withTx({ actor: p.actor, source: p.oauth ? 'mcp' : 'api' }, async (c) => {
+  const id = await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, async (c) => {
     const props: Record<string, unknown> = { name: input.name!.trim(), description: input.description ?? null };
     if (input.slug) props.slug = input.slug;
     if (input.icon) props.icon = input.icon;

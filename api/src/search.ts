@@ -53,7 +53,7 @@ function escapeLike(s: string): string {
 
 function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't'): string {
   const prop = getProperty(obj, f.property);
-  if (!prop || prop.row_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
+  if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
   if (!(OPERATORS as readonly string[]).includes(f.operator)) throw badRequest(`unknown operator "${f.operator}"`);
   const col = `${alias}.${quoteIdent(prop.api_name)}`;
   const t = valueType(prop);
@@ -149,7 +149,7 @@ export interface CompiledSearch {
 export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknown[], isHidden: (p: PropertyDef) => boolean): CompiledSearch {
   const clauses: string[] = [];
   params.push(req.status ?? 'active');
-  clauses.push(`t.row_status = $${params.length}`);
+  clauses.push(`t.record_status = $${params.length}`);
   if (req.status && !['active', 'archived'].includes(req.status)) throw badRequest('status must be active or archived');
 
   if (req.query) {
@@ -158,7 +158,7 @@ export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknow
     const n = params.length;
     const cols = obj.search_properties
       .map((name) => getProperty(obj, name))
-      .filter((p): p is PropertyDef => !!p && p.row_status === 'active' && !isHidden(p))
+      .filter((p): p is PropertyDef => !!p && p.record_status === 'active' && !isHidden(p))
       .map((p) => `t.${quoteIdent(p.api_name)} ilike $${n}`);
     if (getProperty(obj, 'first_name') && getProperty(obj, 'last_name') && obj.search_properties.includes('first_name')) {
       cols.push(`concat_ws(' ', t."first_name", t."last_name") ilike $${n}`);
@@ -170,7 +170,7 @@ export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknow
 
   const orders = (req.sorts ?? []).map((s) => {
     const prop = getProperty(obj, s.property);
-    if (!prop || prop.row_status !== 'active' || isHidden(prop)) throw badRequest(`unknown sort property "${s.property}"`);
+    if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown sort property "${s.property}"`);
     if ((prop.type === 'dropdown' && !isSingleValue(prop)) || prop.type === 'file' || prop.type === 'id_list') {
       throw badRequest(`cannot sort by multi-value property "${s.property}"`);
     }

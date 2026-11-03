@@ -62,7 +62,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
     for (const [k, v] of Object.entries(startWith ?? {})) {
       const p = object.properties.find((x) => x.api_name === k && isEditable(x));
       if (!p || v === null || v === undefined || v === '') continue;
-      if (p.type === 'dropdown' && !p.dropdown_options?.some((o) => o.row_status === 'active' && o.api_value === v)) continue;
+      if (p.type === 'dropdown' && !p.dropdown_options?.some((o) => o.record_status === 'active' && o.api_value === v)) continue;
       properties[k] = v;
     }
     for (const p of fields) {

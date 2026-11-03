@@ -26,7 +26,7 @@ Every call is logged in `meta.schema_changes` with the actor (`crm.actor`) and t
 
 - Object `api_name`: lowercase letters, digits, underscores; starts with a letter; max 63; not `pc_*`; unique.
 - Property `api_name`: letters, digits, dots, underscores; starts with a letter; max 63; unique per object (case-insensitive); immutable.
-- Reserved property names: `id`, `object_type_id`, `name`, `created_at`, `updated_at`, `merged_ids`, `merged_into_id`, `row_status`, `created_by`, `updated_by`, anything starting `pc_` or `row_`, anything containing `__` (used for `<name>__label` view columns).
+- Reserved property names: `id`, `object_type_id`, `name`, `created_at`, `updated_at`, `merged_ids`, `merged_into_id`, `record_status`, `created_by`, `updated_by`, anything starting `pc_` or `row_`, anything containing `__` (used for `<name>__label` view columns).
 - Labels: any characters (emoji fine), 1 to 63, unique per object (case-insensitive).
 - Dropdown option `api_value`: letters, digits, dots, underscores, max 63; label max 63; both unique per property.
 - Property names with dots or capitals must be double-quoted in SQL: `select "favorite.color" from reporting.contacts`.
@@ -39,7 +39,7 @@ Every call is logged in `meta.schema_changes` with the actor (`crm.actor`) and t
 
 ## 4. Records
 
-- Archive (`row_status = 'archived'`) is the recycle bin. Archived rows never appear in `reporting.*`.
+- Archive (`record_status = 'archived'`) is the recycle bin. Archived rows never appear in `reporting.*`.
 - Permanent delete (`meta.delete_record`) wipes every value and the record's history; only the id remains. It cannot be undone. Only admin keys may call it.
 - Merge (`meta.merge_records(object, winner, loser)`): the winner keeps its values, fills empty ones from the loser, gains the loser's associations; the loser becomes `merged` and points to the winner. Looking up a merged id returns the winner.
 - Every insert/update is recorded per property in `meta.record_history` (old value, new value, actor, source).

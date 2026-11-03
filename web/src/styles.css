@@ -355,6 +355,8 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .change { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .change .change-head { justify-content: space-between; }
 .ledger-time { font-size: 12px; color: var(--muted-text); white-space: nowrap; }
+.history-filters { flex-wrap: wrap; margin-bottom: 10px; }
+.history-filters select { width: auto; }
 .activity-text { margin-top: 2px; color: var(--muted-text); overflow-wrap: anywhere; }
 .card { background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; box-shadow: var(--shadow-card); }
 .card-head h3 { font-stretch: var(--label-stretch); font-weight: 600; }
@@ -814,3 +816,4 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .color-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--pill); }
 .color-dot-value { display: inline-flex; align-items: center; gap: 8px; }
 .color-dot { width: 12px; height: 12px; flex: none; border-radius: 50%; }
+.dropdown-color-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }

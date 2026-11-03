@@ -9,7 +9,7 @@ import { fromDb, isWritable, toDb } from './values.js';
 export interface RecordOut {
   id: string;
   object_type_id: string;
-  row_status: string;
+  record_status: string;
   merged_into_id?: string;
   // single reads only: whether the caller may edit this record
   can_edit?: boolean;
@@ -32,14 +32,14 @@ export function visibleProperties(obj: ObjectDef, principal: Principal, requeste
 }
 
 function selectList(obj: ObjectDef, props: PropertyDef[]): string {
-  const cols = new Set([obj.id_column, 'row_status', 'merged_into_id', ...props.map((p) => p.api_name)]);
+  const cols = new Set([obj.id_column, 'record_status', 'merged_into_id', ...props.map((p) => p.api_name)]);
   return [...cols].map((c) => `t.${quoteIdent(c)}`).join(', ');
 }
 
 export function serialize(obj: ObjectDef, props: PropertyDef[], row: Record<string, unknown>): RecordOut {
   const properties: Record<string, unknown> = {};
   for (const p of props) properties[p.api_name] = fromDb(p, row[p.api_name]);
-  const out: RecordOut = { id: row[obj.id_column] as string, object_type_id: obj.object_type_id, row_status: row.row_status as string, properties };
+  const out: RecordOut = { id: row[obj.id_column] as string, object_type_id: obj.object_type_id, record_status: row.record_status as string, properties };
   if (row.merged_into_id) out.merged_into_id = row.merged_into_id as string;
   return out;
 }
@@ -113,7 +113,7 @@ async function attachAssociations(db: Db, obj: ObjectDef, principal: Principal, 
        from crm.associations_both a
        join crm.${quoteIdent(other.object_type_id)} t on t.${quoteIdent(other.id_column)} = a.other_record_id
        where a.object_type_id = $1 and a.record_id = any ($2) and a.other_object_type_id = $3
-         and t.row_status = 'active' and ${access}
+         and t.record_status = 'active' and ${access}
        order by a.record_id, a.created_at, a.association_id`,
       params
     );
@@ -149,11 +149,11 @@ export async function getRecord(
     const access = recordFilter(principal, obj, params);
     const { rows } = await db.query(
       `select ${selectList(obj, props)} from crm.${quoteIdent(obj.object_type_id)} t
-       where t.${quoteIdent(obj.id_column)} = $1 and t.row_status <> 'deleted' and ${access}`,
+       where t.${quoteIdent(obj.id_column)} = $1 and t.record_status <> 'deleted' and ${access}`,
       params
     );
     if (rows.length === 0) break;
-    if (rows[0].row_status === 'merged' && rows[0].merged_into_id) {
+    if (rows[0].record_status === 'merged' && rows[0].merged_into_id) {
       id = rows[0].merged_into_id;
       continue;
     }
@@ -186,13 +186,13 @@ export async function batchReadRecords(
     const access = recordFilter(principal, obj, params);
     const { rows } = await db.query(
       `select ${selectList(obj, props)} from crm.${quoteIdent(obj.object_type_id)} t
-       where t.${quoteIdent(obj.id_column)} = any ($1) and t.row_status <> 'deleted' and ${access}`,
+       where t.${quoteIdent(obj.id_column)} = any ($1) and t.record_status <> 'deleted' and ${access}`,
       params
     );
     const next = new Set<string>();
     for (const row of rows) {
       const rowId = row[obj.id_column] as string;
-      if (row.row_status === 'merged' && row.merged_into_id) {
+      if (row.record_status === 'merged' && row.merged_into_id) {
         for (const [req, cur] of lookup) if (cur === rowId) lookup.set(req, row.merged_into_id);
         if (!found.has(row.merged_into_id)) next.add(row.merged_into_id);
       } else {
@@ -276,7 +276,7 @@ async function planWrite(
   const plan: WritePlan = { columns: [], values: [] };
   for (const [name, raw] of Object.entries(input)) {
     const prop = getProperty(obj, name);
-    if (!prop || prop.row_status !== 'active' || propertyAccess(principal, prop) === 'hidden') throw badRequest(`unknown property "${name}"`);
+    if (!prop || prop.record_status !== 'active' || propertyAccess(principal, prop) === 'hidden') throw badRequest(`unknown property "${name}"`);
     if (!isWritable(prop) || propertyAccess(principal, prop) === 'read_only') throw badRequest(`"${prop.api_name}" is read-only`);
     const { value, newOptions } = toDb(prop, raw, existing?.[prop.api_name]);
     if (prop.type === 'file' && Array.isArray(value) && fileIdCheck) {
@@ -354,7 +354,7 @@ export async function updateRecord(
   const access = recordFilter(principal, obj, params, 't', 'edit');
   const { rows } = await client.query(
     `select * from crm.${quoteIdent(obj.object_type_id)} t
-     where t.${quoteIdent(obj.id_column)} = $1 and t.row_status in ('active', 'archived') and ${access} for update`,
+     where t.${quoteIdent(obj.id_column)} = $1 and t.record_status in ('active', 'archived') and ${access} for update`,
     params
   );
   if (rows.length === 0) throw notFound(`${obj.api_name} record ${id} not found`);
@@ -426,7 +426,7 @@ export async function assertAccessible(db: Db, obj: ObjectDef, principal: Princi
   const access = recordFilter(principal, obj, params, 't', mode);
   const { rows } = await db.query(
     `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} t
-     where t.${quoteIdent(obj.id_column)} = any ($1) and t.row_status <> 'deleted' and ${access}`,
+     where t.${quoteIdent(obj.id_column)} = any ($1) and t.record_status <> 'deleted' and ${access}`,
     params
   );
   if (rows[0].n !== new Set(ids).size) throw notFound(`one or more ${obj.api_name} records not found`);
@@ -444,7 +444,7 @@ export async function canEditRecord(db: Db, obj: ObjectDef, principal: Principal
   if (access === 'true') return true;
   const { rows } = await db.query(
     `select 1 from crm.${quoteIdent(obj.object_type_id)} t
-     where t.${quoteIdent(obj.id_column)} = $1 and t.row_status in ('active', 'archived') and ${access}`,
+     where t.${quoteIdent(obj.id_column)} = $1 and t.record_status in ('active', 'archived') and ${access}`,
     params
   );
   return rows.length > 0;
@@ -460,7 +460,7 @@ export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, v
   const col = quoteIdent(prop.api_name);
   const { rows } = await db.query(
     `select ${quoteIdent(obj.id_column)} as id from crm.${quoteIdent(obj.object_type_id)}
-     where ${ci ? `lower(${col}) = lower($1)` : `${col} = $1`} and row_status in ('active', 'archived') limit 1`,
+     where ${ci ? `lower(${col}) = lower($1)` : `${col} = $1`} and record_status in ('active', 'archived') limit 1`,
     [value]
   );
   return rows[0]?.id ?? null;
@@ -490,6 +490,6 @@ export async function assertUserLinkable(from: ObjectDef, toKey: string): Promis
 export async function objectForWrite(key: string): Promise<ObjectDef> {
   const reg = await getRegistry();
   const obj = reg.byKey.get(key);
-  if (!obj || obj.row_status !== 'active') throw notFound(`unknown object "${key}"`);
+  if (!obj || obj.record_status !== 'active') throw notFound(`unknown object "${key}"`);
   return obj;
 }

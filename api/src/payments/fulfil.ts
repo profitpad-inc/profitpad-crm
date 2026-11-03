@@ -52,7 +52,7 @@ export async function linkedPayments(db: pg.PoolClient | pg.Pool, object: Payabl
   const { rows } = await db.query(
     `select p.pc_0024_id as id, p.status[1] as status, p.method[1] as method, p.purpose[1] as purpose, p.amount, p.paid_at
      from crm.associations_both a
-     join crm.pc_0024 p on p.pc_0024_id = a.other_record_id and p.row_status = 'active'
+     join crm.pc_0024 p on p.pc_0024_id = a.other_record_id and p.record_status = 'active'
      where a.object_type_id = $1 and a.record_id = $2 and a.other_object_type_id = 'pc_0024' and p.purpose is not null
      order by p.created_at desc`,
     [TABLE[object].table, recordId]
@@ -170,7 +170,7 @@ export async function markPaymentSucceeded(client: pg.PoolClient, paymentId: str
 
   const { rows: invoices } = await client.query(
     `select i.pc_0023_id as id, i.status[1] as status from crm.associations_both a
-     join crm.pc_0023 i on i.pc_0023_id = a.other_record_id and i.row_status = 'active'
+     join crm.pc_0023 i on i.pc_0023_id = a.other_record_id and i.record_status = 'active'
      where a.object_type_id = 'pc_0024' and a.record_id = $1 and a.other_object_type_id = 'pc_0023'
      for update of i`,
     [paymentId]
@@ -182,7 +182,7 @@ export async function markPaymentSucceeded(client: pg.PoolClient, paymentId: str
 
   const { rows: quotes } = await client.query(
     `select q.pc_0022_id as id, q.status[1] as status, q.online_payment[1] as online_payment from crm.associations_both a
-     join crm.pc_0022 q on q.pc_0022_id = a.other_record_id and q.row_status = 'active'
+     join crm.pc_0022 q on q.pc_0022_id = a.other_record_id and q.record_status = 'active'
      where a.object_type_id = 'pc_0024' and a.record_id = $1 and a.other_object_type_id = 'pc_0022'
      for update of q`,
     [paymentId]

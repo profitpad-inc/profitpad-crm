@@ -107,7 +107,7 @@ async function validateSharingRule(db: Db, b: SharingRuleBody): Promise<SharingR
     if (!RULE_ACCESS.includes(linkAccess)) throw badRequest(`associations[${i}].access must be read or edit`);
     const labelId = link.label_id ?? null;
     const { rows } = await db.query(
-      `select 1 from meta.pc_0004 where row_status = 'active' and ($3::text is null or pc_0004_id = $3)
+      `select 1 from meta.pc_0004 where record_status = 'active' and ($3::text is null or pc_0004_id = $3)
          and ((from_object_type = $1 and to_object_type = $2) or (from_object_type = $2 and to_object_type = $1)) limit 1`,
       [anchor.object_type_id, other.object_type_id, labelId]
     );
@@ -147,7 +147,7 @@ async function listSharingRules(db: Db, roleId: string, ruleId?: string) {
   return rows.map((r) => {
     const anchor = registry.byKey.get(r.object_type_id);
     let problem: string | null = null;
-    if (!anchor || anchor.row_status !== 'active') problem = `${r.object_type_id} is no longer active`;
+    if (!anchor || anchor.record_status !== 'active') problem = `${r.object_type_id} is no longer active`;
     else {
       try {
         compileFilterGroups(anchor, r.filter_groups, [], noneHidden);
@@ -169,7 +169,7 @@ async function countShared(rule: SharingRule, obj: ObjectDef): Promise<number> {
   const clauses = sharingClauses([rule], obj, params, 't', 'read');
   if (clauses.length === 0) return 0;
   const { rows } = await pool.query(
-    `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} t where t.row_status = 'active' and (${clauses.join(' or ')})`,
+    `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} t where t.record_status = 'active' and (${clauses.join(' or ')})`,
     params
   );
   return rows[0].n;
@@ -239,7 +239,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const userId = await checkKeyUser(old[0].user_id ?? b.user_id, old[0].scopes);
       const expiresAt = keyExpiry(b);
       const { key, prefix } = generateKey();
-      const created = await withTx({ actor: p.actor }, async (c) => {
+      const created = await withTx({ principal: p }, async (c) => {
         const { rows } = await c.query(
           `insert into auth.api_keys (name, key_prefix, key_hash, user_id, scopes, expires_at, created_by)
            values ($1, $2, $3, $4, $5, $6, $7) returning id, name, key_prefix, user_id, scopes, expires_at`,
@@ -388,7 +388,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdminChange(p);
     const rule = await validateSharingRule(pool, req.body ?? {});
-    const id = await withTx({ actor: p.actor }, async (c) => {
+    const id = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query(
         `insert into auth.role_sharing_rules (role_id, name, object_type_id, filter_groups, access, created_by)
          values ($1, $2, $3, $4, $5, $6) returning id`,
@@ -406,7 +406,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdminChange(p);
     const rule = await validateSharingRule(pool, req.body ?? {});
-    await withTx({ actor: p.actor }, async (c) => {
+    await withTx({ principal: p }, async (c) => {
       const { rowCount } = await c.query(
         `update auth.role_sharing_rules set name = $3, object_type_id = $4, filter_groups = $5, access = $6, updated_at = now()
          where role_id = $1 and id = $2`,
@@ -463,7 +463,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // ---- Currencies ----------------------------------------------------------
   app.get('/v1/currencies', async (req) => {
     requireScope(req.principal!, 'read');
-    const { rows } = await pool.query('select code, name, symbol, decimals, rate_to_base, is_base, row_status from meta.pc_0007 order by code');
+    const { rows } = await pool.query('select code, name, symbol, decimals, rate_to_base, is_base, record_status from meta.pc_0007 order by code');
     return { results: rows };
   });
 
@@ -471,7 +471,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'admin');
     const b = req.body ?? ({} as never);
-    const row = await withTx({ actor: p.actor }, async (c) => {
+    const row = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query(
         `insert into meta.pc_0007 (code, name, symbol, decimals, rate_to_base) values ($1, $2, $3, coalesce($4, 2), coalesce($5, 1))
          returning code, name, symbol, decimals, rate_to_base, is_base`,
@@ -483,15 +483,15 @@ export async function adminRoutes(app: FastifyInstance) {
     return row;
   });
 
-  app.patch<{ Params: { code: string }; Body: { name?: string; symbol?: string; rate_to_base?: number; row_status?: string } }>('/v1/currencies/:code', async (req) => {
+  app.patch<{ Params: { code: string }; Body: { name?: string; symbol?: string; rate_to_base?: number; record_status?: string } }>('/v1/currencies/:code', async (req) => {
     const p = req.principal!;
     requireScope(p, 'admin');
     const b = req.body ?? {};
-    const row = await withTx({ actor: p.actor }, async (c) => {
+    const row = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query(
         `update meta.pc_0007 set name = coalesce($2, name), symbol = coalesce($3, symbol), rate_to_base = coalesce($4, rate_to_base),
-           row_status = coalesce($5, row_status) where code = $1 returning code, name, symbol, decimals, rate_to_base, is_base, row_status`,
-        [req.params.code, b.name ?? null, b.symbol ?? null, b.rate_to_base ?? null, b.row_status ?? null]
+           record_status = coalesce($5, record_status) where code = $1 returning code, name, symbol, decimals, rate_to_base, is_base, record_status`,
+        [req.params.code, b.name ?? null, b.symbol ?? null, b.rate_to_base ?? null, b.record_status ?? null]
       );
       return rows[0];
     });
@@ -513,7 +513,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'schema');
     const b = req.body ?? ({} as never);
-    await withTx({ actor: p.actor }, (c) => c.query('select meta.create_integration_table($1, $2, $3)', [b.name, JSON.stringify(b.columns ?? []), b.primary_key]));
+    await withTx({ principal: p }, (c) => c.query('select meta.create_integration_table($1, $2, $3)', [b.name, JSON.stringify(b.columns ?? []), b.primary_key]));
     reply.code(201);
     return { table: `integrations.${b.name}` };
   });
@@ -564,7 +564,7 @@ export async function adminRoutes(app: FastifyInstance) {
     );
     const jobId = jobRows[0].id;
     const counts = { created: 0, updated: 0, errors: [] as { row: number; error: string }[] };
-    await withTx({ actor: p.actor, source: 'import' }, async (c) => {
+    await withTx({ principal: p, source: 'import' }, async (c) => {
       for (const [i, row] of rows.entries()) {
         await c.query('savepoint import_row');
         try {

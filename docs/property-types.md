@@ -49,7 +49,7 @@ Values are `api_value`s; labels live in `meta.pc_0003` and are looked up at read
 
 Always *enforced*: only known option values, no duplicates, no empty arrays. Archived options stay valid on records that already have them but are refused on new writes.
 
-Each option can have a colour (`color`, lowercase `#rrggbb` or null; migration 0039), set with `meta.set_option_details` or `color` on the option endpoints and MCP option tools. Settings → Properties offers 16 presets plus a custom colour once the property's Colours setting (`color_display`) is a dot or a pill; record pages and tables then show coloured values that way.
+Each option can have a colour (`color`, lowercase `#rrggbb` or null; migration 0039), set with `meta.set_option_details` or `color` on the option endpoints and MCP option tools. Settings → Properties offers the portal's 16 dropdown colours (set in Settings → Theme) plus a custom colour once the property's Colours setting (`color_display`) is a dot or a pill; record pages and tables then show coloured values that way.
 
 To model a boolean, use a single-value dropdown with options `true` / `false`.
 

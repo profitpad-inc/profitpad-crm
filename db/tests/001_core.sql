@@ -199,14 +199,14 @@ begin
   update crm.pc_0010 set email = 'b@x.com', job_title = 'CEO' where pc_0010_id = '0000000011';
   perform meta.associate('contacts', '0000000011', 'companies', '0000000002');
   perform meta.merge_records('contacts', '0000000010', '0000000011');
-  perform meta._test_check((select row_status || merged_into_id from crm.pc_0010 where pc_0010_id = '0000000011') = 'merged0000000010', 'loser marked merged');
+  perform meta._test_check((select record_status || merged_into_id from crm.pc_0010 where pc_0010_id = '0000000011') = 'merged0000000010', 'loser marked merged');
   perform meta._test_check((select job_title from crm.pc_0010 where pc_0010_id = '0000000010') = 'CEO', 'winner fills empty values');
   perform meta._test_check((select email from crm.pc_0010 where pc_0010_id = '0000000010') = 'a@x.com', 'winner keeps its own values');
   perform meta._test_check((select merged_ids from crm.pc_0010 where pc_0010_id = '0000000010') = array['0000000011'], 'merged_ids');
   perform meta._test_check(exists (select 1 from crm.associations_both where record_id = '0000000010' and object_type_id = 'pc_0010' and other_record_id = '0000000002'), 'associations move to winner');
 
   perform meta.delete_record('contacts', '0000000010');
-  perform meta._test_check((select email is null and job_title is null and row_status = 'deleted' from crm.pc_0010 where pc_0010_id = '0000000010'), 'delete scrubs values');
+  perform meta._test_check((select email is null and job_title is null and record_status = 'deleted' from crm.pc_0010 where pc_0010_id = '0000000010'), 'delete scrubs values');
   perform meta._test_check((select count(*) from meta.record_history where object_type_id = 'pc_0010' and record_id = '0000000010') = 1, 'delete wipes history');
   insert into crm.pc_0010 (name) values ('New');
   perform meta._test_check((select max(pc_0010_id) from crm.pc_0010) = '0000000048', 'ids are never reused');
@@ -229,7 +229,7 @@ set local role test_crm_api;
 do $t$
 begin
   insert into crm.pc_0010 (name, email) values ('Via API', 'api@x.com');
-  perform meta._test_expect_error($$update crm.pc_0010 set row_status = 'deleted'$$, 'permission denied');
+  perform meta._test_expect_error($$update crm.pc_0010 set record_status = 'deleted'$$, 'permission denied');
   perform meta._test_expect_error($$insert into crm.pc_0010 (pc_0010_id, name) values ('00000000ff', 'x')$$, 'permission denied');
   perform meta._test_expect_error($$update crm.pc_0010 set company_domain = 'x'$$, 'permission denied');
   perform meta._test_expect_error($$alter table crm.pc_0010 add column x text$$, 'must be owner');
@@ -272,14 +272,14 @@ begin
   update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_a;
   perform meta._test_check(meta.has_active_admin(), 'deactivating one of two admins is allowed');
   perform meta._test_expect_error(format($$update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
-  perform meta._test_expect_error(format($$update crm.pc_0000 set row_status = 'archived' where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
+  perform meta._test_expect_error(format($$update crm.pc_0000 set record_status = 'archived' where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
   perform meta._test_expect_error(format($$delete from crm.pc_0000 where pc_0000_id = %L$$, v_b), 'last active user with an admin role');
   update crm.pc_0000 set name = 'Keep Admin B renamed' where pc_0000_id = v_b;
   update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_plain;
 
   update crm.pc_0000 set status = null where pc_0000_id = v_a;
   perform meta._test_expect_error(format($$update crm.pc_0000 set status = '{deactivated}' where pc_0000_id in (%L, %L)$$, v_a, v_b), 'last active user with an admin role');
-  update crm.pc_0000 set row_status = 'archived' where pc_0000_id = v_b;
+  update crm.pc_0000 set record_status = 'archived' where pc_0000_id = v_b;
   perform meta._test_check(meta.has_active_admin(), 'archiving one of two admins is allowed');
 end $t$;
 
@@ -430,20 +430,20 @@ begin
   -- a line archived on its own stays archived when the parent comes back
   perform meta.set_record_status('lines', array[v_l2], 'archived');
   perform meta._test_check(meta.set_record_status('deals', array[v_deal], 'archived') = 1, 'archive returns the parent count');
-  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l1) = 'archived', 'archiving a parent archives its lines');
+  perform meta._test_check((select record_status from crm.pc_0020 where pc_0020_id = v_l1) = 'archived', 'archiving a parent archives its lines');
   perform meta.set_record_status('deals', array[v_deal], 'active');
-  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l1) = 'active', 'restoring a parent restores lines archived with it');
-  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l2) = 'archived', 'lines archived on their own stay archived');
-  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l3) = 'active', 'loose lines untouched');
+  perform meta._test_check((select record_status from crm.pc_0020 where pc_0020_id = v_l1) = 'active', 'restoring a parent restores lines archived with it');
+  perform meta._test_check((select record_status from crm.pc_0020 where pc_0020_id = v_l2) = 'archived', 'lines archived on their own stay archived');
+  perform meta._test_check((select record_status from crm.pc_0020 where pc_0020_id = v_l3) = 'active', 'loose lines untouched');
 
   -- merging a parent moves its lines to the winner
   perform meta.merge_records('deals', v_deal2, v_deal);
   perform meta._test_check(exists (select 1 from crm.associations_both where object_type_id = 'pc_0020' and record_id = v_l1 and other_record_id = v_deal2), 'merge moves lines to the winner');
 
   perform meta.delete_record('deals', v_deal2);
-  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_l1) = 'deleted'
-    and (select row_status from crm.pc_0020 where pc_0020_id = v_l2) = 'deleted', 'deleting a parent deletes its lines');
-  perform meta._test_check((select row_status from crm.pc_0020 where pc_0020_id = v_copies[1]) = 'active', 'other parents keep their lines');
+  perform meta._test_check((select record_status from crm.pc_0020 where pc_0020_id = v_l1) = 'deleted'
+    and (select record_status from crm.pc_0020 where pc_0020_id = v_l2) = 'deleted', 'deleting a parent deletes its lines');
+  perform meta._test_check((select record_status from crm.pc_0020 where pc_0020_id = v_copies[1]) = 'active', 'other parents keep their lines');
 end $t$;
 
 
@@ -458,11 +458,11 @@ begin
   perform meta._test_expect_error(format($$update crm.pc_0022 set status = null where pc_0022_id = %L$$, v_quote), 'required');
   perform meta._test_expect_error($$select meta.update_property('invoices', 'status', p_options => '{"single_value": true, "default_value": "nope"}')$$, 'not an option');
   perform meta.delete_record('quotes', v_quote);
-  perform meta._test_check((select row_status from crm.pc_0022 where pc_0022_id = v_quote) = 'deleted', 'deleting a record with a required status works');
+  perform meta._test_check((select record_status from crm.pc_0022 where pc_0022_id = v_quote) = 'deleted', 'deleting a record with a required status works');
   perform meta.update_property('invoices', 'status', p_options => '{"single_value": true}');
   perform meta._test_check((select column_default from information_schema.columns where table_schema = 'crm' and table_name = 'pc_0023' and column_name = 'status') is null, 'removing default_value drops the default');
   perform meta._test_check((select count(*) from meta.pc_0002 where api_name = 'slug' and object_type_id in ('pc_0022', 'pc_0023', 'pc_0052', 'pc_0054')) = 4, 'page addresses');
-  update crm.pc_0052 set slug = 'contact-us' where pc_0052_id = (select max(pc_0052_id) from crm.pc_0052 where row_status = 'active');
+  update crm.pc_0052 set slug = 'contact-us' where pc_0052_id = (select max(pc_0052_id) from crm.pc_0052 where record_status = 'active');
 end $t$;
 
 -- 30. Row-level security for custom view queries (0030)

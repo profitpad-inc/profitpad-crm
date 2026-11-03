@@ -150,7 +150,7 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 ## The view_data schema
 - One view per object, named after the object's api_name (contacts, companies, deals, tickets, ...), active records only.
 - The id column is <object code>_id, e.g. pc_0010_id for contacts (see topic schema). Alias it "as id" for tables and openRecord.
-- Base columns on every object: object_type_id, <code>_id, name, created_at, updated_at, merged_ids, row_status.
+- Base columns on every object: object_type_id, <code>_id, name, created_at, updated_at, merged_ids, record_status.
 - Single-value dropdowns are text (the api_value) plus <name>__label (the label). Multi-value dropdowns are text[] plus <name>__label (text[] of labels). Filter on the api_value, show the label.
 - owner is a dropdown of user ids (owner__label is the user's name).
 - users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name".
@@ -159,9 +159,9 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
   Contacts per deal, for a board: "select a.record_id as deal_id, string_agg(distinct ct.name, ', ') as contacts from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' group by a.record_id"
   Always join to the other object's view (as above) rather than counting association rows, so hidden records are not counted, and use count(distinct ...) since two records can be linked under more than one label.
 - objects, properties, property_options, association_labels, currencies: the CRM's setup. Order dropdown values by property_options.display_order.
-- property_options: object_type_id, property, api_value, label, display_order, row_status, parent_property, parent_values, is_closed, is_won, probability, color. color is the choice's colour as #rrggbb (null = none); use it for badges and board columns. Pipeline stages use parent_property to probability: deals.stage has parent_property 'pipeline', each stage lists the pipelines it belongs to in parent_values (empty means every pipeline), and is_closed / is_won / probability say what the stage means. Never hard-code stage values like 'closed_won' for won, lost or open: join property_options instead, so renamed or added stages stay right. Open pipeline:
+- property_options: object_type_id, property, api_value, label, display_order, record_status, parent_property, parent_values, is_closed, is_won, probability, color. color is the choice's colour as #rrggbb (null = none); use it for badges and board columns. Pipeline stages use parent_property to probability: deals.stage has parent_property 'pipeline', each stage lists the pipelines it belongs to in parent_values (empty means every pipeline), and is_closed / is_won / probability say what the stage means. Never hard-code stage values like 'closed_won' for won, lost or open: join property_options instead, so renamed or added stages stay right. Open pipeline:
   "select d.currency, sum(d.amount) as open_amount from deals d join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where not s.is_closed group by d.currency"
-  Columns for one pipeline: "select api_value, label from property_options where object_type_id = 'pc_0012' and property = 'stage' and row_status = 'active' and (cardinality(parent_values) = 0 or :pipeline = any(parent_values)) order by display_order"
+  Columns for one pipeline: "select api_value, label from property_options where object_type_id = 'pc_0012' and property = 'stage' and record_status = 'active' and (cardinality(parent_values) = 0 or :pipeline = any(parent_values)) order by display_order"
 - Property api_names with capitals or dots must be double-quoted: "favorite.color".`;
 
 const PROPERTIES = `# Property tools (admins)
@@ -176,7 +176,7 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 
 ## Naming
 - api_name: letters, digits, dots, underscores; starts with a letter; at most 63; unique per object; permanent. Prefer lowercase snake_case.
-- Reserved: id, object_type_id, name, created_at, updated_at, merged_ids, merged_into_id, row_status, created_by, updated_by, anything starting pc_ or row_, anything containing __.
+- Reserved: id, object_type_id, name, created_at, updated_at, merged_ids, merged_into_id, record_status, created_by, updated_by, anything starting pc_ or row_, anything containing __.
 - Labels: 1 to 63 characters, unique per object, sentence case.
 - Option values: letters, digits, dots, underscores, at most 63; unique per property.
 
@@ -264,14 +264,14 @@ function columnType(p: PropertyDef): string {
 }
 
 function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
-  const props = o.properties.filter((pr) => pr.row_status === 'active' && pr.api_name !== 'object_type_id' && propertyAccess(p, pr) !== 'hidden');
+  const props = o.properties.filter((pr) => pr.record_status === 'active' && pr.api_name !== 'object_type_id' && propertyAccess(p, pr) !== 'hidden');
   const lines = [`## ${o.api_name} (${o.label_plural}, code ${o.object_type_id}, id column ${o.id_column})`];
   if (o.description) lines.push(o.description);
   for (const pr of props) {
     let line = `- ${pr.api_name}: ${columnType(pr)}${pr.label !== pr.api_name ? `, "${pr.label}"` : ''}`;
     if (pr.type === 'dropdown') {
       line += `, also ${pr.api_name}__label`;
-      const opts = pr.dropdown_options.filter((x) => x.row_status === 'active');
+      const opts = pr.dropdown_options.filter((x) => x.record_status === 'active');
       if (pr.options.parent_property) line += `, depends on ${pr.options.parent_property}`;
       const details = (x: (typeof opts)[number]) => [
         x.parent_values.length ? `in ${x.parent_values.join('/')}` : '', x.is_won ? 'won' : x.is_closed ? 'closed' : '',
@@ -291,7 +291,7 @@ function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
 
 async function schemaTopic(p: Principal, object?: string): Promise<string> {
   const reg = await getRegistry();
-  const readable = reg.objects.filter((o) => o.row_status === 'active' && (!p.permissions || p.permissions.objects.get(o.object_type_id)?.read));
+  const readable = reg.objects.filter((o) => o.record_status === 'active' && (!p.permissions || p.permissions.objects.get(o.object_type_id)?.read));
   if (object) {
     const o = readable.find((x) => x.api_name === object || x.object_type_id === object);
     if (!o) return `No object "${object}" you can read. Objects: ${readable.map((x) => x.api_name).join(', ')}`;
@@ -303,7 +303,7 @@ async function schemaTopic(p: Principal, object?: string): Promise<string> {
 async function examplesTopic(): Promise<string> {
   const { rows } = await pool.query(
     `select name, slug, description, coalesce(source, draft_source) as source, coalesce(queries, draft_queries) as queries
-     from crm.pc_0055 where row_status = 'active' and slug in ('reporting', 'contacts-companies') order by slug desc`
+     from crm.pc_0055 where record_status = 'active' and slug in ('reporting', 'contacts-companies') order by slug desc`
   );
   if (!rows.length) return '# Examples\n\nThe example views were removed. Use list_views and get_view to read other views.';
   return `# Examples\n\nFinished views to copy from. list_views and get_view show the others.\n\n${rows.map((r) =>

@@ -105,7 +105,7 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
   }, async () => run(async () => {
     requireScope(p, 'read');
     const reg = await getRegistry();
-    const readable = reg.objects.filter((o) => o.row_status === 'active' && canRead(p, o));
+    const readable = reg.objects.filter((o) => o.record_status === 'active' && canRead(p, o));
     const names = new Set(readable.map((o) => o.api_name));
     return readable.map((o) => ({
       api_name: o.api_name,
@@ -134,7 +134,7 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
         description: pr.description ?? undefined,
         writable: isWritable(pr) && p.permissions?.propertyAccess.get(pr.pc_0002_id) !== 'read_only',
         options: pr.type === 'dropdown'
-          ? pr.dropdown_options.filter((o) => o.row_status === 'active').map((o) => ({ value: o.api_value, label: o.label, ...optionDetails(o) }))
+          ? pr.dropdown_options.filter((o) => o.record_status === 'active').map((o) => ({ value: o.api_value, label: o.label, ...optionDetails(o) }))
           : undefined,
         parent_property: (pr.options.parent_property as string | undefined) ?? undefined
       }))
@@ -191,7 +191,7 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
     requireScope(p, 'write');
     const obj = await objectForWrite(object);
     for (const a of associations ?? []) await assertUserLinkable(obj, a.object);
-    const id = await withTx({ actor: p.actor, source: 'mcp' }, (c) => createRecord(c, obj, p, properties, associations ?? []));
+    const id = await withTx({ principal: p, source: 'mcp' }, (c) => createRecord(c, obj, p, properties, associations ?? []));
     await drainCalcQueue();
     return getRecord(pool, obj, p, id);
   }));
@@ -205,7 +205,7 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
   }, async ({ object, id, properties }) => run(async () => {
     requireScope(p, 'write');
     const obj = await objectForWrite(object);
-    await withTx({ actor: p.actor, source: 'mcp' }, (c) => updateRecord(c, obj, p, id, properties));
+    await withTx({ principal: p, source: 'mcp' }, (c) => updateRecord(c, obj, p, id, properties));
     await drainCalcQueue();
     return getRecord(pool, obj, p, id);
   }));
@@ -224,7 +224,7 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
     requireObjectPermission(p, obj, 'edit');
     await assertAccessible(pool, obj, p, [args.id], 'edit');
     await assertAccessible(pool, to, p, [args.to_id]);
-    const associationId = await withTx({ actor: p.actor, source: 'mcp' }, async (c) => {
+    const associationId = await withTx({ principal: p, source: 'mcp' }, async (c) => {
       const { rows } = await c.query('select meta.associate($1, $2, $3, $4, $5) as id', [
         obj.object_type_id, args.id, to.object_type_id, args.to_id, args.label_id ?? null
       ]);
@@ -362,7 +362,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     const v = await loadView(pool, view);
     const obj = await objectForWrite('views');
     const changes = Object.fromEntries(Object.entries(props).filter(([, x]) => x !== undefined));
-    await withTx({ actor: p.actor, source: SCHEMA_SOURCE }, (c) => updateRecord(c, obj, p, v.id, changes));
+    await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => updateRecord(c, obj, p, v.id, changes));
     return viewOut(await loadView(pool, v.id), false);
   }));
 
@@ -436,7 +436,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
   }, async ({ view }) => run(async () => {
     requireScope(p, 'schema');
     const v = await loadView(pool, view);
-    await withTx({ actor: p.actor, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_record_status($1, $2, $3)', ['pc_0055', [v.id], 'archived']));
+    await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_record_status($1, $2, $3)', ['pc_0055', [v.id], 'archived']));
     return { archived: v.slug };
   }));
 
@@ -523,7 +523,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
       inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string() }),
       annotations: { readOnlyHint: false, destructiveHint: archived, idempotentHint: true },
       scopeChallenge: schemaChallenge
-    }, async ({ object, property, value }) => run(() => updateOption(p, object, property, value, { row_status: archived ? 'archived' : 'active' }, SCHEMA_SOURCE)));
+    }, async ({ object, property, value }) => run(() => updateOption(p, object, property, value, { record_status: archived ? 'archived' : 'active' }, SCHEMA_SOURCE)));
   }
 
   // ---- webhooks ----
@@ -681,6 +681,7 @@ export async function mcpRoutes(app: FastifyInstance) {
           error_description: header ? 'the access token is invalid, expired, revoked, or for another resource' : 'an OAuth access token is required'
         });
       }
+      p.channel = 'mcp';
       req.principal = p;
       const authInfo: AuthInfo = {
         token: match![1],

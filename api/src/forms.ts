@@ -79,7 +79,7 @@ export const patternRegExp = (pattern: string) => new RegExp(`^(?:${pattern})$`)
 // Properties a form may fill: plain typed values the visitor can give.
 export function formProperty(obj: ObjectDef, name: string): PropertyDef | null {
   const p = obj.byName.get(name);
-  if (!p || p.row_status !== 'active' || p.read_only) return null;
+  if (!p || p.record_status !== 'active' || p.read_only) return null;
   if (p.is_base && p.api_name !== 'name') return null;
   if (!['text', 'number', 'dropdown', 'date', 'datetime'].includes(p.type)) return null;
   if (p.options.auto_append_users === true) return null; // user pickers (owner) are not for visitors
@@ -100,7 +100,7 @@ function typeFor(p: PropertyDef, wanted?: FieldType): FieldType {
 }
 
 const activeOptions = (p: PropertyDef) =>
-  p.dropdown_options.filter((o) => o.row_status === 'active').sort((a, b) => a.display_order - b.display_order).map((o) => ({ value: o.api_value, label: o.label }));
+  p.dropdown_options.filter((o) => o.record_status === 'active').sort((a, b) => a.display_order - b.display_order).map((o) => ({ value: o.api_value, label: o.label }));
 
 function str(v: unknown, max: number): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined;

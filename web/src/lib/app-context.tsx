@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 import { api, type CustomViewSummary, type Me, type NavItem, type ObjectSummary } from './api';
-import { applyTheme, type Theme } from './theme';
+import { applyTheme, defaultDropdownColors, type Theme } from './theme';
 
 interface AppState {
   me: Me;
@@ -20,6 +20,9 @@ interface AppState {
   reloadNav: () => Promise<void>;
   reloadObjects: () => Promise<void>;
   setTheme: (t: Partial<Theme>) => void;
+  // the 16 colours offered for dropdown choices (Settings, Theme)
+  dropdownColors: string[];
+  setDropdownColors: (colors: string[]) => void;
   signOut: () => void;
   toast: (message?: string) => void;
 }
@@ -40,6 +43,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const [bottomNav, setBottomNav] = useState<NavItem[]>([]);
   const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
   const [theme, setThemeState] = useState<Theme>(() => applyTheme(undefined));
+  const [dropdownColors, setDropdownColors] = useState<string[]>(defaultDropdownColors);
   const [ready, setReady] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -81,7 +85,10 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
       reloadObjects(),
       reloadNav(),
       reloadCustomViews().catch(() => undefined),
-      api<{ theme?: Partial<Theme> }>('GET', '/v1/ui/settings').then((s) => setThemeState(applyTheme(s.theme)))
+      api<{ theme?: Partial<Theme>; dropdown_colors?: { colors?: string[] } }>('GET', '/v1/ui/settings').then((s) => {
+        setThemeState(applyTheme(s.theme));
+        if (s.dropdown_colors?.colors?.length === 16) setDropdownColors(s.dropdown_colors.colors);
+      })
     ]).finally(() => setReady(true));
   }, [reloadObjects, reloadNav, reloadCustomViews]);
 
@@ -95,7 +102,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
     <Ctx.Provider
       value={{
         me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, bottomLeft, bottomNav, customViews, theme,
-        reloadNav, reloadObjects, reloadCustomViews, setTheme, signOut, toast
+        reloadNav, reloadObjects, reloadCustomViews, setTheme, dropdownColors, setDropdownColors, signOut, toast
       }}
     >
       {children}

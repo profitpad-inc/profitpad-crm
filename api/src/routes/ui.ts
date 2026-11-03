@@ -34,6 +34,16 @@ function validateTheme(value: unknown): Record<string, string> {
   return value as Record<string, string>;
 }
 
+// ---- dropdown colours --------------------------------------------------------
+
+// The 16 colours offered when picking a dropdown choice's colour, in order.
+function validateDropdownColors(value: unknown): { colors: string[] } {
+  const raw = (value as { colors?: unknown } | null)?.colors;
+  if (!Array.isArray(raw) || raw.length !== 16) throw badRequest('colors must be a list of exactly 16 colors');
+  for (const c of raw) if (typeof c !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(c)) throw badRequest(`dropdown color "${String(c)}" must look like #1a2b3c`);
+  return { colors: raw.map((c: string) => c.toLowerCase()) };
+}
+
 // ---- forms -------------------------------------------------------------------
 
 // Websites allowed to post public forms. Stored as origins; full URLs are
@@ -85,7 +95,7 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
       }
       // a custom view (crm.pc_0055, /view/#slug); hidden for users who cannot open it
       case 'custom_view': {
-        const { rows } = await pool.query("select slug from crm.pc_0055 where lower(slug) = lower($1) and row_status = 'active'", [String(it.slug ?? '')]);
+        const { rows } = await pool.query("select slug from crm.pc_0055 where lower(slug) = lower($1) and record_status = 'active'", [String(it.slug ?? '')]);
         if (rows.length === 0) throw badRequest(`custom view "${String(it.slug)}" does not exist`);
         out.push({ type: 'custom_view', slug: rows[0].slug, ...(label ? { label } : {}) });
         break;
@@ -169,7 +179,7 @@ const NOT_DEFAULT_COLUMNS: Record<string, string[]> = { pc_0055: ['draft_source'
 function defaultColumns(obj: ObjectDef): Column[] {
   const skip = NOT_DEFAULT_COLUMNS[obj.object_type_id] ?? [];
   const native = obj.properties
-    .filter((p) => !p.is_base && p.row_status === 'active' && p.type !== 'file' && !/body|description|definition|values/.test(p.api_name) && !skip.includes(p.api_name))
+    .filter((p) => !p.is_base && p.record_status === 'active' && p.type !== 'file' && !/body|description|definition|values/.test(p.api_name) && !skip.includes(p.api_name))
     .slice(0, 5);
   return [
     { type: 'property', property: 'name' },
@@ -208,7 +218,7 @@ export async function uiRoutes(app: FastifyInstance) {
       scopes: [...p.scopes],
       is_admin: isAdmin(p),
       user,
-      readable_objects: reg.objects.filter((o) => o.row_status === 'active' && canRead(p, o)).map((o) => o.api_name)
+      readable_objects: reg.objects.filter((o) => o.record_status === 'active' && canRead(p, o)).map((o) => o.api_name)
     };
   });
 
@@ -222,9 +232,9 @@ export async function uiRoutes(app: FastifyInstance) {
   app.put<{ Params: { key: string }; Body: unknown }>('/v1/ui/settings/:key', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
-    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, forms: validateFormsSettings };
+    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, dropdown_colors: validateDropdownColors, forms: validateFormsSettings };
     const validate = validators[req.params.key];
-    if (!validate) throw badRequest('unknown setting (supported: theme, forms)');
+    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, forms)');
     const value = validate(req.body);
     await pool.query(
       `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)
@@ -276,7 +286,7 @@ export async function uiRoutes(app: FastifyInstance) {
   app.put<{ Params: { userId: string }; Body: { items: unknown; bottom_left?: unknown; bottom?: unknown } }>('/v1/ui/nav/users/:userId', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
-    const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and row_status = 'active'", [req.params.userId]);
+    const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and record_status = 'active'", [req.params.userId]);
     if (users.length === 0) throw notFound('user not found');
     const items = await validateNav(req.body?.items);
     const left = req.body?.bottom_left === undefined ? null : validateBottomLeft(req.body.bottom_left);

@@ -103,7 +103,7 @@ export function RecordPage() {
           const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: all.slice(i, i + 100), properties: props });
           records.push(...r.results);
         }
-        return { object: name, records: records.filter((r) => r.row_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
+        return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
       })
     );
     setAssociated(groups);
@@ -203,13 +203,13 @@ export function RecordPage() {
               )}
             >
               {(close) => (
-                record.row_status === 'archived'
+                record.record_status === 'archived'
                   ? <button onClick={() => { close(); restore(); }}>Restore</button>
                   : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
               )}
             </Menu>
           </div>
-          {record.row_status === 'archived' && (
+          {record.record_status === 'archived' && (
             <div className="record-archived">
               <span className="small">This record is archived (in the recycle bin).</span>
               {schema.permissions.delete && <button className="btn small" onClick={restore}>Restore</button>}
@@ -277,7 +277,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   const [error, setError] = useState<{ property: string; message: string; failed: string } | null>(null);
   // collapsed sections; System starts closed
   const [closed, setClosed] = useState<Record<string, boolean>>({ system: true });
-  const shown = schema.properties.filter((p) => p.row_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
+  const shown = schema.properties.filter((p) => p.record_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   const main = shown.filter((p) => !p.is_base || p.api_name === 'name');
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
   // without edit access (the role, or this record only through a read-only
@@ -353,7 +353,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
         </div>
       ) : p.type === 'file' ? (
         <div className="prop-value">
-          <FileField object={schema.api_name} record={record} property={p} canEdit={canEdit && p.row_status === 'active' && !p.read_only} onSaved={onSaved} />
+          <FileField object={schema.api_name} record={record} property={p} canEdit={canEdit && p.record_status === 'active' && !p.read_only} onSaved={onSaved} />
         </div>
       ) : (
         <div className="prop-value">{displayValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>
@@ -372,6 +372,8 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
 
 type Tab = 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
 
+type HistoryVia = 'crm_ui' | 'api' | 'mcp' | 'calculation' | 'other';
+
 interface HistoryRow {
   property: string;
   old_value: unknown;
@@ -379,7 +381,19 @@ interface HistoryRow {
   changed_at: string;
   changed_by: string;
   source: string;
+  via: HistoryVia;
+  changed_by_name: string | null;
+  api_key_id: string | null;
+  api_key_name: string | null;
 }
+
+interface HistoryFacets {
+  properties: string[];
+  changed_by: { changed_by: string; name: string | null }[];
+  via: HistoryVia[];
+}
+
+const VIA_LABELS: Record<HistoryVia, string> = { crm_ui: 'CRM UI', api: 'API', mcp: 'MCP', calculation: 'Calculation', other: 'Other' };
 
 function activityTime(object: string, r: CrmRecord): string {
   const p = r.properties;
@@ -551,21 +565,65 @@ function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
   );
 }
 
+// ISO 8601 in the viewer's time zone, with its offset (2026-11-03T14:05:09-08:00),
+// so the time matches the day heading above it.
+function isoLocal(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
+  const offset = -d.getTimezoneOffset();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `${offset >= 0 ? '+' : '-'}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`;
+}
+
 function ChangeHistory({ object, id, schema }: { object: string; id: string; schema: ObjectDef }) {
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const [facets, setFacets] = useState<HistoryFacets | null>(null);
+  const [property, setProperty] = useState('');
+  const [changedBy, setChangedBy] = useState('');
+  const [via, setVia] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setHistory(null);
-    api<{ results: HistoryRow[] }>('GET', `/v1/objects/${object}/${id}/history?limit=200`).then((r) => setHistory(r.results)).catch((e) => setError((e as Error).message));
+    setProperty('');
+    setChangedBy('');
+    setVia('');
   }, [object, id]);
 
-  const propLabel = (name: string) => schema.properties.find((p) => p.api_name === name)?.label ?? name;
+  useEffect(() => {
+    setHistory(null);
+    setError(null);
+    const q = new URLSearchParams({ limit: '200' });
+    if (property) q.set('property', property);
+    if (changedBy) q.set('changed_by', changedBy);
+    if (via) q.set('via', via);
+    api<{ results: HistoryRow[]; facets: HistoryFacets }>('GET', `/v1/objects/${object}/${id}/history?${q}`)
+      .then((r) => { setHistory(r.results); setFacets(r.facets); })
+      .catch((e) => setError((e as Error).message));
+  }, [object, id, property, changedBy, via]);
+
+  const propLabel = (name: string) => (name === 'association' ? 'Association' : schema.properties.find((p) => p.api_name === name)?.label ?? name);
+  const filtered = !!(property || changedBy || via);
   return (
     <div className="timeline">
+      {facets && (
+        <div className="field-row history-filters">
+          <select value={property} onChange={(e) => setProperty(e.target.value)} aria-label="Property or association">
+            <option value="">Every property and association</option>
+            {[...facets.properties].sort((a, b) => propLabel(a).localeCompare(propLabel(b))).map((name) => <option key={name} value={name}>{propLabel(name)}</option>)}
+          </select>
+          <select value={changedBy} onChange={(e) => setChangedBy(e.target.value)} aria-label="Changed by">
+            <option value="">Anyone</option>
+            {facets.changed_by.map((c) => <option key={c.changed_by} value={c.changed_by}>{c.name ? `${c.name} (${c.changed_by})` : c.changed_by}</option>)}
+          </select>
+          <select value={via} onChange={(e) => setVia(e.target.value)} aria-label="Made through">
+            <option value="">Any way</option>
+            {facets.via.map((v) => <option key={v} value={v}>{VIA_LABELS[v]}</option>)}
+          </select>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       {history === null && !error && <div className="muted">Loading…</div>}
-      {history?.length === 0 && <div className="muted">No changes recorded.</div>}
+      {history?.length === 0 && <div className="muted">{filtered ? 'No changes match these filters.' : 'No changes recorded.'}</div>}
       {history && byDay(history, (h) => h.changed_at).map(({ day, rows }) => (
         <LedgerDay key={day} day={day}>
           {rows.map((h, i) => (
@@ -573,9 +631,14 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
               <span className="change-dot" aria-hidden="true" />
               <div className="change-body">
                 <div className="change-head">
-                  <strong>{h.property === 'association' ? 'Association' : propLabel(h.property)}</strong>
-                  <span className="muted small push-right">{h.changed_by}, {h.source}</span>
-                  <time className="ledger-time" dateTime={h.changed_at}>{timeOf(h.changed_at)}</time>
+                  <strong>{propLabel(h.property)}</strong>
+                  <span className="muted small push-right">
+                    <span title={h.changed_by_name ?? undefined}>{h.changed_by}</span>
+                    {' · '}{VIA_LABELS[h.via]}
+                    {h.api_key_name && <> · key <span title={`API key ${h.api_key_id}`}>{h.api_key_name}</span></>}
+                    {h.source !== h.via && h.source !== 'api' && <> · {h.source}</>}
+                  </span>
+                  <time className="ledger-time" dateTime={h.changed_at} title={h.changed_at}>{isoLocal(h.changed_at)}</time>
                 </div>
                 <div className="small">
                   <span className="faint">{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span> → {h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}

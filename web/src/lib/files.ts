@@ -11,7 +11,7 @@ export interface FileInfo {
   status: 'uploading' | 'ready' | null;
   checksum: string | null;
   public_url: string | null;
-  row_status: string;
+  record_status: string;
   created_at: string;
 }
 

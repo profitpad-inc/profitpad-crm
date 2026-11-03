@@ -68,7 +68,7 @@ export interface DropdownOption {
   api_value: string;
   label: string;
   display_order: number;
-  row_status: string;
+  record_status: string;
   // stage details (migration 0035)
   parent_values?: string[];
   is_closed?: boolean;
@@ -92,7 +92,7 @@ export interface Property {
   is_base: boolean;
   is_native?: boolean;
   read_only: boolean;
-  row_status: string;
+  record_status: string;
 }
 
 export interface ObjectDef extends ObjectSummary {
@@ -110,7 +110,7 @@ export interface AssociatedRecord {
 export interface CrmRecord {
   id: string;
   object_type_id: string;
-  row_status: string;
+  record_status: string;
   // batch read: the merged id that was asked for
   requested_id?: string;
   // single reads: false when the user can see but not edit this record
