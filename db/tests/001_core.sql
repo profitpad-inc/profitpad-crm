@@ -673,5 +673,55 @@ begin
   perform meta._test_check((select aliases = '{}' from meta.pc_0001 where api_name = 'contacts'), 'aliases can be cleared');
 end $t$;
 
+-- 34. Created by and Updated by (0049)
+do $t$
+declare
+  v_id text;
+begin
+  perform meta._test_check((select count(*) = 2 from meta.pc_0002 where object_type_id = 'pc_0010' and type = 'actor' and is_base and read_only), 'contacts have created_by and updated_by');
+  perform meta._test_check(not exists (
+    select 1 from meta.pc_0002 p where p.api_name = 'created_at' and p.is_base
+      and not exists (select 1 from meta.pc_0002 a where a.object_type_id = p.object_type_id and a.api_name in ('created_by', 'updated_by') and a.type = 'actor')
+  ), 'every object has the actor properties');
+  perform meta.create_object('actor_things', 'Actor thing', 'Actor things');
+  perform meta._test_check((select count(*) = 2 from meta.pc_0002 p join meta.pc_0001 o on o.object_type_id = p.object_type_id where o.api_name = 'actor_things' and p.type = 'actor'), 'new objects get the actor properties');
+  perform meta._test_check((select p.description like 'Who created the record:%' from meta.pc_0002 p join meta.pc_0001 o on o.object_type_id = p.object_type_id where o.api_name = 'actor_things' and p.api_name = 'created_by'), 'new actor properties are described');
+  perform meta._test_expect_error($$select meta.create_property('contacts', 'who', 'Who', 'actor')$$, 'type must be one of');
+  insert into crm.pc_0010 (name) values ('Actor test') returning pc_0010_id into v_id;
+  perform set_config('crm.actor', 'user:actortest', true);
+  update crm.pc_0010 set name = 'Actor test 2' where pc_0010_id = v_id;
+  perform set_config('crm.actor', 'test', true);
+  perform meta._test_check((select created_by = 'test' and updated_by = 'user:actortest' from crm.contacts where pc_0010_id = v_id), 'crm views carry created_by and updated_by');
+  perform meta._test_check(exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'contacts' and column_name = 'updated_by'), 'view_data carries updated_by');
+  perform meta._test_check(exists (select 1 from information_schema.columns where table_schema = 'reporting' and table_name = 'contacts' and column_name = 'created_by'), 'reporting carries created_by');
+  perform meta._test_check(not exists (select 1 from meta.record_history where object_type_id = 'pc_0010' and record_id = v_id and property in ('created_by', 'updated_by')), 'actor changes are not logged as history');
+  perform meta._test_check(meta.compile_filter_groups('pc_0010', '[{"filters":[{"property":"updated_by","operator":"eq","value":"user:x"}]}]', 't') = '((t.updated_by = ''user:x''::text))', 'sharing rules filter actors like text');
+end $t$;
+
+-- 35. Removed users archive their options (0050)
+do $t$
+declare
+  v_user text;
+  v_deal text;
+  v_status text;
+begin
+  insert into crm.pc_0000 (name, email) values ('Gone Soon', 'gone.soon@test.example') returning pc_0000_id into v_user;
+  insert into crm.pc_0012 (name, owner) values ('Owned deal', array[v_user]) returning pc_0012_id into v_deal;
+  update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_user;
+  select o.record_status into v_status from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+  where p.object_type_id = 'pc_0012' and p.api_name = 'owner' and o.api_value = v_user;
+  perform meta._test_check(v_status = 'archived', 'deactivating a user archives their owner option');
+  perform meta._test_check((select owner = array[v_user] from crm.pc_0012 where pc_0012_id = v_deal), 'records keep an archived user option');
+  update crm.pc_0012 set name = 'Owned deal 2', owner = array[v_user] where pc_0012_id = v_deal;
+  perform meta._test_check(true, 'an archived user option can still be written');
+  update crm.pc_0000 set status = '{active}' where pc_0000_id = v_user;
+  select o.record_status into v_status from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+  where p.object_type_id = 'pc_0012' and p.api_name = 'owner' and o.api_value = v_user;
+  perform meta._test_check(v_status = 'active', 'reactivating a user restores their option');
+  update crm.pc_0000 set record_status = 'archived' where pc_0000_id = v_user;
+  perform meta._test_check((select o.record_status = 'archived' from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+    where p.object_type_id = 'pc_0054' and p.api_name = 'host' and o.api_value = v_user), 'archiving a user archives their host option');
+end $t$;
+
 rollback;
 \echo all core tests passed

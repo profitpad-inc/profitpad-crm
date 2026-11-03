@@ -14,7 +14,7 @@
 
 ### Base columns on every object table
 
-`object_type_id`, `pc_xxxx_id` (PK, 10-char hex), `name`, `created_at` (user-changeable), `updated_at` (generated copy of `row_updated_at`), `merged_ids`, `merged_into_id`, `record_status` (`active`, `archived`, `merged`, `deleted`), `row_created_at`, `row_updated_at`, `created_by`, `updated_by`.
+`object_type_id`, `pc_xxxx_id` (PK, 10-char hex), `name`, `created_at` (user-changeable), `updated_at` (generated copy of `row_updated_at`), `merged_ids`, `merged_into_id`, `record_status` (`active`, `archived`, `merged`, `deleted`), `row_created_at`, `row_updated_at`, `created_by`, `updated_by`. `created_by` and `updated_by` are also read-only properties of type `actor` ("Created by", "Updated by", migration 0049), shown in `crm.<api_name>`, `reporting.*` and `view_data.*` right after `record_status`; history never records them.
 
 Triggers on every object table:
 - `before_write`: blocks changes to ids and creation timestamps, bumps `row_updated_at`, stamps `updated_by` from `crm.actor`.

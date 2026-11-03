@@ -51,7 +51,7 @@ const DATE_OPERATORS: OperatorDef[] = [
 
 export function operatorsFor(p: Property): OperatorDef[] {
   const t = valueType(p);
-  if (p.type === 'dropdown') return DROPDOWN_OPERATORS;
+  if (p.type === 'dropdown' || p.type === 'actor') return DROPDOWN_OPERATORS;
   if (p.type === 'file' || p.type === 'id_list') return KNOWN;
   if (t === 'number') return NUMBER_OPERATORS;
   if (t === 'date' || t === 'datetime') return DATE_OPERATORS;

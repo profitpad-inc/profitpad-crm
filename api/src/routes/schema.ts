@@ -32,7 +32,7 @@ export function propertyOut(p: PropertyDef, principal?: Principal) {
     description: p.description,
     type: p.type,
     options: p.options,
-    dropdown_options: p.type === 'dropdown' ? p.dropdown_options : undefined,
+    dropdown_options: p.type === 'dropdown' || p.type === 'actor' ? p.dropdown_options : undefined,
     calc_sql: p.calc_sql ?? undefined,
     calc_output_type: p.calc_output_type ?? undefined,
     calc_last_error: p.calc_last_error ?? undefined,

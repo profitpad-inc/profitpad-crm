@@ -1309,7 +1309,10 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
   const newLines = other === 'lines' && self !== 'products';
   // a line has one product
   const full = self === 'lines' && items.length > 0;
-  const canCreate = self === 'deals' && (other === 'quotes' || other === 'invoices');
+  // the + offers a new record or an existing one; files are uploaded on their own page and lines have their own dialog
+  const canCreate = other !== 'files' && other !== 'lines';
+  // a quote or invoice made from a deal copies its lines, amount and currency, then opens
+  const fromDeal = self === 'deals' && (other === 'quotes' || other === 'invoices');
   const label = meta.label_singular.toLowerCase();
   return (
     <div className="card assoc-card">
@@ -1352,14 +1355,16 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
         <CreateRecordModal
           object={createSchema}
           associations={[{ object: self, id: selfId }]}
-          copyLines={{ object: self, id: selfId, count: lineCount, label: (objectByName.get(self)?.label_singular ?? self).toLowerCase() }}
-          // a quote or invoice made from a deal starts with the deal's amount and currency
-          startWith={{
+          copyLines={fromDeal ? { object: self, id: selfId, count: lineCount, label: (objectByName.get(self)?.label_singular ?? self).toLowerCase() } : undefined}
+          startWith={fromDeal ? {
             amount: selfRecord.properties.amount,
             currency: Array.isArray(selfRecord.properties.currency) ? selfRecord.properties.currency[0] : selfRecord.properties.currency
-          }}
+          } : undefined}
           onClose={() => { setDialog(null); onChanged(); }}
-          onCreated={(r) => navigate(`/objects/${other}/${r.id}`)}
+          onCreated={(r) => {
+            if (fromDeal) navigate(`/objects/${other}/${r.id}`);
+            else { setDialog(null); onChanged(); }
+          }}
         />
       )}
       {adding && (

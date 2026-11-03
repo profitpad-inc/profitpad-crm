@@ -23,7 +23,8 @@ const TYPE_LABELS: Record<string, string> = {
   calculation: 'Calculation',
   file: 'File',
   id: 'Record ID',
-  id_list: 'Record IDs'
+  id_list: 'Record IDs',
+  actor: 'User or process'
 };
 
 const NEW_TYPES: PropType[] = ['text', 'number', 'dropdown', 'date', 'datetime', 'file', 'calculation'];

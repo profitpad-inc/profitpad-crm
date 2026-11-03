@@ -71,15 +71,14 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
     const unique = [...new Set(values as string[])];
     if (unique.length === 0) return { value: null, newOptions: [] };
     if (isSingleValue(prop) && unique.length > 1) throw fail('only one value is allowed');
-    const current = new Set(Array.isArray(existing) ? (existing as string[]) : []);
+    // archived options are still valid values through the API; only the UI
+    // stops offering them (it keeps a value a record already has)
     const newOptions: string[] = [];
     for (const v of unique) {
       const opt = prop.dropdown_options.find((o) => o.api_value === v);
       if (!opt) {
         if (prop.options.allow_user_add === true && /^[A-Za-z0-9._]{1,63}$/.test(v)) newOptions.push(v);
         else throw fail(`"${v}" is not one of: ${prop.dropdown_options.filter((o) => o.record_status === 'active').map((o) => o.api_value).join(', ')}`);
-      } else if (opt.record_status !== 'active' && !current.has(v)) {
-        throw fail(`option "${v}" is archived`);
       }
     }
     return { value: unique, newOptions };

@@ -91,6 +91,19 @@ export function optionLabel(p: Property, value: string): string {
   return p.dropdown_options?.find((o) => o.api_value === value)?.label ?? value;
 }
 
+// Who made a change (created_by, updated_by): users by name (the API sends
+// them as the property's options), anything else by what it was.
+export function actorLabel(p: Property, value: string): string {
+  const user = p.dropdown_options?.find((o) => o.api_value === value);
+  if (user) return user.label;
+  const [kind, rest] = [value.split(':')[0], value.slice(value.indexOf(':') + 1)];
+  if (kind === 'user') return 'Removed user';
+  if (kind === 'api') return `API key ${rest}`;
+  if (kind === 'system') return rest === 'migration' ? 'System update' : rest === 'calculation' ? 'Calculation' : 'System';
+  if (kind === 'public') return 'Public page';
+  return value;
+}
+
 // Phone properties store +16132220328ext4 (the API checks them with Google's
 // libphonenumber). Shown as +1 613-222-0328 ext4; other countries keep the
 // stored digits, since grouping them needs the library's metadata.
@@ -108,6 +121,7 @@ export function formatValue(p: Property, value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
   if (p.type === 'text' && p.options.display === 'phone' && typeof value === 'string') return displayPhone(value);
   if (p.type === 'file' && Array.isArray(value)) return value.length === 1 ? '1 file' : `${value.length} files`;
+  if (p.type === 'actor') return actorLabel(p, String(value));
   const t = valueType(p);
   if (p.type === 'dropdown') {
     const values = Array.isArray(value) ? value : [value];

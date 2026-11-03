@@ -362,6 +362,7 @@ function columnType(p: PropertyDef): string {
   if (t === 'file') return 'text[] (file ids)';
   if (t === 'id') return 'text (record ID)';
   if (t === 'id_list') return 'text[]';
+  if (t === 'actor') return 'text (who: user:<user id>, api:<key prefix>, system:<what> or public)';
   return t;
 }
 

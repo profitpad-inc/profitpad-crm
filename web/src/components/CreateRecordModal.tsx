@@ -15,8 +15,12 @@ const PREFERRED: Record<string, string[]> = {
   forms: ['name', 'description'],
   // the rest is filled in on the record page; they start as drafts
   quotes: ['name', 'expiration_date'],
-  invoices: ['name', 'due_date']
+  invoices: ['name', 'due_date'],
+  // key, lengths and start times are set in the editor; status starts as draft
+  booking_pages: ['name', 'description', 'host']
 };
+// User pickers that start on the signed-in user.
+const STARTS_AS_ME = ['owner', 'host'];
 // Values every new record of the object starts with, not asked.
 const STARTS_WITH: Record<string, Record<string, unknown>> = {
   forms: { status: 'draft' },
@@ -44,9 +48,11 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
     ? preferred.map((n) => editable.find((p) => p.api_name === n)).filter((p): p is NonNullable<typeof p> => !!p)
     : [editable.find((p) => p.api_name === 'name'), ...editable.filter((p) => !p.is_base).slice(0, 6)].filter((p): p is NonNullable<typeof p> => !!p);
   const [values, setValues] = useState<Record<string, string>>(() => {
-    const owner = editable.find((p) => p.api_name === 'owner');
     const defaults: Record<string, string> = {};
-    if (owner && me.user && owner.dropdown_options?.some((o) => o.api_value === me.user!.id)) defaults.owner = me.user.id;
+    for (const p of editable) {
+      if (!STARTS_AS_ME.includes(p.api_name) || !me.user) continue;
+      if (p.dropdown_options?.some((o) => o.api_value === me.user!.id && o.record_status === 'active')) defaults[p.api_name] = me.user.id;
+    }
     return defaults;
   });
   // property: shown under that field when the API says which one failed

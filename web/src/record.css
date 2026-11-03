@@ -7,7 +7,21 @@
 /* ---- columns ---------------------------------------------------------------- */
 .record-page .record-middle { background: var(--page-background); padding: 20px 28px 40px; }
 .record-page .record-right { background: var(--surface); gap: 12px; }
-.record-page .activity, .record-page .submission { max-width: 760px; }
+/* the stream keeps a readable width and sits centred when the column is wider than that */
+.record-page .activity, .record-page .submission { max-width: 880px; margin-inline: auto; }
+/* big screens: the side panels take a share of the extra room */
+@media (min-width: 1600px) {
+  .record-page { grid-template-columns: 400px minmax(0, 1fr) 380px; }
+  .record-page.two-col { grid-template-columns: 400px minmax(0, 1fr); }
+}
+@media (min-width: 1920px) {
+  .record-page { grid-template-columns: 460px minmax(0, 1fr) 440px; }
+  .record-page.two-col { grid-template-columns: 460px minmax(0, 1fr); }
+}
+@media (min-width: 2400px) {
+  .record-page { grid-template-columns: 520px minmax(0, 1fr) 500px; }
+  .record-page.two-col { grid-template-columns: 520px minmax(0, 1fr); }
+}
 
 /* ---- header tile ------------------------------------------------------------- */
 .record-page .record-head {

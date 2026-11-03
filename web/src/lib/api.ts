@@ -83,7 +83,7 @@ export interface Property {
   api_name: string;
   label: string;
   description: string | null;
-  type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list';
+  type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list' | 'actor';
   options: Record<string, unknown>;
   dropdown_options?: DropdownOption[];
   calc_output_type?: 'text' | 'number' | 'date' | 'datetime';

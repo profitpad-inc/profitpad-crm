@@ -32,7 +32,7 @@ export const OPERATORS = [
 
 function valueType(prop: PropertyDef): string {
   if (prop.type === 'calculation') return prop.calc_output_type ?? 'text';
-  if (prop.type === 'id' || prop.type === 'id_list') return 'text';
+  if (prop.type === 'id' || prop.type === 'id_list' || prop.type === 'actor') return 'text';
   return prop.type;
 }
 

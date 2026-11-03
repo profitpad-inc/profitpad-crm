@@ -33,7 +33,7 @@ function propertySchema(p: PropertyDef): Schema {
         type: 'string',
         nullable: true,
         pattern: p.options.regex && p.options.regex_scope !== 'ui' ? p.options.regex : undefined,
-        readOnly: p.type === 'id' || undefined
+        readOnly: p.type === 'id' || p.type === 'actor' || undefined
       };
   }
 }
