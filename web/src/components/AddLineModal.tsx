@@ -6,12 +6,14 @@ import { AMOUNT_PARENTS, lineAmount, money, parentTotals, setParentAmount, type 
 import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable, toInput } from './ui';
 
-// New line item: pick a product (its name, SKU and price fill the line and the
-// line links to it) or write a custom line. With a parent the line is created
-// on it (a deal, quote, invoice, ...); from the Lines table it has none. On a
-// deal, quote, invoice, cart or order it offers to set the parent's amount to
-// the new total of its lines.
-const LINE_FIELDS = ['name', 'sku', 'quantity', 'unit_price', 'discount'];
+// New line item: pick a product (its name, SKU, price, cost and unit fill the
+// line and the line links to it) or write a custom line. With a parent the line
+// is created on it (a deal, quote, invoice, ...); from the Lines table it has
+// none. On a deal, quote, invoice, cart or order it offers to set the parent's
+// amount to the new total of its lines.
+const LINE_FIELDS = ['name', 'sku', 'quantity', 'uom', 'unit_price', 'unit_cost', 'discount'];
+// product property -> line property
+const FROM_PRODUCT: [string, string][] = [['name', 'name'], ['sku', 'sku'], ['price', 'unit_price'], ['cost', 'unit_cost'], ['uom', 'uom']];
 
 export function AddLineModal({ parent, onClose, onCreated }: {
   parent?: { object: string; id: string };
@@ -47,7 +49,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
     if (mode !== 'product' || product) return;
     const h = setTimeout(async () => {
       try {
-        const res = await api<SearchResult>('POST', '/v1/objects/products/search', { query: q.trim() || undefined, limit: 8, properties: ['name', 'sku', 'price'] });
+        const res = await api<SearchResult>('POST', '/v1/objects/products/search', { query: q.trim() || undefined, limit: 8, properties: FROM_PRODUCT.map(([from]) => from) });
         setResults(res.results);
       } catch (err) {
         setError({ message: (err as Error).message });
@@ -62,17 +64,19 @@ export function AddLineModal({ parent, onClose, onCreated }: {
     ...editable.filter((p) => !p.is_base && !LINE_FIELDS.includes(p.api_name))
   ];
   const priceProp = products?.properties.find((p) => p.api_name === 'price');
-  const unitPrice = schema?.properties.find((p) => p.api_name === 'unit_price');
 
   function pickProduct(r: CrmRecord) {
     setProduct(r);
-    const p = r.properties;
-    setValues((s) => ({
-      ...s,
-      name: typeof p.name === 'string' ? p.name : '',
-      sku: typeof p.sku === 'string' ? p.sku : '',
-      unit_price: unitPrice && p.price !== null && p.price !== undefined ? toInput(unitPrice, p.price) : ''
-    }));
+    const filled: Record<string, string> = {};
+    for (const [from, to] of FROM_PRODUCT) {
+      const prop = schema?.properties.find((p) => p.api_name === to);
+      if (!prop) continue;
+      let v = toInput(prop, r.properties[from]);
+      // a unit added to products but not to lines is left blank
+      if (prop.type === 'dropdown' && v && !prop.dropdown_options?.some((o) => o.api_value === v && o.record_status === 'active')) v = '';
+      filled[to] = v;
+    }
+    setValues((s) => ({ ...s, ...filled }));
   }
 
   function switchMode(m: 'product' | 'custom') {
