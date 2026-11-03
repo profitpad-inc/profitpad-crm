@@ -229,7 +229,8 @@ end $t$;
 set local role test_crm_api;
 do $t$
 begin
-  insert into crm.pc_0010 (name, email) values ('Via API', 'api@x.com');
+  insert into crm.pc_0010 (first_name, email) values ('Via API', 'api@x.com');
+  perform meta._test_expect_error($$insert into crm.pc_0010 (name) values ('x')$$, 'permission denied');
   perform meta._test_expect_error($$update crm.pc_0010 set record_status = 'deleted'$$, 'permission denied');
   perform meta._test_expect_error($$insert into crm.pc_0010 (pc_0010_id, name) values ('00000000ff', 'x')$$, 'permission denied');
   perform meta._test_expect_error($$update crm.pc_0010 set company_domain = 'x'$$, 'permission denied');
@@ -721,6 +722,40 @@ begin
   update crm.pc_0000 set record_status = 'archived' where pc_0000_id = v_user;
   perform meta._test_check((select o.record_status = 'archived' from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
     where p.object_type_id = 'pc_0054' and p.api_name = 'host' and o.api_value = v_user), 'archiving a user archives their host option');
+end $t$;
+
+
+-- 36. Calculated contact name (0056)
+do $t$
+declare
+  v_a text;
+  v_b text;
+begin
+  perform meta._test_check((select type = 'calculation' and read_only from meta.pc_0002 where object_type_id = 'pc_0010' and api_name = 'name'), 'contact name is a calculation');
+  perform meta._test_check(not has_column_privilege('test_crm_api', 'crm.pc_0010', 'name', 'UPDATE'), 'the API cannot write a calculated name');
+  insert into crm.pc_0010 (first_name, last_name) values ('Ada', 'Lovelace') returning pc_0010_id into v_a;
+  insert into crm.pc_0010 (first_name, preferred_name) values ('Robert', 'Bob') returning pc_0010_id into v_b;
+  perform meta.process_calc_queue();
+  perform meta._test_check((select name = 'Ada Lovelace' from crm.pc_0010 where pc_0010_id = v_a), 'name is first and last name');
+  perform meta._test_check((select name = 'Bob' from crm.pc_0010 where pc_0010_id = v_b), 'preferred name wins');
+  update crm.pc_0010 set preferred_name = null, last_name = null where pc_0010_id = v_b;
+  perform meta.process_calc_queue();
+  perform meta._test_check((select name = 'Robert' from crm.pc_0010 where pc_0010_id = v_b), 'first name alone has no trailing space');
+  update crm.pc_0010 set first_name = null where pc_0010_id = v_b;
+  perform meta.process_calc_queue();
+  perform meta._test_check((select name is null from crm.pc_0010 where pc_0010_id = v_b), 'no names gives an empty name');
+  perform meta._test_expect_error($$select meta.archive_property('contacts', 'first_name')$$, 'calculations read');
+  perform meta._test_expect_error($$select meta.set_name_calculation('contacts', 'r.first_name')$$, 'already a calculation');
+  perform meta.merge_records('contacts', v_b, v_a);
+  perform meta.process_calc_queue();
+  perform meta._test_check((select name = 'Ada Lovelace' from crm.pc_0010 where pc_0010_id = v_b), 'merging fills the calculated name from merged values');
+  perform meta.set_name_calculation('contacts', null);
+  perform meta._test_check((select type = 'text' and not read_only and calc_sql is null from meta.pc_0002 where object_type_id = 'pc_0010' and api_name = 'name'), 'name back to text');
+  perform meta._test_check(has_column_privilege('test_crm_api', 'crm.pc_0010', 'name', 'UPDATE'), 'a text name is writable again');
+  perform meta._test_check((select name = 'Ada Lovelace' from crm.pc_0010 where pc_0010_id = v_b), 'records keep their last calculated name');
+  perform meta.archive_property('contacts', 'preferred_name');
+  perform meta._test_check(true, 'a text name no longer blocks archiving its inputs');
+  perform meta._test_expect_error($$select meta.set_name_calculation('contacts', null)$$, 'already text');
 end $t$;
 
 rollback;

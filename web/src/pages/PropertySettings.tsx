@@ -320,7 +320,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   const [type, setType] = useState<PropType>((property?.type as PropType) ?? 'text');
   const [options, setOptions] = useState<Options>(property?.options ?? {});
   const [calcSql, setCalcSql] = useState(property?.calc_sql ?? '');
-  const [calcType, setCalcType] = useState(property?.calc_output_type ?? 'number');
+  // name is the one system property whose type can change: text or a text calculation
+  const nameProp = !!property?.is_base && property.api_name === 'name';
+  const [calcType, setCalcType] = useState(property?.calc_output_type ?? (nameProp ? 'text' : 'number'));
   const [choices, setChoices] = useState<Choice[]>(
     [...(property?.dropdown_options ?? [])]
       .sort((a, b) => a.display_order - b.display_order)
@@ -454,7 +456,10 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         const next = optionsFor(type);
         if (sameKeys(next) !== sameKeys(cleanOptions(property.options))) patch.options = next;
       }
-      if (type === 'calculation' && (calcSql !== (property.calc_sql ?? '') || calcType !== property.calc_output_type)) {
+      if (nameProp && type !== property.type) {
+        patch.type = type;
+        if (type === 'calculation') patch.calc_sql = calcSql;
+      } else if (type === 'calculation' && (calcSql !== (property.calc_sql ?? '') || calcType !== property.calc_output_type)) {
         patch.calc_sql = calcSql;
         patch.calc_output_type = calcType;
       }
@@ -572,15 +577,23 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         </label>
         <label className="field">
           <span>Type</span>
-          {property ? (
+          {property && !nameProp ? (
             <input value={typeLabel(property)} disabled />
           ) : (
             <Select value={type} onChange={(v) => setType(v as PropType)}>
-              {NEW_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+              {(nameProp ? (['text', 'calculation'] as PropType[]) : NEW_TYPES).map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
             </Select>
           )}
         </label>
-        {locked && <p className="muted small">This is a system property: only its label and description can be changed.</p>}
+        {locked && !nameProp && <p className="muted small">This is a system property: only its label and description can be changed.</p>}
+        {nameProp && <p className="muted small">The record name is text people type, or a calculation of other properties (shown as text, not editable on records).</p>}
+        {nameProp && type !== property!.type && (
+          <p className="muted small">
+            {type === 'calculation'
+              ? 'Saving replaces every record\'s name with the calculated value.'
+              : 'Saving keeps every record\'s last calculated name, and names become editable again.'}
+          </p>
+        )}
 
         {!locked && type === 'text' && (
           <>
@@ -633,14 +646,16 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           </label>
         )}
 
-        {!locked && type === 'calculation' && (
+        {(!locked || nameProp) && type === 'calculation' && (
           <>
-            <label className="field">
-              <span>Result type</span>
-              <Select value={calcType} onChange={(v) => setCalcType(v as typeof calcType)}>
-                {(['number', 'text', 'date', 'datetime'] as const).map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-              </Select>
-            </label>
+            {!nameProp && (
+              <label className="field">
+                <span>Result type</span>
+                <Select value={calcType} onChange={(v) => setCalcType(v as typeof calcType)}>
+                  {(['number', 'text', 'date', 'datetime'] as const).map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                </Select>
+              </label>
+            )}
             <label className="field">
               <span>SQL expression (the current record is <code>r</code>)</span>
               <textarea className="mono" rows={6} value={calcSql} onChange={(e) => setCalcSql(e.target.value)} placeholder="coalesce(r.quantity, 0) * coalesce(r.unit_price, 0)" />

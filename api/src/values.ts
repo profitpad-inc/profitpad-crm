@@ -14,8 +14,9 @@ export interface Coerced {
 
 export function isWritable(prop: PropertyDef): boolean {
   if (prop.record_status !== 'active') return false;
+  if (prop.type === 'calculation') return false; // name can be one (meta.set_name_calculation)
   if (prop.is_base) return prop.api_name === 'name' || prop.api_name === 'created_at';
-  return !prop.read_only && prop.type !== 'calculation';
+  return !prop.read_only;
 }
 
 // Converts an API value into what the column stores. existing is the current

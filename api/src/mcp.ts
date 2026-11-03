@@ -598,7 +598,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_property', {
     title: 'Update property',
-    description: 'Changes a property\'s label, description or options, or a calculation\'s SQL. The api_name and type cannot change.',
+    description: 'Changes a property\'s label, description or options, or a calculation\'s SQL. The api_name cannot change, and the type only for name: {"type": "calculation", "calc_sql": ...} makes name a text calculation (read-only, filled from other properties; contacts start that way), {"type": "text"} makes it plain text again (records keep their last calculated names).',
     inputSchema: z.object({
       object: objectArg,
       property: propertyArg,
@@ -606,7 +606,8 @@ function registerAdminTools(server: McpServer, p: Principal) {
       description: z.string().optional(),
       options: optionsArg.describe('The full options object (replaces the current one)'),
       calc_sql: z.string().optional(),
-      calc_output_type: z.enum(['text', 'number', 'date', 'datetime']).optional()
+      calc_output_type: z.enum(['text', 'number', 'date', 'datetime']).optional(),
+      type: z.enum(['text', 'calculation']).optional().describe('Only for name: switch between text and calculation')
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge

@@ -75,7 +75,8 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       const v = values[p.api_name];
       if (v !== undefined && v !== '') properties[p.api_name] = fromInput(p, v);
     }
-    if (!properties.name && (properties.first_name || properties.last_name) && object.properties.some((p) => p.api_name === 'first_name')) {
+    // a calculated name (contacts by default) fills itself
+    if (!properties.name && (properties.first_name || properties.last_name) && editable.some((p) => p.api_name === 'name') && object.properties.some((p) => p.api_name === 'first_name')) {
       properties.name = [properties.first_name, properties.last_name].filter(Boolean).join(' ');
     }
     let record = created;

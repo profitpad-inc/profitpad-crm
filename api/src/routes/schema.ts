@@ -84,18 +84,27 @@ export async function createProperty(p: Principal, objectKey: string, b: Propert
 
 export async function updateProperty(
   p: Principal, objectKey: string, name: string,
-  b: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string },
+  b: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string; type?: string },
   source?: string
 ) {
   requireScope(p, 'schema');
   const [obj, prop] = await findProperty(objectKey, name);
+  // only name changes type: text <-> calculation (text output)
+  const retype = b.type !== undefined && b.type !== prop.type;
+  if (retype) {
+    if (prop.api_name !== 'name' || !['text', 'calculation'].includes(b.type!)) throw badRequest('only name can change type, between text and calculation');
+    if (b.type === 'calculation' && !b.calc_sql) throw badRequest('a calculated name needs calc_sql');
+  }
+  if (prop.api_name === 'name' && b.calc_output_type !== undefined && b.calc_output_type !== 'text') throw badRequest('a calculated name is text');
   await withTx({ principal: p, source }, async (c) => {
     if (b.label !== undefined || b.description !== undefined || b.options !== undefined) {
       await c.query('select meta.update_property($1, $2, $3, $4, $5)', [
         obj.object_type_id, prop.api_name, b.label ?? null, b.description ?? null, b.options ? JSON.stringify(b.options) : null
       ]);
     }
-    if (b.calc_sql !== undefined || b.calc_output_type !== undefined) {
+    if (retype) {
+      await c.query('select meta.set_name_calculation($1, $2)', [obj.object_type_id, b.type === 'calculation' ? b.calc_sql : null]);
+    } else if (b.calc_sql !== undefined || b.calc_output_type !== undefined) {
       await c.query('select meta.update_calculation($1, $2, $3, $4)', [
         obj.object_type_id, prop.api_name, b.calc_sql ?? prop.calc_sql, b.calc_output_type ?? null
       ]);
@@ -259,7 +268,7 @@ export async function schemaRoutes(app: FastifyInstance) {
 
   app.patch<{
     Params: { object: string; property: string };
-    Body: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string };
+    Body: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string; type?: string };
   }>('/v1/schema/:object/properties/:property', async (req) => {
     return updateProperty(req.principal!, req.params.object, req.params.property, req.body ?? {});
   });
