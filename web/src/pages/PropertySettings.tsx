@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { api, clearSchemaCache, getSchema, type DropdownOption, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { nameProperties, recordName } from '../lib/display';
 import { Menu, Modal } from '../components/ui';
+import { EmptyState, SettingsPage, TableSkeleton } from '../components/settings';
 import { ColorPicker } from '../components/ColorPicker';
 
 // Admin page for an object's properties. Every change goes through the
@@ -126,34 +127,42 @@ export function PropertySettings() {
   const base = `/v1/schema/${object}/properties`;
 
   return (
-    <section>
-      <h2>Properties</h2>
-      <p className="muted">
+    <SettingsPage
+      className="wide"
+      title="Properties"
+      description={<>
         Properties are the fields stored on each record. Archiving hides a property everywhere and keeps its values; unarchive it to bring it back.
         Deleting an archived property removes it and all its values for good.
-      </p>
-      <div className="field-row">
+      </>}
+      actions={<>
         <select value={object} onChange={(e) => setObject(e.target.value)} aria-label="Object">
           {sorted.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
         </select>
-      </div>
+        <button className="btn primary" onClick={() => setEditing('new')} disabled={!object}><Plus size={14} /> Create property</button>
+      </>}
+    >
       {error && <div className="error">{error}</div>}
-      <div className="field-row table-bar">
+      <div className="settings-toolbar">
         <input type="search" placeholder="Search properties" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search properties" />
         <select value={status} onChange={(e) => setStatus(e.target.value as 'active' | 'archived')} aria-label="Which properties">
           <option value="active">Active</option>
           <option value="archived">Archived ({archivedCount})</option>
         </select>
-        <button className="btn primary push-right" onClick={() => setEditing('new')} disabled={!object}><Plus size={14} /> Create property</button>
+        {props && <span className="muted small">{shown.length} {shown.length === 1 ? 'property' : 'properties'}</span>}
       </div>
-      {props && (
+      {!props && !error && <TableSkeleton rows={6} />}
+      {props && shown.length === 0 && (
+        <EmptyState icon={<SlidersHorizontal size={18} />} title={q ? 'No matching properties' : `No ${status} properties`}>
+          {q ? 'Try a different search.' : status === 'archived' ? 'Archived properties show up here.' : 'Create a property to store a new field on these records.'}
+        </EmptyState>
+      )}
+      {props && shown.length > 0 && (
         <div className="access-table">
           <table className="grid">
             <thead>
               <tr><th>Label</th><th>Internal name</th><th>Type</th><th>Source</th><th /></tr>
             </thead>
             <tbody>
-              {shown.length === 0 && <tr><td colSpan={5} className="muted">{q ? 'No matching properties.' : `No ${status} properties.`}</td></tr>}
               {shown.map((p) => (
                 <tr key={p.id}>
                   <td className="primary-cell">
@@ -162,7 +171,7 @@ export function PropertySettings() {
                   <td><code className="muted">{p.api_name}</code></td>
                   <td>{typeLabel(p)}</td>
                   <td>{source(p)}</td>
-                  <td>
+                  <td className="row-actions">
                     <Menu align="right" trigger={(open) => <button className="icon-btn" onClick={open} aria-label={`Actions for ${p.label}`}><MoreHorizontal size={16} /></button>}>
                       {(close) => (
                         <>
@@ -203,7 +212,7 @@ export function PropertySettings() {
           onDeleted={async () => { const label = deleting.label; setDeleting(null); await changed(`${label} deleted`); }}
         />
       )}
-    </section>
+    </SettingsPage>
   );
 }
 
@@ -473,31 +482,31 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         {str('format') === 'currency' && type === 'number' && (
           <label className="field">
             <span>Currency code</span>
-            <input value={str('currency_code')} maxLength={3} placeholder="USD" onChange={(e) => set('currency_code', e.target.value.toUpperCase())} style={{ width: 90 }} />
+            <input value={str('currency_code')} maxLength={3} placeholder="USD" onChange={(e) => set('currency_code', e.target.value.toUpperCase())} className="input-xs" />
           </label>
         )}
         <label className="field">
           <span>Decimals</span>
-          <input type="number" min={0} max={10} value={str('decimals')} onChange={(e) => set('decimals', num(e.target.value))} style={{ width: 90 }} />
+          <input type="number" min={0} max={10} value={str('decimals')} onChange={(e) => set('decimals', num(e.target.value))} className="input-xs" />
         </label>
         <label className="field">
           <span>Prefix</span>
-          <input value={str('prefix')} maxLength={63} onChange={(e) => set('prefix', e.target.value)} style={{ width: 90 }} />
+          <input value={str('prefix')} maxLength={63} onChange={(e) => set('prefix', e.target.value)} className="input-xs" />
         </label>
         <label className="field">
           <span>Suffix</span>
-          <input value={str('suffix')} maxLength={63} onChange={(e) => set('suffix', e.target.value)} style={{ width: 90 }} />
+          <input value={str('suffix')} maxLength={63} onChange={(e) => set('suffix', e.target.value)} className="input-xs" />
         </label>
       </div>
       {type === 'number' && (
         <div className="field-row">
           <label className="field">
             <span>Minimum</span>
-            <input type="number" value={str('min')} onChange={(e) => set('min', num(e.target.value))} style={{ width: 120 }} />
+            <input type="number" value={str('min')} onChange={(e) => set('min', num(e.target.value))} className="input-sm" />
           </label>
           <label className="field">
             <span>Maximum</span>
-            <input type="number" value={str('max')} onChange={(e) => set('max', num(e.target.value))} style={{ width: 120 }} />
+            <input type="number" value={str('max')} onChange={(e) => set('max', num(e.target.value))} className="input-sm" />
           </label>
         </div>
       )}
@@ -591,7 +600,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         {!locked && type === 'file' && (
           <label className="field">
             <span>Most files per record (empty for no limit)</span>
-            <input type="number" min={1} step={1} value={str('max_files')} onChange={(e) => set('max_files', num(e.target.value))} style={{ width: 120 }} />
+            <input type="number" min={1} step={1} value={str('max_files')} onChange={(e) => set('max_files', num(e.target.value))} className="input-sm" />
           </label>
         )}
 

@@ -28,7 +28,42 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
 
 ## Where we're at (2026-10-31)
 
+- 2026-11-03 (view tooling, round 2 of AI feedback, `~/Downloads/test-crm-mcp-feedback-round-2.md`): migration `0046_integration_examples.sql` (`data_example` on view integrations) plus API, MCP, kit, Settings and guide changes (details in `docs/architecture.md` "Custom views", "Round 2" bullet): integration host and masked url, data contract with mismatch warnings, MCP `create_view_integration`/`update_view_integration`/`test_integration`; `get_view` `lines`/`search` excerpts; `publish_state` with saves since publishing; kit control heights (34/28px) and `small` on TextInput/Select; `<ScrollX>`; guide notes on Sticky lag, the overflow trap and archived owners. Checks: both SQL suites pass on a separate throwaway cluster (port 5496; the usual 5499 one was in use by another session); 27 in-process checks (MCP tools over `app.inject`, a local fake workflow, mismatch logging, excerpts, publish state, guide) pass; API and web typecheck, web build. Not done: `render_view` (needs a headless browser on the server; asked the user). Not tried in a browser, not committed, 0046 not applied to the server. `IntegrationSettings.tsx`, `mcp.ts` and the guide were also being edited by another session at the same time.
 - 2026-11-03: the user confirmed every migration in `db/migrations` is applied to the server, so older "not yet applied" notes below are out of date.
+- 2026-11-03 (Settings redesign, frontend-design skill): plan in `~/.claude/plans/using-the-frontend-design-graceful-moler.md`.
+  - **Rail.** Settings has a grouped rail: Your account, Workspace, People and access, Integrations, Security. Each link has a Lucide icon. The `GROUPS` array in `Settings.tsx` drives both the rail and the route gating. On mobile the rail is a strip of chips across the top.
+  - **Page header.** Every page starts with the same header: title, description, and the main action at the top right.
+  - **Shared pieces.** These live in `web/src/components/settings.tsx`:
+    - `SettingsPage`, `SettingsSection`, `SettingRow` (label left, control right)
+    - `EditPanel` (an inline form with a footer holding Cancel then the main action)
+    - `EmptyState` (has a `compact` variant), `TableSkeleton`
+    - `StatusPill` (tones: on, off, failed, pending, warn, info)
+    - `SaveBar` (sticky, shows "You have unsaved changes")
+    - `CopyField`
+  - **Styles.** `web/src/settings.css` is imported by `Settings.tsx` and scoped under `.settings`. The old settings rules and `.key-new`/`.key-secret` were removed from `styles.css`. Global additions: `--warn` and `.btn.ghost` (plus `.danger-text`).
+  - **Per page:**
+    - Theme has a live mini-CRM preview (`ThemePreview`) and a 4×4 dropdown colour grid.
+    - Theme, Navigation menus and Payments track unsaved changes against what was last loaded or saved.
+    - Roles is two panes: a role list on the left, the editor on the right.
+    - Webhook endpoint cards move Reveal secret, New secret, Turn off and Delete into a ⋯ menu. The signing and batching details moved to a "How deliveries work" section.
+    - All inline styles in the settings pages are gone.
+  - **Copy changes.**
+    - Account no longer shows "Signed in with Google", because `me` has no provider field and Microsoft sign-in also exists.
+    - Users now says Google or Microsoft.
+    - The nav editor's divider label is "Divider" (it had em dashes).
+  - **No changes** to the API, migrations or data logic.
+  - **Checks.** Web typecheck and build pass. In the browser pane against the local copy, at 1366×860 and the mobile preset, I checked:
+    - every page renders;
+    - the Theme preview and save bar react to a colour change;
+    - the API key panel opens and cancels;
+    - the webhook ⋯ menu opens;
+    - no page scrolls sideways at 375px.
+
+    To sign in there, I made a test admin user `0000000008` (settings-preview@example.test) with a session on the local copy DB (port 5499). I revoked the session afterwards and deleted a temporary test webhook endpoint.
+  - **Not checked.**
+    - Switching between roles, since the local copy has one role.
+    - Pages filled with real data, such as API keys and the sent log with rows, or a connected Stripe account.
+  - Not committed.
 - 2026-11-03 (Record ID, not Object ID): the id property (`<code>_id`) was labelled "Object ID" while the API, UI and docs said record id. Migration `0045_record_id_label.sql` recreates `meta._create_object_table` so new objects get "Record ID" and relabels existing id properties still called "Object ID" (29 on the server). Wording in UI, API messages, OpenAPI, MCP, views guide and docs now says "Record ID" / "record IDs" (property type labels "Record ID" / "Record IDs", webhook sent log filter). API field names were already `record_id` and are unchanged. Checks: SQL suite on the throwaway cluster, API and web typecheck, the migration in a rolled-back transaction on the server DB (29 relabelled, function updated). 0045 applied to the server 2026-11-03 08:41 UTC (29 labels confirmed, function seeds "Record ID"). Not tried in a browser, not committed; UI and API wording needs a deploy.
 - 2026-11-03 (create property dialog): `Modal` in `web/src/components/ui.tsx` takes `locked` (Escape and outside clicks do nothing). The create and edit property dialogs are locked; their X and Cancel open a confirm ("Discard this property?" when creating, "Discard your changes?" when editing; Keep editing / Discard). Typechecks; not tried in a browser.
 - 2026-11-03 (row_status renamed to record_status): the base column is now `record_status` everywhere: every crm/meta table and its check constraints, every view (`crm.<api_name>`, `reporting.*`, `view_data.*`, `meta.objects`/`properties`/...), the 31 functions that mentioned it, API (responses, filters, OpenAPI, MCP, views guide, webhooks), web, SQL tests and docs. Migration `0044_record_status.sql` does it generically: renames columns, constraints and view columns found in the catalog, recreates each function from `pg_get_functiondef` with the name replaced (`meta.update_option` drops and recreates for its `p_record_status` argument, grants and comment restored), renames history rows with `property = 'row_status'` and rewrites custom view sources and queries in `crm.pc_0055`. Old migrations keep the old name (never edited); `meta.schema_changes` keeps it as a log. Breaking for API clients and webhook receivers that read `row_status` (archived/restored events now carry property `record_status`). Checks: SQL suite on the throwaway cluster (no `row_status` column, function or constraint left, `update_option` grants kept), API typecheck and `npm test`, web typecheck and build, and the migration in a rolled-back transaction on the server DB (128 columns, 20 history rows, the Sales board draft, `_refresh_views`, reporting reads). 0044 applied to the server 2026-11-03 (128 columns renamed, no function left with the old name). Committed and pushed; the API on the server must be redeployed (`git pull` plus `docker compose up -d --build`), since the API running before that reads `row_status`.

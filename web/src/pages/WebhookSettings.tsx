@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { MoreHorizontal, Plus, Webhook, X } from 'lucide-react';
 import { api, getSchema, type AssociationLabel, type FilterGroup, type ObjectDef } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from '../components/FilterBuilder';
+import { Menu } from '../components/ui';
+import { CopyField, EditPanel, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 
 // Settings → Webhooks (admins, migration 0038): endpoints that receive record
 // events as signed JSON POSTs, their subscriptions (object, event, optional
@@ -180,43 +182,51 @@ export function WebhookSettings() {
   const secretMissing = !!d && !!d.secret_header.trim() && !d.secret_value && !d.had_secret;
   const batchOk = !!d && /^\d+$/.test(d.batch_max) && Number(d.batch_max) >= 1 && Number(d.batch_max) <= 1000;
 
+  const newEndpoint = () => setEndpointDraft(EMPTY_ENDPOINT);
+  const endpointTone = (e: Endpoint): Tone => (!e.enabled ? 'off' : e.consecutive_failures > 0 ? 'failed' : 'on');
+  const endpointState = (e: Endpoint) => (!e.enabled ? 'Off' : e.consecutive_failures > 0 ? 'Failing' : 'On');
+
   return (
-    <section>
-      <h2>Webhooks</h2>
-      <p className="muted">
+    <SettingsPage
+      className="wide"
+      title="Webhooks"
+      description={<>
         Endpoints receive record events as JSON POSTs, such as an n8n webhook that runs when a contact's stage is set. Each endpoint has
-        subscriptions: an object, an event (created, updated, merged, archived, restored, an association added or removed, a property
-        populated, changed or cleared), optional WHERE conditions on the record and up to 3 property values to send. Events within 50 ms of each other are sent
-        together in one POST (<code>{"{"}batch_id, events: [...]{"}"}</code>), up to each endpoint's batch size. Every POST is
-        signed with the endpoint's secret in <code>X-PCRM-Signature</code> (<code>t=&lt;unix time&gt;,v1=&lt;HMAC-SHA256 of "t.body"&gt;</code>).
-        Failed deliveries are retried for about a day, and the sent log below keeps 30 days. An admin's AI can add and change webhooks through the MCP server.
-      </p>
+        subscriptions: an object, an event, optional WHERE conditions on the record and up to 3 property values to send. An admin's AI can
+        add and change webhooks through the MCP server.
+      </>}
+      actions={!d && <button className="btn primary" onClick={newEndpoint}><Plus size={14} /> New endpoint</button>}
+    >
       {error && <div className="error">{error}</div>}
 
       {secret && (
-        <div className="card" style={{ margin: '12px 0' }}>
-          <strong>{secret.fresh ? 'Signing secret for the new endpoint' : 'Signing secret'}</strong>
+        <div className="callout success">
+          <div className="callout-title">{secret.fresh ? 'Signing secret for the new endpoint' : 'Signing secret'}</div>
           <p className="muted small">Use it to check <code>X-PCRM-Signature</code>. You can reveal it again here later.</p>
-          <code style={{ wordBreak: 'break-all' }}>{secret.value}</code>
-          <div className="field-row" style={{ marginTop: 8 }}>
-            <button className="btn small" onClick={() => navigator.clipboard?.writeText(secret.value).then(() => toast('Copied'))}>Copy</button>
-            <button className="btn small" onClick={() => setSecret(null)}>Hide</button>
-          </div>
+          <CopyField value={secret.value} label="Signing secret" secret />
+          <div className="actions"><button className="btn small" onClick={() => setSecret(null)}>Hide</button></div>
         </div>
       )}
 
-      {d ? (
-        <form className="key-new" onSubmit={(e) => { e.preventDefault(); saveEndpoint(d); }}>
+      {d && (
+        <EditPanel
+          title={d.editing ? `Edit ${d.name || 'endpoint'}` : 'New endpoint'}
+          onSubmit={() => saveEndpoint(d)}
+          footer={<>
+            <button className="btn" type="button" onClick={() => setEndpointDraft(null)}>Cancel</button>
+            <button className="btn primary" type="submit" disabled={!d.name.trim() || !d.url.trim() || secretMissing || !batchOk}>{d.editing ? 'Save' : 'Add endpoint'}</button>
+          </>}
+        >
           <div className="field-row">
             <label>Name<input value={d.name} required maxLength={100} onChange={(e) => setEndpointDraft({ ...d, name: e.target.value })} /></label>
-            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
+            <label className="check">
               <input type="checkbox" checked={d.enabled} onChange={(e) => setEndpointDraft({ ...d, enabled: e.target.checked })} /> On
             </label>
           </div>
-          <label className="field">Address (the webhook URL)
+          <label>Address (the webhook URL)
             <input value={d.url} required type="url" placeholder="https://n8n.example.com/webhook/crm-events" onChange={(e) => setEndpointDraft({ ...d, url: e.target.value })} />
           </label>
-          <label className="field">What it is for
+          <label>What it is for
             <textarea value={d.description} rows={2} maxLength={1000} onChange={(e) => setEndpointDraft({ ...d, description: e.target.value })} />
           </label>
           <div className="field-row">
@@ -228,119 +238,136 @@ export function WebhookSettings() {
                 placeholder={d.had_secret ? 'Unchanged' : ''} onChange={(e) => setEndpointDraft({ ...d, secret_value: e.target.value })} />
             </label>
           </div>
-          <label className="field">Most events per POST
-            <input type="number" min={1} max={1000} step={1} required value={d.batch_max} style={{ width: 120 }}
+          <label>Most events per POST
+            <input className="input-narrow" type="number" min={1} max={1000} step={1} required value={d.batch_max}
               onChange={(e) => setEndpointDraft({ ...d, batch_max: e.target.value })} />
             <span className="muted small">Events within 50 ms of each other are sent together as one batch, up to this many (1 to 1000). 1 sends each event on its own.</span>
           </label>
-          <div className="field-row">
-            <button className="btn primary" type="submit" disabled={!d.name.trim() || !d.url.trim() || secretMissing || !batchOk}>{d.editing ? 'Save' : 'Add endpoint'}</button>
-            <button className="btn" type="button" onClick={() => setEndpointDraft(null)}>Cancel</button>
-          </div>
-        </form>
-      ) : (
-        <div className="field-row">
-          <button className="btn primary" onClick={() => setEndpointDraft(EMPTY_ENDPOINT)}><Plus size={14} /> New endpoint</button>
-        </div>
+        </EditPanel>
       )}
 
-      {list && list.length === 0 && <p className="muted" style={{ marginTop: 12 }}>No webhook endpoints yet.</p>}
-      {list?.map((e) => (
-        <div key={e.id} className="card" style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ minWidth: 0 }}>
-              <strong>{e.name}</strong>
-              {!e.enabled && <span className="pill" style={{ marginLeft: 6 }}>Off</span>}
-              <div className="small" style={{ wordBreak: 'break-all' }}>{e.url}{e.has_secret && <span className="muted"> · with {e.secret_header}</span>}</div>
-              <div className="muted small">{e.batch_max === 1 ? 'Sends each event on its own' : `Batches of up to ${e.batch_max} events`}</div>
-              {e.description && <div className="muted small">{e.description}</div>}
-              <div className="muted small" style={{ marginTop: 4 }}>
-                Last 7 days: {e.deliveries.succeeded_7d} delivered, {e.deliveries.failed_7d} failed{e.deliveries.pending ? `, ${e.deliveries.pending} waiting` : ''}
-                {e.last_success_at && ` · last success ${when(e.last_success_at)}`}
+      {!list && !error && <TableSkeleton rows={3} />}
+      {list && list.length === 0 && !d && (
+        <EmptyState icon={<Webhook size={18} />} title="No webhook endpoints yet" action={<button className="btn primary" onClick={newEndpoint}>New endpoint</button>}>
+          Add the address of a service, such as an n8n webhook, then subscribe it to the record events it should receive.
+        </EmptyState>
+      )}
+      <div className="thing-list">
+        {list?.map((e) => (
+          <div key={e.id} className="thing">
+            <div className="thing-head">
+              <div className="thing-main">
+                <div className="thing-title">{e.name}<StatusPill tone={endpointTone(e)}>{endpointState(e)}</StatusPill></div>
+                <div className="thing-sub">{e.url}{e.has_secret && ` with ${e.secret_header}`}</div>
+                {e.description && <div className="thing-sub plain">{e.description}</div>}
+                <div className="thing-meta">
+                  <span>Last 7 days: {e.deliveries.succeeded_7d} delivered, {e.deliveries.failed_7d} failed{e.deliveries.pending ? `, ${e.deliveries.pending} waiting` : ''}</span>
+                  {e.last_success_at && <span>Last success {when(e.last_success_at)}</span>}
+                  <span>{e.batch_max === 1 ? 'Sends each event on its own' : `Batches of up to ${e.batch_max} events`}</span>
+                </div>
+                {e.consecutive_failures > 0 && e.last_error && (
+                  <div className="thing-sub failed">{e.consecutive_failures} failed in a row, last {when(e.last_failure_at)}: {e.last_error}</div>
+                )}
+                {testResult?.endpoint === e.id && <div className="thing-sub plain">Test: {testResult.text}</div>}
               </div>
-              {e.consecutive_failures > 0 && e.last_error && (
-                <div className="small" style={{ color: 'var(--danger)' }}>
-                  {e.consecutive_failures} failed in a row, last {when(e.last_failure_at)}: {e.last_error}
+              <div className="thing-actions">
+                <button className="btn small" onClick={() => setEndpointDraft({
+                  editing: e.id, name: e.name, description: e.description ?? '', url: e.url, enabled: e.enabled, batch_max: String(e.batch_max),
+                  secret_header: e.secret_header ?? '', secret_value: '', had_secret: e.has_secret
+                })}>Edit</button>
+                <button className="btn small" onClick={() => sendTest(e)}>Send test</button>
+                <Menu align="right" trigger={(open) => <button className="icon-btn" onClick={open} aria-label={`More actions for ${e.name}`}><MoreHorizontal size={16} /></button>}>
+                  {(close) => (
+                    <>
+                      <button onClick={() => { close(); run(async () => {
+                        const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/secret`);
+                        setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
+                      }); }}>Reveal signing secret</button>
+                      <button onClick={() => { close(); if (window.confirm(`Make a new signing secret for "${e.name}"? The old one stops working at once.`)) run(async () => {
+                        const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/rotate-secret`);
+                        setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
+                      }, 'New signing secret made'); }}>New signing secret</button>
+                      <button onClick={() => { close(); run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: !e.enabled }), e.enabled ? 'Endpoint turned off' : 'Endpoint turned on'); }}>
+                        {e.enabled ? 'Turn off' : 'Turn on'}
+                      </button>
+                      <div className="menu-sep" />
+                      <button className="danger" onClick={() => { close(); if (window.confirm(`Delete "${e.name}" with its ${e.subscriptions.length} subscription(s) and delivery log?`)) run(() => api('DELETE', `/v1/webhooks/endpoints/${e.id}`), 'Endpoint deleted'); }}>Delete endpoint</button>
+                    </>
+                  )}
+                </Menu>
+              </div>
+            </div>
+
+            <div className="thing-body">
+              <h3>Subscriptions</h3>
+              {e.subscriptions.length === 0 ? (
+                <div className="empty-state compact">
+                  <span className="empty-state-icon" aria-hidden><Webhook size={14} /></span>
+                  <p>No subscriptions: this endpoint receives nothing yet.</p>
+                </div>
+              ) : (
+                <div className="access-table">
+                  <table className="grid">
+                    <tbody>
+                      {e.subscriptions.map((s) => (
+                        <tr key={s.id}>
+                          <td className="primary-cell wrap">
+                            {s.summary} {!s.enabled && <StatusPill tone="off">Off</StatusPill>}
+                            {s.description && <span className="sub">{s.description}</span>}
+                            <span className="sub">{s.send_properties.length ? `Sends ${s.send_properties.join(', ')}` : 'Sends no property values'}</span>
+                          </td>
+                          <td className="row-actions">
+                            <span className="row-actions-inner">
+                              <button className="btn small ghost" onClick={() => setSubDraft({
+                                editing: s.id, endpoint_id: e.id, object: s.object, event: s.event, properties: s.properties, send_properties: s.send_properties,
+                                target_object: s.target_object ?? '', label_id: s.label_id ?? '', filter_groups: s.filter_groups,
+                                description: s.description ?? '', enabled: s.enabled
+                              })}>Edit</button>
+                              <button className="btn small ghost" onClick={() => run(() => api('PATCH', `/v1/webhooks/subscriptions/${s.id}`, { enabled: !s.enabled }))}>
+                                {s.enabled ? 'Turn off' : 'Turn on'}
+                              </button>
+                              <button className="btn small ghost danger-text" onClick={() => window.confirm('Delete this subscription?') && run(() => api('DELETE', `/v1/webhooks/subscriptions/${s.id}`), 'Subscription deleted')}>Delete</button>
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-              {testResult?.endpoint === e.id && <div className="muted small">Test: {testResult.text}</div>}
+              {subDraft?.endpoint_id === e.id ? (
+                <SubscriptionForm draft={subDraft} onChange={setSubDraft} onCancel={() => setSubDraft(null)}
+                  onSaved={async (message) => { setSubDraft(null); toast(message); await load(); }} />
+              ) : (
+                <div className="actions">
+                  <button className="btn small" onClick={() => setSubDraft({
+                    editing: null, endpoint_id: e.id, object: 'contacts', event: 'created', properties: [], send_properties: [], target_object: '', label_id: '',
+                    filter_groups: [], description: '', enabled: true
+                  })}><Plus size={12} /> Add subscription</button>
+                  <button className="btn small ghost" onClick={() => setOpenLog(openLog === e.id ? null : e.id)}>{openLog === e.id ? 'Hide deliveries' : 'Recent deliveries'}</button>
+                </div>
+              )}
+              {openLog === e.id && <DeliveryLog endpoint={e} />}
             </div>
-            <span className="field-row" style={{ alignSelf: 'flex-start' }}>
-              <button className="btn small" onClick={() => setEndpointDraft({
-                editing: e.id, name: e.name, description: e.description ?? '', url: e.url, enabled: e.enabled, batch_max: String(e.batch_max),
-                secret_header: e.secret_header ?? '', secret_value: '', had_secret: e.has_secret
-              })}>Edit</button>
-              <button className="btn small" onClick={() => sendTest(e)}>Send test</button>
-              <button className="btn small" onClick={() => run(async () => {
-                const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/secret`);
-                setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
-              })}>Reveal secret</button>
-              <button className="btn small" onClick={() => window.confirm(`Make a new signing secret for "${e.name}"? The old one stops working at once.`) && run(async () => {
-                const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/rotate-secret`);
-                setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
-              }, 'New signing secret made')}>New secret</button>
-              <button className="btn small" onClick={() => run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: !e.enabled }), e.enabled ? 'Endpoint turned off' : 'Endpoint turned on')}>
-                {e.enabled ? 'Turn off' : 'Turn on'}
-              </button>
-              <button className="btn small" onClick={() => window.confirm(`Delete "${e.name}" with its ${e.subscriptions.length} subscription(s) and delivery log?`) && run(() => api('DELETE', `/v1/webhooks/endpoints/${e.id}`), 'Endpoint deleted')}>Delete</button>
-            </span>
           </div>
-
-          <h3 style={{ fontSize: 14, margin: '14px 0 6px' }}>Subscriptions</h3>
-          <div className="access-table">
-            <table className="grid">
-              <tbody>
-                {e.subscriptions.length === 0 && <tr><td className="muted">No subscriptions: this endpoint receives nothing yet.</td></tr>}
-                {e.subscriptions.map((s) => (
-                  <tr key={s.id}>
-                    <td className="primary-cell">
-                      {s.summary}
-                      {!s.enabled && <span className="pill" style={{ marginLeft: 6 }}>Off</span>}
-                      {s.description && <div className="muted small">{s.description}</div>}
-                      <div className="muted small">{s.send_properties.length ? `Sends ${s.send_properties.join(', ')}` : 'Sends no property values'}</div>
-                    </td>
-                    <td style={{ width: 1, whiteSpace: 'nowrap' }}>
-                      <span className="field-row">
-                        <button className="btn small" onClick={() => setSubDraft({
-                          editing: s.id, endpoint_id: e.id, object: s.object, event: s.event, properties: s.properties, send_properties: s.send_properties,
-                          target_object: s.target_object ?? '', label_id: s.label_id ?? '', filter_groups: s.filter_groups,
-                          description: s.description ?? '', enabled: s.enabled
-                        })}>Edit</button>
-                        <button className="btn small" onClick={() => run(() => api('PATCH', `/v1/webhooks/subscriptions/${s.id}`, { enabled: !s.enabled }))}>
-                          {s.enabled ? 'Turn off' : 'Turn on'}
-                        </button>
-                        <button className="btn small" onClick={() => window.confirm('Delete this subscription?') && run(() => api('DELETE', `/v1/webhooks/subscriptions/${s.id}`), 'Subscription deleted')}>Delete</button>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {subDraft?.endpoint_id === e.id ? (
-            <SubscriptionForm draft={subDraft} onChange={setSubDraft} onCancel={() => setSubDraft(null)}
-              onSaved={async (message) => { setSubDraft(null); toast(message); await load(); }} />
-          ) : (
-            <div className="field-row" style={{ marginTop: 8 }}>
-              <button className="btn small" onClick={() => setSubDraft({
-                editing: null, endpoint_id: e.id, object: 'contacts', event: 'created', properties: [], send_properties: [], target_object: '', label_id: '',
-                filter_groups: [], description: '', enabled: true
-              })}><Plus size={12} /> Add subscription</button>
-              <button className="btn small" onClick={() => setOpenLog(openLog === e.id ? null : e.id)}>{openLog === e.id ? 'Hide deliveries' : 'Recent deliveries'}</button>
-            </div>
-          )}
-          {openLog === e.id && <DeliveryLog endpoint={e} />}
-        </div>
-      ))}
+        ))}
+      </div>
 
       {list && list.length > 0 && (
-        <>
-          <h3 style={{ marginTop: 24 }}>Sent log</h3>
-          <p className="muted small">Every delivery to every endpoint in the last 30 days, newest first.</p>
+        <SettingsSection title="Sent log" description="Every delivery to every endpoint in the last 30 days, newest first.">
           <DeliveryLog endpoints={list} />
-        </>
+        </SettingsSection>
       )}
-    </section>
+
+      <SettingsSection title="How deliveries work">
+        <ul className="plain-list">
+          <li>Events within 50 ms of each other are sent together in one POST (<code>{"{"}batch_id, events: [...]{"}"}</code>), up to each endpoint's batch size.</li>
+          <li>Every POST is signed with the endpoint's secret in <code>X-PCRM-Signature</code> (<code>t=&lt;unix time&gt;,v1=&lt;HMAC-SHA256 of "t.body"&gt;</code>).</li>
+          <li>Events: created, updated, merged, archived, restored, an association added or removed, and a property populated, changed or cleared.</li>
+          <li>Failed deliveries are retried for about a day, and the sent log keeps 30 days.</li>
+        </ul>
+      </SettingsSection>
+    </SettingsPage>
   );
 }
 
@@ -399,7 +426,14 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
   }
 
   return (
-    <form className="key-new" style={{ marginTop: 10 }} onSubmit={(e) => { e.preventDefault(); save(); }}>
+    <EditPanel
+      title={d.editing ? 'Edit subscription' : 'New subscription'}
+      onSubmit={save}
+      footer={<>
+        <button className="btn" type="button" onClick={onCancel}>Cancel</button>
+        <button className="btn primary" type="submit" disabled={!canSave}>{d.editing ? 'Save' : 'Add subscription'}</button>
+      </>}
+    >
       {error && <div className="error">{error}</div>}
       <div className="field-row">
         <label>Object
@@ -429,22 +463,25 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
             </label>
           </>
         )}
-        <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
+        <label className="check">
           <input type="checkbox" checked={d.enabled} onChange={(e) => onChange({ ...d, enabled: e.target.checked })} /> On
         </label>
       </div>
       {takesProperties && schema && (
         <div className="field">
           <span>{d.event === 'updated' ? 'Only when one of these changes (optional)' : 'Properties (any of them)'}</span>
-          <div className="field-row" style={{ flexWrap: 'wrap' }}>
-            {d.properties.map((name) => (
-              <span key={name} className="pill">
-                {properties.find((p) => p.api_name === name)?.label ?? name}{' '}
-                <button type="button" className="btn small" aria-label="Remove" onClick={() => onChange({ ...d, properties: d.properties.filter((x) => x !== name) })}>×</button>
-              </span>
-            ))}
-            <select value="" onChange={(e) => e.target.value && onChange({ ...d, properties: [...d.properties, e.target.value] })}>
-              <option value="">Add a property…</option>
+          <div className="pill-picker">
+            {d.properties.map((name) => {
+              const label = properties.find((p) => p.api_name === name)?.label ?? name;
+              return (
+                <span key={name} className="role-chip">
+                  {label}
+                  <button type="button" className="icon-btn" aria-label={`Remove ${label}`} onClick={() => onChange({ ...d, properties: d.properties.filter((x) => x !== name) })}><X size={12} /></button>
+                </span>
+              );
+            })}
+            <select className="role-add" value="" onChange={(e) => e.target.value && onChange({ ...d, properties: [...d.properties, e.target.value] })}>
+              <option value="">Add a property</option>
               {properties.filter((p) => !d.properties.includes(p.api_name)).map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
             </select>
           </div>
@@ -453,16 +490,19 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
       {schema && (
         <div className="field">
           <span>Send these values with each delivery (up to {MAX_SEND_PROPERTIES}, optional)</span>
-          <div className="field-row" style={{ flexWrap: 'wrap' }}>
-            {d.send_properties.map((name) => (
-              <span key={name} className="pill">
-                {properties.find((p) => p.api_name === name)?.label ?? name}{' '}
-                <button type="button" className="btn small" aria-label="Remove" onClick={() => onChange({ ...d, send_properties: d.send_properties.filter((x) => x !== name) })}>×</button>
-              </span>
-            ))}
+          <div className="pill-picker">
+            {d.send_properties.map((name) => {
+              const label = properties.find((p) => p.api_name === name)?.label ?? name;
+              return (
+                <span key={name} className="role-chip">
+                  {label}
+                  <button type="button" className="icon-btn" aria-label={`Remove ${label}`} onClick={() => onChange({ ...d, send_properties: d.send_properties.filter((x) => x !== name) })}><X size={12} /></button>
+                </span>
+              );
+            })}
             {d.send_properties.length < MAX_SEND_PROPERTIES && (
-              <select value="" onChange={(e) => e.target.value && onChange({ ...d, send_properties: [...d.send_properties, e.target.value] })}>
-                <option value="">Add a property…</option>
+              <select className="role-add" value="" onChange={(e) => e.target.value && onChange({ ...d, send_properties: [...d.send_properties, e.target.value] })}>
+                <option value="">Add a property</option>
                 {properties.filter((p) => !d.send_properties.includes(p.api_name)).map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
               </select>
             )}
@@ -485,14 +525,10 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
           {d.filter_groups.length > 0 && <button type="button" className="btn small" onClick={() => onChange({ ...d, filter_groups: [] })}>Remove conditions</button>}
         </div>
       </div>
-      <label className="field">What it is for (optional)
+      <label>What it is for (optional)
         <input value={d.description} maxLength={1000} onChange={(e) => onChange({ ...d, description: e.target.value })} />
       </label>
-      <div className="field-row">
-        <button className="btn primary" type="submit" disabled={!canSave}>{d.editing ? 'Save' : 'Add subscription'}</button>
-        <button className="btn" type="button" onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
+    </EditPanel>
   );
 }
 
@@ -559,11 +595,12 @@ function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?:
   const filtered = !!(status || endpointId || event || object || since || until);
   const endpointName = (id: number) => endpoints?.find((e) => e.id === id)?.name ?? `Endpoint ${id}`;
 
-  const color = (s: Delivery['status']) => (s === 'succeeded' ? 'var(--money)' : s === 'failed' ? 'var(--danger)' : undefined);
+  const tone = (s: Delivery['status']): Tone => (s === 'succeeded' ? 'on' : s === 'failed' ? 'failed' : s === 'pending' ? 'pending' : 'off');
+  const statusLabel = (s: Delivery['status']) => (s === 'pending' ? 'Waiting' : s === 'succeeded' ? 'Delivered' : s === 'failed' ? 'Failed' : 'Cancelled');
 
   return (
-    <div style={{ marginTop: 10 }}>
-      <div className="field-row" style={{ flexWrap: 'wrap' }}>
+    <div className="delivery-log">
+      <div className="settings-toolbar">
         <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
           <option value="">Every status</option>
           <option value="pending">Waiting</option>
@@ -584,57 +621,72 @@ function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?:
               <option value="">Every object</option>
               {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
             </select>
-            {object && <input value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="Record ID" aria-label="Record ID" style={{ width: 120 }} />}
+            {object && <input className="input-narrow" value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="Record ID" aria-label="Record ID" />}
             <label className="small">From <input type="date" value={since} min={oldest} max={today} onChange={(e) => setSince(e.target.value)} /></label>
             <label className="small">To <input type="date" value={until} min={oldest} max={today} onChange={(e) => setUntil(e.target.value)} /></label>
             {filtered && (
-              <button className="btn small" onClick={() => { setStatus(''); setEndpointId(''); setEvent(''); setObject(''); setRecordId(''); setSince(''); setUntil(''); }}>Clear filters</button>
+              <button className="btn small ghost" onClick={() => { setStatus(''); setEndpointId(''); setEvent(''); setObject(''); setRecordId(''); setSince(''); setUntil(''); }}>Clear filters</button>
             )}
           </>
         )}
-        <button className="btn small" onClick={() => load().catch((e) => setError((e as Error).message))}>Refresh</button>
+        <button className="btn small push-right" onClick={() => load().catch((e) => setError((e as Error).message))}>Refresh</button>
       </div>
       {totals && (
-        <div className="muted small" style={{ marginTop: 6 }}>
-          {totals.succeeded} delivered · {totals.failed} failed · {totals.pending} waiting{totals.cancelled ? ` · ${totals.cancelled} cancelled` : ''}
-          {all ? (filtered ? ' (filtered)' : ' in the last 30 days') : ' in the last 30 days'}
+        <div className="settings-totals">
+          <StatusPill tone="on">{totals.succeeded} delivered</StatusPill>
+          <StatusPill tone="failed">{totals.failed} failed</StatusPill>
+          <StatusPill tone="pending">{totals.pending} waiting</StatusPill>
+          {totals.cancelled > 0 && <StatusPill tone="off">{totals.cancelled} cancelled</StatusPill>}
+          <span>{all && filtered ? 'Filtered' : 'In the last 30 days'}</span>
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      <div className="access-table" style={{ marginTop: 6 }}>
-        <table className="grid">
-          <thead>
-            <tr><th>When</th>{all && <th>Endpoint</th>}<th>Event</th><th>Record</th><th>Status</th><th /></tr>
-          </thead>
-          <tbody>
-            {rows?.length === 0 && <tr><td colSpan={all ? 6 : 5} className="muted">{filtered ? 'Nothing matches these filters.' : 'Nothing sent in the last 30 days.'}</td></tr>}
-            {rows?.map((r) => (
-              <tr key={r.id}>
-                <td className="small">{when(r.created_at)}</td>
-                {all && <td className="small">{endpointName(r.endpoint_id)}</td>}
-                <td className="small">{r.event}</td>
-                <td className="small"><Link to={`/objects/${r.object}/${r.record_id}`}>{r.object} {r.record_id}</Link></td>
-                <td className="small">
-                  <span style={{ color: color(r.status) }}>{r.status === 'pending' ? 'waiting' : r.status === 'succeeded' ? 'delivered' : r.status}</span>
-                  {r.attempts > 0 && ` · ${r.attempts} ${r.attempts === 1 ? 'try' : 'tries'}`}
-                  {r.last_status !== null && ` · HTTP ${r.last_status}`}
-                  {r.batch_id && <span className="muted" title={`Sent in batch ${r.batch_id}`}> · batch {r.batch_id.slice(0, 8)}</span>}
-                  {r.status === 'pending' && r.next_attempt_at && r.attempts > 0 && <div className="muted">next try {when(r.next_attempt_at)}</div>}
-                  {r.last_error && r.status !== 'succeeded' && <div style={{ color: 'var(--danger)' }}>{r.last_error}</div>}
-                  {payload?.id === r.id && <pre className="small" style={{ maxHeight: 300, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{payload.text}</pre>}
-                </td>
-                <td style={{ width: 1, whiteSpace: 'nowrap' }}>
-                  <span className="field-row">
-                    <button className="btn small" onClick={() => showPayload(r.id).catch((e) => setError((e as Error).message))}>{payload?.id === r.id ? 'Hide' : 'Payload'}</button>
-                    {(r.status === 'failed' || r.status === 'cancelled') && <button className="btn small" onClick={() => retry(r.id)}>Retry</button>}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {next && <button className="btn small" style={{ marginTop: 6 }} onClick={() => load(next).catch((e) => setError((e as Error).message))}>Older</button>}
+      {!rows && !error && <TableSkeleton rows={3} />}
+      {rows && rows.length === 0 && (
+        <div className="empty-state compact">
+          <span className="empty-state-icon" aria-hidden><Webhook size={14} /></span>
+          <p>{filtered ? 'Nothing matches these filters.' : 'Nothing sent in the last 30 days.'}</p>
+        </div>
+      )}
+      {rows && rows.length > 0 && (
+        <div className="access-table">
+          <table className="grid">
+            <thead>
+              <tr><th>When</th>{all && <th>Endpoint</th>}<th>Event</th><th>Record</th><th>Status</th><th /></tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="small">{when(r.created_at)}</td>
+                  {all && <td className="small">{endpointName(r.endpoint_id)}</td>}
+                  <td className="small">{r.event}</td>
+                  <td className="small"><Link to={`/objects/${r.object}/${r.record_id}`}>{r.object} {r.record_id}</Link></td>
+                  <td className="small wrap">
+                    <StatusPill tone={tone(r.status)}>{statusLabel(r.status)}</StatusPill>
+                    <span className="sub">
+                      {[
+                        r.attempts > 0 ? `${r.attempts} ${r.attempts === 1 ? 'try' : 'tries'}` : null,
+                        r.last_status !== null ? `HTTP ${r.last_status}` : null
+                      ].filter(Boolean).join(', ')}
+                      {r.batch_id && <span title={`Sent in batch ${r.batch_id}`}>{r.attempts > 0 || r.last_status !== null ? ', ' : ''}batch {r.batch_id.slice(0, 8)}</span>}
+                    </span>
+                    {r.status === 'pending' && r.next_attempt_at && r.attempts > 0 && <span className="sub">Next try {when(r.next_attempt_at)}</span>}
+                    {r.last_error && r.status !== 'succeeded' && <span className="sub failed">{r.last_error}</span>}
+                    {payload?.id === r.id && <pre className="delivery-payload">{payload.text}</pre>}
+                  </td>
+                  <td className="row-actions">
+                    <span className="row-actions-inner">
+                      <button className="btn small ghost" onClick={() => showPayload(r.id).catch((e) => setError((e as Error).message))}>{payload?.id === r.id ? 'Hide' : 'Payload'}</button>
+                      {(r.status === 'failed' || r.status === 'cancelled') && <button className="btn small" onClick={() => retry(r.id)}>Retry</button>}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {next && <div className="load-more"><button className="btn small" onClick={() => load(next).catch((e) => setError((e as Error).message))}>Older</button></div>}
     </div>
   );
 }

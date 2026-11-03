@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CalendarDays } from 'lucide-react';
 import { API_BASE, api } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 import '../booking.css';
 
 // Settings -> Calendars: the user's Google and Microsoft calendars for the
@@ -98,67 +100,81 @@ export function CalendarSettings() {
     void patch(c, { busy_calendar_ids: next });
   };
 
+  const providers = config && (
+    <>
+      <button className="btn" onClick={() => connect('google')} disabled={!config.google}>Connect Google Calendar</button>
+      <button className="btn" onClick={() => connect('microsoft')} disabled={!config.microsoft}>Connect Microsoft Outlook</button>
+    </>
+  );
+
   return (
-    <section>
-      <h2>Calendars</h2>
-      <p className="muted">
+    <SettingsPage
+      title="Calendars"
+      description={<>
         Booking pages offer only the times when your connected calendars are free, and add booked meetings to your calendar with the visitor invited.
         {config && config.google_domains.length > 0 && ` Google accounts must be ${config.google_domains.join(' or ')} accounts.`}
-      </p>
+      </>}
+      actions={list && list.length > 0 ? providers : undefined}
+    >
       {notice && <div className="error">{notice}</div>}
       {error && <div className="error">{error}</div>}
+      {config && !config.google && !config.microsoft && <div className="callout">Calendar connections are not set up on the server yet.</div>}
 
-      {config && (
-        <div className="cal-connect">
-          <button className="btn" onClick={() => connect('google')} disabled={!config.google}>Connect Google Calendar</button>
-          <button className="btn" onClick={() => connect('microsoft')} disabled={!config.microsoft}>Connect Microsoft Outlook</button>
-          {!config.google && !config.microsoft && <span className="small muted">Not set up on the server yet.</span>}
-        </div>
+      {!list && !error && <TableSkeleton rows={2} />}
+      {list && list.length === 0 && (
+        <EmptyState icon={<CalendarDays size={18} />} title="No calendars connected" action={config && (config.google || config.microsoft) && <div className="cal-provider-row">{providers}</div>}>
+          Connect a calendar so booking pages can see when you are busy and add meetings for you.
+        </EmptyState>
       )}
-
-      {list && list.length === 0 && <p className="muted" style={{ marginTop: 12 }}>No calendars connected.</p>}
-      <div className="cal-list">
+      <div className="thing-list">
         {list?.map((c) => (
-          <div className="card cal-conn" key={c.id}>
-            <div className="cal-conn-head">
-              <strong>{PROVIDER[c.provider]}{c.email ? `: ${c.email}` : ''}</strong>
-              {c.status === 'needs_reconnect' && <span className="cal-tag warn">Needs to be connected again</span>}
-              {c.use_for_new_events && c.status === 'active' && <span className="cal-tag">New meetings go here</span>}
-            </div>
-            {c.error && <div className="error">{c.error}</div>}
-
-            {c.calendars && (
-              <>
-                <div className="cal-calendars">
-                  <span className="small muted">Count as busy</span>
-                  {c.calendars.map((cal) => (
-                    <label key={cal.id}>
-                      <input type="checkbox" checked={busyIds(c).includes(cal.id)} onChange={(e) => toggleBusy(c, cal.id, e.target.checked)} />
-                      {cal.name}{cal.primary ? ' (main)' : ''}
-                    </label>
-                  ))}
+          <div className="thing" key={c.id}>
+            <div className="thing-head">
+              <div>
+                <div className="thing-title">
+                  {PROVIDER[c.provider]}
+                  {c.status === 'needs_reconnect' && <StatusPill tone="warn">Needs to be connected again</StatusPill>}
+                  {c.use_for_new_events && c.status === 'active' && <StatusPill tone="on">New meetings go here</StatusPill>}
                 </div>
-                <label className="field" style={{ maxWidth: 360 }}>
-                  <span>Add new meetings to</span>
-                  <select value={c.write_calendar_id ?? ''} onChange={(e) => patch(c, { write_calendar_id: e.target.value || null })}>
-                    <option value="">Main calendar</option>
-                    {c.calendars.filter((cal) => cal.can_write && !cal.primary).map((cal) => <option key={cal.id} value={cal.id}>{cal.name}</option>)}
-                  </select>
-                </label>
-              </>
-            )}
-
-            <div className="field-row">
-              {c.status === 'needs_reconnect' && <button className="btn" onClick={() => connect(c.provider)}>Connect again</button>}
-              {!c.use_for_new_events && c.status === 'active' && (
-                <button className="btn small" onClick={() => patch(c, { use_for_new_events: true }, 'New meetings go to this calendar')}>Use for new meetings</button>
-              )}
-              <button className="btn small" onClick={() => window.confirm(`Disconnect ${PROVIDER[c.provider]}${c.email ? ` (${c.email})` : ''}? Booking pages stop checking it.`)
-                && run(() => api('DELETE', `/v1/calendar/connections/${c.id}`), 'Calendar disconnected')}>Disconnect</button>
+                {c.email && <div className="thing-sub">{c.email}</div>}
+              </div>
+              <div className="thing-actions">
+                {c.status === 'needs_reconnect' && <button className="btn primary small" onClick={() => connect(c.provider)}>Connect again</button>}
+                {!c.use_for_new_events && c.status === 'active' && (
+                  <button className="btn small" onClick={() => patch(c, { use_for_new_events: true }, 'New meetings go to this calendar')}>Use for new meetings</button>
+                )}
+                <button className="btn small ghost danger-text" onClick={() => window.confirm(`Disconnect ${PROVIDER[c.provider]}${c.email ? ` (${c.email})` : ''}? Booking pages stop checking it.`)
+                  && run(() => api('DELETE', `/v1/calendar/connections/${c.id}`), 'Calendar disconnected')}>Disconnect</button>
+              </div>
             </div>
+            {(c.error || c.calendars) && (
+              <div className="thing-body">
+                {c.error && <div className="error">{c.error}</div>}
+                {c.calendars && (
+                  <>
+                    <div className="cal-calendars">
+                      <span className="cal-calendars-title">Count as busy</span>
+                      {c.calendars.map((cal) => (
+                        <label key={cal.id}>
+                          <input type="checkbox" checked={busyIds(c).includes(cal.id)} onChange={(e) => toggleBusy(c, cal.id, e.target.checked)} />
+                          {cal.name}{cal.primary ? ' (main)' : ''}
+                        </label>
+                      ))}
+                    </div>
+                    <label className="field cal-write">
+                      <span>Add new meetings to</span>
+                      <select value={c.write_calendar_id ?? ''} onChange={(e) => patch(c, { write_calendar_id: e.target.value || null })}>
+                        <option value="">Main calendar</option>
+                        {c.calendars.filter((cal) => cal.can_write && !cal.primary).map((cal) => <option key={cal.id} value={cal.id}>{cal.name}</option>)}
+                      </select>
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
-    </section>
+    </SettingsPage>
   );
 }

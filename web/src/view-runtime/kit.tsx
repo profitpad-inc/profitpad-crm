@@ -229,6 +229,29 @@ export function Sticky({ top = 0, children, style, className }: { top?: number; 
   return <div ref={ref} className={cx('v-sticky', (fill || shift > 0) && 'stuck', className)} style={{ zIndex: 5, ...stuck, ...style }}>{children}</div>;
 }
 
+// A wide area (a kanban board, a wide table) that scrolls sideways under a
+// header that stays at the top of the screen while it scrolls down. The
+// header sits outside the sideways scroller (an overflow container would
+// stop it sticking) and follows its scrollLeft. Give header and body columns
+// the same fixed widths so they line up. top: the gap above the stuck header.
+export function ScrollX({ header, top = 0, children, style, className }: { header: ReactNode; top?: number; children?: ReactNode } & Styled) {
+  const head = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const follow = () => {
+    if (head.current && body.current) head.current.style.transform = `translateX(${-body.current.scrollLeft}px)`;
+  };
+  return (
+    <div className={cx('v-scrollx', className)} style={style}>
+      <Sticky top={top} className="v-scrollx-head">
+        <div ref={head} className="v-scrollx-inner">{header}</div>
+      </Sticky>
+      <div ref={body} className="v-scrollx-body" onScroll={follow}>
+        <div className="v-scrollx-inner">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function Card({ title, subtitle, actions, children, style, className }: { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode } & Styled) {
   return (
     <section className={cx('v-card', className)} style={style}>
@@ -328,8 +351,8 @@ export function Button({ variant, small, disabled, onClick, children, type = 'bu
 }
 
 // debounce (ms): onChange waits until typing stops; the box itself updates at once
-export function TextInput({ value, onChange, placeholder, type = 'text', debounce, style, className }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'number' | 'date' | 'search'; debounce?: number;
+export function TextInput({ value, onChange, placeholder, type = 'text', debounce, small, style, className }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'number' | 'date' | 'search'; debounce?: number; small?: boolean;
 } & Styled) {
   const [text, setText] = useState(value);
   const sent = useRef(value);
@@ -354,14 +377,14 @@ export function TextInput({ value, onChange, placeholder, type = 'text', debounc
     if (debounce && debounce > 0) timer.current = setTimeout(emit, debounce);
     else emit();
   }
-  return <input className={cx('v-input', className)} style={style} type={type} value={debounce ? text : value} placeholder={placeholder} onChange={(e) => change(e.target.value)} />;
+  return <input className={cx('v-input', small && 'small', className)} style={style} type={type} value={debounce ? text : value} placeholder={placeholder} onChange={(e) => change(e.target.value)} />;
 }
 
-export function Select({ value, onChange, options, placeholder, style, className }: {
-  value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string;
+export function Select({ value, onChange, options, placeholder, small, style, className }: {
+  value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string; small?: boolean;
 } & Styled) {
   return (
-    <select className={cx('v-input v-select', className)} style={style} value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className={cx('v-input v-select', small && 'small', className)} style={style} value={value} onChange={(e) => onChange(e.target.value)}>
       {placeholder !== undefined && <option value="">{placeholder}</option>}
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>

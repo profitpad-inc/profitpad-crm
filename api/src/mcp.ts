@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { createMcpHandler, McpServer, requireScopes, type AuthInfo, type CallToolResult } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { pool, withTx } from './db.js';
-import { ApiError, fromPg } from './errors.js';
+import { ApiError, badRequest, fromPg } from './errors.js';
 import { authenticateOAuthToken, requireObjectPermission, requireScope, type Principal } from './auth.js';
 import { getRegistry, type ObjectDef, type OptionDef } from './registry.js';
 import {
@@ -19,11 +19,13 @@ import {
 } from './routes/schema.js';
 import {
   createView, listViewErrors, listViews, loadView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut,
-  viewSummary, type ViewRow
+  viewSummary, publishState, sourceExcerpt, type ViewRow
 } from './views.js';
 import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { findIcons } from './icons.js';
-import { listIntegrations } from './integrations.js';
+import {
+  auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, updateIntegration, type AdminIntegration
+} from './integrations.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
   updateEndpoint, updateSubscription
@@ -47,7 +49,7 @@ Records are addressed by object api_name and record ID. You act as the signed-in
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also manage webhooks (endpoints that receive record events, and their subscriptions): they send CRM data to outside addresses, so confirm the URL and what will be sent with the admin before creating or changing an endpoint or subscription, and before deleting one.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also manage webhooks (endpoints that receive record events, and their subscriptions): they send CRM data to outside addresses, so confirm the URL and what will be sent with the admin before creating or changing an endpoint or subscription, and before deleting one. The same goes for view integrations: confirm the URL and the data before creating or changing one.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -246,9 +248,10 @@ const SCHEMA_SOURCE = 'mcp';
 
 // After a draft is saved the model shows the preview link and asks; it does
 // not publish on its own.
-const draftSaved = (v: ViewRow, withCode = false) => ({
+const draftSaved = async (v: ViewRow, withCode = false) => ({
   ...(withCode ? viewOut(v) : viewSummary(v)),
-  next_step: `Saved as a draft; nobody else sees it yet. Give the user this link to preview it: ${viewOut(v).draft_url} . After they open it, get_view_runtime_errors shows anything that went wrong in their browser. Then ask whether to publish. Do not call publish_view unless they say yes.`
+  ...(await publishState(v)),
+  next_step: `Saved as a draft; the published version (if any) is unchanged. Give the user this link to preview it: ${viewOut(v).draft_url} . After they open it, get_view_runtime_errors shows anything that went wrong in their browser. Then ask whether to publish. Do not call publish_view unless they say yes.`
 });
 
 const editsArg = z.array(z.object({ old_str: z.string(), new_str: z.string() }))
@@ -281,12 +284,30 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('get_view', {
     title: 'Get custom view',
-    description: 'One custom view with its code and queries. code picks which version to include: draft (default), published, both or none. To change the code or queries use save_view_draft, then publish_view.',
-    inputSchema: z.object({ view: viewArg, code: z.enum(['draft', 'published', 'both', 'none']).optional() }),
+    description: 'One custom view with its code and queries, and its publish_state. code picks which version to include: draft (default), published, both or none. To read only part of the source (before edits), give lines [start, end] or search (text, any case; matching lines with context lines around them): the answer then has source_excerpt with line numbers instead of the whole source; copy old_str from it without the "12| " prefixes. To change the code or queries use save_view_draft, then publish_view.',
+    inputSchema: z.object({
+      view: viewArg,
+      code: z.enum(['draft', 'published', 'both', 'none']).optional(),
+      lines: z.tuple([z.number().int().min(1), z.number().int().min(1)]).optional().describe('[start, end], 1-based, of the draft source (or the published one with code: published)'),
+      search: z.string().optional().describe('Show only lines containing this text, with context lines around them'),
+      context: z.number().int().min(0).max(20).optional().describe('Lines around each search match (default 3)')
+    }),
     annotations: { readOnlyHint: true }
-  }, async ({ view, code }) => run(async () => {
-    const out: Record<string, unknown> = viewOut(await loadView(pool, view));
+  }, async ({ view, code, lines, search, context }) => run(async () => {
+    const v = await loadView(pool, view);
+    const out: Record<string, unknown> = { ...viewOut(v), ...(await publishState(v)) };
     const which = code ?? 'draft';
+    if (lines || search !== undefined) {
+      if (which === 'both' || which === 'none') throw badRequest('lines and search read one version: code draft or published');
+      const source = which === 'published' ? v.source : v.draft_source;
+      if (!source) throw badRequest(`the ${which} version has no code`);
+      out.source_excerpt = sourceExcerpt(source, { lines, search, context });
+      delete out.draft_source;
+      delete out.source;
+      if (which === 'draft') delete out.queries;
+      else delete out.draft_queries;
+      return out;
+    }
     if (which === 'none' || which === 'published') {
       delete out.draft_source;
       delete out.draft_queries;
@@ -375,11 +396,78 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('list_view_integrations', {
     title: 'List view integrations',
-    description: 'Lists the integrations views can call with callIntegration(key, data): outside endpoints such as n8n webhooks that an admin set up in Settings, View integrations (key, label, description, audience, enabled). You cannot add or change them; if the view needs one that is missing, tell the admin what to add (the key and the data it will receive). See view_guide topic integrations.',
+    description: 'Lists the integrations views can call with callIntegration(key, data): outside endpoints such as n8n webhooks (key, label, description, audience, enabled, host and a masked url, data_example: the shape of data the other end expects, and the last call\'s status). Build data to match data_example. See view_guide topic integrations.',
     annotations: { readOnlyHint: true }
-  }, async () => run(async () => (await listIntegrations(p)).map((i) => ({
-    key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: 'enabled' in i ? i.enabled : true
-  }))));
+  }, async () => run(async () => (await listIntegrations(p)).map((i) => {
+    const admin = 'url' in i ? (i as AdminIntegration) : null;
+    return {
+      key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: admin ? admin.enabled : true,
+      ...(admin ? { ...maskUrl(admin.url), has_secret: admin.has_secret, last_called_at: admin.last_called_at, last_status: admin.last_status, last_error: admin.last_error } : {}),
+      data_example: i.data_example
+    };
+  })));
+
+  const integrationFields = {
+    label: z.string().describe('Name people see, up to 100 characters'),
+    description: z.string().nullable().optional().describe('What it does and when to use it'),
+    url: z.string().describe('The endpoint: https on a public address (e.g. an n8n webhook URL)'),
+    data_example: z.unknown().optional().describe('An example of the data views send (the contract with the workflow); calls whose data does not match its shape are still sent, with a warning in the view\'s runtime errors. null removes it'),
+    audience: z.enum(['admins', 'everyone']).optional().describe('Who may call it from a view they can open (default admins)'),
+    enabled: z.boolean().optional(),
+    secret_header: z.string().nullable().optional().describe('Header sent with every call, e.g. X-Webhook-Secret for n8n header auth (null removes it)'),
+    secret_value: z.string().optional().describe('The value of secret_header; never shown again')
+  };
+
+  server.registerTool('create_view_integration', {
+    title: 'Create view integration',
+    description: 'Adds an integration views can call. It sends CRM data to an outside address, so first show the admin the URL and the data it will receive and wait for their yes. The endpoint gets a JSON POST {integration, data, view, user, sent_at}.',
+    inputSchema: z.object({ key: z.string().describe('2 to 40: lowercase letters, digits, - and _, starting with a letter; views call it by this'), ...integrationFields }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async (b) => run(async () => {
+    const out = await createIntegration(p, b);
+    await auditIntegration(p, 'integration.created', out.key, b);
+    return { ...out, url: undefined, ...maskUrl(out.url) };
+  }));
+
+  server.registerTool('update_view_integration', {
+    title: 'Update view integration',
+    description: 'Changes an integration (fields not given stay). Changing the url or audience changes where data goes or who sends it: confirm with the admin first. Setting data_example alone is a safe way to record the contract.',
+    inputSchema: z.object({
+      key: z.string(),
+      label: integrationFields.label.optional(),
+      description: integrationFields.description,
+      url: integrationFields.url.optional(),
+      data_example: integrationFields.data_example,
+      audience: integrationFields.audience,
+      enabled: integrationFields.enabled,
+      secret_header: integrationFields.secret_header,
+      secret_value: integrationFields.secret_value
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ key, ...b }) => run(async () => {
+    const input = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined));
+    const out = await updateIntegration(p, key, input);
+    await auditIntegration(p, 'integration.updated', out.key, input);
+    return { ...out, url: undefined, ...maskUrl(out.url) };
+  }));
+
+  server.registerTool('test_integration', {
+    title: 'Test view integration',
+    description: 'Sends data to an integration now, as you (view: null in the payload), and returns what the endpoint answered: status and data, or the error. Without data it sends the integration\'s data_example (or {"test": true}). Use it to check the workflow on the other end; it really runs that workflow (a Slack message is really posted), so say so to the admin first.',
+    inputSchema: z.object({ key: z.string(), data: z.unknown().optional() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ key, data }) => run(async () => {
+    try {
+      return { ok: true, ...(await testIntegration(p, key, data)) };
+    } catch (err) {
+      // a failed send is an answer to report, not a tool error
+      if (err instanceof ApiError && err.code === 'integration_failed') return { ok: false, error: err.message, ...((err.details as object | undefined) ?? {}) };
+      throw err;
+    }
+  }));
 
   server.registerTool('try_view_query', {
     title: 'Try a view query',

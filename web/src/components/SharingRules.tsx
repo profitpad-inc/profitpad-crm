@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Share2, Trash2 } from 'lucide-react';
 import { api, getSchema, type AssociationLabel, type FilterGroup, type ObjectDef, type ObjectSummary } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from './FilterBuilder';
+import { EmptyState, SettingsSection } from './settings';
 
 // Settings → Roles: sharing rules widen which records a role's users see (or
 // edit) beyond their own or their team's: records of one object that match
@@ -144,16 +145,20 @@ export function SharingRules({ roleId, recordAccess }: { roleId: string; recordA
     }
   }
 
+  const add = <button className="btn" onClick={() => startNew().catch((err) => setError((err as Error).message))}><Plus size={14} /> Add sharing rule</button>;
+
   return (
-    <>
-      <h3>Sharing rules</h3>
-      <p className="muted">
+    <SettingsSection
+      title="Sharing rules"
+      description={<>
         Sharing rules let this role see records it otherwise wouldn't, without opening up everything: for example every company whose
         name contains "ACME", plus those companies' contacts. The object access above still decides what they can do with them, and a
         rule never lets anyone delete.
-      </p>
+      </>}
+      actions={!draft && rules.length > 0 ? add : undefined}
+    >
       {recordAccess === 'all' && (
-        <p className="muted">This role already sees every record, so its sharing rules add nothing until record access is set to their own or their team's records.</p>
+        <div className="callout">This role already sees every record, so its sharing rules add nothing until record access is set to their own or their team's records.</div>
       )}
       {error && <div className="error">{error}</div>}
       {rules.map((rule) => {
@@ -174,13 +179,12 @@ export function SharingRules({ roleId, recordAccess }: { roleId: string; recordA
       {draft && draft.id === null && (
         <RuleEditor roleId={roleId} draft={draft} setDraft={setDraft} schema={schemas.get(draft.object)} onSave={save} />
       )}
-      {!draft && rules.length === 0 && <p className="muted">No sharing rules yet.</p>}
-      {!draft && (
-        <div className="actions">
-          <button className="btn" onClick={() => startNew().catch((err) => setError((err as Error).message))}><Plus size={14} /> Add sharing rule</button>
-        </div>
+      {!draft && rules.length === 0 && (
+        <EmptyState icon={<Share2 size={18} />} title="No sharing rules yet" action={add}>
+          Add one to let this role see a chosen set of records beyond its record access.
+        </EmptyState>
       )}
-    </>
+    </SettingsSection>
   );
 }
 

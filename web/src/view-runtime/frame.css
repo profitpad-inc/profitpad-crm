@@ -82,15 +82,17 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .v-badge.tone-danger { background: color-mix(in srgb, var(--danger) 10%, #fff); border-color: transparent; }
 .v-badge.tone-warning { background: color-mix(in srgb, var(--warning) 10%, #fff); color: var(--warning); border-color: transparent; }
 
-.v-btn { font: inherit; font-weight: 500; padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--page-background); color: var(--text); cursor: pointer; }
+/* Controls share two heights so buttons, inputs and selects line up in a row:
+   34px (default) and 28px (small). Documented in api/src/views-guide.ts. */
+.v-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; white-space: nowrap; font: inherit; font-weight: 500; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--page-background); color: var(--text); cursor: pointer; }
 .v-btn:hover:not(:disabled) { background: var(--surface); }
 .v-btn:disabled { opacity: 0.55; cursor: default; }
 .v-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .v-btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 88%, #000); }
 .v-btn.danger { color: var(--danger); }
-.v-btn.small { padding: 4px 8px; font-size: 12px; }
+.v-btn.small { height: 28px; padding: 0 8px; font-size: 12px; }
 
-.v-input { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); color: var(--text); min-width: 0; max-width: 100%; }
+.v-input { height: 34px; font: inherit; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); color: var(--text); min-width: 0; max-width: 100%; }
 .v-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
 /* drawn chevron a little in from the edge, like the CRM's selects */
 .v-select {
@@ -102,6 +104,13 @@ a:hover, .v-link:hover { text-decoration: underline; }
   background-position: right 12px center;
   background-size: 12px;
 }
+.v-input.small { height: 28px; padding: 0 8px; font-size: 12px; }
+.v-select.small { padding-right: 26px; background-position: right 8px center; }
+
+/* ScrollX: a header that stays at the top above a body that scrolls sideways */
+.v-scrollx-head { overflow: hidden; background: var(--page-background); }
+.v-scrollx-body { overflow-x: auto; }
+.v-scrollx-inner { width: max-content; min-width: 100%; }
 
 .v-loading, .v-empty { padding: 16px 0; text-align: center; }
 .v-error { padding: 10px 12px; border-radius: var(--radius); background: color-mix(in srgb, var(--danger) 8%, #fff); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 25%, #fff); white-space: pre-wrap; }

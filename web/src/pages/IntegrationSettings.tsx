@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Cable, Plus } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 
 // Settings → View integrations (admins, migration 0036): outside endpoints such as
 // n8n webhooks that custom views send data to with callIntegration(key, data).
@@ -19,6 +20,8 @@ interface Integration {
   last_called_at: string | null;
   last_status: number | null;
   last_error: string | null;
+  // the shape of data views send (migration 0046)
+  data_example: unknown;
 }
 
 interface Draft {
@@ -34,6 +37,8 @@ interface Draft {
   secret_header: string;
   secret_value: string;
   had_secret: boolean;
+  // JSON text, '' for none
+  data_example: string;
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
@@ -41,8 +46,19 @@ const keyFrom = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-
 
 const EMPTY: Draft = {
   editing: null, key: '', keyTouched: false, label: '', description: '', url: '', audience: 'admins', enabled: true,
-  secret_header: '', secret_value: '', had_secret: false
+  secret_header: '', secret_value: '', had_secret: false, data_example: ''
 };
+
+// the example as the box shows it, and back (undefined when it is not JSON)
+const exampleText = (v: unknown) => (v === null || v === undefined ? '' : JSON.stringify(v, null, 2));
+function parseExample(text: string): unknown {
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
 
 export function IntegrationSettings() {
   const { toast } = useApp();
@@ -73,7 +89,7 @@ export function IntegrationSettings() {
 
   function save(d: Draft) {
     const body: Record<string, unknown> = {
-      label: d.label, description: d.description, url: d.url, audience: d.audience, enabled: d.enabled
+      label: d.label, description: d.description, url: d.url, audience: d.audience, enabled: d.enabled, data_example: parseExample(d.data_example)
     };
     const header = d.secret_header.trim();
     if (!header) {
@@ -93,7 +109,7 @@ export function IntegrationSettings() {
     setError(null);
     setTestResult(null);
     try {
-      const res = await api<{ status: number; data: unknown }>('POST', `/v1/view-integrations/${encodeURIComponent(i.key)}/test`, { data: { test: true } });
+      const res = await api<{ status: number; data: unknown }>('POST', `/v1/view-integrations/${encodeURIComponent(i.key)}/test`, {});
       setTestResult({ key: i.key, text: `HTTP ${res.status}: ${typeof res.data === 'string' ? res.data : JSON.stringify(res.data)}`.slice(0, 600) });
     } catch (e) {
       setTestResult({ key: i.key, text: (e as Error).message });
@@ -104,19 +120,30 @@ export function IntegrationSettings() {
   const d = draft;
   // a header with no stored or new value cannot be saved
   const secretMissing = !!d && !!d.secret_header.trim() && !d.secret_value && !(d.had_secret && d.secret_header.trim());
+  const badExample = !!d && parseExample(d.data_example) === undefined;
 
   return (
-    <section>
-      <h2>View integrations</h2>
-      <p className="muted">
+    <SettingsPage
+      className="wide"
+      title="View integrations"
+      description={<>
         Outside services that custom views can send data to, such as an n8n webhook that posts to Slack. A view calls one by its key with{' '}
         <code>callIntegration('key', data)</code>; the viewer is asked to allow each send, then the CRM's server makes the request, so the
-        secret header below never reaches a browser. The service receives a JSON POST with <code>data</code>, the <code>view</code> and the{' '}
+        secret header never reaches a browser. The service receives a JSON POST with <code>data</code>, the <code>view</code> and the{' '}
         <code>user</code> who sent it, and its answer goes back to the view.
-      </p>
+      </>}
+      actions={!d && <button className="btn primary" onClick={() => setDraft(EMPTY)}><Plus size={14} /> New integration</button>}
+    >
       {error && <div className="error">{error}</div>}
-      {d ? (
-        <form className="key-new" onSubmit={(e) => { e.preventDefault(); save(d); }}>
+      {d && (
+        <EditPanel
+          title={d.editing ? `Edit ${d.label || d.key}` : 'New integration'}
+          onSubmit={() => save(d)}
+          footer={<>
+            <button className="btn" type="button" onClick={() => setDraft(null)}>Cancel</button>
+            <button className="btn primary" type="submit" disabled={!d.label.trim() || !d.url.trim() || !d.key || secretMissing || badExample}>{d.editing ? 'Save' : 'Add integration'}</button>
+          </>}
+        >
           <div className="field-row">
             <label>Name<input value={d.label} required maxLength={100}
               onChange={(e) => setDraft({ ...d, label: e.target.value, key: d.editing || d.keyTouched ? d.key : keyFrom(e.target.value) })} /></label>
@@ -134,12 +161,17 @@ export function IntegrationSettings() {
               </select>
             </label>
           </div>
-          <label className="field">Address (the webhook URL)
+          <label>Address (the webhook URL)
             <input value={d.url} required type="url" placeholder="https://n8n.example.com/webhook/slack-message" onChange={(e) => setDraft({ ...d, url: e.target.value })} />
           </label>
-          <label className="field">What it does (shown to the AI building views)
+          <label>What it does (shown to the AI building views)
             <textarea value={d.description} rows={2} maxLength={1000} placeholder="Posts data.text to the #sales Slack channel"
               onChange={(e) => setDraft({ ...d, description: e.target.value })} />
+          </label>
+          <label>Example data (optional JSON: what views send as <code>data</code>; Send test sends it)
+            <textarea className="mono" value={d.data_example} rows={4} placeholder={'{\n  "text": "Pipeline: $120,000 open",\n  "note": "Weekly update"\n}'}
+              onChange={(e) => setDraft({ ...d, data_example: e.target.value })} />
+            {badExample && <span className="sub failed">This is not valid JSON.</span>}
           </label>
           <div className="field-row">
             <label>Secret header (optional)
@@ -149,54 +181,52 @@ export function IntegrationSettings() {
               <input value={d.secret_value} type="password" autoComplete="new-password" disabled={!d.secret_header.trim()}
                 placeholder={d.had_secret ? 'Unchanged' : ''} onChange={(e) => setDraft({ ...d, secret_value: e.target.value })} />
             </label>
-            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
+            <label className="check">
               <input type="checkbox" checked={d.enabled} onChange={(e) => setDraft({ ...d, enabled: e.target.checked })} /> On
             </label>
           </div>
-          <div className="field-row">
-            <button className="btn primary" type="submit" disabled={!d.label.trim() || !d.url.trim() || !d.key || secretMissing}>{d.editing ? 'Save' : 'Add integration'}</button>
-            <button className="btn" type="button" onClick={() => setDraft(null)}>Cancel</button>
-          </div>
-        </form>
-      ) : (
-        <div className="field-row">
-          <button className="btn primary" onClick={() => setDraft(EMPTY)}><Plus size={14} /> New integration</button>
-        </div>
+        </EditPanel>
       )}
-      {list && (
-        <div className="access-table" style={{ marginTop: 12 }}>
+      {!list && !error && <TableSkeleton rows={3} />}
+      {list && list.length === 0 && !d && (
+        <EmptyState icon={<Cable size={18} />} title="No integrations yet" action={<button className="btn primary" onClick={() => setDraft(EMPTY)}>New integration</button>}>
+          Add an outside address, such as an n8n webhook, that custom views can send data to.
+        </EmptyState>
+      )}
+      {list && list.length > 0 && (
+        <div className="access-table">
           <table className="grid">
             <thead>
               <tr><th>Name</th><th>Address</th><th>Who</th><th>Last call</th><th /></tr>
             </thead>
             <tbody>
-              {list.length === 0 && <tr><td colSpan={5} className="muted">No integrations yet.</td></tr>}
               {list.map((i) => (
                 <tr key={i.key}>
-                  <td className="primary-cell">
-                    {i.label} <span className="muted small">{i.key}</span>
-                    {!i.enabled && <span className="pill" style={{ marginLeft: 6 }}>Off</span>}
-                    {i.description && <div className="muted small">{i.description}</div>}
+                  <td className="primary-cell wrap">
+                    {i.label} {!i.enabled && <StatusPill tone="off">Off</StatusPill>}
+                    <span className="sub"><code>{i.key}</code>{i.description && ` ${i.description}`}</span>
                   </td>
-                  <td className="small">{i.url}{i.has_secret && <div className="muted">with {i.secret_header}</div>}</td>
+                  <td className="small wrap">{i.url}{i.has_secret && <span className="sub">With {i.secret_header}</span>}</td>
                   <td>{i.audience === 'everyone' ? 'Everyone' : 'Admins'}</td>
-                  <td className="small">
+                  <td className="small wrap">
                     {i.last_called_at ? (
                       <>
-                        {when(i.last_called_at)}{i.last_status !== null && ` · HTTP ${i.last_status}`}
-                        {i.last_error && <div style={{ color: 'var(--danger)' }}>{i.last_error}</div>}
+                        {when(i.last_called_at)}
+                        {i.last_status !== null && <span className="sub">HTTP {i.last_status}</span>}
+                        {i.last_error && <span className="sub failed">{i.last_error}</span>}
                       </>
-                    ) : <span className="muted">never</span>}
-                    {testResult?.key === i.key && <div className="muted">Test: {testResult.text}</div>}
+                    ) : <span className="muted">Never</span>}
+                    {testResult?.key === i.key && <span className="sub">Test: {testResult.text}</span>}
                   </td>
-                  <td>
-                    <span className="field-row">
-                      <button className="btn small" onClick={() => setDraft({
+                  <td className="row-actions">
+                    <span className="row-actions-inner">
+                      <button className="btn small ghost" onClick={() => setDraft({
                         editing: i.key, key: i.key, keyTouched: true, label: i.label, description: i.description ?? '', url: i.url, audience: i.audience,
-                        enabled: i.enabled, secret_header: i.secret_header ?? '', secret_value: '', had_secret: i.has_secret
-                      })}>Edit</button>{' '}
-                      <button className="btn small" onClick={() => sendTest(i)}>Send test</button>{' '}
-                      <button className="btn small" onClick={() => window.confirm(`Delete "${i.label}"? Views that call ${i.key} stop working.`) && run(() => api('DELETE', `/v1/view-integrations/${encodeURIComponent(i.key)}`), 'Integration deleted')}>Delete</button>
+                        enabled: i.enabled, secret_header: i.secret_header ?? '', secret_value: '', had_secret: i.has_secret,
+                        data_example: exampleText(i.data_example)
+                      })}>Edit</button>
+                      <button className="btn small ghost" onClick={() => sendTest(i)}>Send test</button>
+                      <button className="btn small ghost danger-text" onClick={() => window.confirm(`Delete "${i.label}"? Views that call ${i.key} stop working.`) && run(() => api('DELETE', `/v1/view-integrations/${encodeURIComponent(i.key)}`), 'Integration deleted')}>Delete</button>
                     </span>
                   </td>
                 </tr>
@@ -205,6 +235,6 @@ export function IntegrationSettings() {
           </table>
         </div>
       )}
-    </section>
+    </SettingsPage>
   );
 }

@@ -517,6 +517,63 @@ export function viewSummary(v: ViewRow) {
   };
 }
 
+// Where the draft stands against the published version, in words, with the
+// number of draft saves since publishing (from the record's history), so a
+// publish made elsewhere (the draft bar, the Code card) is noticed.
+export async function publishState(v: ViewRow): Promise<{ published_at: Date | null; saves_since_publish: number | null; publish_state: string }> {
+  if (v.status !== 'published' || !v.published_at) {
+    return { published_at: null, saves_since_publish: null, publish_state: 'Never published: only admins can open the draft.' };
+  }
+  const { rows } = await pool.query(
+    `select count(distinct changed_at)::int as n from meta.record_history
+     where object_type_id = 'pc_0055' and record_id = $1 and property in ('draft_source', 'draft_queries') and changed_at > $2`,
+    [v.id, v.published_at]
+  );
+  const n = rows[0].n as number;
+  const at = v.published_at.toISOString().replace(/\.\d+Z$/, 'Z');
+  const state = !hasUnpublishedChanges(v)
+    ? `Published ${at}; the draft is the same as the published version.`
+    : `Published ${at}; the published version is ${n || 'some'} draft save${n === 1 ? '' : 's'} behind (publish_view only when the user asks).`;
+  return { published_at: v.published_at, saves_since_publish: n, publish_state: state };
+}
+
+// Part of a source with line numbers: lines start to end (1-based), or the
+// lines matching search (any case) with context lines around each.
+export function sourceExcerpt(source: string, opts: { lines?: [number, number]; search?: string; context?: number }) {
+  const all = source.split('\n');
+  const width = String(all.length).length;
+  const fmt = (i: number) => `${String(i + 1).padStart(width)}| ${all[i]}`;
+  if (opts.search !== undefined) {
+    const needle = opts.search.toLowerCase();
+    if (!needle) throw badRequest('search is empty');
+    const context = Math.min(Math.max(opts.context ?? 3, 0), 20);
+    const hits = all.flatMap((l, i) => (l.toLowerCase().includes(needle) ? [i] : []));
+    const shown = hits.slice(0, 30);
+    const ranges: [number, number][] = [];
+    for (const h of shown) {
+      const lo = Math.max(0, h - context);
+      const hi = Math.min(all.length - 1, h + context);
+      const last = ranges[ranges.length - 1];
+      if (last && lo <= last[1] + 1) last[1] = Math.max(last[1], hi);
+      else ranges.push([lo, hi]);
+    }
+    return {
+      total_lines: all.length,
+      matches: hits.length,
+      ...(hits.length > shown.length ? { note: `showing the first ${shown.length} matches` } : {}),
+      excerpt: ranges.map(([lo, hi]) => Array.from({ length: hi - lo + 1 }, (_, k) => fmt(lo + k)).join('\n')).join('\n--\n')
+    };
+  }
+  const [start, end] = opts.lines ?? [1, all.length];
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) throw badRequest('lines must be [start, end] with 1 <= start <= end');
+  const hi = Math.min(end, all.length);
+  return {
+    total_lines: all.length,
+    lines: [start, hi],
+    excerpt: start > all.length ? '' : Array.from({ length: hi - start + 1 }, (_, k) => fmt(start - 1 + k)).join('\n')
+  };
+}
+
 // ---- runtime errors (migration 0035) ----------------------------------------------
 
 export const ERROR_KINDS = ['crash', 'error', 'console', 'query', 'start', 'integration'] as const;

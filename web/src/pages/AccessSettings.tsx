@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { displayName } from '../lib/display';
+import { displayName, initials } from '../lib/display';
 import { SharingRules } from '../components/SharingRules';
+import { EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -89,14 +90,22 @@ export function UserSettings() {
     roles.flatMap((r) => r.assignments.filter((a) => a.user_id === userId).map((a) => ({ role: r, assignmentId: a.id })));
 
   return (
-    <section>
-      <h2>Users</h2>
-      <p className="muted">
-        People sign in with Google when their email matches a user here whose Status is not Deactivated. What they can see comes from their roles; a user
-        with no role sees nothing. To add someone, <Link to="/objects/users">create a user record</Link> with their email.
-      </p>
+    <SettingsPage
+      title="Users"
+      description={<>
+        People sign in with Google or Microsoft when their email matches a user here whose Status is not Deactivated. What
+        they can see comes from their roles; a user with no role sees nothing.
+      </>}
+      actions={<Link className="btn primary" to="/objects/users"><Plus size={14} /> Add a user</Link>}
+    >
       {error && <div className="error">{error}</div>}
-      {loaded && (
+      {!loaded && <TableSkeleton rows={4} />}
+      {loaded && users.length === 0 && (
+        <EmptyState icon={<Users size={18} />} title="No users yet" action={<Link className="btn primary" to="/objects/users">Add a user</Link>}>
+          Create a user record with someone's email so they can sign in.
+        </EmptyState>
+      )}
+      {loaded && users.length > 0 && (
         <div className="access-table">
           <table className="grid">
             <thead>
@@ -109,11 +118,14 @@ export function UserSettings() {
                 return (
                   <tr key={u.id}>
                     <td className="primary-cell">
-                      <Link to={`/objects/users/${u.id}`}>{u.name}</Link>
-                      {me.user?.id === u.id && <span className="muted small"> (you)</span>}
-                      {u.deactivated && <span className="muted small"> · deactivated, cannot sign in</span>}
+                      <span className="person">
+                        <span className="person-avatar">{initials(u.name)}</span>
+                        <Link to={`/objects/users/${u.id}`}>{u.name}</Link>
+                        {me.user?.id === u.id && <span className="muted small">You</span>}
+                        {u.deactivated && <StatusPill tone="off">Deactivated</StatusPill>}
+                      </span>
                     </td>
-                    <td>{u.email ?? <span className="muted">no email</span>}</td>
+                    <td>{u.email ?? <span className="muted">No email</span>}</td>
                     <td>
                       <div className="role-chips">
                         {assigned.length === 0 && <span className="muted small">No role</span>}
@@ -136,7 +148,7 @@ export function UserSettings() {
                             aria-label={`Add a role for ${u.name}`}
                             onChange={(e) => run(() => api('POST', `/v1/roles/${e.target.value}/assignments`, { user_id: u.id }))}
                           >
-                            <option value="">Add role…</option>
+                            <option value="">Add role</option>
                             {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                           </select>
                         )}
@@ -149,7 +161,7 @@ export function UserSettings() {
           </table>
         </div>
       )}
-    </section>
+    </SettingsPage>
   );
 }
 
@@ -229,105 +241,126 @@ export function RoleSettings() {
   }
 
   const members = role
-    ? role.assignments.map((a) => (a.user_id ? users.find((u) => u.id === a.user_id)?.name ?? `user ${a.user_id}` : `team ${a.team_id}`))
+    ? role.assignments.map((a) => ({ id: a.id, name: a.user_id ? users.find((u) => u.id === a.user_id)?.name ?? `User ${a.user_id}` : `Team ${a.team_id}` }))
     : [];
+  const accessLabel = (r: Role) => (r.is_admin ? 'Admin' : RECORD_ACCESS.find((o) => o.value === r.record_access)?.label);
 
   return (
-    <section>
-      <h2>Roles</h2>
-      <p className="muted">
+    <SettingsPage
+      className="wide"
+      title="Roles"
+      description={<>
         A role decides which objects its users can read, create, edit and delete, and which records they see. Someone with
         several roles gets the most permissive combination. Assign roles on the <Link to="/settings/users">Users</Link> page.
-      </p>
-      <div className="actions">
-        <label className="field inline">
-          <span>Role</span>
-          <select value={selected ?? ''} onChange={(e) => pick(e.target.value)}>
-            {roles.map((r) => <option key={r.id} value={r.id}>{r.name}{r.is_admin ? ' (admin)' : ''}</option>)}
-            {selected === 'new' && <option value="new">New role</option>}
-          </select>
-        </label>
-        <button className="btn" onClick={() => pick('new')}><Plus size={14} /> New role</button>
-      </div>
-
-      {(role || selected === 'new') && (
-        <form className="role-form" onSubmit={save}>
-          <label className="field">
-            <span>Name</span>
-            <input value={draft.name} maxLength={63} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Description</span>
-            <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-          </label>
-          <div className="checks">
-            <label>
-              <input type="checkbox" checked={draft.is_admin} onChange={(e) => setDraft({ ...draft, is_admin: e.target.checked })} />
-              Admin: full access to every object, record and setting
-            </label>
+      </>}
+      actions={<button className="btn primary" onClick={() => pick('new')}><Plus size={14} /> New role</button>}
+    >
+      {!loaded ? <TableSkeleton rows={4} /> : (
+        <div className="roles-layout">
+          <div className="role-list" role="list" aria-label="Roles">
+            {roles.map((r) => (
+              <button key={r.id} role="listitem" className={selected === r.id ? 'active' : ''} onClick={() => pick(r.id)} aria-current={selected === r.id}>
+                {r.name}
+                <span>{accessLabel(r)}</span>
+              </button>
+            ))}
+            {selected === 'new' && <button role="listitem" className="active" aria-current>New role<span>Not saved yet</span></button>}
+            {roles.length === 0 && selected !== 'new' && <span className="muted small">No roles yet.</span>}
           </div>
-          {!draft.is_admin && (
-            <label className="field">
-              <span>Which records can people with this role see?</span>
-              <select value={draft.record_access} onChange={(e) => setDraft({ ...draft, record_access: e.target.value as Role['record_access'] })}>
-                {RECORD_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
-            </label>
-          )}
-          <div className="actions">
-            <button className="btn primary">{selected === 'new' ? 'Create role' : 'Save role'}</button>
-            {role && <button type="button" className="btn" onClick={remove}><Trash2 size={14} /> Delete role</button>}
-            {message && <span className="muted small">{message}</span>}
+
+          <div className="role-editor">
+            {!role && selected !== 'new' && (
+              <EmptyState icon={<ShieldCheck size={18} />} title="No role chosen" action={<button className="btn primary" onClick={() => pick('new')}>New role</button>}>
+                Pick a role on the left, or create one.
+              </EmptyState>
+            )}
+            {(role || selected === 'new') && (
+              <SettingsSection title={selected === 'new' ? 'New role' : 'Details'}>
+                <form className="role-form" onSubmit={save}>
+                  <label className="field">
+                    <span>Name</span>
+                    <input value={draft.name} maxLength={63} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                  </label>
+                  <label className="field">
+                    <span>Description</span>
+                    <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+                  </label>
+                  <label className="check">
+                    <input type="checkbox" checked={draft.is_admin} onChange={(e) => setDraft({ ...draft, is_admin: e.target.checked })} />
+                    Admin: full access to every object, record and setting
+                  </label>
+                  {!draft.is_admin && (
+                    <label className="field">
+                      <span>Which records can people with this role see?</span>
+                      <select value={draft.record_access} onChange={(e) => setDraft({ ...draft, record_access: e.target.value as Role['record_access'] })}>
+                        {RECORD_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
+                    </label>
+                  )}
+                  <div className="actions">
+                    <button className="btn primary">{selected === 'new' ? 'Create role' : 'Save role'}</button>
+                    {role && <button type="button" className="btn ghost danger-text" onClick={remove}><Trash2 size={14} /> Delete role</button>}
+                    {message && <span className="muted small" role="status">{message}</span>}
+                  </div>
+                </form>
+                {error && <div className="error">{error}</div>}
+              </SettingsSection>
+            )}
+
+            {role && (
+              <>
+                <SettingsSection title="Members" description={members.length ? undefined : 'Nobody has this role yet. Assign it on the Users page.'}>
+                  {members.length > 0 && (
+                    <div className="member-list">
+                      {members.map((m) => (
+                        <span key={m.id} className="person"><span className="person-avatar">{initials(m.name)}</span>{m.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </SettingsSection>
+
+                <SettingsSection title="Object access" description={role.is_admin ? 'Admin roles can use every object.' : 'Create, edit and delete each include read.'}>
+                  {!role.is_admin && !role.object_permissions.some((p) => p.can_read) && (
+                    <div className="callout warn">This role cannot read any object yet, so its users see nothing. Tick Read for the objects they should use.</div>
+                  )}
+                  {!role.is_admin && (
+                    <div className="access-table">
+                      <table className="grid">
+                        <thead>
+                          <tr><th>Object</th><th className="cell-check">Read</th><th className="cell-check">Create</th><th className="cell-check">Edit</th><th className="cell-check">Delete</th></tr>
+                        </thead>
+                        <tbody>
+                          {objects.map((o) => {
+                            const p = role.object_permissions.find((x) => x.object_type_id === o.object_type_id);
+                            return (
+                              <tr key={o.object_type_id}>
+                                <td>{o.label_plural}</td>
+                                {(['can_read', 'can_create', 'can_edit', 'can_delete'] as const).map((k) => (
+                                  <td key={k} className="cell-check">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`${o.label_plural}: ${k.slice(4)}`}
+                                      checked={p?.[k] ?? false}
+                                      onChange={(e) => setPermission(o.object_type_id, o.api_name, k, e.target.checked)}
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </SettingsSection>
+
+                {!role.is_admin && <SharingRules roleId={role.id} recordAccess={role.record_access} />}
+              </>
+            )}
           </div>
-        </form>
+        </div>
       )}
-      {error && <div className="error">{error}</div>}
-
-      {role && (
-        <>
-          <h3>Members</h3>
-          <p className={members.length ? '' : 'muted'}>{members.length ? members.join(', ') : 'Nobody has this role yet.'}</p>
-
-          <h3>Object access</h3>
-          {!role.is_admin && !role.object_permissions.some((p) => p.can_read) && (
-            <div className="error">This role cannot read any object yet, so its users see nothing. Tick Read for the objects they should use.</div>
-          )}
-          {role.is_admin ? (
-            <p className="muted">Admin roles can use every object.</p>
-          ) : (
-            <div className="access-table">
-              <table className="grid">
-                <thead>
-                  <tr><th>Object</th><th>Read</th><th>Create</th><th>Edit</th><th>Delete</th></tr>
-                </thead>
-                <tbody>
-                  {objects.map((o) => {
-                    const p = role.object_permissions.find((x) => x.object_type_id === o.object_type_id);
-                    return (
-                      <tr key={o.object_type_id}>
-                        <td>{o.label_plural}</td>
-                        {(['can_read', 'can_create', 'can_edit', 'can_delete'] as const).map((k) => (
-                          <td key={k}>
-                            <input
-                              type="checkbox"
-                              aria-label={`${o.label_plural}: ${k.slice(4)}`}
-                              checked={p?.[k] ?? false}
-                              onChange={(e) => setPermission(o.object_type_id, o.api_name, k, e.target.checked)}
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {!role.is_admin && <SharingRules roleId={role.id} recordAccess={role.record_access} />}
-        </>
-      )}
-    </section>
+    </SettingsPage>
   );
 }

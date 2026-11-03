@@ -44,16 +44,75 @@ interface IntegrationRow {
   last_called_at: Date | null;
   last_status: number | null;
   last_error: string | null;
+  // what views send as data (0046), or null
+  data_example: unknown;
 }
 
 const isAdmin = (p: Principal) => p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
 const canUse = (p: Principal, i: IntegrationRow) => i.enabled && (i.audience === 'everyone' || isAdmin(p));
 
-// Connected apps (OAuth, including an admin's AI over MCP) cannot set up
-// where CRM data is sent: a person does that in Settings.
+// Admins; a connected app (an admin's AI over MCP) also needs the schema
+// scope, and is told to confirm the URL and data with the admin first, as
+// with webhooks.
 function requireAdmin(p: Principal): void {
   if (!isAdmin(p)) throw forbidden('only admins can change integrations');
-  if (p.oauth) throw forbidden('connected apps cannot change integrations; an admin sets them up in Settings, View integrations');
+  if (p.oauth && !p.scopes.has('schema')) throw forbidden('connected apps need the schema scope to manage integrations');
+}
+
+// Security log entry for changes made without a request at hand (the MCP);
+// the REST routes log with logEvent.
+export async function auditIntegration(p: Principal, event: 'integration.created' | 'integration.updated', key: string, input: IntegrationInput): Promise<void> {
+  await pool.query(
+    `insert into auth.security_events (event, actor, user_id, ip, user_agent, target_type, target_id, details)
+     values ($1, $2, null, null, $3, 'integration', $4, $5)`,
+    [event, p.actor, p.oauth?.clientName ?? null, key, JSON.stringify({
+      fields: Object.keys(input).filter((k) => k !== 'secret_value'),
+      ...(typeof input.url === 'string' ? { url: input.url } : {}),
+      ...(input.secret_value !== undefined ? { secret_changed: true } : {}),
+      ...(p.oauth ? { via: p.oauth.clientName } : {})
+    })]
+  );
+}
+
+// The address with the path hidden but for its first part and the last 4
+// characters: enough to tell endpoints apart, not to call one.
+export function maskUrl(raw: string): { host: string; url_masked: string } {
+  try {
+    const u = new URL(raw);
+    const parts = u.pathname.split('/').filter(Boolean);
+    const last = parts.length > 1 ? parts[parts.length - 1] : '';
+    const path = parts.length === 0 ? '/' : parts.length === 1 ? `/${parts[0]}` : `/${parts[0]}/…${last.slice(-4)}`;
+    return { host: u.host, url_masked: `${u.protocol}//${u.host}${path}${u.search ? '?…' : ''}` };
+  } catch {
+    return { host: '', url_masked: '' };
+  }
+}
+
+// Differences between data and the integration's example: missing or extra
+// fields and different types, a level at a time (arrays by their first item;
+// null in the example accepts anything).
+export function payloadMismatches(example: unknown, data: unknown, path = 'data', out: string[] = []): string[] {
+  if (out.length >= 10 || example === null || example === undefined) return out;
+  const kind = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+  const want = kind(example);
+  const got = kind(data);
+  if (want !== got) {
+    out.push(`${path} is ${got === 'undefined' ? 'missing' : `a ${got}`}, the example has a ${want}`);
+    return out;
+  }
+  if (want === 'array') {
+    const [first] = example as unknown[];
+    (data as unknown[]).slice(0, 20).forEach((item, i) => payloadMismatches(first, item, `${path}[${i}]`, out));
+  } else if (want === 'object') {
+    const e = example as Record<string, unknown>;
+    const d = data as Record<string, unknown>;
+    for (const k of Object.keys(e)) {
+      if (!(k in d)) out.push(`${path}.${k} is missing`);
+      else payloadMismatches(e[k], d[k], `${path}.${k}`, out);
+    }
+    for (const k of Object.keys(d)) if (!(k in e)) out.push(`${path}.${k} is not in the example`);
+  }
+  return out.slice(0, 10);
 }
 
 // What admins see (never the secret itself)
@@ -71,12 +130,15 @@ function adminOut(i: IntegrationRow) {
     updated_at: i.updated_at,
     last_called_at: i.last_called_at,
     last_status: i.last_status,
-    last_error: i.last_error
+    last_error: i.last_error,
+    data_example: i.data_example ?? null
   };
 }
 
+export type AdminIntegration = ReturnType<typeof adminOut>;
+
 // What a view builder or viewer needs to know
-const publicOut = (i: IntegrationRow) => ({ key: i.key, label: i.label, description: i.description, audience: i.audience });
+const publicOut = (i: IntegrationRow) => ({ key: i.key, label: i.label, description: i.description, audience: i.audience, data_example: i.data_example ?? null });
 
 async function loadIntegration(key: string): Promise<IntegrationRow> {
   const { rows } = await pool.query('select * from auth.view_integrations where key = $1', [key]);
@@ -122,6 +184,7 @@ export interface IntegrationInput {
   secret_value?: unknown;
   audience?: unknown;
   enabled?: unknown;
+  data_example?: unknown;
 }
 
 // Checks the fields given; the secret is sealed here and never returned.
@@ -145,6 +208,15 @@ function readInput(input: IntegrationInput, creating: boolean): Record<string, u
   if (input.enabled !== undefined) {
     if (typeof input.enabled !== 'boolean') throw badRequest('enabled must be true or false');
     out.enabled = input.enabled;
+  }
+  if (input.data_example !== undefined) {
+    // any JSON value; null (or "") removes it
+    if (input.data_example === null || input.data_example === '') out.data_example = null;
+    else {
+      const text = JSON.stringify(input.data_example);
+      if (text === undefined || text.length > 20_000) throw badRequest('data_example must be JSON up to 20,000 characters');
+      out.data_example = text;
+    }
   }
   // secret_header null (or "") removes the secret; a header needs a value
   if (input.secret_header !== undefined) {
@@ -321,7 +393,13 @@ export async function callFromView(p: Principal, slug: string, key: string, data
   if (!i || !canUse(p, i)) throw (i && i.enabled ? forbidden(`you cannot use the integration "${key}"`) : notFound(`no integration "${key}"`));
   rateLimit(p, key);
   try {
-    return await callOut(p, i, data, { slug: v.slug, name: v.name, draft: draft || v.status !== 'published' });
+    // data that does not match the example still goes out; the builder sees why in the view's errors
+    const warnings = payloadMismatches(i.data_example, data ?? null);
+    if (warnings.length) {
+      await logViewErrors(p, v.slug, draft, [{ kind: 'integration', message: `data for ${key} does not match its example: ${warnings.join('; ')}`, detail: `integration ${key}` }]).catch(() => undefined);
+    }
+    const out = await callOut(p, i, data, { slug: v.slug, name: v.name, draft: draft || v.status !== 'published' });
+    return warnings.length ? { ...out, warnings } : out;
   } catch (err) {
     if (err instanceof ApiError && err.code === 'integration_failed') {
       await logViewErrors(p, v.slug, draft, [{ kind: 'integration', message: err.message, detail: `integration ${key}` }]).catch(() => undefined);
@@ -330,10 +408,14 @@ export async function callFromView(p: Principal, slug: string, key: string, data
   }
 }
 
-// Settings' "Send test" (admins): a call with test data and no view.
+// Settings' "Send test" and the MCP's test_integration (admins): a call with
+// no view. Without data it sends the example, or {"test": true}.
 export async function testIntegration(p: Principal, key: string, data: unknown) {
   requireAdmin(p);
   const i = await loadIntegration(key);
   rateLimit(p, key);
-  return callOut(p, i, data ?? { test: true }, null);
+  const sent = data ?? i.data_example ?? { test: true };
+  const warnings = data === undefined || data === null ? [] : payloadMismatches(i.data_example, data);
+  const out = await callOut(p, i, sent, null);
+  return { ...out, sent, ...(warnings.length ? { warnings } : {}) };
 }

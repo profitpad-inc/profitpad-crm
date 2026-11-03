@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { Plug } from 'lucide-react';
 import { api, API_BASE } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { CopyField, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 
 // Apps connected through OAuth (api/src/oauth.ts), such as AI assistants
 // using the MCP server. Everyone sees and disconnects their own; admins also
@@ -89,100 +91,83 @@ export function ConnectedApps() {
     window.confirm(`Disconnect ${c.app_name}${whose}? It stops working immediately.`) &&
     run(() => api('DELETE', `/v1/oauth/connections/${c.id}`), `${c.app_name} disconnected`);
 
+  const table = (head: string[], body: ReactNode) => (
+    <div className="access-table">
+      <table className="grid">
+        <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+        <tbody>{body}</tbody>
+      </table>
+    </div>
+  );
+
   return (
-    <section>
-      <h2>Connected apps</h2>
-      <p className="muted">
-        Apps such as AI assistants can use the CRM as you once you allow them. They see and change only what you can, and only with the access you
-        gave. To connect an MCP client, add this server address in the client; it will ask you to sign in and allow access.
-      </p>
-      <div className="key-new">
-        <strong>MCP server address</strong>
-        <div className="key-secret">{MCP_URL}</div>
-        <div className="field-row">
-          <button className="btn" onClick={() => navigator.clipboard.writeText(MCP_URL).then(() => toast('Address copied'))}>Copy address</button>
-        </div>
-      </div>
+    <SettingsPage
+      title="Connected apps"
+      description="Apps such as AI assistants can use the CRM as you once you allow them. They see and change only what you can, and only with the access you gave."
+    >
+      <SettingsSection title="MCP server address" description="To connect an MCP client, add this address in the client. It will ask you to sign in and allow access.">
+        <CopyField value={MCP_URL} label="MCP server address" />
+      </SettingsSection>
       {error && <div className="error">{error}</div>}
 
-      {mine && (
-        <div className="access-table" style={{ marginTop: 12 }}>
-          <table className="grid">
-            <thead>
-              <tr><th>App</th><th>Access</th><th>Connected</th><th>Last used</th><th /></tr>
-            </thead>
-            <tbody>
-              {mine.length === 0 && <tr><td colSpan={5} className="muted">You have not connected any apps.</td></tr>}
-              {mine.map((c) => (
-                <tr key={c.id}>
-                  <td className="primary-cell">{c.app_name} <span className="muted small">{publisher(c.app_kind, c.client_id)}</span></td>
-                  <td>{access(c.scopes)}</td>
-                  <td>{when(c.created_at)}</td>
-                  <td>{c.last_used_at ? when(c.last_used_at) : <span className="muted">never</span>}</td>
-                  <td><button className="btn small" onClick={() => disconnect(c, '')}>Disconnect</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {me.user && (
+        <SettingsSection title="Your connections">
+          {!mine && !error && <TableSkeleton rows={2} />}
+          {mine && mine.length === 0 && (
+            <EmptyState compact icon={<Plug size={14} />} title="No apps connected">Apps you allow to use the CRM as you show up here.</EmptyState>
+          )}
+          {mine && mine.length > 0 && table(['App', 'Access', 'Connected', 'Last used', ''], mine.map((c) => (
+            <tr key={c.id}>
+              <td className="primary-cell">{c.app_name}<span className="sub">{publisher(c.app_kind, c.client_id)}</span></td>
+              <td>{access(c.scopes)}</td>
+              <td>{when(c.created_at)}</td>
+              <td>{c.last_used_at ? when(c.last_used_at) : <span className="muted">Never</span>}</td>
+              <td className="row-actions"><button className="btn small ghost danger-text" onClick={() => disconnect(c, '')}>Disconnect</button></td>
+            </tr>
+          )))}
+        </SettingsSection>
       )}
 
       {me.is_admin && everyone && (
-        <>
-          <h2 style={{ marginTop: 24 }}>Everyone's connections</h2>
-          <div className="access-table">
-            <table className="grid">
-              <thead>
-                <tr><th>User</th><th>App</th><th>Access</th><th>Last used</th><th /></tr>
-              </thead>
-              <tbody>
-                {everyone.length === 0 && <tr><td colSpan={5} className="muted">No connections.</td></tr>}
-                {everyone.map((c) => (
-                  <tr key={c.id}>
-                    <td><Link to={`/objects/users/${c.user_id}`}>{c.user_name || c.user_email || c.user_id}</Link></td>
-                    <td className="primary-cell">{c.app_name}</td>
-                    <td>{access(c.scopes)}</td>
-                    <td>{c.last_used_at ? when(c.last_used_at) : <span className="muted">never</span>}</td>
-                    <td><button className="btn small" onClick={() => disconnect(c, ` for ${c.user_name || c.user_email || 'this user'}`)}>Disconnect</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <SettingsSection title="Everyone's connections">
+          {everyone.length === 0
+            ? <EmptyState compact icon={<Plug size={14} />} title="No connections">Nobody in this portal has connected an app yet.</EmptyState>
+            : table(['User', 'App', 'Access', 'Last used', ''], everyone.map((c) => (
+              <tr key={c.id}>
+                <td><Link to={`/objects/users/${c.user_id}`}>{c.user_name || c.user_email || c.user_id}</Link></td>
+                <td className="primary-cell">{c.app_name}</td>
+                <td>{access(c.scopes)}</td>
+                <td>{c.last_used_at ? when(c.last_used_at) : <span className="muted">Never</span>}</td>
+                <td className="row-actions"><button className="btn small ghost danger-text" onClick={() => disconnect(c, ` for ${c.user_name || c.user_email || 'this user'}`)}>Disconnect</button></td>
+              </tr>
+            )))}
+        </SettingsSection>
       )}
 
       {me.is_admin && apps && (
-        <>
-          <h2 style={{ marginTop: 24 }}>Apps</h2>
-          <p className="muted">Every app that has asked for access. Blocking an app stops it for everyone: its tokens stop working and nobody can connect it.</p>
-          <div className="access-table">
-            <table className="grid">
-              <thead>
-                <tr><th>App</th><th>Returns to</th><th>Connections</th><th>Last used</th><th /></tr>
-              </thead>
-              <tbody>
-                {apps.length === 0 && <tr><td colSpan={5} className="muted">No apps yet.</td></tr>}
-                {apps.map((a) => (
-                  <tr key={a.id}>
-                    <td className="primary-cell">{a.name} <span className="muted small">{publisher(a.kind, a.client_id)}</span></td>
-                    <td className="small">{[...new Set(a.redirect_uris.map((r) => new URL(r).host))].join(', ')}</td>
-                    <td>{a.connections}</td>
-                    <td>{a.last_used_at ? when(a.last_used_at) : <span className="muted">never</span>}</td>
-                    <td>
-                      {a.blocked_at ? (
-                        <button className="btn small" onClick={() => run(() => api('POST', `/v1/oauth/apps/${a.id}/unblock`, {}), `${a.name} unblocked`)}>Unblock</button>
-                      ) : (
-                        <button className="btn small" onClick={() => window.confirm(`Block ${a.name} for everyone?`) && run(() => api('POST', `/v1/oauth/apps/${a.id}/block`, {}), `${a.name} blocked`)}>Block</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <SettingsSection title="Apps" description="Every app that has asked for access. Blocking an app stops it for everyone: its tokens stop working and nobody can connect it.">
+          {apps.length === 0
+            ? <EmptyState compact icon={<Plug size={14} />} title="No apps yet">Apps appear here the first time someone tries to connect one.</EmptyState>
+            : table(['App', 'Returns to', 'Connections', 'Last used', ''], apps.map((a) => (
+              <tr key={a.id}>
+                <td className="primary-cell">
+                  {a.name} {a.blocked_at && <StatusPill tone="failed">Blocked</StatusPill>}
+                  <span className="sub">{publisher(a.kind, a.client_id)}</span>
+                </td>
+                <td className="small">{[...new Set(a.redirect_uris.map((r) => new URL(r).host))].join(', ')}</td>
+                <td>{a.connections}</td>
+                <td>{a.last_used_at ? when(a.last_used_at) : <span className="muted">Never</span>}</td>
+                <td className="row-actions">
+                  {a.blocked_at ? (
+                    <button className="btn small ghost" onClick={() => run(() => api('POST', `/v1/oauth/apps/${a.id}/unblock`, {}), `${a.name} unblocked`)}>Unblock</button>
+                  ) : (
+                    <button className="btn small ghost danger-text" onClick={() => window.confirm(`Block ${a.name} for everyone?`) && run(() => api('POST', `/v1/oauth/apps/${a.id}/block`, {}), `${a.name} blocked`)}>Block</button>
+                  )}
+                </td>
+              </tr>
+            )))}
+        </SettingsSection>
       )}
-    </section>
+    </SettingsPage>
   );
 }

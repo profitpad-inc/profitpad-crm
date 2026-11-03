@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
+import {
+  ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  ShieldCheck, SlidersHorizontal, Trash2, User, Users, Webhook
+} from 'lucide-react';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
-import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme } from '../lib/theme';
+import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme, type ThemeKey } from '../lib/theme';
 import { displayName, initials } from '../lib/display';
 import { RoleSettings, UserSettings } from './AccessSettings';
 import { ApiKeySettings, SecurityLog } from './SecuritySettings';
@@ -14,46 +18,69 @@ import { PaymentSettings } from './PaymentSettings';
 import { PropertySettings } from './PropertySettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
+import '../settings.css';
+
+// who sees a page: everyone, signed-in users (not bare API keys), or admins
+type Gate = 'all' | 'user' | 'admin';
+interface SettingsLink { path: string; label: string; icon: ReactNode; gate: Gate; element: ReactNode }
+
+const GROUPS: { label: string; links: SettingsLink[] }[] = [
+  { label: 'Your account', links: [
+    { path: '', label: 'Account', icon: <User size={16} />, gate: 'all', element: <Account /> },
+    { path: 'connected-apps', label: 'Connected apps', icon: <Plug size={16} />, gate: 'all', element: <ConnectedApps /> },
+    { path: 'calendars', label: 'Calendars', icon: <CalendarDays size={16} />, gate: 'user', element: <CalendarSettings /> }
+  ] },
+  { label: 'Workspace', links: [
+    { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
+    { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'admin', element: <NavSettings /> },
+    { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> }
+  ] },
+  { label: 'People and access', links: [
+    { path: 'users', label: 'Users', icon: <Users size={16} />, gate: 'admin', element: <UserSettings /> },
+    { path: 'roles', label: 'Roles', icon: <ShieldCheck size={16} />, gate: 'admin', element: <RoleSettings /> }
+  ] },
+  { label: 'Integrations', links: [
+    { path: 'embed-domains', label: 'Embed domains', icon: <Globe size={16} />, gate: 'admin', element: <EmbedDomains /> },
+    { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: 'admin', element: <IntegrationSettings /> },
+    { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
+    { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> }
+  ] },
+  { label: 'Security', links: [
+    { path: 'api-keys', label: 'API keys', icon: <KeyRound size={16} />, gate: 'admin', element: <ApiKeySettings /> },
+    { path: 'security-log', label: 'Security log', icon: <ScrollText size={16} />, gate: 'admin', element: <SecurityLog /> }
+  ] }
+];
 
 export function Settings() {
   const { me } = useApp();
+  const allowed = (g: Gate) => g === 'all' || (g === 'user' ? !!me.user : me.is_admin);
   return (
     <div className="page settings">
-      <h1 className="page-title">Settings</h1>
       <div className="settings-layout">
-        <nav className="settings-nav">
-          <NavLink to="/settings" end>Account</NavLink>
-          <NavLink to="/settings/connected-apps">Connected apps</NavLink>
-          {me.user && <NavLink to="/settings/calendars">Calendars</NavLink>}
-          {me.is_admin && <NavLink to="/settings/theme">Theme</NavLink>}
-          {me.is_admin && <NavLink to="/settings/navigation">Navigation menus</NavLink>}
-          {me.is_admin && <NavLink to="/settings/properties">Properties</NavLink>}
-          {me.is_admin && <NavLink to="/settings/users">Users</NavLink>}
-          {me.is_admin && <NavLink to="/settings/roles">Roles</NavLink>}
-          {me.is_admin && <NavLink to="/settings/embed-domains">Embed domains</NavLink>}
-          {me.is_admin && <NavLink to="/settings/view-integrations">View integrations</NavLink>}
-          {me.is_admin && <NavLink to="/settings/webhooks">Webhooks</NavLink>}
-          {me.is_admin && <NavLink to="/settings/payments">Payments</NavLink>}
-          {me.is_admin && <NavLink to="/settings/api-keys">API keys</NavLink>}
-          {me.is_admin && <NavLink to="/settings/security-log">Security log</NavLink>}
+        <nav className="settings-rail" aria-label="Settings">
+          <h1 className="settings-rail-title">Settings</h1>
+          {GROUPS.map((g) => {
+            const links = g.links.filter((l) => allowed(l.gate));
+            if (links.length === 0) return null;
+            return (
+              <div key={g.label} className="settings-group">
+                <div className="settings-group-label">{g.label}</div>
+                {links.map((l) => (
+                  <NavLink key={l.path} to={l.path ? `/settings/${l.path}` : '/settings'} end={!l.path}>
+                    {l.icon}{l.label}
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="settings-body">
           <Routes>
-            <Route index element={<Account />} />
-            <Route path="connected-apps" element={<ConnectedApps />} />
-            <Route path="calendars" element={<CalendarSettings />} />
-            <Route path="theme" element={me.is_admin ? <ThemeSettings /> : <Navigate to="/settings" />} />
-            <Route path="navigation" element={me.is_admin ? <NavSettings /> : <Navigate to="/settings" />} />
-            <Route path="properties" element={me.is_admin ? <PropertySettings /> : <Navigate to="/settings" />} />
-            <Route path="users" element={me.is_admin ? <UserSettings /> : <Navigate to="/settings" />} />
-            <Route path="roles" element={me.is_admin ? <RoleSettings /> : <Navigate to="/settings" />} />
-            <Route path="embed-domains" element={me.is_admin ? <EmbedDomains /> : <Navigate to="/settings" />} />
+            {GROUPS.flatMap((g) => g.links).map((l) => {
+              const element = allowed(l.gate) ? l.element : <Navigate to="/settings" />;
+              return l.path ? <Route key={l.path} path={l.path} element={element} /> : <Route key="index" index element={element} />;
+            })}
             <Route path="forms" element={<Navigate to="/settings/embed-domains" replace />} />
-            <Route path="view-integrations" element={me.is_admin ? <IntegrationSettings /> : <Navigate to="/settings" />} />
-            <Route path="webhooks" element={me.is_admin ? <WebhookSettings /> : <Navigate to="/settings" />} />
-            <Route path="payments" element={me.is_admin ? <PaymentSettings /> : <Navigate to="/settings" />} />
-            <Route path="api-keys" element={me.is_admin ? <ApiKeySettings /> : <Navigate to="/settings" />} />
-            <Route path="security-log" element={me.is_admin ? <SecurityLog /> : <Navigate to="/settings" />} />
           </Routes>
         </div>
       </div>
@@ -65,39 +92,51 @@ function Account() {
   const { me, signOut } = useApp();
   const name = me.user?.name || [me.user?.first_name, me.user?.last_name].filter(Boolean).join(' ') || me.key_name;
   return (
-    <section>
-      <div className="account">
-        <span className="record-avatar">{initials(name)}</span>
+    <SettingsPage title="Account" description="Who you are signed in as and what you can do in this portal.">
+      <div className="profile">
+        <span className="person-avatar large">{initials(name)}</span>
         <div>
           <h2>{name}</h2>
-          <div className="muted">{me.user?.email ?? ''}</div>
+          {me.user?.email && <div className="muted">{me.user.email}</div>}
         </div>
       </div>
-      <dl className="facts">
-        <dt>Signed in with</dt><dd>Google</dd>
-        <dt>Access</dt><dd>{me.is_admin ? 'Admin' : me.scopes.join(', ')}</dd>
-      </dl>
-      <button className="btn" onClick={signOut}>Sign out</button>
-    </section>
+      <div className="setting-rows">
+        <SettingRow label="Access" hint={me.is_admin ? 'Admins can change every setting here.' : 'What this sign-in is allowed to do.'}>
+          {me.is_admin ? <StatusPill tone="info">Admin</StatusPill> : <span>{me.scopes.join(', ')}</span>}
+        </SettingRow>
+        <SettingRow label="Sign out" hint="Ends this session on this device. Other devices stay signed in.">
+          <button className="btn" onClick={signOut}>Sign out</button>
+        </SettingRow>
+      </div>
+    </SettingsPage>
   );
 }
+
+const THEME_GROUPS: { label: string; keys: ThemeKey[] }[] = [
+  { label: 'Brand', keys: ['primary'] },
+  { label: 'Sidebar', keys: ['sidebar_background', 'sidebar_text', 'sidebar_active'] },
+  { label: 'Content', keys: ['page_background', 'surface', 'text', 'muted_text', 'border'] }
+];
 
 function ThemeSettings() {
   const { theme, setTheme, dropdownColors, setDropdownColors } = useApp();
   const [draft, setDraft] = useState<Theme>(theme);
   const [colors, setColors] = useState<string[]>(dropdownColors);
-  const [saved, setSaved] = useState<string | null>(null);
+  // what is saved, to tell whether the draft has unsaved changes (the live preview changes `theme` itself)
+  const [saved, setSaved] = useState(() => JSON.stringify({ theme, colors: dropdownColors }));
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dirty = JSON.stringify({ theme: draft, colors }) !== saved;
 
   function update(next: Theme) {
     setDraft(next);
     setTheme(next); // live preview
-    setSaved(null);
+    setMessage(null);
   }
 
   function updateColor(i: number, hex: string) {
     setColors((cs) => cs.map((c, j) => (j === i ? hex.toLowerCase() : c)));
-    setSaved(null);
+    setMessage(null);
   }
 
   async function save() {
@@ -106,43 +145,92 @@ function ThemeSettings() {
       await api('PUT', '/v1/ui/settings/theme', draft);
       await api('PUT', '/v1/ui/settings/dropdown_colors', { colors });
       setDropdownColors(colors);
-      setSaved('Saved for everyone.');
+      setSaved(JSON.stringify({ theme: draft, colors }));
+      setMessage('Theme saved for everyone.');
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
+  const label = (k: ThemeKey) => THEME_FIELDS.find((f) => f.key === k)!.label;
+
   return (
-    <section>
-      <h2>Theme</h2>
-      <p className="muted">Colors apply to everyone in this portal. Changes preview immediately; save to keep them.</p>
-      <div className="theme-grid">
-        {THEME_FIELDS.map((f) => (
-          <label key={f.key} className="color-field">
-            <ColorInput value={draft[f.key]} onChange={(hex) => update({ ...draft, [f.key]: hex })} label={f.label} />
-            <span>{f.label}</span>
-            <HexInput value={draft[f.key]} onChange={(hex) => update({ ...draft, [f.key]: hex })} />
-          </label>
-        ))}
+    <SettingsPage className="wide" title="Theme" description="Colours apply to everyone in this portal. Changes show straight away; save to keep them.">
+      <div className="theme-layout">
+        <div className="theme-controls">
+          <SettingsSection title="Portal colours">
+            {THEME_GROUPS.map((g) => (
+              <div key={g.label} className="color-rows">
+                <div className="color-rows-head">{g.label}</div>
+                {g.keys.map((k) => (
+                  <label key={k} className="color-field">
+                    <ColorInput value={draft[k]} onChange={(hex) => update({ ...draft, [k]: hex })} label={label(k)} />
+                    <span>{label(k)}</span>
+                    <HexInput value={draft[k]} onChange={(hex) => update({ ...draft, [k]: hex })} />
+                  </label>
+                ))}
+              </div>
+            ))}
+          </SettingsSection>
+          <SettingsSection title="Default dropdown colours" description="The 16 colours offered when giving a dropdown choice a colour. Choices that already have a colour keep it.">
+            <div className="swatch-grid">
+              {colors.map((c, i) => (
+                <label key={i} className="swatch-tile">
+                  <span className="swatch-tile-top">
+                    <ColorInput value={c} onChange={(hex) => updateColor(i, hex)} label={dropdownColorName(c, i)} />
+                    {/* the hex is in the box below it, so a changed colour just says Custom */}
+                    <span>{dropdownColorName(c, i) === c ? 'Custom' : dropdownColorName(c, i)}</span>
+                  </span>
+                  <HexInput value={c} onChange={(hex) => updateColor(i, hex)} />
+                </label>
+              ))}
+            </div>
+          </SettingsSection>
+        </div>
+        <ThemePreview theme={draft} colors={colors} />
       </div>
-      <h3>Default dropdown colours</h3>
-      <p className="muted">The 16 colours offered when giving a dropdown choice a colour. Choices that already have a colour keep it.</p>
-      <div className="theme-grid dropdown-color-grid">
-        {colors.map((c, i) => (
-          <label key={i} className="color-field">
-            <ColorInput value={c} onChange={(hex) => updateColor(i, hex)} label={dropdownColorName(c, i)} />
-            <span>{dropdownColorName(c, i)}</span>
-            <HexInput value={c} onChange={(hex) => updateColor(i, hex)} />
-          </label>
-        ))}
-      </div>
-      {error && <div className="error">{error}</div>}
-      <div className="actions">
+      <SaveBar dirty={dirty} message={message} error={error}>
         <button className="btn" onClick={() => { update(DEFAULT_THEME); setColors(defaultDropdownColors()); }}>Reset to defaults</button>
-        <button className="btn primary" onClick={save}>Save theme</button>
-        {saved && <span className="muted small">{saved}</span>}
+        <button className="btn primary" onClick={save} disabled={!dirty}>Save theme</button>
+      </SaveBar>
+    </SettingsPage>
+  );
+}
+
+// A miniature CRM drawn from the draft, showing what this page itself does not: a record, a table with dropdown
+// pills and the full dropdown palette.
+function ThemePreview({ theme, colors }: { theme: Theme; colors: string[] }) {
+  const vars = {
+    '--p-primary': theme.primary, '--p-side': theme.sidebar_background, '--p-side-text': theme.sidebar_text,
+    '--p-side-active': theme.sidebar_active, '--p-page': theme.page_background, '--p-surface': theme.surface,
+    '--p-text': theme.text, '--p-muted': theme.muted_text, '--p-border': theme.border
+  } as CSSProperties;
+  const rows = [['Website redesign', 'Proposal'], ['Annual support', 'Negotiation'], ['Onboarding package', 'Closed won'], ['Hardware refresh', 'Discovery'], ['Training days', 'Proposal']];
+  const stages = ['Discovery', 'Proposal', 'Negotiation', 'Closed won'];
+  return (
+    <div className="theme-preview-wrap" style={vars}>
+      <div className="theme-preview-label">Preview</div>
+      <div className="theme-preview" aria-hidden>
+        <div className="tp-side"><i className="logo" /><i className="active" /><i /><i /><i /></div>
+        <div className="tp-main">
+          <div className="tp-head">
+            <span className="tp-avatar">NT</span>
+            <div><div className="tp-name">Northwind Traders</div><div className="tp-muted">Company</div></div>
+            <span className="tp-btn">Create deal</span>
+          </div>
+          <div className="tp-table">
+            <div className="tp-row th"><span>Deal</span><span>Stage</span></div>
+            {rows.map(([deal, stage]) => (
+              <div key={deal} className="tp-row">
+                <a>{deal}</a>
+                <span className="tp-pill" style={{ '--pill': colors[stages.indexOf(stage)] ?? theme.primary } as CSSProperties}>{stage}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-    </section>
+      <div className="tp-palette">{colors.map((c, i) => <span key={i} style={{ background: c }} title={dropdownColorName(c, i)} />)}</div>
+    </div>
   );
 }
 
@@ -209,39 +297,47 @@ function EmbedDomains() {
   }
 
   return (
-    <section>
-      <h2>Embed domains</h2>
-      <p className="muted">
+    <SettingsPage
+      title="Embed domains"
+      description={<>
         Websites allowed to embed forms and booking pages with the snippet from their record page. Enter each address
         separately: <code>https://example.com</code> and <code>https://www.example.com</code> are different websites.
-        This stops other websites from using your forms and booking pages; spam is handled by rate limits and hidden bot checks.
-      </p>
-      {origins && (
-        <div className="origin-list">
-          {origins.length === 0 ? <div className="muted small">No websites yet. Forms and booking pages only work on their hosted page.</div> : (
-            <ul>
-              {origins.map((o) => (
-                <li key={o}>
-                  <span>{o}</span>
-                  <button className="icon-btn push-right" title="Remove" aria-label={`Remove ${o}`}
-                    onClick={() => window.confirm(`Remove ${o}? Forms and booking pages embedded there stop working.`) && save(origins.filter((x) => x !== o))}>
-                    <Trash2 size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form className="field inline" onSubmit={(e) => { e.preventDefault(); add(); }}>
-            <input placeholder="https://www.example.com" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Website address" />
-            <button className="btn primary" type="submit" disabled={!draft.trim()}>
-              <Plus size={14} /> Add
-            </button>
-          </form>
-        </div>
-      )}
-      {error && <div className="error">{error}</div>}
-      {saved && <div className="muted small">{saved}</div>}
-    </section>
+      </>}
+    >
+      <SettingsSection
+        title="Allowed websites"
+        description="This stops other websites from using your forms and booking pages. Spam is handled by rate limits and hidden bot checks."
+      >
+        <form className="origin-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
+          <input placeholder="https://www.example.com" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Website address" />
+          <button className="btn primary" type="submit" disabled={!draft.trim() || !origins}>
+            <Plus size={14} /> Add website
+          </button>
+        </form>
+        {!origins && !error && <TableSkeleton rows={2} />}
+        {origins && origins.length === 0 && (
+          <EmptyState icon={<Globe size={18} />} title="No websites yet">
+            Forms and booking pages only work on their hosted page until you add a website here.
+          </EmptyState>
+        )}
+        {origins && origins.length > 0 && (
+          <ul className="origin-list">
+            {origins.map((o) => (
+              <li key={o}>
+                <Globe size={14} className="lead" />
+                <span>{o}</span>
+                <button className="icon-btn push-right" title="Remove" aria-label={`Remove ${o}`}
+                  onClick={() => window.confirm(`Remove ${o}? Forms and booking pages embedded there stop working.`) && save(origins.filter((x) => x !== o))}>
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {error && <div className="error">{error}</div>}
+        {saved && <div className="muted small" role="status">{saved}</div>}
+      </SettingsSection>
+    </SettingsPage>
   );
 }
 
@@ -263,11 +359,21 @@ interface UserOption {
 function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: (o: string, id: number) => string, customViewName: (slug: string) => string): string {
   switch (item.type) {
     case 'home': return 'Home';
-    case 'custom_view': return item.label ?? `Custom view: ${customViewName(item.slug)}`;
-    case 'divider': return '— Divider —';
+    case 'custom_view': return item.label ?? customViewName(item.slug);
+    case 'divider': return 'Divider';
     case 'object': return item.label ?? objectLabel(item.object);
     case 'view': return item.label ?? `${objectLabel(item.object)}: ${viewName(item.object, item.view_id)}`;
-    case 'section': return `Section: ${item.label}`;
+    case 'section': return item.label;
+  }
+}
+
+// what kind of link a row is, shown in small text after its label where the label alone does not say
+function itemKind(item: NavItem): string | null {
+  switch (item.type) {
+    case 'custom_view': return 'Custom view';
+    case 'view': return 'Saved view';
+    case 'section': return 'Section';
+    default: return null;
   }
 }
 
@@ -275,10 +381,13 @@ function NavSettings() {
   const { objects, objectByName, reloadNav, navSource, customViews } = useApp();
   const [target, setTarget] = useState<string>('default');
   const [menus, setMenus] = useState<Menu[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [items, setItems] = useState<NavItem[]>([]);
   const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
   const [bottom, setBottom] = useState<NavItem[]>([]);
+  // the menu as last loaded or saved, to tell whether there are unsaved changes
+  const [savedJson, setSavedJson] = useState('');
   const [views, setViews] = useState<Record<string, View[]>>({});
   // section: a section's index, null for the top level, 'bottom' for the mobile bottom bar
   const [adding, setAdding] = useState<{ section: number | null | 'bottom'; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
@@ -292,19 +401,24 @@ function NavSettings() {
   }
 
   useEffect(() => {
-    loadMenus().then((m) => showMenu(m.find((x) => x.scope === 'default')));
+    loadMenus().then((m) => { showMenu(m.find((x) => x.scope === 'default')); setLoaded(true); });
     api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
       .then((r) => setUsers(r.results.map((u) => ({ id: u.id, name: displayName(u.properties, u.id) }))))
       .catch(() => undefined);
   }, []);
 
   function showMenu(m: Menu | undefined) {
-    setItems(m?.items ?? []);
-    setBottomLeft(m?.bottom_left ?? 'menu');
-    setBottom(m?.bottom ?? []);
+    const next = { items: m?.items ?? [], bottomLeft: m?.bottom_left ?? 'menu', bottom: m?.bottom ?? [] };
+    setItems(next.items);
+    setBottomLeft(next.bottomLeft);
+    setBottom(next.bottom);
+    setSavedJson(JSON.stringify(next));
   }
 
+  const dirty = loaded && JSON.stringify({ items, bottomLeft, bottom }) !== savedJson;
+
   function pickTarget(t: string) {
+    if (dirty && !window.confirm('Switch menus? Your unsaved changes to this menu are lost.')) return;
     setTarget(t);
     setMessage(null);
     const own = menus.find((m) => m.scope === 'user' && m.user_id === t);
@@ -366,7 +480,8 @@ function NavSettings() {
       else await api('PUT', `/v1/ui/nav/users/${target}`, { items, bottom_left: bottomLeft, bottom });
       await loadMenus();
       await reloadNav();
-      setMessage('Saved.');
+      setSavedJson(JSON.stringify({ items, bottomLeft, bottom }));
+      setMessage('Menu saved.');
     } catch (err) {
       setError((err as Error).message);
     }
@@ -382,29 +497,37 @@ function NavSettings() {
 
   const hasOwn = target !== 'default' && menus.some((m) => m.scope === 'user' && m.user_id === target);
 
-  const renderList = (list: NavItem[], section: number | null) =>
-    list.map((it, i) => (
-      <div key={`${section}-${i}`} className={`nav-edit-row${section !== null ? ' child' : ''}`}>
-        <span className="nav-edit-label">{itemLabel(it, objectLabel, viewName, customViewName)}</span>
-        <button className="icon-btn" onClick={() => update(section, (l) => move(l, i, -1))} disabled={i === 0} aria-label="Move up"><ArrowUp size={14} /></button>
-        <button className="icon-btn" onClick={() => update(section, (l) => move(l, i, 1))} disabled={i === list.length - 1} aria-label="Move down"><ArrowDown size={14} /></button>
-        <button className="icon-btn" onClick={() => update(section, (l) => l.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={14} /></button>
-        {it.type === 'section' && section === null && (
-          <div className="nav-edit-children">{renderList(it.items, i)}</div>
-        )}
+  const row = (it: NavItem, i: number, list: NavItem[], change: (fn: (l: NavItem[]) => NavItem[]) => void, child: boolean, children?: ReactNode) => {
+    const label = itemLabel(it, objectLabel, viewName, customViewName);
+    const kind = itemKind(it);
+    return (
+      <div key={i} className={`nav-edit-row ${it.type}${child ? ' child' : ''}`}>
+        <span className="nav-edit-label">{label}{kind && it.type !== 'section' && <span className="kind">{kind}</span>}</span>
+        <button className="icon-btn" onClick={() => change((l) => move(l, i, -1))} disabled={i === 0} aria-label={`Move ${label} up`}><ArrowUp size={14} /></button>
+        <button className="icon-btn" onClick={() => change((l) => move(l, i, 1))} disabled={i === list.length - 1} aria-label={`Move ${label} down`}><ArrowDown size={14} /></button>
+        <button className="icon-btn" onClick={() => change((l) => l.filter((_, j) => j !== i))} aria-label={`Remove ${label}`}><Trash2 size={14} /></button>
+        {children}
       </div>
-    ));
+    );
+  };
+
+  const renderList = (list: NavItem[], section: number | null) =>
+    list.map((it, i) => row(it, i, list, (fn) => update(section, fn), section !== null,
+      it.type === 'section' && section === null ? <div className="nav-edit-children">{renderList(it.items, i)}</div> : undefined));
+
+  const slots = [
+    bottomLeft === 'menu' ? 'Menu' : 'Home',
+    ...bottom.map((it) => itemLabel(it, objectLabel, viewName, customViewName)),
+    ...Array.from({ length: BOTTOM_MAX - bottom.length }, () => null),
+    'Search'
+  ];
 
   return (
-    <section className="nav-settings">
-      <h2>Navigation menus</h2>
-      <p className="muted">
-        The default menu is shown to everyone without their own. Pick a user to give them their own menu.
-        {navSource === 'user' && ' (Your own menu overrides the default.)'}
-      </p>
-      <label className="field inline">
-        <span>Menu</span>
-        <select value={target} onChange={(e) => pickTarget(e.target.value)}>
+    <SettingsPage
+      title="Navigation menus"
+      description={<>The default menu is shown to everyone without their own. Pick a user to give them their own menu.{navSource === 'user' && ' Your own menu overrides the default.'}</>}
+      actions={
+        <select value={target} onChange={(e) => pickTarget(e.target.value)} aria-label="Menu to edit">
           <option value="default">Default menu (everyone)</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
@@ -412,83 +535,107 @@ function NavSettings() {
             </option>
           ))}
         </select>
-      </label>
-      {target !== 'default' && !hasOwn && <p className="muted small">This user uses the default menu. Saving creates their own copy.</p>}
+      }
+    >
+      <SettingsSection
+        title="Sidebar"
+        description={target !== 'default' && !hasOwn ? 'This user uses the default menu. Saving creates their own copy.' : 'Links in the order they appear. Sections group the links under them.'}
+      >
+        {!loaded ? <TableSkeleton rows={5} /> : items.length === 0
+          ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections below.</EmptyState>
+          : <div className="nav-tree">{renderList(items, null)}</div>}
+      </SettingsSection>
 
-      <div className="nav-edit">{renderList(items, null)}</div>
+      <SettingsSection title="Mobile bottom bar" description={`Shown along the bottom of the screen on mobile: the left button, up to ${BOTTOM_MAX} links, then Search.`}>
+        <div className="bottom-strip" aria-label="Bottom bar preview">
+          {slots.map((s, i) => <span key={i} className={s === null ? 'free' : i === 0 || i === slots.length - 1 ? 'fixed' : ''}>{s ?? 'Free'}</span>)}
+        </div>
+        <div className="setting-rows">
+          <SettingRow label="Left button" htmlFor="bottom-left">
+            <select id="bottom-left" value={bottomLeft} onChange={(e) => setBottomLeft(e.target.value as 'menu' | 'home')}>
+              <option value="menu">Menu (opens the full menu)</option>
+              <option value="home">Home</option>
+            </select>
+          </SettingRow>
+          <SettingRow label="Links" hint="Add links with Add to mobile bottom bar below.">
+            {bottom.length === 0 ? <span className="muted">No links between the left button and Search.</span> : (
+              <div className="nav-tree stretch">
+                {bottom.map((it, i) => row(it, i, bottom, (fn) => setBottom(fn), false))}
+              </div>
+            )}
+          </SettingRow>
+        </div>
+      </SettingsSection>
 
-      <h3 className="nav-settings-group">Mobile bottom bar</h3>
-      <p className="muted small">Shown along the bottom of the screen on mobile: the left button, up to {BOTTOM_MAX} links, then Search.</p>
-      <label className="field inline">
-        <span>Left button</span>
-        <select value={bottomLeft} onChange={(e) => setBottomLeft(e.target.value as 'menu' | 'home')}>
-          <option value="menu">Menu (opens the full menu)</option>
-          <option value="home">Home</option>
-        </select>
-      </label>
-      <div className="nav-edit">
-        {bottom.length === 0 && <p className="muted small">No links between the left button and Search.</p>}
-        {bottom.map((it, i) => (
-          <div key={i} className="nav-edit-row">
-            <span className="nav-edit-label">{itemLabel(it, objectLabel, viewName, customViewName)}</span>
-            <button className="icon-btn" onClick={() => setBottom((l) => move(l, i, -1))} disabled={i === 0} aria-label="Move up"><ArrowUp size={14} /></button>
-            <button className="icon-btn" onClick={() => setBottom((l) => move(l, i, 1))} disabled={i === bottom.length - 1} aria-label="Move down"><ArrowDown size={14} /></button>
-            <button className="icon-btn" onClick={() => setBottom((l) => l.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 size={14} /></button>
-          </div>
-        ))}
-      </div>
+      <SettingsSection title="Add an item">
+        <div className="nav-add">
+          <label className="field">
+            <span>Where</span>
+            <select
+              value={adding.section ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                const section = v === '' ? null : v === 'bottom' ? 'bottom' : Number(v);
+                // dividers and sections cannot go in the bottom bar
+                setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section') ? 'object' : a.type }));
+              }}
+            >
+              <option value="">Top level</option>
+              {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Section "{it.label}"</option>)}
+              <option value="bottom">Mobile bottom bar</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Type</span>
+            <select value={adding.type} onChange={(e) => setAdding((a) => ({ ...a, type: e.target.value, view: '' }))}>
+              <option value="object">Object</option>
+              <option value="view">Saved view</option>
+              <option value="home">Home</option>
+              <option value="custom_view">Custom view</option>
+              {adding.section !== 'bottom' && <option value="divider">Divider</option>}
+              {adding.section === null && <option value="section">Section</option>}
+            </select>
+          </label>
+          {(adding.type === 'object' || adding.type === 'view') && (
+            <label className="field">
+              <span>Object</span>
+              <select value={adding.object} onChange={(e) => setAdding((a) => ({ ...a, object: e.target.value, view: '' }))}>
+                {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
+              </select>
+            </label>
+          )}
+          {adding.type === 'view' && (
+            <label className="field">
+              <span>View</span>
+              <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
+                <option value="">Choose a view</option>
+                {(views[adding.object] ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}{v.shared ? '' : ' (personal)'}</option>)}
+              </select>
+            </label>
+          )}
+          {adding.type === 'custom_view' && (
+            <label className="field">
+              <span>View</span>
+              <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
+                <option value="">Choose a view</option>
+                {customViews.map((v) => <option key={v.slug} value={v.slug}>{v.name ?? v.slug}{v.status === 'published' ? '' : ' (draft)'}</option>)}
+              </select>
+            </label>
+          )}
+          {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (
+            <label className="field">
+              <span>{adding.type === 'section' ? 'Section name' : 'Label (optional)'}</span>
+              <input value={adding.label} maxLength={63} onChange={(e) => setAdding((a) => ({ ...a, label: e.target.value }))} />
+            </label>
+          )}
+          <button className="btn" onClick={add}><Plus size={14} /> Add</button>
+        </div>
+      </SettingsSection>
 
-      <div className="nav-add nav-settings-foot">
-        <select
-          value={adding.section ?? ''}
-          onChange={(e) => {
-            const v = e.target.value;
-            const section = v === '' ? null : v === 'bottom' ? 'bottom' : Number(v);
-            // dividers and sections cannot go in the bottom bar
-            setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section') ? 'object' : a.type }));
-          }}
-        >
-          <option value="">Add to top level</option>
-          {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Add to section "{it.label}"</option>)}
-          <option value="bottom">Add to mobile bottom bar</option>
-        </select>
-        <select value={adding.type} onChange={(e) => setAdding((a) => ({ ...a, type: e.target.value, view: '' }))}>
-          <option value="object">Object</option>
-          <option value="view">Saved view</option>
-          <option value="home">Home</option>
-          <option value="custom_view">Custom view</option>
-          {adding.section !== 'bottom' && <option value="divider">Divider</option>}
-          {adding.section === null && <option value="section">Section</option>}
-        </select>
-        {(adding.type === 'object' || adding.type === 'view') && (
-          <select value={adding.object} onChange={(e) => setAdding((a) => ({ ...a, object: e.target.value, view: '' }))}>
-            {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
-          </select>
-        )}
-        {adding.type === 'view' && (
-          <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
-            <option value="">Choose a view</option>
-            {(views[adding.object] ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}{v.shared ? '' : ' (personal)'}</option>)}
-          </select>
-        )}
-        {adding.type === 'custom_view' && (
-          <select value={adding.view} onChange={(e) => setAdding((a) => ({ ...a, view: e.target.value }))}>
-            <option value="">Choose a view</option>
-            {customViews.map((v) => <option key={v.slug} value={v.slug}>{v.name ?? v.slug}{v.status === 'published' ? '' : ' (draft)'}</option>)}
-          </select>
-        )}
-        {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (
-          <input placeholder={adding.type === 'section' ? 'Section name' : 'Label (optional)'} value={adding.label} maxLength={63} onChange={(e) => setAdding((a) => ({ ...a, label: e.target.value }))} />
-        )}
-        <button className="btn" onClick={add}><Plus size={14} /> Add</button>
-      </div>
-
-      {error && <div className="error">{error}</div>}
-      <div className="actions">
+      <SaveBar dirty={dirty} message={message} error={error}>
         {hasOwn && <button className="btn" onClick={resetUser}>Reset to default menu</button>}
         <button className="btn primary" onClick={save}>Save menu</button>
-        {message && <span className="muted small">{message}</span>}
-      </div>
-    </section>
+      </SaveBar>
+    </SettingsPage>
   );
 }

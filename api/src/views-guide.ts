@@ -19,7 +19,7 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 2. Look at existing views with list_views and get_view; match their structure and look.
 3. Learn the data: view_guide topic "schema" (optionally for one object), or describe_object.
 4. Write and test each query with try_view_query until it returns what you expect.
-5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again. For changes, send save_view_draft edits (find and replace: [{"old_str", "new_str"}], each old_str matching exactly one place) instead of the whole source, and set_queries / remove_queries for single queries. Saves answer with a short summary; get_view shows the current draft code.
+5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again. For changes, send save_view_draft edits (find and replace: [{"old_str", "new_str"}], each old_str matching exactly one place) instead of the whole source, and set_queries / remove_queries for single queries. Saves answer with a short summary, including publish_state (whether the published version is behind the draft, and by how many saves; someone may publish from the CRM while you work). get_view shows the current draft code; to find old_str without reading all of it, use get_view with search (matching lines with context) or lines [start, end].
 6. run_view_query runs a saved draft query. Then give the user the draft_url from create_view / save_view_draft (/view/?draft=1#<slug>) so they can preview it, and ask whether to publish.
 7. After the user has opened the draft, get_view_runtime_errors lists what went wrong in their browser since the last save: crashes, uncaught errors, console errors and failed queries, with the frame width. Check it after every change the user tries; no errors listed only means nothing failed while someone had it open.
 8. publish_view only when the user says to publish. Never publish on your own, even for a small change: publishing replaces what everyone sees. Drafts never affect the published version.
@@ -73,7 +73,9 @@ Anything else fails to save.
 - Crashes, uncaught errors, console.error calls and failed queries are reported to the CRM, and get_view_runtime_errors returns them (only while someone has the view open; console.error is a fine way to report something you want to see).
 
 ## Scrolling and height
-- By default the frame grows to fit the content and the CRM page scrolls, not the view. Do not set a fixed height on the page, and do not give the whole view its own scroll area (two scrollbars). CSS position: sticky does not work here because the frame never scrolls: use the kit's <Sticky> (it follows useViewport) for headers that stay in view.
+- By default the frame grows to fit the content and the CRM page scrolls, not the view. Do not set a fixed height on the page, and do not give the whole view its own scroll area (two scrollbars). CSS position: sticky does not work here because the frame never scrolls: use the kit's <Sticky> (it follows useViewport) for headers that stay in view. In this mode <Sticky> trails the scroll slightly (the scroll position arrives as a message from the CRM page), so headers visibly slip and catch up: fine for a summary bar, not for column headers.
+- Boards, wide tables and anything with pinned column headers should be fill views (below), where sticky is native and has no lag.
+- CSS trap: an element with overflow (overflow-x: auto for sideways scrolling included) becomes the scroll parent of everything inside it, so position: sticky inside it sticks to that box, not to the page, and headers inside a sideways scroller never stick vertically. Put the header outside the sideways scroller and move it with the scroller's scrollLeft: the kit's <ScrollX header={...}> does exactly that.
 - For a view that should fill the screen and scroll itself (a board with pinned column headers, a map, a split pane), add \`export const frame = 'fill'\` next to the default export. The frame is then exactly as tall as the visible part of the CRM page, the document scrolls inside the frame, and position: sticky, height: 100vh and window scroll events all behave normally. <Sticky> uses position: sticky there.`;
 
 const UI_KIT = `# UI kit (@pcrm/view)
@@ -87,6 +89,7 @@ Every component below also takes style and className, added to its own (style={{
 - <Grid columns={2|3|4} gap={12}>: side-by-side cells; one column on phones.
 - <Stack gap={12}>, <Row gap={8} align="center" wrap>: vertical and horizontal groups.
 - <Card title subtitle actions>children</Card>: a white box with a border and shadow.
+- <ScrollX header={<HeaderRow />} top={0}>body</ScrollX>: a wide area (kanban board, wide table) that scrolls sideways under a header that stays at the top while the page scrolls down and moves sideways with the body. Give the header's columns and the body's columns the same fixed widths (e.g. each column width: 280, flex: none) so they line up. Best in a fill view.
 - <Sticky top={0}>children</Sticky>: stays in view at the top while its parent element scrolls past, then leaves with the parent (column headers of a long board or table). Give it a background so content passes under it, e.g. style={{ background: 'var(--page-background)' }}. Works whether or not the view is a fill view.
 
 ## Data display
@@ -102,8 +105,10 @@ Every component below also takes style and className, added to its own (style={{
 - <RecordLink object id>text</RecordLink>: a link that opens a record.
 
 ## Inputs
-- <TextInput value onChange={(v) => ...} placeholder type="text"|"search"|"number"|"date" debounce={300} />: with debounce (ms), the box updates as you type but onChange waits until typing stops; use it when onChange sets params or runs a query.
-- <Select value onChange options={[{ value, label }]} placeholder? />: the caret sits 12px in from the right like other CRM selects; widen it with style={{ minWidth: 200 }}.
+Sizes: Button, TextInput and Select are 34px tall, or 28px with small, so controls of the same size line up in a Row or in Page actions (which takes inputs as well as buttons: <Page actions={<><TextInput small .../><Button small>Send</Button></>}>). Mix sizes only on purpose. Text is 14px (12px small).
+
+- <TextInput value onChange={(v) => ...} placeholder type="text"|"search"|"number"|"date" debounce={300} small />: with debounce (ms), the box updates as you type but onChange waits until typing stops; use it when onChange sets params or runs a query.
+- <Select value onChange options={[{ value, label }]} placeholder? small />: the caret sits 12px in from the right like other CRM selects; widen it with style={{ minWidth: 200 }}.
 - <Button variant="primary"|"danger" small disabled onClick>text</Button>
 
 ## Formatters
@@ -153,7 +158,7 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 - Base columns on every object: object_type_id, <code>_id, name, created_at, updated_at, merged_ids, record_status.
 - Single-value dropdowns are text (the api_value) plus <name>__label (the label). Multi-value dropdowns are text[] plus <name>__label (text[] of labels). Filter on the api_value, show the label.
 - owner is a dropdown of user ids (owner__label is the user's name).
-- users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name".
+- users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name". Records can be owned by users who are archived or deactivated, and those are not in that list (or, when archived, not in users at all), so add the owners found on the records: "select pc_0000_id as id, name from users where status = 'active' union select owner, owner__label from deals where owner is not null order by 2".
 - associations: one row per link, seen from both sides: association_id, label_id, label, object_type_id, record_id, other_object_type_id, other_record_id, side, created_at, object, other_object (the last two are api_names, like 'deals' and 'contacts'). It holds links between every pair of objects, so always filter both object and other_object; joining contacts on other_record_id without other_object = 'contacts' matches ids of unrelated records. A deal's contacts:
   "select ct.pc_0010_id as id, ct.name from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' and a.record_id = :deal"
   Contacts per deal, for a board: "select a.record_id as deal_id, string_agg(distinct ct.name, ', ') as contacts from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' group by a.record_id"
@@ -194,7 +199,10 @@ const INTEGRATIONS = `# Integrations
 
 Views have no network access of their own. To reach an outside service (an n8n workflow that posts to Slack, sends an email, calls another API), an admin adds an integration in Settings, View integrations: a key, a name, a description, the endpoint's URL and optionally a secret header. The CRM's server makes the request, so there is no CORS to deal with and the secret never reaches the browser.
 
-- list_view_integrations shows the ones that exist (key, label, description, audience, enabled). You cannot add or change them. If the view needs one that is missing, tell the admin the key to use, what it should point at, and the data it will receive.
+- list_view_integrations shows the ones that exist: key, label, description, audience, enabled, host and a masked url (where it points), the last call's status, and data_example: the data the other end expects.
+- data_example is the contract between the view and the workflow. Build data to match it (same fields and types). A call whose data does not match still goes out, but the mismatch is logged in get_view_runtime_errors (kind "integration", "data for <key> does not match its example: ...") and the call's answer carries warnings. When you build both sides, record the shape with update_view_integration data_example first, and make the workflow read those fields.
+- test_integration(key, data?) sends data now (data_example when none is given) and returns the status and answer, so the workflow can be checked without a person clicking the view's button. It really runs the workflow (a test Slack message is really posted): say so to the admin first.
+- create_view_integration and update_view_integration add or change one. They send CRM data to an outside address: show the admin the URL and the data first and wait for their yes, as with webhooks. Admins can also do it in Settings, View integrations.
 - In the view: import { callIntegration } from '@pcrm/view'; then await callIntegration('slack-message', { channel: '#sales', text }) from a button's onClick.
 - The viewer first sees "Allow sending this?" with the data listed (they can tick "Don't ask again on this page"). Never call it on load or in an effect.
 - It resolves with { status, data }: data is the service's answer (parsed JSON, or text). It rejects with an Error whose message explains why: "The viewer did not allow sending this", the service's HTTP error ("Slack message answered HTTP 500: ..."), a timeout (15 seconds), or the viewer not being allowed to use it (audience "admins" means only admins can). Show the message, and disable the button while it runs.
