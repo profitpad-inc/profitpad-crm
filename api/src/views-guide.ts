@@ -7,7 +7,7 @@ import { MAX_QUERIES, MAX_SOURCE, PARAM_TYPES, ROW_CAP, VIEW_MODULES, parseQueri
 // AI needs to build a custom view. The runtime it describes is
 // web/src/view-runtime (kit.tsx); keep the two in step.
 
-export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'sql', 'schema', 'properties', 'integrations', 'examples'] as const;
+export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'design', 'sql', 'schema', 'properties', 'integrations', 'examples'] as const;
 export type GuideTopic = (typeof GUIDE_TOPICS)[number];
 
 const OVERVIEW = `# Custom views
@@ -15,7 +15,7 @@ const OVERVIEW = `# Custom views
 A custom view is a page in the CRM built from React (TSX) plus named, read-only SQL queries. It lives in the database (object "views"), so creating or changing one needs no deploy. People open it at /view/#<slug>; admins see every view and its code under /objects/views.
 
 ## How to build one
-1. Read the other topics you need: runtime, ui_kit, styling, sql (always), schema (the data), examples (finished views to copy from).
+1. Read the other topics you need: runtime, ui_kit, styling, design (how to lay out a good view, and the review before handing it over), sql (always), schema (the data), examples (finished views to copy from).
 2. Look at existing views with list_views and get_view; match their structure and look.
 3. Learn the data: view_guide topic "schema" (optionally for one object), or describe_object.
 4. Write and test each query with try_view_query until it returns what you expect.
@@ -133,7 +133,81 @@ const STYLING = `# Styling
 - Money: format with formatMoney and the record's currency. Never add amounts in different currencies together; group by currency instead.
 - Dates: YYYY-MM-DD; datetimes YYYY-MM-DD HH:MM.
 - Empty values: "--" (Table does this). Loading and errors: always handle both.
-- Phones: Grid becomes one column below 720px; keep tables to the columns that matter.`;
+- Phones: Grid becomes one column below 720px; keep tables to the columns that matter.
+- How to lay out a view and choose charts, tables and states: topic design.`;
+
+const DESIGN = `# Design
+
+A view should look like part of the CRM and answer one job quickly. These rules turn that into choices; the kit (topic ui_kit) and tokens (topic styling) are how you carry them out.
+
+## Start from the job
+- Before writing code, put the view in one sentence: who opens it, what they need to see or decide, and how often. "Sales reps, every morning: which of my deals close this month and which are stuck." The title is that job in a few words ("Deals closing this month"); the subtitle says the scope ("Your open deals, by close date").
+- Pick one main shape, two at most:
+  - Dashboard: a few numbers to watch, and a trend.
+  - Work list: records someone acts on, one by one.
+  - Board: records moving through stages (ScrollX in a fill view).
+  - Drill-down: a list, and the selected item's details beside or below it.
+  - Tool: a form or button that does something (an integration, record changes).
+- If the user asks for "everything about X", ask what they will do with it, or build the work list first.
+
+## Top to bottom
+1. Page title and subtitle; filters and actions in Page actions, on the right.
+2. Up to 4 Stat tiles in a Grid (columns={4}, or 3): the numbers that answer the job. Each label says what it counts; use hint for scope or a comparison ("of 120 open", "last 30 days").
+3. The main chart or table, full width.
+4. Supporting cards, two side by side (Grid columns={2}).
+- What someone acts on should be visible without scrolling at 1280 by 800.
+- One primary Button per screen; the rest are plain or small.
+- One Page; never a Card inside a Card; no extra margins around kit pieces (Stack, Row and Grid gaps do the spacing: 12 between cards, 8 inside a row).
+
+## Choosing what shows the data
+| Question | Use |
+| --- | --- |
+| One number that matters | Stat (tone="money" for amounts) |
+| How it changes over time | LineChart or AreaChart, time across, weeks or months |
+| Which category is biggest | Horizontal BarChart, largest first; over 7 categories, show the top 7 plus "Other", or a table |
+| Parts of a whole | Bar or stacked bar; a pie only for 2 to 4 parts |
+| Exact values people read or copy | Table |
+| Records people act on | Table with RecordLink or onRowClick |
+| Records moving through stages | Board: ScrollX with fixed-width columns, in a fill view |
+- Under 3 data points, show the numbers, not a chart.
+- Money in different currencies: one series per currency or a currency picker, never added together.
+
+## Charts
+- One message per chart; the card title says it ("Won per month") and the subtitle the scope.
+- chartColors in order; the same series keeps the same color everywhere in the view; at most 5 series (group the rest). One series: chartColors[0].
+- Bars start at zero. Format ticks and tooltips with formatMoney, formatNumber or formatPercent (tickFormatter, Tooltip formatter); fontSize={12} on axes; CartesianGrid vertical={false}.
+- 200 to 280px tall inside a card; charts side by side get the same height.
+
+## Tables
+- 3 to 7 columns. First column: the record's name as a RecordLink. Numbers right-aligned (align: 'right'); dates YYYY-MM-DD; dropdowns by their __label.
+- Status as a Badge with one meaning per tone across the view: money for won or paid, danger for lost or overdue, warning for at risk, primary or none for open. Keep the map in one place (Record<string, BadgeTone>).
+- Sort by what matters and say so in the subtitle ("Biggest first"). Limit long lists in SQL and say it ("Top 50 by amount"), or page through them with a param.
+- hideOnMobile: true on the columns a phone can do without; keep the name and one or two figures.
+
+## Filters and selection
+- Filters sit in Page actions as small Select and TextInput (search with debounce), with a small "Clear" button when any is set. Keep every filter and the selected item in address params (setParams), so links, refreshes and render_view params keep them.
+- Say what the filters left: a count in the subtitle or card title ("12 deals").
+
+## Words, numbers and states
+- Labels in sentence case and the user's words: property labels and __label columns, never api_names or ids.
+- Money with formatMoney and the record's currency; shares with formatPercent; counts with formatNumber; missing values "--".
+- Loading: Loading or Table loading, not an empty message while data is still coming.
+- Empty: say what is empty and what to do ("No deals close this month. Pick another month above.").
+- Errors: ErrorBox with the message, in the card where the data would be.
+- Color carries meaning only (money, danger, warning, primary). No decorative colors, gradients, extra shadows, emoji as icons, or font sizes outside the kit (only Stat values are big).
+
+## Phones
+- Grid becomes one column; keep Stat tiles to 4; tables use hideOnMobile; boards scroll sideways with 260 to 300px columns.
+
+## Review before handing it over
+Render with render_view and fix what it finds before giving the user the draft_url:
+1. 1280 wide, and 390 wide (phones). Long pages: also scrolled (scroll_y), or full_page.
+2. Drill-downs and tabs: with params, or click.
+3. The report has no text_cut, overflow or off_right (except a sideways scroller you meant), an empty console and no failed_queries.
+4. The numbers match what try_view_query returns.
+5. The empty state: params that match nothing.
+6. Title and subtitle still say exactly what the page covers.
+Then tell the user what the view shows, what you checked, and anything you could not check.`;
 
 const SQL = `# SQL queries
 
@@ -347,6 +421,7 @@ export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', ob
     case 'runtime': return RUNTIME;
     case 'ui_kit': return UI_KIT;
     case 'styling': return STYLING;
+    case 'design': return DESIGN;
     case 'sql': return SQL;
     case 'schema': return schemaTopic(p, object);
     case 'properties': return PROPERTIES;
