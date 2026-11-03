@@ -33,8 +33,8 @@ COMPANY_WORDS = ["Northwind", "Contoso", "Globex", "Initech", "Umbrella", "Stark
                  "Soylent", "Tyrell", "Cyberdyne", "Wonka", "Gringotts", "Monarch", "Pied Piper", "Aperture", "Massive", "Oscorp"]
 COMPANY_SUFFIX = ["Labs", "Industries", "Systems", "Group", "Partners", "Supply", "Logistics", "Foods", "Health", "Media"]
 INDUSTRIES = ["Software", "Manufacturing", "Retail", "Healthcare", "Logistics", "Finance", "Education", "Construction"]
-CITIES = [("Toronto", "ON", "Canada"), ("Vancouver", "BC", "Canada"), ("Austin", "TX", "USA"), ("Denver", "CO", "USA"),
-          ("Chicago", "IL", "USA"), ("Seattle", "WA", "USA"), ("Boston", "MA", "USA"), ("Calgary", "AB", "Canada")]
+CITIES = [("Toronto", "ON", "CA"), ("Vancouver", "BC", "CA"), ("Austin", "TX", "US"), ("Denver", "CO", "US"),
+          ("Chicago", "IL", "US"), ("Seattle", "WA", "US"), ("Boston", "MA", "US"), ("Calgary", "AB", "CA")]
 TITLES = ["CEO", "CFO", "Operations Manager", "Purchasing Lead", "Sales Director", "Office Manager", "Engineer", "Buyer"]
 PRODUCTS = ["Widget", "Gadget", "Sprocket", "Gear", "Valve", "Bracket", "Sensor", "Panel", "Cable", "Fitting",
             "Pump", "Filter", "Hinge", "Bearing", "Switch"]
@@ -165,7 +165,7 @@ class Generator:
             name = "%s %s" % (random.choice(COMPANY_WORDS), random.choice(COMPANY_SUFFIX))
             city, state, country = random.choice(CITIES)
             companies.append({"name": name, "domain": "%s-%s%d.example.com" % (name.lower().replace(" ", ""), RUN, i),
-                              "industry": random.choice(INDUSTRIES), "city": city, "state": state, "country": country,
+                              "industry": random.choice(INDUSTRIES), "address_city": city, "address_province": state, "country": country,
                               "employee_count": random.randint(5, 5000), "annual_revenue": money(2e5, 5e7),
                               "phone": "+1 555 %03d %04d" % (random.randint(100, 999), random.randint(0, 9999)),
                               "owner": owner(), "created_at": iso(past(900))})
@@ -178,7 +178,7 @@ class Generator:
             contacts.append({"name": "%s %s" % (f, l), "first_name": f, "last_name": l,
                              "email": "%s.%s.%s%d@example.org" % (f.lower(), l.lower().replace("-", ""), RUN, i),
                              "phone": "+1 555 %03d %04d" % (random.randint(100, 999), random.randint(0, 9999)),
-                             "job_title": random.choice(TITLES), "city": city, "state": state, "country": country,
+                             "job_title": random.choice(TITLES), "address_city": city, "address_province": state, "country": country,
                              "lifecycle_stage": random.choice(["lead", "mql", "sql", "opportunity", "customer", "other"]),
                              "owner": owner(), "created_at": iso(past(700))})
         self.create("contacts", contacts)
