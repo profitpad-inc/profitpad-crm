@@ -26,6 +26,10 @@ const HISTORY_VIA = ['crm_ui', 'api', 'mcp', 'calculation', 'other'];
 // properties ($3), each with how it came in. Rows from before migration 0043
 // have no channel: API key and MCP rows are still known from the actor and
 // source; a user's change through the CRM or with their own key is not.
+// The id column is never written to the history (it never changes), so its
+// row is made from the record's created_at row, written in the same
+// transaction that created it.
+const HISTORY_COLUMNS = 'id, property, old_value, new_value, changed_at, changed_by, source, channel, api_key_id';
 const HISTORY_ROWS = `with h as (
   select h.*, case
       when h.source = 'calculation' then 'calculation'
@@ -34,8 +38,14 @@ const HISTORY_ROWS = `with h as (
       when h.changed_by like 'api:%' then 'api'
       else 'other'
     end as via
-  from meta.record_history h
-  where h.object_type_id = $1 and h.record_id = $2 and h.property <> all ($3::text[])
+  from (
+    select ${HISTORY_COLUMNS} from meta.record_history where object_type_id = $1 and record_id = $2
+    union all
+    (select id, $1 || '_id', null, to_jsonb(record_id), changed_at, changed_by, source, channel, api_key_id
+     from meta.record_history where object_type_id = $1 and record_id = $2 and property = 'created_at' and old_value is null
+     order by id limit 1)
+  ) h
+  where h.property <> all ($3::text[])
 )`;
 
 export async function recordRoutes(app: FastifyInstance) {

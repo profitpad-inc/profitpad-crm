@@ -601,7 +601,9 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
       .catch((e) => setError((e as Error).message));
   }, [object, id, property, changedBy, via]);
 
-  const propLabel = (name: string) => (name === 'association' ? 'Association' : schema.properties.find((p) => p.api_name === name)?.label ?? name);
+  const propLabel = (name: string) => (name === 'association' ? 'Association' : schema.properties.find((p) => p.api_name === name)?.label ?? (name === 'merged_into_id' ? 'Merged into' : name));
+  // associations, then merges (on the record kept and the one merged away), then the rest A to Z
+  const propRank = (name: string) => (name === 'association' ? 0 : name === 'merged_ids' || name === 'merged_into_id' ? 1 : 2);
   const filtered = !!(property || changedBy || via);
   return (
     <div className="timeline">
@@ -609,7 +611,7 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
         <div className="field-row history-filters">
           <select value={property} onChange={(e) => setProperty(e.target.value)} aria-label="Property or association">
             <option value="">Every property and association</option>
-            {[...facets.properties].sort((a, b) => propLabel(a).localeCompare(propLabel(b))).map((name) => <option key={name} value={name}>{propLabel(name)}</option>)}
+            {[...facets.properties].sort((a, b) => propRank(a) - propRank(b) || propLabel(a).localeCompare(propLabel(b))).map((name) => <option key={name} value={name}>{propLabel(name)}</option>)}
           </select>
           <select value={changedBy} onChange={(e) => setChangedBy(e.target.value)} aria-label="Changed by">
             <option value="">Anyone</option>
