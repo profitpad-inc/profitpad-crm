@@ -391,7 +391,7 @@ function NavSettings() {
   // the menu as last loaded or saved, to tell whether there are unsaved changes
   const [savedJson, setSavedJson] = useState('');
   const [views, setViews] = useState<Record<string, View[]>>({});
-  // section: a section's index, null for the top level, 'bottom' for the mobile bottom bar
+  // section: a section's index, null for the sidebar's top level, 'bottom' for the mobile hotbar
   const [adding, setAdding] = useState<{ section: number | null | 'bottom'; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -466,7 +466,7 @@ function NavSettings() {
     } else item = { type: adding.type as 'home' | 'divider' };
     if (adding.section === 'bottom') {
       if (bottom.length >= BOTTOM_MAX) {
-        setError(`The bottom bar holds at most ${BOTTOM_MAX} links between the left button and Search.`);
+        setError(`The mobile hotbar holds at most ${BOTTOM_MAX} links between the left button and Search.`);
         return;
       }
       setError(null);
@@ -542,7 +542,7 @@ function NavSettings() {
           : <div className="nav-tree">{renderList(items, null)}</div>}
       </SettingsSection>
 
-      <SettingsSection title="Mobile bottom bar" description={`Shown along the bottom of the screen on mobile: the left button, up to ${BOTTOM_MAX} links, then Search.`}>
+      <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: the left button, up to ${BOTTOM_MAX} links, then Search.`}>
         <BottomBarPreview left={bottomLeft} items={bottom} />
         <div className="setting-rows">
           <SettingRow label="Left button" htmlFor="bottom-left">
@@ -551,7 +551,7 @@ function NavSettings() {
               <option value="home">Home</option>
             </select>
           </SettingRow>
-          <SettingRow label="Links" hint="Add links with Add to mobile bottom bar below.">
+          <SettingRow label="Links" hint="Add links with Add an item below, choosing Mobile hotbar.">
             {bottom.length === 0 ? <span className="muted">No links between the left button and Search.</span> : (
               <div className="nav-tree stretch">
                 {bottom.map((it, i) => row(it, i, bottom, (fn) => setBottom(fn), false))}
@@ -570,13 +570,13 @@ function NavSettings() {
               onChange={(e) => {
                 const v = e.target.value;
                 const section = v === '' ? null : v === 'bottom' ? 'bottom' : Number(v);
-                // dividers and sections cannot go in the bottom bar
-                setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section') ? 'object' : a.type }));
+                // dividers and sections cannot go in the hotbar, nor Home (that is the Left button setting)
+                setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section' || a.type === 'home') ? 'object' : a.type }));
               }}
             >
-              <option value="">Top level</option>
-              {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Section "{it.label}"</option>)}
-              <option value="bottom">Mobile bottom bar</option>
+              <option value="">Sidebar</option>
+              {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Sidebar, in section "{it.label}"</option>)}
+              <option value="bottom">Mobile hotbar</option>
             </select>
           </label>
           <label className="field">
@@ -584,7 +584,7 @@ function NavSettings() {
             <select value={adding.type} onChange={(e) => setAdding((a) => ({ ...a, type: e.target.value, view: '' }))}>
               <option value="object">Object</option>
               <option value="view">Saved view</option>
-              <option value="home">Home</option>
+              {adding.section !== 'bottom' && <option value="home">Home</option>}
               <option value="custom_view">Custom view</option>
               {adding.section !== 'bottom' && <option value="divider">Divider</option>}
               {adding.section === null && <option value="section">Section</option>}
@@ -634,12 +634,12 @@ function NavSettings() {
   );
 }
 
-// The phone's bottom bar as BottomBar (components/MobileNav.tsx) draws it, with the same classes and links, but not
+// The mobile hotbar as BottomBar (components/MobileNav.tsx) draws it, with the same classes and links, but not
 // clickable. Like the real bar, links this admin cannot open are left out.
 function BottomBarPreview({ left, items }: { left: 'menu' | 'home'; items: NavItem[] }) {
   const { objectByName, customViews } = useApp();
   return (
-    <div className="bottom-bar-preview" aria-label="Bottom bar preview">
+    <div className="bottom-bar-preview" aria-label="Mobile hotbar preview">
       <div className="bottom-bar">
         <span className="bottom-item">
           {left === 'menu' ? <MenuIcon size={22} strokeWidth={1.75} /> : <HomeIcon size={22} strokeWidth={1.75} />}

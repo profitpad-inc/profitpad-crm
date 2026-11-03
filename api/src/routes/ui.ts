@@ -121,7 +121,9 @@ function validateBottomLeft(left: unknown): 'menu' | 'home' {
 async function validateBottom(items: unknown): Promise<NavItem[]> {
   if (!Array.isArray(items) || items.length > 3) throw badRequest('bottom must be an array of at most 3 items');
   const out = await validateNav(items);
-  if (out.some((it) => it.type === 'divider' || it.type === 'section')) throw badRequest('the bottom bar takes home, object, view and custom_view items only');
+  if (out.some((it) => it.type === 'divider' || it.type === 'section')) throw badRequest('the bottom bar takes object, view and custom_view items only');
+  // Home belongs on the left button (bottom_left: "home"), not among the links
+  if (out.some((it) => it.type === 'home')) throw badRequest('the bottom bar takes object, view and custom_view items only; for Home set bottom_left to "home"');
   return out;
 }
 

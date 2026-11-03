@@ -1,14 +1,14 @@
 /* Colors come from the portal theme (lib/theme.ts sets these on :root). */
 :root {
-  --primary: #2445b8;
-  --sidebar-background: #1b2430;
-  --sidebar-text: #e6e9ee;
-  --sidebar-active: #2c3746;
+  --primary: #1d4ed8;
+  --sidebar-background: #0f172a;
+  --sidebar-text: #f1f5f9;
+  --sidebar-active: #26344d;
   --page-background: #ffffff;
-  --surface: #f3f5f8;
-  --text: #18202b;
-  --muted-text: #5d6878;
-  --border: #dce1e8;
+  --surface: #eef1f5;
+  --text: #0b1220;
+  --muted-text: #475467;
+  --border: #cfd6df;
   /* not themed: money keeps its meaning whatever a tenant picks */
   --money: #1e7a4c;
   --danger: #b42318;

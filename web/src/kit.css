@@ -3,9 +3,9 @@
    theme tokens or mixes of them. */
 
 :root {
-  --primary-soft: color-mix(in srgb, var(--primary) 9%, var(--page-background));
-  --primary-line: color-mix(in srgb, var(--primary) 35%, var(--border));
-  --hairline: color-mix(in srgb, var(--border) 70%, var(--page-background));
+  --primary-soft: color-mix(in srgb, var(--primary) 11%, var(--page-background));
+  --primary-line: color-mix(in srgb, var(--primary) 45%, var(--border));
+  --hairline: color-mix(in srgb, var(--border) 85%, var(--page-background));
 }
 
 .person { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }

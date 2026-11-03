@@ -31,6 +31,35 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
 - 2026-11-03 (view tooling, round 3 of AI feedback, `~/Downloads/test-crm-mcp-feedback.md`, from building a "Booking forms" view): migration `0047_object_aliases.sql` (object aliases, seeded for native objects); `list_objects` links in the short form plus `linked_only_by_crm`; `FEATURE_LINKS` notes on how features link records (`how_linked` in `describe_object`, schema topic); `render_view` `timezone` (default the caller's, the renderer itself runs in UTC) and `click`; kit types and `hideOnMobile` columns; guide recommends selections in params (details in `docs/architecture.md`, "Round 3" bullet). Checks: both SQL suites (new section 33) on the throwaway cluster on port 5496; 20 in-process checks with a real Chromium through a local Playwright browser server (short links, aliases, how_linked, set_object_aliases, Toronto time shown as 09:00 for 14:00 UTC, clicks and params, kit type imports, hideOnMobile at 390 and 1024px); API and web typecheck, web build. Not tried in a real browser, not committed, 0047 not applied to the server.
 - 2026-11-03 (view tooling, round 2 of AI feedback, `~/Downloads/test-crm-mcp-feedback-round-2.md`): migration `0046_integration_examples.sql` (`data_example` on view integrations) plus API, MCP, kit, Settings and guide changes (details in `docs/architecture.md` "Custom views", "Round 2" bullet): integration host and masked url, data contract with mismatch warnings, MCP `create_view_integration`/`update_view_integration`/`test_integration`; `get_view` `lines`/`search` excerpts; `publish_state` with saves since publishing; kit control heights (34/28px) and `small` on TextInput/Select; `<ScrollX>`; guide notes on Sticky lag, the overflow trap and archived owners. Checks: both SQL suites pass on a separate throwaway cluster (port 5496; the usual 5499 one was in use by another session); 27 in-process checks (MCP tools over `app.inject`, a local fake workflow, mismatch logging, excerpts, publish state, guide) pass; API and web typecheck, web build. Later the same day: `render_view` (MCP) draws a view in headless Chromium in a new `renderer` container and returns a screenshot, element boxes with layout issues, console errors and failed queries (`api/src/render.ts`, `deploy/renderer/`, `docs/deploy.md` section 17; `playwright-core` 1.64.1 added to the API). 16 checks pass against a real Chromium through a local Playwright browser server (screenshot, cut placeholder flagged, 28px small controls, off-screen content, console errors, failed query, createRecord refused and nothing created, ScrollX header pinned at scroll 900, phone width, fill view with native sticky, crash reported); screenshots looked right. The Docker image was not built here (Docker is not running on this Mac). Not tried in a browser, not committed, 0046 not applied to the server. `IntegrationSettings.tsx`, `mcp.ts` and the guide were also being edited by another session at the same time.
 - 2026-11-03: the user confirmed every migration in `db/migrations` is applied to the server, so older "not yet applied" notes below are out of date.
+- 2026-11-03 (quote PDF restyle): `api/src/pdf/quote.ts` now draws the quote like the public quote page. It has the title in Montserrat with the status pill on the right; "Prepared for", "Attention" (name over email) and "Valid until" as label over value under a light rule; a ledger of lines with one dark header rule, light row rules and right-aligned amounts (the header repeats after a page break); the total right-aligned on a double rule; the page's status notes (accepted, declined with reason, awaiting countersignature, expired); and signatures side by side on a signing line with an ×, then the name, then "Signed <UTC time>"; the signed fields come last as label and value pairs.
+  - **Fonts:** Inter 400/500/600 and Montserrat 700 are embedded from `@fontsource/inter` and `@fontsource/montserrat` 5.3.0, now API dependencies (same versions as `web/`). WOFF files only: fontkit 2.0.4 (pdfkit 0.20.2) crashes subsetting the WOFF2 files. The files are the Latin subset, so a string with other characters (Ł, Cyrillic, Greek) falls back to Helvetica. That keeps what the old PDF showed, but those letters are still garbled. A real fix needs mixed-font text runs (Latin plus the latin-ext file) and is not done.
+  - **Colours:** text, secondary text, border and surface come from the tenant theme, with `web/src/lib/theme.ts` defaults (the old PDF defaulted to `#1f7a74`). The page uses `primary` only for buttons and links, and the PDF has neither, so the PDF does not use `primary` now; the title is no longer in the accent colour. Pill and note colours are the page's fixed ones.
+  - **Changes:** dates read like the page ("December 15, 2026", UTC calendar day) instead of ISO. Signed fields now come after both signatures, as on the page, not between them. Every field the old PDF showed is still there, and so is the "(signature image could not be read)" fallback.
+  - **Checks:** API typecheck and `npm test` (15) pass; both SQL suites pass on a throwaway cluster (port 5493, scratchpad). Against that cluster a quote with a company, a contact, three lines (one wrapping, SKUs, a discount), two signing fields and `requires_countersign` was published, accepted with a drawn signature and countersigned through the real API. PDFs were rendered for open, pending countersign and accepted, plus a direct 40-line declined quote with a custom theme and an unreadable countersignature. All were looked at as images; `pdffonts` shows the four faces embedded. Not opened in a desktop PDF viewer. Not committed. The Docker image needs a rebuild on deploy (new dependencies in `api/package.json`).
+- 2026-11-03 (crisper default colours): the user found the look too soft.
+  - **New `DEFAULT_THEME`** in `lib/theme.ts`, with the same values in the `styles.css` `:root` fallbacks:
+
+    | Colour | New value |
+    | --- | --- |
+    | primary | `#1d4ed8` |
+    | sidebar background | `#0f172a` |
+    | sidebar text | `#f1f5f9` |
+    | sidebar selected item | `#26344d` |
+    | surface | `#eef1f5` |
+    | text | `#0b1220` |
+    | secondary text | `#475467` (7.7:1 on white, was 5.6:1) |
+    | border | `#cfd6df` |
+
+  - **Stronger derived tints** in `kit.css`: `--primary-soft` 11% (was 9%), `--primary-line` 45% (was 35%), `--hairline` 85% (was 70%).
+  - **Not changed:**
+    - `view-runtime/frame.css` still has the old fallbacks (custom views were out of scope).
+    - Dropdown colours.
+  - **Server portal.** It had its own saved theme (`ui.settings` key `theme`, saved 2026-11-02 by user `0000000009`): primary `#3d638f`, border `#e2e4e8`, secondary text `#6b7280`, sidebar `#2f3133`.
+    - At the user's request, I replaced it with the new default values on the server DB (2026-11-03 10:38 UTC, `updated_by` `claude_admin`).
+    - The old row is saved in `backups/ui_settings_theme_20261103_053835.json` (gitignored).
+    - The API reads the theme from the DB on every request, so this needs no redeploy. Until the new UI is deployed, though, the kit tints are still the old ones.
+  - **Checks.** Web typecheck and build pass. In the browser pane on the local copy (no saved theme), I looked at the contacts table and a deal record, and compared the portal theme against the new defaults on the same page.
+  - Not committed.
 - 2026-11-03 (CRM-wide redesign, after Settings): the same design system now runs through the rest of the CRM. Four subagents did the work in parallel, one per area, then the lead merged it and checked it in the browser.
   - **Shared kit.** `web/src/kit.css` is imported in `main.tsx`. It holds the pieces that used to be Settings-only: status pills, empty states, skeletons, edit panels, callouts, copy fields, the save bar, person avatars, and the tokens `--primary-soft`, `--primary-line` and `--hairline` on `:root`. Components are still in `components/settings.tsx`.
   - **Tables** (`table.css`, `ObjectTable.tsx`, `ColumnPicker.tsx`):
@@ -75,7 +104,7 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
     - payments on public pages
     - the Changes tab with data
     - keyboard editing of property rows (still mouse-only, as before)
-  - **Follow-up:** the quote PDF (`api/src/pdf/quote.ts`) now looks different from the public quote page (Helvetica, no double rule or signing line).
+  - **Follow-up (done 2026-11-03, see the quote PDF restyle entry):** the quote PDF (`api/src/pdf/quote.ts`) looked different from the public quote page.
   - Not committed.
 - 2026-11-03 (Settings redesign, frontend-design skill): plan in `~/.claude/plans/using-the-frontend-design-graceful-moler.md`.
   - **Rail.** Settings has a grouped rail: Your account, Workspace, People and access, Integrations, Security. Each link has a Lucide icon. The `GROUPS` array in `Settings.tsx` drives both the rail and the route gating. On mobile the rail is a strip of chips across the top.
@@ -94,6 +123,10 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
     - Roles is two panes: a role list on the left, the editor on the right.
     - Webhook endpoint cards move Reveal secret, New secret, Turn off and Delete into a ⋯ menu. The signing and batching details moved to a "How deliveries work" section.
     - Navigation menus shows a preview of the mobile bottom bar (`BottomBarPreview` in `Settings.tsx`). It uses the real bar's `.bottom-bar`/`.bottom-item` classes and `navLink` inside a 390px frame, so it looks like what phones show. Checked in the browser pane.
+    - The Navigation menus page now calls the bottom bar the "Mobile hotbar" (UI wording only; code names still say bottom).
+    - In Add an item, Where offers Sidebar, `Sidebar, in section "X"` and Mobile hotbar.
+    - Home, Divider and Section are not offered for the hotbar, because Home belongs in the Left button setting. The API enforces it too: `validateBottom` in `api/src/routes/ui.ts` answers 400 "for Home set bottom_left to "home"", and `docs/architecture.md` is updated. There is no DB constraint, and no saved menu on the server or local copy had Home in the hotbar. Checked in the browser pane (UI) and against a test API on the local copy (Home and divider refused, Home as left button saved). Needs an API deploy.
+    - The current API code reads `aliases`, a column the local copy at 5499 does not have yet (another session's work), so object lookups there fail with 500.
     - All inline styles in the settings pages are gone.
   - **Copy changes.**
     - Account no longer shows "Signed in with Google", because `me` has no provider field and Microsoft sign-in also exists.
