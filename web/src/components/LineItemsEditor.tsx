@@ -58,6 +58,12 @@ function lineProps(r: Row): Record<string, unknown> {
     customizations: r.custom ? r.customizations.trim() || null : null
   };
 }
+// the unit price must be at least 1 cent above the unit cost
+const minPrice = (r: { cost: string }) => (num(r.cost) === null ? null : Math.round((num(r.cost)! + 0.01) * 100) / 100);
+const priceTooLow = (r: { cost: string; price: string }) => {
+  const min = minPrice(r);
+  return min !== null && (num(r.price) ?? 0) < min - 1e-9;
+};
 const snapshot = (r: Row) => JSON.stringify([lineProps(r), r.product?.id ?? null]);
 
 export function LineItemsEditor({ parent, onClose, onSaved }: {
@@ -73,6 +79,7 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
   const [custom, setCustom] = useState<{ key: number | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const parentLabel = (objectByName.get(parent.object)?.label_singular ?? parent.object).toLowerCase();
   const withAmount = AMOUNT_PARENTS.includes(parent.object);
@@ -108,6 +115,7 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
         }
       }
       setRows([...loaded, blankRow()]);
+      focusCell(loaded.length, 0);
       if (withAmount) setTotals(await parentTotals(parent.object, parent.id));
     })().catch((err) => setError((err as Error).message));
   }, [parent.object, parent.id]);
@@ -182,15 +190,44 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
   }
 
   function close() {
-    if (dirty && !busy && !confirm('Discard your changes to the line items?')) return;
-    onClose();
+    if (busy) return;
+    if (dirty) setConfirmClose(true);
+    else onClose();
   }
 
-  async function save() {
+  // Enter on Qty or Unit price: the next line's product (a new line after the last)
+  function nextLine(r: number) {
     if (!rows) return;
+    if (r === rows.length - 1) addLine(r);
+    else focusCell(r + 1, 0);
+  }
+
+  // Cmd+Enter (Ctrl+Enter on Windows) saves, unless a dialog is open on top
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const keysLive = !custom && !confirmClose;
+  useEffect(() => {
+    if (!keysLive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      saveRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [keysLive]);
+
+  async function save() {
+    if (!rows || busy || !dirty) return;
     const missing = rows.findIndex((r) => !isBlank(r) && !r.name.trim());
     if (missing >= 0) {
       setError(`Line ${missing + 1} needs a description.`);
+      return;
+    }
+    const low = rows.findIndex((r) => !isBlank(r) && priceTooLow(r));
+    if (low >= 0) {
+      setError(`Line ${low + 1}: the unit price must be at least ${money(minPrice(rows[low]), currency)}, 1 cent above the unit cost.`);
+      focusCell(low, 2);
       return;
     }
     setBusy(true);
@@ -248,7 +285,7 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
         title="Line items"
         className="line-editor"
         onClose={close}
-        locked={!!custom || busy}
+        locked={!!custom || busy || confirmClose}
         footer={
           <>
             {amountChanges && (
@@ -321,25 +358,22 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
                               aria-label={`Quantity, line ${r + 1}`}
                               style={row.uom ? { paddingRight: `${row.uom.length + 2}ch` } : undefined}
                               onChange={(e) => patch(row.key, { qty: e.target.value })}
-                              onKeyDown={(e) => e.key === 'Enter' && focusCell(r, 2)}
+                              onKeyDown={(e) => e.key === 'Enter' && !e.metaKey && !e.ctrlKey && nextLine(r)}
                             />
                             {row.uom && <span className="le-uom">{row.uom}</span>}
                           </span>
                         </div>
                         <div role="cell">
                           <input
-                            className="le-in"
+                            className={`le-in${!isBlank(row) && priceTooLow(row) ? ' invalid' : ''}`}
                             data-r={r}
                             data-c={2}
+                            title={minPrice(row) === null ? undefined : `At least ${money(minPrice(row), currency)}`}
                             inputMode="decimal"
                             value={row.price}
                             aria-label={`Unit price, line ${r + 1}`}
                             onChange={(e) => patch(row.key, { price: e.target.value })}
-                            onKeyDown={(e) => {
-                              if (e.key !== 'Enter') return;
-                              if (r === rows.length - 1) addLine(r);
-                              else focusCell(r + 1, 0);
-                            }}
+                            onKeyDown={(e) => e.key === 'Enter' && !e.metaKey && !e.ctrlKey && nextLine(r)}
                           />
                         </div>
                       </>
@@ -376,6 +410,21 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
           {error && <div className="error">{error}</div>}
         </div>
       </Modal>
+      {confirmClose && (
+        <Modal
+          className="discard-confirm"
+          title="Discard your changes?"
+          onClose={() => setConfirmClose(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setConfirmClose(false)} autoFocus>Keep editing</button>
+              <button className="btn danger" onClick={onClose}>Discard</button>
+            </>
+          }
+        >
+          <p>Closing now loses any changes you haven't saved.</p>
+        </Modal>
+      )}
       {custom && (
         <CustomLineModal
           row={custom.key === null ? null : all.find((r) => r.key === custom.key) ?? null}
@@ -451,6 +500,7 @@ function ProductSearch({ product, onPick, cell, onEnter, invalid, id, autoFocus 
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.metaKey || e.ctrlKey) return;
     if (open && e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)); }
     else if (open && e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
     else if (e.key === 'Enter') {
@@ -551,6 +601,7 @@ function CustomLineModal({ row, currency, onClose, onSave }: {
     if (q === null || q <= 0) er.qty = 'Enter a quantity above 0.';
     if (price.trim() && num(price) === null) er.price = 'Enter a number.';
     if (cost.trim() && (num(cost) === null || num(cost)! < 0)) er.cost = 'Enter a number, 0 or more.';
+    else if (!er.price && priceTooLow({ cost, price })) er.price = `At least ${money(minPrice({ cost }), currency)}, 1 cent above the unit cost.`;
     setErrors(er);
     if (Object.keys(er).length) return;
     onSave({

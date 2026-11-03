@@ -216,15 +216,19 @@ export function PaymentSettings() {
               Offer Interac e-Transfer
             </label>
           </SettingRow>
-          <SettingRow label="Send e-Transfers to" htmlFor="etransfer-email">
-            <input id="etransfer-email" type="email" value={draft.etransfer.email} maxLength={254} placeholder="payments@example.com"
-              onChange={(e) => setDraft({ ...draft, etransfer: { ...draft.etransfer, email: e.target.value } })} />
-          </SettingRow>
-          <SettingRow label="Instructions" hint="Optional." htmlFor="etransfer-instructions">
-            <textarea id="etransfer-instructions" rows={3} maxLength={2000} value={draft.etransfer.instructions}
-              placeholder="Autodeposit is on, so no security question is needed."
-              onChange={(e) => setDraft({ ...draft, etransfer: { ...draft.etransfer, instructions: e.target.value } })} />
-          </SettingRow>
+          {draft.etransfer.enabled && (
+            <>
+              <SettingRow label="Send e-Transfers to" htmlFor="etransfer-email">
+                <input id="etransfer-email" type="email" value={draft.etransfer.email} maxLength={254} placeholder="payments@example.com"
+                  onChange={(e) => setDraft({ ...draft, etransfer: { ...draft.etransfer, email: e.target.value } })} />
+              </SettingRow>
+              <SettingRow label="Instructions" hint="Optional." htmlFor="etransfer-instructions">
+                <textarea id="etransfer-instructions" rows={3} maxLength={2000} value={draft.etransfer.instructions}
+                  placeholder="Autodeposit is on, so no security question is needed."
+                  onChange={(e) => setDraft({ ...draft, etransfer: { ...draft.etransfer, instructions: e.target.value } })} />
+              </SettingRow>
+            </>
+          )}
         </div>
       </SettingsSection>
 

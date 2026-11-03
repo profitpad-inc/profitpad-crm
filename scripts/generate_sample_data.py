@@ -165,7 +165,7 @@ class Generator:
             name = "%s %s" % (random.choice(COMPANY_WORDS), random.choice(COMPANY_SUFFIX))
             city, state, country = random.choice(CITIES)
             companies.append({"name": name, "domain": "%s-%s%d.example.com" % (name.lower().replace(" ", ""), RUN, i),
-                              "industry": random.choice(INDUSTRIES), "address_city": city, "address_province": state, "country": country,
+                              "industry": random.choice(INDUSTRIES), "address_city": city, "address_province": state, "address_country": country,
                               "employee_count": random.randint(5, 5000), "annual_revenue": money(2e5, 5e7),
                               "phone": "+1 555 %03d %04d" % (random.randint(100, 999), random.randint(0, 9999)),
                               "owner": owner(), "created_at": iso(past(900))})
@@ -178,7 +178,7 @@ class Generator:
             contacts.append({"name": "%s %s" % (f, l), "first_name": f, "last_name": l,
                              "email": "%s.%s.%s%d@example.org" % (f.lower(), l.lower().replace("-", ""), RUN, i),
                              "phone": "+1 555 %03d %04d" % (random.randint(100, 999), random.randint(0, 9999)),
-                             "job_title": random.choice(TITLES), "address_city": city, "address_province": state, "country": country,
+                             "job_title": random.choice(TITLES), "address_city": city, "address_province": state, "address_country": country,
                              "lifecycle_stage": random.choice(["lead", "mql", "sql", "opportunity", "customer", "other"]),
                              "owner": owner(), "created_at": iso(past(700))})
         self.create("contacts", contacts)
