@@ -1,7 +1,7 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
-  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, GripVertical, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
   ShieldCheck, SlidersHorizontal, Trash2, User, Users, Webhook
 } from 'lucide-react';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -21,6 +21,7 @@ import { PropertySettings } from './PropertySettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
 import { Select } from '../components/Select';
+import { Modal } from '../components/ui';
 import '../settings.css';
 
 // who sees a page: everyone, signed-in users (not bare API keys), or admins
@@ -417,8 +418,50 @@ function itemKind(item: NavItem): string | null {
   }
 }
 
+// A list in the menu editor: the sidebar's top level, a section (its index in the top level) or the mobile hotbar.
+type ListKey = 'top' | 'bottom' | number;
+interface Spot { list: ListKey; index: number }
+
+// moves list[from] so it lands before what is now list[to] (to = length: the end)
+function moveWithin<T>(list: T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [x] = next.splice(from, 1);
+  next.splice(to > from ? to - 1 : to, 0, x);
+  return next;
+}
+
+// moves a sidebar item between the top level and sections (never a section into a section; the caller checks)
+function moveNav(all: NavItem[], from: Spot, to: Spot): NavItem[] {
+  if (from.list === to.list) {
+    if (from.list === 'top') return moveWithin(all, from.index, to.index);
+    return all.map((it, i) => (i === from.list && it.type === 'section' ? { ...it, items: moveWithin(it.items, from.index, to.index) } : it));
+  }
+  let item: NavItem | undefined;
+  let next: NavItem[];
+  if (from.list === 'top') {
+    item = all[from.index];
+    next = all.filter((_, i) => i !== from.index);
+  } else {
+    next = all.map((it, i) => {
+      if (i !== from.list || it.type !== 'section') return it;
+      item = it.items[from.index];
+      return { ...it, items: it.items.filter((_, j) => j !== from.index) };
+    });
+  }
+  const moved = item;
+  if (!moved) return all;
+  if (to.list === 'top') {
+    next.splice(to.index, 0, moved);
+    return next;
+  }
+  // taking an item out of the top level above the section shifts the section up one
+  const section = from.list === 'top' && from.index < (to.list as number) ? (to.list as number) - 1 : to.list;
+  return next.map((it, i) => (i === section && it.type === 'section' ? { ...it, items: [...it.items.slice(0, to.index), moved, ...it.items.slice(to.index)] } : it));
+}
+
 function NavSettings() {
   const { objects, objectByName, reloadNav, navSource, customViews } = useApp();
+  const navigate = useNavigate();
   const [target, setTarget] = useState<string>('default');
   const [menus, setMenus] = useState<Menu[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -431,6 +474,13 @@ function NavSettings() {
   const [views, setViews] = useState<Record<string, View[]>>({});
   // section: a section's index, null for the sidebar's top level, 'bottom' for the mobile hotbar
   const [adding, setAdding] = useState<{ section: number | null | 'bottom'; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
+  // which + Add picker is open, under the sidebar or under the hotbar
+  const [picker, setPicker] = useState<'sidebar' | 'bottom' | null>(null);
+  // the row being dragged and where it would land
+  const dragFrom = useRef<Spot | null>(null);
+  const [dropAt, setDropAt] = useState<Spot | null>(null);
+  // with unsaved changes: the page or menu the admin asked to go to, held until they discard or keep editing
+  const [leaving, setLeaving] = useState<{ to: string } | { target: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -457,8 +507,45 @@ function NavSettings() {
 
   const dirty = loaded && JSON.stringify({ items, bottomLeft, bottom }) !== savedJson;
 
+  // With unsaved changes, a click on a link to another page asks first (the same dialog as closing a property),
+  // and closing or reloading the tab gets the browser's own warning.
+  useEffect(() => {
+    if (!dirty) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaving({ to: url.pathname + url.search + url.hash });
+    };
+    const onUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    document.addEventListener('click', onClick, true);
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [dirty]);
+
+  function discard() {
+    const l = leaving;
+    setLeaving(null);
+    if (!l) return;
+    if ('to' in l) {
+      setSavedJson(JSON.stringify({ items, bottomLeft, bottom }));
+      navigate(l.to);
+    } else showTarget(l.target);
+  }
+
   function pickTarget(t: string) {
-    if (dirty && !window.confirm('Switch menus? Your unsaved changes to this menu are lost.')) return;
+    if (dirty) setLeaving({ target: t });
+    else showTarget(t);
+  }
+
+  function showTarget(t: string) {
     setTarget(t);
     setMessage(null);
     const own = menus.find((m) => m.scope === 'user' && m.user_id === t);
@@ -511,6 +598,61 @@ function NavSettings() {
       setBottom((l) => [...l, item]);
     } else update(adding.section, (l) => [...l, item]);
     setAdding((a) => ({ ...a, label: '' }));
+    setPicker(null);
+  }
+
+  function openPicker(where: 'sidebar' | 'bottom') {
+    setError(null);
+    // dividers and sections cannot go in the hotbar, nor Home (that is the Left button setting)
+    setAdding((a) => ({
+      ...a,
+      section: where === 'bottom' ? 'bottom' : null,
+      type: where === 'bottom' && (a.type === 'divider' || a.type === 'section' || a.type === 'home') ? 'object' : a.type,
+      label: ''
+    }));
+    setPicker(where);
+  }
+
+  const listOf = (key: ListKey): NavItem[] => {
+    if (key === 'bottom') return bottom;
+    if (key === 'top') return items;
+    const s = items[key];
+    return s?.type === 'section' ? s.items : [];
+  };
+
+  // whether the dragged row may land in a list: the hotbar and the sidebar stay apart, and sections do not nest
+  function canDrop(to: ListKey) {
+    const from = dragFrom.current;
+    if (!from) return false;
+    if ((from.list === 'bottom') !== (to === 'bottom')) return false;
+    return !(typeof to === 'number' && listOf(from.list)[from.index]?.type === 'section');
+  }
+
+  function dragOverRow(e: DragEvent<HTMLDivElement>, list: ListKey, i: number, it: NavItem) {
+    if (!dragFrom.current) return;
+    e.stopPropagation();
+    // measure against the row's own line, not a section's links under it
+    const head = (e.currentTarget.querySelector('.nav-edit-label') as HTMLElement).getBoundingClientRect();
+    const below = e.clientY >= head.top + head.height / 2;
+    // the lower half of a section's heading drops into the section, at its top
+    if (it.type === 'section' && list === 'top' && below && canDrop(i)) {
+      e.preventDefault();
+      setDropAt({ list: i, index: 0 });
+      return;
+    }
+    if (!canDrop(list)) return;
+    e.preventDefault();
+    setDropAt({ list, index: below ? i + 1 : i });
+  }
+
+  function drop() {
+    const from = dragFrom.current;
+    const to = dropAt;
+    dragFrom.current = null;
+    setDropAt(null);
+    if (!from || !to) return;
+    if (from.list === 'bottom') setBottom((l) => moveWithin(l, from.index, to.index));
+    else setItems((all) => moveNav(all, from, to));
   }
 
   async function save() {
@@ -537,11 +679,32 @@ function NavSettings() {
 
   const hasOwn = target !== 'default' && menus.some((m) => m.scope === 'user' && m.user_id === target);
 
-  const row = (it: NavItem, i: number, list: NavItem[], change: (fn: (l: NavItem[]) => NavItem[]) => void, child: boolean, children?: ReactNode) => {
+  const row = (it: NavItem, i: number, list: NavItem[], listKey: ListKey, change: (fn: (l: NavItem[]) => NavItem[]) => void, child: boolean, children?: ReactNode) => {
     const label = itemLabel(it, objectLabel, viewName, customViewName);
     const kind = itemKind(it);
+    const dropHere = dropAt?.list === listKey;
     return (
-      <div key={i} className={`nav-edit-row ${it.type}${child ? ' child' : ''}`}>
+      <div
+        key={i}
+        className={`nav-edit-row ${it.type}${child ? ' child' : ''}${dropHere && dropAt.index === i ? ' drop-before' : ''}${dropHere && dropAt.index === list.length && i === list.length - 1 ? ' drop-after' : ''}`}
+        onDragOver={(e) => dragOverRow(e, listKey, i, it)}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(); }}
+      >
+        <span
+          className="nav-grip"
+          draggable
+          title="Drag to reorder"
+          onDragStart={(e) => {
+            e.stopPropagation();
+            dragFrom.current = { list: listKey, index: i };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', label);
+            e.dataTransfer.setDragImage(e.currentTarget.parentElement!, 12, 12);
+          }}
+          onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
+        >
+          <GripVertical size={14} />
+        </span>
         <span className="nav-edit-label">
           {it.type === 'home' || it.type === 'divider' ? label : (
             <EditableLabel
@@ -560,9 +723,108 @@ function NavSettings() {
     );
   };
 
-  const renderList = (list: NavItem[], section: number | null) =>
-    list.map((it, i) => row(it, i, list, (fn) => update(section, fn), section !== null,
-      it.type === 'section' && section === null ? <div className="nav-edit-children">{renderList(it.items, i)}</div> : undefined));
+  const renderList = (list: NavItem[], section: number | null): ReactNode[] =>
+    list.map((it, i) => row(it, i, list, section ?? 'top', (fn) => update(section, fn), section !== null,
+      it.type === 'section' && section === null ? (
+        <div
+          className={`nav-edit-children${dropAt?.list === i && it.items.length === 0 ? ' drop-into' : ''}`}
+          // over the gaps or an empty section (rows inside handle their own)
+          onDragOver={(e) => {
+            if (!dragFrom.current) return;
+            e.stopPropagation();
+            if (!canDrop(i)) return;
+            e.preventDefault();
+            setDropAt({ list: i, index: it.items.length });
+          }}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(); }}
+        >
+          {renderList(it.items, i)}
+        </div>
+      ) : undefined));
+
+  const addButton = (where: 'sidebar' | 'bottom') => {
+    const full = where === 'bottom' && bottom.length >= BOTTOM_MAX;
+    return (
+      <button
+        type="button"
+        className="btn small nav-add-btn"
+        aria-expanded={picker === where}
+        disabled={full && picker !== where}
+        title={full ? `The mobile hotbar holds at most ${BOTTOM_MAX} links` : undefined}
+        onClick={() => (picker === where ? setPicker(null) : openPicker(where))}
+      >
+        <Plus size={14} /> Add
+      </button>
+    );
+  };
+
+  // the selector under a menu's + Add: what to add and, in the sidebar, where
+  const addPicker = (where: 'sidebar' | 'bottom') => picker === where && (
+    <div className="nav-add">
+      {where === 'sidebar' && items.some((it) => it.type === 'section') && (
+        <label className="field">
+          <span>Where</span>
+          <Select
+            value={adding.section === null || adding.section === 'bottom' ? '' : adding.section}
+            onChange={(v) => {
+              const section = v === '' ? null : Number(v);
+              setAdding((a) => ({ ...a, section, type: section !== null && a.type === 'section' ? 'object' : a.type }));
+            }}
+          >
+            <option value="">Top level</option>
+            {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>In section "{it.label}"</option>)}
+          </Select>
+        </label>
+      )}
+      <label className="field">
+        <span>Type</span>
+        <Select value={adding.type} onChange={(v) => setAdding((a) => ({ ...a, type: v, view: '' }))}>
+          <option value="object">Object</option>
+          <option value="view">Saved view</option>
+          {where !== 'bottom' && <option value="home">Home</option>}
+          <option value="custom_view">Custom view</option>
+          {where !== 'bottom' && <option value="divider">Divider</option>}
+          {adding.section === null && <option value="section">Section</option>}
+        </Select>
+      </label>
+      {(adding.type === 'object' || adding.type === 'view') && (
+        <label className="field">
+          <span>Object</span>
+          <Select value={adding.object} onChange={(v) => setAdding((a) => ({ ...a, object: v, view: '' }))}>
+            {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
+          </Select>
+        </label>
+      )}
+      {adding.type === 'view' && (
+        <label className="field">
+          <span>View</span>
+          <Select value={adding.view} onChange={(v) => setAdding((a) => ({ ...a, view: v }))}>
+            <option value="">Choose a view</option>
+            {(views[adding.object] ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}{v.shared ? '' : ' (personal)'}</option>)}
+          </Select>
+        </label>
+      )}
+      {adding.type === 'custom_view' && (
+        <label className="field">
+          <span>View</span>
+          <Select value={adding.view} onChange={(v) => setAdding((a) => ({ ...a, view: v }))}>
+            <option value="">Choose a view</option>
+            {customViews.map((v) => <option key={v.slug} value={v.slug}>{v.name ?? v.slug}{v.status === 'published' ? '' : ' (draft)'}</option>)}
+          </Select>
+        </label>
+      )}
+      {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (
+        <label className="field">
+          <span>{adding.type === 'section' ? 'Section name' : 'Label (optional)'}</span>
+          <input value={adding.label} maxLength={63} onChange={(e) => setAdding((a) => ({ ...a, label: e.target.value }))} />
+        </label>
+      )}
+      <div className="nav-add-actions">
+        <button className="btn" onClick={() => setPicker(null)}>Cancel</button>
+        <button className="btn primary" onClick={add}><Plus size={14} /> Add</button>
+      </div>
+    </div>
+  );
 
 
   return (
@@ -585,8 +847,10 @@ function NavSettings() {
         description={target !== 'default' && !hasOwn ? 'This user uses the default menu. Saving creates their own copy.' : 'Links in the order they appear. Sections group the links under them.'}
       >
         {!loaded ? <TableSkeleton rows={5} /> : items.length === 0
-          ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections below.</EmptyState>
+          ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections with + Add.</EmptyState>
           : <div className="nav-tree">{renderList(items, null)}</div>}
+        {loaded && addButton('sidebar')}
+        {addPicker('sidebar')}
       </SettingsSection>
 
       <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: the left button, up to ${BOTTOM_MAX} links, then Search.`}>
@@ -598,77 +862,15 @@ function NavSettings() {
               <option value="home">Home</option>
             </Select>
           </SettingRow>
-          <SettingRow label="Links" hint="Add links with Add an item below, choosing Mobile hotbar.">
+          <SettingRow label="Links">
             {bottom.length === 0 ? <span className="muted">No links between the left button and Search.</span> : (
               <div className="nav-tree stretch">
-                {bottom.map((it, i) => row(it, i, bottom, (fn) => setBottom(fn), false))}
+                {bottom.map((it, i) => row(it, i, bottom, 'bottom', (fn) => setBottom(fn), false))}
               </div>
             )}
+            {addButton('bottom')}
+            {addPicker('bottom')}
           </SettingRow>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="Add an item">
-        <div className="nav-add">
-          <label className="field">
-            <span>Where</span>
-            <Select
-              value={adding.section ?? ''}
-              onChange={(v) => {
-                const section = v === '' ? null : v === 'bottom' ? 'bottom' : Number(v);
-                // dividers and sections cannot go in the hotbar, nor Home (that is the Left button setting)
-                setAdding((a) => ({ ...a, section, type: section === 'bottom' && (a.type === 'divider' || a.type === 'section' || a.type === 'home') ? 'object' : a.type }));
-              }}
-            >
-              <option value="">Sidebar</option>
-              {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>Sidebar, in section "{it.label}"</option>)}
-              <option value="bottom">Mobile hotbar</option>
-            </Select>
-          </label>
-          <label className="field">
-            <span>Type</span>
-            <Select value={adding.type} onChange={(v) => setAdding((a) => ({ ...a, type: v, view: '' }))}>
-              <option value="object">Object</option>
-              <option value="view">Saved view</option>
-              {adding.section !== 'bottom' && <option value="home">Home</option>}
-              <option value="custom_view">Custom view</option>
-              {adding.section !== 'bottom' && <option value="divider">Divider</option>}
-              {adding.section === null && <option value="section">Section</option>}
-            </Select>
-          </label>
-          {(adding.type === 'object' || adding.type === 'view') && (
-            <label className="field">
-              <span>Object</span>
-              <Select value={adding.object} onChange={(v) => setAdding((a) => ({ ...a, object: v, view: '' }))}>
-                {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
-              </Select>
-            </label>
-          )}
-          {adding.type === 'view' && (
-            <label className="field">
-              <span>View</span>
-              <Select value={adding.view} onChange={(v) => setAdding((a) => ({ ...a, view: v }))}>
-                <option value="">Choose a view</option>
-                {(views[adding.object] ?? []).map((v) => <option key={v.id} value={v.id}>{v.name}{v.shared ? '' : ' (personal)'}</option>)}
-              </Select>
-            </label>
-          )}
-          {adding.type === 'custom_view' && (
-            <label className="field">
-              <span>View</span>
-              <Select value={adding.view} onChange={(v) => setAdding((a) => ({ ...a, view: v }))}>
-                <option value="">Choose a view</option>
-                {customViews.map((v) => <option key={v.slug} value={v.slug}>{v.name ?? v.slug}{v.status === 'published' ? '' : ' (draft)'}</option>)}
-              </Select>
-            </label>
-          )}
-          {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (
-            <label className="field">
-              <span>{adding.type === 'section' ? 'Section name' : 'Label (optional)'}</span>
-              <input value={adding.label} maxLength={63} onChange={(e) => setAdding((a) => ({ ...a, label: e.target.value }))} />
-            </label>
-          )}
-          <button className="btn" onClick={add}><Plus size={14} /> Add</button>
         </div>
       </SettingsSection>
 
@@ -676,6 +878,22 @@ function NavSettings() {
         {hasOwn && <button className="btn" onClick={resetUser}>Reset to default menu</button>}
         <button className="btn primary" onClick={save}>Save menu</button>
       </SaveBar>
+
+      {leaving && (
+        <Modal
+          className="discard-confirm"
+          title="Discard your changes?"
+          onClose={() => setLeaving(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setLeaving(null)} autoFocus>Keep editing</button>
+              <button className="btn danger" onClick={discard}>Discard</button>
+            </>
+          }
+        >
+          <p>{'to' in leaving ? 'Leaving now loses' : 'Switching menus now loses'} any changes you haven't saved to this menu.</p>
+        </Modal>
+      )}
     </SettingsPage>
   );
 }
