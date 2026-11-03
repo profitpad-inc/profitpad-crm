@@ -14,7 +14,7 @@ type RecParams = { object: string; id: string };
 const props = (q: { properties?: string }) => (q.properties ? q.properties.split(',').map((s) => s.trim()).filter(Boolean) : undefined);
 
 function bulkIds(ids: unknown): string[] {
-  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && id !== '')) throw badRequest('ids must be a list of record ids');
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && id !== '')) throw badRequest('ids must be a list of record IDs');
   const unique = [...new Set(ids as string[])];
   if (unique.length === 0 || unique.length > BULK_MAX) throw badRequest(`ids must have 1 to ${BULK_MAX} items`);
   return unique;
@@ -144,7 +144,7 @@ export async function recordRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'admin');
     const obj = await objectForWrite(req.params.object);
-    if (req.body?.confirm !== req.params.id) throw badRequest('permanent deletion cannot be undone; send {"confirm": "<record id>"}');
+    if (req.body?.confirm !== req.params.id) throw badRequest('permanent deletion cannot be undone; send {"confirm": "<record ID>"}');
     await withTx({ principal: p }, (c) => c.query('select meta.delete_record($1, $2)', [obj.object_type_id, req.params.id]));
     reply.code(204);
   });

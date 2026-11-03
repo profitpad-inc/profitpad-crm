@@ -258,7 +258,7 @@ function columnType(p: PropertyDef): string {
   if (t === 'number') return 'numeric';
   if (t === 'datetime') return 'timestamptz';
   if (t === 'file') return 'text[] (file ids)';
-  if (t === 'id') return 'text (record id)';
+  if (t === 'id') return 'text (record ID)';
   if (t === 'id_list') return 'text[]';
   return t;
 }

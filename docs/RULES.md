@@ -84,4 +84,4 @@ Every call is logged in `meta.schema_changes` with the actor (`crm.actor`) and t
 
 ## 8. Testing
 
-- `./db/test-local.sh` runs the SQL suite on a throwaway local cluster. Never run `db/tests/*.sql` against a real tenant: tests consume record ids.
+- `./db/test-local.sh` runs the SQL suite on a throwaway local cluster. Never run `db/tests/*.sql` against a real tenant: tests consume record IDs.

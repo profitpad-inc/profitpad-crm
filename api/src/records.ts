@@ -173,7 +173,7 @@ export async function batchReadRecords(
   requireObjectPermission(principal, obj, 'read');
   const ids = body.ids;
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100 || !ids.every((i) => typeof i === 'string')) {
-    throw badRequest('ids must be an array of 1 to 100 record ids');
+    throw badRequest('ids must be an array of 1 to 100 record IDs');
   }
   const specs = validateSpecs(body.associations);
   const props = visibleProperties(obj, principal, body.properties);

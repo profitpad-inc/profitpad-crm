@@ -367,7 +367,7 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
         ], responses: { 200: json({ type: 'object' }), ...errors } }
     },
     [`${base}/{id}/permanently-delete`]: {
-      post: { tags: [tag], summary: 'Permanently delete', description: 'Admin only. Send {"confirm": "<record id>"}. Wipes every value and the history; cannot be undone.', operationId: `permanently_delete_${o.api_name}`, parameters: [idParam], responses: { 204: { description: 'Deleted' }, ...errors } }
+      post: { tags: [tag], summary: 'Permanently delete', description: 'Admin only. Send {"confirm": "<record ID>"}. Wipes every value and the history; cannot be undone.', operationId: `permanently_delete_${o.api_name}`, parameters: [idParam], responses: { 204: { description: 'Deleted' }, ...errors } }
     },
     [`${base}/{id}/associations`]: {
       get: { tags: [tag], summary: 'List associations', operationId: `associations_${o.api_name}`, parameters: [idParam, { name: 'to_object', in: 'query', schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } }
@@ -540,7 +540,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       version: reg.version,
       description:
         'Object-based CRM API. Objects, properties and options come from the live registry, so this document changes as the schema does. ' +
-        'Record ids are 10-character lowercase hex strings, unique within an object.\n\n' +
+        'Record IDs are 10-character lowercase hex strings, unique within an object.\n\n' +
         AUTH_GUIDE
     },
     servers: [{ url: serverUrl }],

@@ -40,7 +40,7 @@ Values are `api_value`s; labels live in `meta.pc_0003` and are looked up at read
 
 | Option | Type | Effect |
 |---|---|---|
-| `single_value` | boolean | *enforced*: at most one value. Switching on fails (listing record ids) if any record has more than one. Switching is instant either way: storage is always `text[]` |
+| `single_value` | boolean | *enforced*: at most one value. Switching on fails (listing record IDs) if any record has more than one. Switching is instant either way: storage is always `text[]` |
 | `allow_user_add` | boolean | API writes may introduce new values (created with label = api_value) |
 | `allow_form_add` | boolean | reserved for forms |
 | `auto_append_users` | boolean | every active user becomes an option (`api_value` = user id, label = user name) |

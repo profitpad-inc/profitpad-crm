@@ -43,7 +43,7 @@ export const mcpOriginAllowed = (origin: string | undefined) => !origin || allow
 
 const INSTRUCTIONS = `ProfitPad CRM: records (contacts, companies, deals, tickets, quotes and more) organised as objects with typed properties, linked to each other by associations.
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
-Records are addressed by object api_name and record id. You act as the signed-in user and see only what they may see.`;
+Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.`;
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `

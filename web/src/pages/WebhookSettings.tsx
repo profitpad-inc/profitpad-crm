@@ -467,7 +467,7 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
               </select>
             )}
           </div>
-          {d.send_properties.length === 0 && <div className="muted small">Without any, deliveries carry the record id and the change but no property values.</div>}
+          {d.send_properties.length === 0 && <div className="muted small">Without any, deliveries carry the record ID and the change but no property values.</div>}
         </div>
       )}
       <div className="field">
@@ -584,7 +584,7 @@ function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?:
               <option value="">Every object</option>
               {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
             </select>
-            {object && <input value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="Record id" aria-label="Record id" style={{ width: 120 }} />}
+            {object && <input value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="Record ID" aria-label="Record ID" style={{ width: 120 }} />}
             <label className="small">From <input type="date" value={since} min={oldest} max={today} onChange={(e) => setSince(e.target.value)} /></label>
             <label className="small">To <input type="date" value={until} min={oldest} max={today} onChange={(e) => setUntil(e.target.value)} /></label>
             {filtered && (
