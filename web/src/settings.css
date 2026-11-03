@@ -288,3 +288,9 @@
 .settings-toolbar input[type='date'] { width: 150px; padding-right: 6px; }
 .thing-body .field-row { gap: 12px; }
 .thing-body .field-row > .field.grow { flex: 1 1 260px; }
+/* Admin approval (0061): items waiting to be turned on, and the one a ?review= link points at */
+.approval-note { display: block; margin-top: 4px; line-height: 1.5; }
+.approval-note .status-pill { vertical-align: 1px; }
+.settings .reviewing { outline: 2px solid var(--warn); outline-offset: -2px; border-radius: var(--radius); }
+.settings tr.reviewing > td { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.origin-list li .origin-main { display: flex; flex-direction: column; min-width: 0; }

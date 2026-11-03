@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Cable, Plus } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
+import { ApprovalNote, EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton, useReview, type Approval } from '../components/settings';
 import { Select } from '../components/Select';
 
 // Settings → View integrations (admins, migration 0036): outside endpoints such as
 // n8n webhooks that custom views send data to with callIntegration(key, data).
 // The API makes the request, so the secret header never reaches a browser.
 
-interface Integration {
+interface Integration extends Approval {
   key: string;
   label: string;
   description: string | null;
@@ -70,6 +70,7 @@ export function IntegrationSettings() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [testResult, setTestResult] = useState<{ key: string; text: string } | null>(null);
+  const review = useReview();
 
   const load = useCallback(async () => {
     const res = await api<{ results: Integration[] }>('GET', '/v1/view-integrations');
@@ -108,6 +109,13 @@ export function IntegrationSettings() {
       else await api('POST', '/v1/view-integrations', { ...body, key: d.key });
       setDraft(null);
     }, d.editing ? 'Integration saved' : 'Integration added');
+  }
+
+  // turning one on lets views send CRM data to it (an admin's approval when it was added outside the CRM)
+  function turnOn(i: Integration) {
+    const who = i.audience === 'everyone' ? 'anyone who can open a view that calls it' : 'admins';
+    if (!window.confirm(`Turn on "${i.label}"? Views will be able to send CRM data to ${i.url}, for ${who}.`)) return;
+    run(() => api('PATCH', `/v1/view-integrations/${encodeURIComponent(i.key)}`, { enabled: true }), i.awaiting_approval ? 'Integration approved and turned on' : 'Integration turned on');
   }
 
   async function sendTest(i: Integration) {
@@ -209,10 +217,11 @@ export function IntegrationSettings() {
             </thead>
             <tbody>
               {list.map((i) => (
-                <tr key={i.key}>
+                <tr key={i.key} id={`review-${i.key}`} className={review === i.key ? 'reviewing' : undefined}>
                   <td className="primary-cell wrap">
-                    {i.label} {!i.enabled && <StatusPill tone="off">Off</StatusPill>}
+                    {i.label} {!i.enabled && !i.awaiting_approval && <StatusPill tone="off">Off</StatusPill>}
                     <span className="sub"><code>{i.key}</code>{i.description && ` ${i.description}`}</span>
+                    <ApprovalNote item={i} />
                   </td>
                   <td className="small wrap">{i.url}{i.has_secret && <span className="sub">With {i.secret_header}</span>}</td>
                   <td>{i.audience === 'everyone' ? 'Everyone' : 'Admins'}</td>
@@ -228,6 +237,11 @@ export function IntegrationSettings() {
                   </td>
                   <td className="row-actions">
                     <span className="row-actions-inner">
+                      {!i.enabled && (
+                        <button className={`btn small${i.awaiting_approval ? ' primary' : ' ghost'}`} onClick={() => turnOn(i)}>
+                          {i.awaiting_approval ? 'Approve and turn on' : 'Turn on'}
+                        </button>
+                      )}
                       <button className="btn small ghost" onClick={() => setDraft({
                         editing: i.key, key: i.key, keyTouched: true, label: i.label, description: i.description ?? '', url: i.url, audience: i.audience,
                         enabled: i.enabled, secret_header: i.secret_header ?? '', secret_value: '', had_secret: i.has_secret,

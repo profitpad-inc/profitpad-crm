@@ -1,4 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check, Copy } from 'lucide-react';
 
 // Building blocks shared by every Settings page (styles in settings.css). A page is a header (title, description,
@@ -103,6 +104,44 @@ export type Tone = 'on' | 'off' | 'failed' | 'pending' | 'warn' | 'info';
 
 export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return <span className={`status-pill ${tone}`}>{children}</span>;
+}
+
+// Admin approval (migration 0061): integrations, webhooks and embed domains set up from outside the CRM (an AI over
+// MCP, an API key) wait for an admin to turn them on here.
+export interface Approval {
+  awaiting_approval: boolean;
+  requested_via: string | null;
+  requested_at: string | null;
+}
+
+// pill: false where the item's own status pill already says it is waiting
+export function ApprovalNote({ item, pill = true }: { item: Approval; pill?: boolean }) {
+  if (!item.awaiting_approval) return null;
+  return (
+    <span className="sub approval-note">
+      {pill && <><StatusPill tone="warn">Waiting for approval</StatusPill>{' '}</>}
+      {item.requested_via ? `Added by ${item.requested_via}` : 'Added outside the CRM'}
+      {item.requested_at && `, ${new Date(item.requested_at).toLocaleString()}`}. Check where it sends data, then turn it on.
+    </span>
+  );
+}
+
+// ?review=<id> (the link the AI hands out): the id under review. Its element (id="review-<id>", given the "reviewing"
+// class by the page) is scrolled into view once it is on the page.
+export function useReview(): string | null {
+  const [params] = useSearchParams();
+  const review = params.get('review');
+  useEffect(() => {
+    if (!review) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(`review-${review}`);
+      if (el || ++tries > 40) window.clearInterval(timer);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [review]);
+  return review;
 }
 
 // Sticky bar at the bottom of pages whose one Save covers several sections.

@@ -5,6 +5,7 @@ import { isIP } from 'node:net';
 import { pool } from './db.js';
 import { ApiError, badRequest, forbidden, notFound } from './errors.js';
 import { requireScope, type Principal } from './auth.js';
+import { approvalChange, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
 import { isBlockedAddress } from './oauth.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 import { canOpen, loadView, logViewErrors } from './views.js';
@@ -31,7 +32,7 @@ const INTERACTIVE_CALLS_PER_MINUTE = 120;
 // other host must be https on a public address.
 const privateHosts = new Set((process.env.INTEGRATION_PRIVATE_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean));
 
-interface IntegrationRow {
+interface IntegrationRow extends ApprovalRow {
   key: string;
   label: string;
   description: string | null;
@@ -56,8 +57,8 @@ const isAdmin = (p: Principal) => p.scopes.has('admin') || (p.userId !== null &&
 const canUse = (p: Principal, i: IntegrationRow) => i.enabled && (i.audience === 'everyone' || isAdmin(p));
 
 // Admins; a connected app (an admin's AI over MCP) also needs the schema
-// scope, and is told to confirm the URL and data with the admin first, as
-// with webhooks.
+// scope. Only an admin signed in to the CRM can turn one on (approval.ts):
+// set up any other way, it waits for approval.
 function requireAdmin(p: Principal): void {
   if (!isAdmin(p)) throw forbidden('only admins can change integrations');
   if (p.oauth && !p.scopes.has('schema')) throw forbidden('connected apps need the schema scope to manage integrations');
@@ -136,7 +137,8 @@ function adminOut(i: IntegrationRow) {
     last_status: i.last_status,
     last_error: i.last_error,
     data_example: i.data_example ?? null,
-    interactive: i.interactive
+    interactive: i.interactive,
+    ...approvalOut(i, approveUrl('view-integrations', i.key))
   };
 }
 
@@ -255,6 +257,7 @@ export async function createIntegration(p: Principal, input: IntegrationInput) {
   if (typeof input.key !== 'string' || !KEY_RE.test(input.key)) throw badRequest('key must be 2 to 40 characters: lowercase letters, digits, - and _, starting with a letter');
   const fields = readInput(input, true);
   if ((fields.secret_header == null) !== (fields.secret_value == null)) throw badRequest('give both secret_header and secret_value, or neither');
+  Object.assign(fields, approvalChange(p, `The integration "${input.key}"`, approveUrl('view-integrations', input.key), fields.enabled as boolean | undefined, true));
   const cols = ['key', 'created_by', ...Object.keys(fields)];
   const values = [input.key, p.actor, ...Object.values(fields)];
   try {
@@ -269,10 +272,16 @@ export async function createIntegration(p: Principal, input: IntegrationInput) {
   }
 }
 
-export async function updateIntegration(p: Principal, key: string, input: IntegrationInput) {
+// approved: an admin turned it on with this change (the route logs it)
+export async function updateIntegration(p: Principal, key: string, input: IntegrationInput): Promise<AdminIntegration & { approved?: true }> {
   requireAdmin(p);
   const current = await loadIntegration(key);
   const fields = readInput(input, false);
+  // where data goes and who sends it; the rest needs no new approval
+  const guarded = ('url' in fields && fields.url !== current.url) || ('audience' in fields && fields.audience !== current.audience);
+  const approval = approvalChange(p, `The integration "${key}"`, approveUrl('view-integrations', key), fields.enabled as boolean | undefined, guarded, current);
+  delete fields.enabled;
+  Object.assign(fields, approval);
   const header = 'secret_header' in fields ? fields.secret_header : current.secret_header;
   const value = 'secret_value' in fields ? fields.secret_value : current.secret_value;
   if ((header == null) !== (value == null)) throw badRequest(header == null ? 'secret_value needs a secret_header' : 'secret_header needs a secret_value');
@@ -282,7 +291,7 @@ export async function updateIntegration(p: Principal, key: string, input: Integr
     `update auth.view_integrations set ${sets.join(', ')}, updated_at = now() where key = $1 returning *`,
     [key, ...Object.values(fields)]
   );
-  return adminOut(rows[0]);
+  return { ...adminOut(rows[0]), ...('approved_at' in approval ? { approved: true as const } : {}) };
 }
 
 export async function deleteIntegration(p: Principal, key: string): Promise<void> {

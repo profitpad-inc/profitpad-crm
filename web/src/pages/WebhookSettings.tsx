@@ -5,7 +5,9 @@ import { api, getSchema, type AssociationLabel, type FilterGroup, type ObjectDef
 import { useApp } from '../lib/app-context';
 import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from '../components/FilterBuilder';
 import { Menu } from '../components/ui';
-import { CopyField, EditPanel, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
+import {
+  ApprovalNote, CopyField, EditPanel, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview, type Approval, type Tone
+} from '../components/settings';
 import { Select } from '../components/Select';
 
 // Settings → Webhooks (admins, migration 0038): endpoints that receive record
@@ -17,7 +19,7 @@ type EventName =
   | 'created' | 'updated' | 'merged' | 'archived' | 'restored'
   | 'association_added' | 'association_removed' | 'property_changed' | 'property_cleared';
 
-interface Subscription {
+interface Subscription extends Approval {
   id: number;
   endpoint_id: number;
   object: string;
@@ -34,7 +36,7 @@ interface Subscription {
   created_at: string;
 }
 
-interface Endpoint {
+interface Endpoint extends Approval {
   id: number;
   name: string;
   description: string | null;
@@ -124,6 +126,7 @@ export function WebhookSettings() {
   const [endpointDraft, setEndpointDraft] = useState<EndpointDraft | null>(null);
   const [subDraft, setSubDraft] = useState<SubscriptionDraft | null>(null);
   // a signing secret just made or revealed, shown until dismissed
+  const review = useReview();
   const [secret, setSecret] = useState<{ endpoint: number; value: string; fresh: boolean } | null>(null);
   const [testResult, setTestResult] = useState<{ endpoint: number; text: string } | null>(null);
   const [openLog, setOpenLog] = useState<number | null>(null);
@@ -184,8 +187,20 @@ export function WebhookSettings() {
   const batchOk = !!d && /^\d+$/.test(d.batch_max) && Number(d.batch_max) >= 1 && Number(d.batch_max) <= 1000;
 
   const newEndpoint = () => setEndpointDraft(EMPTY_ENDPOINT);
-  const endpointTone = (e: Endpoint): Tone => (!e.enabled ? 'off' : e.consecutive_failures > 0 ? 'failed' : 'on');
-  const endpointState = (e: Endpoint) => (!e.enabled ? 'Off' : e.consecutive_failures > 0 ? 'Failing' : 'On');
+  const endpointTone = (e: Endpoint): Tone => (e.awaiting_approval ? 'warn' : !e.enabled ? 'off' : e.consecutive_failures > 0 ? 'failed' : 'on');
+  const endpointState = (e: Endpoint) => (e.awaiting_approval ? 'Waiting for approval' : !e.enabled ? 'Off' : e.consecutive_failures > 0 ? 'Failing' : 'On');
+
+  // turning one on sends CRM data out (an admin's approval when it was added outside the CRM)
+  function turnOnEndpoint(e: Endpoint) {
+    if (!window.confirm(`Turn on "${e.name}"? Its subscriptions that are on will send CRM data to ${e.url}.`)) return;
+    run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: true }), e.awaiting_approval ? 'Endpoint approved and turned on' : 'Endpoint turned on');
+  }
+
+  function turnOnSubscription(e: Endpoint, s: Subscription) {
+    const sends = s.send_properties.length ? `record IDs, changes and ${s.send_properties.join(', ')}` : 'record IDs and changes';
+    if (!window.confirm(`Turn on "${s.summary}"? It sends ${sends} to ${e.url}.`)) return;
+    run(() => api('PATCH', `/v1/webhooks/subscriptions/${s.id}`, { enabled: true }), s.awaiting_approval ? 'Subscription approved and turned on' : 'Subscription turned on');
+  }
 
   return (
     <SettingsPage
@@ -255,12 +270,13 @@ export function WebhookSettings() {
       )}
       <div className="thing-list">
         {list?.map((e) => (
-          <div key={e.id} className="thing">
+          <div key={e.id} id={`review-endpoint-${e.id}`} className={`thing${review === `endpoint-${e.id}` ? ' reviewing' : ''}`}>
             <div className="thing-head">
               <div className="thing-main">
                 <div className="thing-title">{e.name}<StatusPill tone={endpointTone(e)}>{endpointState(e)}</StatusPill></div>
                 <div className="thing-sub">{e.url}{e.has_secret && ` with ${e.secret_header}`}</div>
                 {e.description && <div className="thing-sub plain">{e.description}</div>}
+                <ApprovalNote item={e} pill={false} />
                 <div className="thing-meta">
                   <span>Last 7 days: {e.deliveries.succeeded_7d} delivered, {e.deliveries.failed_7d} failed{e.deliveries.pending ? `, ${e.deliveries.pending} waiting` : ''}</span>
                   {e.last_success_at && <span>Last success {when(e.last_success_at)}</span>}
@@ -272,6 +288,11 @@ export function WebhookSettings() {
                 {testResult?.endpoint === e.id && <div className="thing-sub plain">Test: {testResult.text}</div>}
               </div>
               <div className="thing-actions">
+                {!e.enabled && (
+                  <button className={`btn small${e.awaiting_approval ? ' primary' : ''}`} onClick={() => turnOnEndpoint(e)}>
+                    {e.awaiting_approval ? 'Approve and turn on' : 'Turn on'}
+                  </button>
+                )}
                 <button className="btn small" onClick={() => setEndpointDraft({
                   editing: e.id, name: e.name, description: e.description ?? '', url: e.url, enabled: e.enabled, batch_max: String(e.batch_max),
                   secret_header: e.secret_header ?? '', secret_value: '', had_secret: e.has_secret
@@ -288,9 +309,9 @@ export function WebhookSettings() {
                         const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/rotate-secret`);
                         setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
                       }, 'New signing secret made'); }}>New signing secret</button>
-                      <button onClick={() => { close(); run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: !e.enabled }), e.enabled ? 'Endpoint turned off' : 'Endpoint turned on'); }}>
-                        {e.enabled ? 'Turn off' : 'Turn on'}
-                      </button>
+                      {e.enabled && (
+                        <button onClick={() => { close(); run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: false }), 'Endpoint turned off'); }}>Turn off</button>
+                      )}
                       <div className="menu-sep" />
                       <button className="danger" onClick={() => { close(); if (window.confirm(`Delete "${e.name}" with its ${e.subscriptions.length} subscription(s) and delivery log?`)) run(() => api('DELETE', `/v1/webhooks/endpoints/${e.id}`), 'Endpoint deleted'); }}>Delete endpoint</button>
                     </>
@@ -311,11 +332,12 @@ export function WebhookSettings() {
                   <table className="grid">
                     <tbody>
                       {e.subscriptions.map((s) => (
-                        <tr key={s.id}>
+                        <tr key={s.id} id={`review-subscription-${s.id}`} className={review === `subscription-${s.id}` ? 'reviewing' : undefined}>
                           <td className="primary-cell wrap">
-                            {s.summary} {!s.enabled && <StatusPill tone="off">Off</StatusPill>}
+                            {s.summary} {!s.enabled && !s.awaiting_approval && <StatusPill tone="off">Off</StatusPill>}
                             {s.description && <span className="sub">{s.description}</span>}
                             <span className="sub">{s.send_properties.length ? `Sends ${s.send_properties.join(', ')}` : 'Sends no property values'}</span>
+                            <ApprovalNote item={s} />
                           </td>
                           <td className="row-actions">
                             <span className="row-actions-inner">
@@ -324,9 +346,13 @@ export function WebhookSettings() {
                                 target_object: s.target_object ?? '', label_id: s.label_id ?? '', filter_groups: s.filter_groups,
                                 description: s.description ?? '', enabled: s.enabled
                               })}>Edit</button>
-                              <button className="btn small ghost" onClick={() => run(() => api('PATCH', `/v1/webhooks/subscriptions/${s.id}`, { enabled: !s.enabled }))}>
-                                {s.enabled ? 'Turn off' : 'Turn on'}
-                              </button>
+                              {s.enabled ? (
+                                <button className="btn small ghost" onClick={() => run(() => api('PATCH', `/v1/webhooks/subscriptions/${s.id}`, { enabled: false }), 'Subscription turned off')}>Turn off</button>
+                              ) : (
+                                <button className={`btn small${s.awaiting_approval ? ' primary' : ' ghost'}`} onClick={() => turnOnSubscription(e, s)}>
+                                  {s.awaiting_approval ? 'Approve and turn on' : 'Turn on'}
+                                </button>
+                              )}
                               <button className="btn small ghost danger-text" onClick={() => window.confirm('Delete this subscription?') && run(() => api('DELETE', `/v1/webhooks/subscriptions/${s.id}`), 'Subscription deleted')}>Delete</button>
                             </span>
                           </td>

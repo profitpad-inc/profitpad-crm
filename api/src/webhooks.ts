@@ -10,6 +10,7 @@ import { compileFilterGroups, type FilterGroup } from './search.js';
 import { serialize } from './records.js';
 import { fromDb } from './values.js';
 import { checkUrl, guardedLookup } from './integrations.js';
+import { approvalChange, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 
 // Webhook subscriptions (migration 0038). Admins, or their AI over MCP with
@@ -65,6 +66,8 @@ const POLL_MS = 500;
 const isAdmin = (p: Principal) => p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
 
 // Admins; a connected app (an admin's AI over MCP) also needs the schema scope.
+// Only an admin signed in to the CRM can turn endpoints and subscriptions on
+// (approval.ts): set up any other way, they wait for approval.
 function requireAdmin(p: Principal): void {
   if (!isAdmin(p)) throw forbidden('only admins can see or change webhooks');
   if (p.oauth && !p.scopes.has('schema')) throw forbidden('connected apps need the schema scope to manage webhooks');
@@ -82,7 +85,7 @@ async function audit(p: Principal, event: string, targetType: string, targetId: 
 
 // ---- endpoints ----------------------------------------------------------------
 
-interface EndpointRow {
+interface EndpointRow extends ApprovalRow {
   id: string;
   name: string;
   description: string | null;
@@ -118,8 +121,12 @@ const endpointOut = (e: EndpointRow) => ({
   last_success_at: e.last_success_at,
   last_failure_at: e.last_failure_at,
   last_error: e.last_error,
-  consecutive_failures: e.consecutive_failures
+  consecutive_failures: e.consecutive_failures,
+  ...approvalOut(e, endpointApproveUrl(e.id))
 });
+
+const endpointApproveUrl = (id: string | number) => approveUrl('webhooks', `endpoint-${id}`);
+const subscriptionApproveUrl = (id: string | number) => approveUrl('webhooks', `subscription-${id}`);
 
 function requireSecretBox(): void {
   if (!secretBoxReady()) throw new ApiError(503, 'the server cannot store secrets: CALENDAR_TOKEN_KEY is not set', 'not_configured');
@@ -230,6 +237,7 @@ export async function createEndpoint(p: Principal, input: EndpointInput, req?: F
   requireSecretBox();
   const fields = readEndpoint(input, true);
   if ((fields.secret_header == null) !== (fields.secret_value == null)) throw badRequest('give both secret_header and secret_value, or neither');
+  Object.assign(fields, approvalChange(p, 'A webhook endpoint', '', fields.enabled as boolean | undefined, true));
   const secret = newSigningSecret();
   const cols = ['signing_secret', 'created_by', 'updated_by', ...Object.keys(fields)];
   const values = [seal(secret), p.actor, p.actor, ...Object.values(fields)];
@@ -249,6 +257,11 @@ export async function updateEndpoint(p: Principal, id: unknown, input: EndpointI
   const value = 'secret_value' in fields ? fields.secret_value : current.secret_value;
   if ((header == null) !== (value == null)) throw badRequest(header == null ? 'secret_value needs a secret_header' : 'secret_header needs a secret_value');
   if (!Object.keys(fields).length) return getEndpoint(p, id);
+  // where deliveries go; the rest needs no new approval
+  const guarded = 'url' in fields && fields.url !== current.url;
+  const approval = approvalChange(p, `Webhook endpoint ${current.id}`, endpointApproveUrl(current.id), fields.enabled as boolean | undefined, guarded, current);
+  delete fields.enabled;
+  Object.assign(fields, approval);
   // a re-enabled endpoint starts counting failures again
   if (fields.enabled === true) fields.consecutive_failures = 0;
   const sets = Object.keys(fields).map((c, i) => `${c} = $${i + 3}`);
@@ -257,6 +270,7 @@ export async function updateEndpoint(p: Principal, id: unknown, input: EndpointI
     [current.id, p.actor, ...Object.values(fields)]
   );
   await audit(p, 'webhook.endpoint_updated', 'webhook_endpoint', Number(current.id), loggedFields(input), req);
+  if ('approved_at' in approval) await audit(p, 'webhook.endpoint_approved', 'webhook_endpoint', Number(current.id), { url: fields.url ?? current.url }, req);
   return getEndpoint(p, id);
 }
 
@@ -288,7 +302,7 @@ export async function rotateSigningSecret(p: Principal, id: unknown, req?: Fasti
 
 // ---- subscriptions ------------------------------------------------------------
 
-interface SubscriptionRow {
+interface SubscriptionRow extends ApprovalRow {
   id: string;
   endpoint_id: string;
   object_type_id: string;
@@ -366,7 +380,8 @@ function subscriptionOut(reg: Registry, s: SubscriptionRow) {
     created_by: s.created_by,
     created_at: s.created_at,
     updated_by: s.updated_by,
-    updated_at: s.updated_at
+    updated_at: s.updated_at,
+    ...approvalOut(s, subscriptionApproveUrl(s.id))
   };
 }
 
@@ -391,7 +406,7 @@ function subscribableObject(reg: Registry, key: unknown, field: string): ObjectD
 }
 
 // Checks a whole subscription (the stored one merged with the changes).
-async function checkSubscription(reg: Registry, s: Omit<SubscriptionRow, 'id' | 'created_by' | 'created_at' | 'updated_by' | 'updated_at'>) {
+async function checkSubscription(reg: Registry, s: Omit<SubscriptionRow, 'id' | 'created_by' | 'created_at' | 'updated_by' | 'updated_at' | Exclude<keyof ApprovalRow, 'enabled'>>) {
   const obj = reg.byKey.get(s.object_type_id)!;
   if (!EVENT_NAMES.includes(s.event)) throw badRequest(`event must be one of ${EVENT_NAMES.join(', ')}`);
   if (PROPERTY_EVENTS.has(s.event) && s.properties.length === 0) throw badRequest(`${s.event} needs properties: the property api_names to watch`);
@@ -470,11 +485,14 @@ export async function createSubscription(p: Principal, input: SubscriptionInput,
   };
   if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw badRequest('enabled must be true or false');
   await checkSubscription(reg, s);
+  const approval = approvalChange(p, 'A webhook subscription', '', input.enabled as boolean | undefined, true);
+  const extra = Object.keys(approval).filter((k) => k !== 'enabled');
   const { rows } = await pool.query(
     `insert into auth.webhook_subscriptions
-       (endpoint_id, object_type_id, event, properties, send_properties, target_object_type_id, label_id, filter_groups, description, enabled, created_by, updated_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11) returning *`,
-    [s.endpoint_id, s.object_type_id, s.event, s.properties, s.send_properties, s.target_object_type_id, s.label_id, JSON.stringify(s.filter_groups), s.description, s.enabled, p.actor]
+       (endpoint_id, object_type_id, event, properties, send_properties, target_object_type_id, label_id, filter_groups, description, enabled, created_by, updated_by${extra.map((k) => `, ${k}`).join('')})
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11${extra.map((_, i) => `, $${i + 12}`).join('')}) returning *`,
+    [s.endpoint_id, s.object_type_id, s.event, s.properties, s.send_properties, s.target_object_type_id, s.label_id, JSON.stringify(s.filter_groups), s.description,
+      approval.enabled, p.actor, ...extra.map((k) => approval[k])]
   );
   await audit(p, 'webhook.subscription_created', 'webhook_subscription', Number(rows[0].id), { endpoint_id: Number(endpoint.id), object: obj.api_name, event: s.event }, req);
   return subscriptionOut(reg, rows[0]);
@@ -494,10 +512,7 @@ export async function updateSubscription(p: Principal, id: unknown, input: Subsc
   if (input.label_id !== undefined) next.label_id = input.label_id === null ? null : String(input.label_id);
   if (input.filter_groups !== undefined) next.filter_groups = readFilterGroups(input.filter_groups);
   if (input.description !== undefined) next.description = readDescription(input.description);
-  if (input.enabled !== undefined) {
-    if (typeof input.enabled !== 'boolean') throw badRequest('enabled must be true or false');
-    next.enabled = input.enabled;
-  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw badRequest('enabled must be true or false');
   // switching to an event that takes no properties or target drops them
   if (input.event !== undefined) {
     if (input.properties === undefined && next.event !== 'updated' && !PROPERTY_EVENTS.has(next.event)) next.properties = [];
@@ -507,12 +522,20 @@ export async function updateSubscription(p: Principal, id: unknown, input: Subsc
     }
   }
   await checkSubscription(reg, next);
+  // what is sent and when; only the description needs no new approval
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const guarded = next.event !== current.event || !same(next.properties, current.properties) || !same(next.send_properties, current.send_properties)
+    || next.target_object_type_id !== current.target_object_type_id || next.label_id !== current.label_id || !same(next.filter_groups, current.filter_groups);
+  const approval = approvalChange(p, `Webhook subscription ${current.id}`, subscriptionApproveUrl(current.id), input.enabled as boolean | undefined, guarded, current);
+  const extra = Object.keys(approval);
   const { rows } = await pool.query(
     `update auth.webhook_subscriptions set event = $2, properties = $3, send_properties = $4, target_object_type_id = $5, label_id = $6,
-       filter_groups = $7, description = $8, enabled = $9, updated_by = $10, updated_at = now() where id = $1 returning *`,
-    [current.id, next.event, next.properties, next.send_properties, next.target_object_type_id, next.label_id, JSON.stringify(next.filter_groups), next.description, next.enabled, p.actor]
+       filter_groups = $7, description = $8, updated_by = $9${extra.map((k, i) => `, ${k} = $${i + 10}`).join('')}, updated_at = now() where id = $1 returning *`,
+    [current.id, next.event, next.properties, next.send_properties, next.target_object_type_id, next.label_id, JSON.stringify(next.filter_groups), next.description, p.actor,
+      ...extra.map((k) => approval[k])]
   );
   await audit(p, 'webhook.subscription_updated', 'webhook_subscription', Number(current.id), { fields: Object.keys(input) }, req);
+  if ('approved_at' in approval) await audit(p, 'webhook.subscription_approved', 'webhook_subscription', Number(current.id), { endpoint_id: Number(current.endpoint_id), event: next.event }, req);
   return subscriptionOut(reg, rows[0]);
 }
 

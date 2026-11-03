@@ -28,6 +28,7 @@ import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
 } from './integrations.js';
 import { describeCreateForm, listConfig } from './native-ui.js';
+import { loadFormsSettings, saveEmbedDomains } from './routes/ui.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
   updateEndpoint, updateSubscription
@@ -51,7 +52,7 @@ Records are addressed by object api_name and record ID. You act as the signed-in
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also manage webhooks (endpoints that receive record events, and their subscriptions): they send CRM data to outside addresses, so confirm the URL and what will be sent with the admin before creating or changing an endpoint or subscription, and before deleting one. The same goes for view integrations: confirm the URL and the data before creating or changing one.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -483,7 +484,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
     const admin = 'url' in i ? (i as AdminIntegration) : null;
     return {
       key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: admin ? admin.enabled : true, interactive: i.interactive,
-      ...(admin ? { ...maskUrl(admin.url), has_secret: admin.has_secret, last_called_at: admin.last_called_at, last_status: admin.last_status, last_error: admin.last_error } : {}),
+      ...(admin ? {
+        ...maskUrl(admin.url), has_secret: admin.has_secret, last_called_at: admin.last_called_at, last_status: admin.last_status, last_error: admin.last_error,
+        awaiting_approval: admin.awaiting_approval, ...(admin.approve_url ? { approve_url: admin.approve_url } : {})
+      } : {}),
       data_example: i.data_example
     };
   })));
@@ -494,7 +498,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     url: z.string().describe('The endpoint: https on a public address (e.g. an n8n webhook URL)'),
     data_example: z.unknown().optional().describe('An example of the data views send (the contract with the workflow); calls whose data does not match its shape are still sent, with a warning in the view\'s runtime errors. null removes it'),
     audience: z.enum(['admins', 'everyone']).optional().describe('Who may call it from a view they can open (default admins)'),
-    enabled: z.boolean().optional(),
+    enabled: z.boolean().optional().describe('Only false does anything: you can turn an integration off but not on. New ones start off until an admin turns them on (approve_url)'),
     interactive: z.boolean().optional().describe('For calls made while the viewer types (autocomplete, lookups): the viewer is asked once per page visit instead of on every call, and up to 120 calls a minute per viewer instead of 30. Default false'),
     secret_header: z.string().nullable().optional().describe('Header sent with every call, e.g. X-Webhook-Secret for n8n header auth (null removes it)'),
     secret_value: z.string().optional().describe('The value of secret_header; never shown again')
@@ -502,19 +506,19 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('create_view_integration', {
     title: 'Create view integration',
-    description: 'Adds an integration views can call. It sends CRM data to an outside address, so first show the admin the URL and the data it will receive and wait for their yes. The endpoint gets a JSON POST {integration, data, view, user, sent_at}.',
+    description: 'Adds an integration views can call. It sends CRM data to an outside address, so first show the admin the URL and the data it will receive and wait for their yes. It starts off: give the admin the approve_url from the answer to review and turn it on in the CRM (until then views cannot call it; test_integration still works). The endpoint gets a JSON POST {integration, data, view, user, sent_at}.',
     inputSchema: z.object({ key: z.string().describe('2 to 40: lowercase letters, digits, - and _, starting with a letter; views call it by this'), ...integrationFields }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     scopeChallenge: schemaChallenge
   }, async (b) => run(async () => {
     const out = await createIntegration(p, b);
     await auditIntegration(p, 'integration.created', out.key, b);
-    return { ...out, url: undefined, ...maskUrl(out.url) };
+    return { ...out, url: undefined, ...maskUrl(out.url), next_step: `Give the admin this link to review and turn it on: ${out.approve_url}` };
   }));
 
   server.registerTool('update_view_integration', {
     title: 'Update view integration',
-    description: 'Changes an integration (fields not given stay). Changing the url or audience changes where data goes or who sends it: confirm with the admin first. Setting data_example alone is a safe way to record the contract.',
+    description: 'Changes an integration (fields not given stay). Changing the url or audience changes where data goes or who sends it: confirm with the admin first, and know it turns the integration off until the admin approves again (approve_url in the answer). Other fields (label, description, data_example, interactive, secret) keep it as it is. Setting data_example alone is a safe way to record the contract.',
     inputSchema: z.object({
       key: z.string(),
       label: integrationFields.label.optional(),
@@ -531,9 +535,9 @@ function registerAdminTools(server: McpServer, p: Principal) {
     scopeChallenge: schemaChallenge
   }, async ({ key, ...b }) => run(async () => {
     const input = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined));
-    const out = await updateIntegration(p, key, input);
+    const { approved: _approved, ...out } = await updateIntegration(p, key, input);
     await auditIntegration(p, 'integration.updated', out.key, input);
-    return { ...out, url: undefined, ...maskUrl(out.url) };
+    return { ...out, url: undefined, ...maskUrl(out.url), ...(out.approve_url ? { next_step: `Waiting for approval: give the admin this link to review and turn it on: ${out.approve_url}` } : {}) };
   }));
 
   server.registerTool('test_integration', {
@@ -745,7 +749,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     label_id: z.string().nullable().optional().describe('Association events: one association label id (omit for any label)'),
     filter_groups: filterGroupsArg.describe('WHERE conditions on the record, same format as search_records: filters in a group are ANDed, groups ORed. E.g. [{"filters": [{"property": "first_name", "operator": "contains", "value": "chris"}]}]. Checked against the record as it is when the event is processed.'),
     description: z.string().nullable().optional().describe('What this subscription is for'),
-    enabled: z.boolean().optional()
+    enabled: z.boolean().optional().describe('Only false does anything: you can turn a subscription off but not on (approve_url)')
   };
 
   server.registerTool('list_webhooks', {
@@ -756,15 +760,14 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('create_webhook_endpoint', {
     title: 'Create webhook endpoint',
-    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs, batched: events within 50 ms of each other go in one POST {batch_id, events: [...]}, up to batch_max (default 10, 1 to 1000). Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings, Webhooks. Then add subscriptions with create_webhook_subscription.',
+    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs, batched: events within 50 ms of each other go in one POST {batch_id, events: [...]}, up to batch_max (default 10, 1 to 1000). Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings, Webhooks. Then add subscriptions with create_webhook_subscription. The endpoint and its subscriptions start off: give the admin their approve_url links to review and turn them on in the CRM (test_webhook_endpoint still works meanwhile).',
     inputSchema: z.object({
       name: z.string(),
       url: z.string(),
       description: z.string().optional(),
       batch_max: z.number().int().min(1).max(1000).optional().describe('Most events per POST (default 10). 1 sends every event on its own.'),
       secret_header: z.string().optional().describe('Optional header sent with every delivery, e.g. X-Webhook-Secret for n8n header auth'),
-      secret_value: z.string().optional().describe('The value of secret_header'),
-      enabled: z.boolean().optional()
+      secret_value: z.string().optional().describe('The value of secret_header')
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     scopeChallenge: schemaChallenge
@@ -772,7 +775,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_webhook_endpoint', {
     title: 'Update webhook endpoint',
-    description: 'Changes an endpoint\'s name, url, description, batch_max, secret header or enabled (a disabled endpoint keeps its pending deliveries until enabled again). Fields not given stay; secret_header null removes it.',
+    description: 'Changes an endpoint\'s name, url, description, batch_max, secret header or turns it off (enabled false; a disabled endpoint keeps its pending deliveries until enabled again). You cannot turn one on: the admin does, with the approve_url. Changing the url turns it off until the admin approves again. Fields not given stay; secret_header null removes it.',
     inputSchema: z.object({
       endpoint_id: endpointIdArg,
       name: z.string().optional(),
@@ -781,7 +784,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
       batch_max: z.number().int().min(1).max(1000).optional().describe('Most events per POST, 1 to 1000'),
       secret_header: z.string().nullable().optional(),
       secret_value: z.string().optional(),
-      enabled: z.boolean().optional()
+      enabled: z.boolean().optional().describe('Only false does anything: you can turn an endpoint off but not on')
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     scopeChallenge: schemaChallenge
@@ -808,7 +811,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('create_webhook_subscription', {
     title: 'Create webhook subscription',
-    description: 'Subscribes an endpoint to one event on one object (any object from list_objects, including forms, form_submissions, views and users). Add one subscription per object and event. Each delivery carries the event, record_id, the change (changes, change, association or merged_ids) and the current values of up to 3 send_properties (none unless chosen; ask the admin which fields the receiver needs). The answer\'s summary describes it in words; check it matches what the admin asked for.',
+    description: 'Subscribes an endpoint to one event on one object (any object from list_objects, including forms, form_submissions, views and users). Add one subscription per object and event. Each delivery carries the event, record_id, the change (changes, change, association or merged_ids) and the current values of up to 3 send_properties (none unless chosen; ask the admin which fields the receiver needs). The answer\'s summary describes it in words; check it matches what the admin asked for. It starts off: give the admin the approve_url to review and turn it on.',
     inputSchema: z.object({ endpoint_id: endpointIdArg, object: objectArg, ...subscriptionFields }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
@@ -816,7 +819,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_webhook_subscription', {
     title: 'Update webhook subscription',
-    description: 'Changes a subscription\'s event, properties, target_object, label_id, filter_groups (the full list; [] removes the filters), description or enabled. Its endpoint and object cannot change.',
+    description: 'Changes a subscription\'s event, properties, send_properties, target_object, label_id, filter_groups (the full list; [] removes the filters), description, or turns it off (enabled false). Its endpoint and object cannot change. Any change but the description turns it off until the admin approves again (approve_url in the answer).',
     inputSchema: z.object({ subscription_id: subscriptionIdArg, ...subscriptionFields, event: subscriptionFields.event.optional() }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
@@ -831,6 +834,30 @@ function registerAdminTools(server: McpServer, p: Principal) {
   }, async ({ subscription_id }) => run(async () => {
     await deleteSubscription(p, subscription_id);
     return { deleted: subscription_id };
+  }));
+
+  // ---- embed domains ----
+
+  server.registerTool('list_embed_domains', {
+    title: 'List embed domains',
+    description: 'Lists the websites allowed to embed forms and booking pages (allowed_origins), and the ones waiting for an admin to allow them (pending_origins, with who asked).',
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => {
+    requireScope(p, 'schema');
+    return loadFormsSettings();
+  }));
+
+  server.registerTool('add_embed_domain', {
+    title: 'Add embed domain',
+    description: 'Asks for websites to be allowed to embed forms and booking pages (the embed snippet on their record page). They wait in pending_origins until an admin allows them: give the admin the approve_url from the answer. Enter each address separately: https://example.com and https://www.example.com are different websites.',
+    inputSchema: z.object({ websites: z.array(z.string()).min(1).max(20).describe('Website addresses, e.g. https://www.example.com (a full page URL is cut down to the website)') }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ websites }) => run(async () => {
+    requireScope(p, 'schema');
+    const current = await loadFormsSettings();
+    const out = await saveEmbedDomains(p, { allowed_origins: [...current.allowed_origins, ...websites] });
+    return { ...out, ...(out.approve_url ? { next_step: `Give the admin this link to review and allow them: ${out.approve_url}` } : {}) };
   }));
 
   server.registerTool('list_webhook_deliveries', {

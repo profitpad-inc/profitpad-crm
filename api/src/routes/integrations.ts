@@ -30,8 +30,9 @@ export async function integrationRoutes(app: FastifyInstance) {
   app.patch<{ Params: KeyParams; Body: IntegrationInput }>('/v1/view-integrations/:key', async (req) => {
     const p = req.principal!;
     requireRecentSignIn(p);
-    const out = await updateIntegration(p, req.params.key, req.body ?? {});
+    const { approved, ...out } = await updateIntegration(p, req.params.key, req.body ?? {});
     await logEvent(req, 'integration.updated', { target: { type: 'integration', id: out.key }, details: logged(req.body ?? {}) });
+    if (approved) await logEvent(req, 'integration.approved', { target: { type: 'integration', id: out.key }, details: { url: out.url, audience: out.audience } });
     return out;
   });
 

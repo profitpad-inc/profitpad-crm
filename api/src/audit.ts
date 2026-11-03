@@ -39,6 +39,9 @@ export type SecurityEvent =
   | 'integration.created'
   | 'integration.updated'
   | 'integration.deleted'
+  | 'integration.approved'
+  | 'embed_domain.requested'
+  | 'embed_domain.approved'
   | 'export';
 
 export interface EventInfo {

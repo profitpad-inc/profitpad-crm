@@ -1,8 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { pool } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
 import { requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { approveFields, approveUrl, canApprove, requestFields } from '../approval.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
 
@@ -46,18 +47,79 @@ function validateDropdownColors(value: unknown): { colors: string[] } {
 
 // ---- forms -------------------------------------------------------------------
 
-// Websites allowed to post public forms. Stored as origins; full URLs are
-// cut down to scheme://host[:port].
-function validateFormsSettings(value: unknown): { allowed_origins: string[] } {
-  const raw = (value as { allowed_origins?: unknown } | null)?.allowed_origins;
-  if (!Array.isArray(raw) || raw.length > 100) throw badRequest('allowed_origins must be a list of at most 100 websites');
+// Websites allowed to embed forms and booking pages (Settings, Embed
+// domains). Stored as origins; full URLs are cut down to scheme://host[:port].
+// Websites added from outside the CRM (an AI over MCP, an API key) wait in
+// pending_origins until an admin signed in to the CRM allows them (approval.ts).
+interface PendingOrigin {
+  origin: string;
+  requested_by: string;
+  requested_via: string | null;
+  requested_at: string;
+}
+
+export interface FormsSettings {
+  allowed_origins: string[];
+  pending_origins: PendingOrigin[];
+}
+
+export const EMBED_DOMAINS_URL = approveUrl('embed-domains', 'pending');
+
+function readOrigins(raw: unknown, field: string): string[] {
+  if (!Array.isArray(raw) || raw.length > 100) throw badRequest(`${field} must be a list of at most 100 websites`);
   const origins = new Set<string>();
   for (const r of raw) {
     const o = typeof r === 'string' ? normalizeOrigin(r) : null;
     if (!o) throw badRequest(`"${String(r)}" is not a website address like https://www.example.com`);
     origins.add(o);
   }
-  return { allowed_origins: [...origins] };
+  return [...origins];
+}
+
+export async function loadFormsSettings(): Promise<FormsSettings> {
+  const { rows } = await pool.query("select value from ui.settings where key = 'forms'");
+  const v = rows[0]?.value ?? {};
+  return { allowed_origins: v.allowed_origins ?? [], pending_origins: v.pending_origins ?? [] };
+}
+
+// Saves the embed domains: allowed_origins is the whole list wanted, and
+// pending_origins (optional) the waiting websites to keep. From an admin
+// signed in to the CRM the list is saved as given; from anywhere else
+// removals apply and new websites are added to pending_origins instead.
+export async function saveEmbedDomains(p: Principal, body: unknown, req?: FastifyRequest): Promise<FormsSettings & { requested: string[]; approve_url?: string }> {
+  requireAdmin(p);
+  const b = (body ?? {}) as { allowed_origins?: unknown; pending_origins?: unknown };
+  const wanted = readOrigins(b.allowed_origins, 'allowed_origins');
+  const keep = b.pending_origins === undefined ? null : new Set(readOrigins(b.pending_origins, 'pending_origins'));
+  const current = await loadFormsSettings();
+  const approver = canApprove(p);
+  const allowed = approver ? wanted : current.allowed_origins.filter((o) => wanted.includes(o));
+  const added = wanted.filter((o) => !current.allowed_origins.includes(o));
+  if (approver && added.length) approveFields(p);
+  const requested = approver ? [] : added.filter((o) => !current.pending_origins.some((x) => x.origin === o));
+  const ask = requestFields(p);
+  const pending = [
+    ...current.pending_origins.filter((x) => !allowed.includes(x.origin) && (!keep || keep.has(x.origin))),
+    ...requested.map((origin) => ({ origin, requested_by: ask.requested_by, requested_via: ask.requested_via, requested_at: ask.requested_at.toISOString() }))
+  ];
+  if (pending.length > 100) throw badRequest('at most 100 websites can wait for approval');
+  const value: FormsSettings = { allowed_origins: allowed, pending_origins: pending };
+  await pool.query(
+    `insert into ui.settings (key, value, updated_by) values ('forms', $1, $2)
+     on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
+    [JSON.stringify(value), p.actor]
+  );
+  clearAllowedOriginsCache();
+  const log = (event: 'settings.updated' | 'embed_domain.requested' | 'embed_domain.approved', details: Record<string, unknown>) => req
+    ? logEvent(req, event, { target: { type: 'setting', id: 'forms' }, details })
+    : pool.query(
+      `insert into auth.security_events (event, actor, user_agent, target_type, target_id, details) values ($1, $2, $3, 'setting', 'forms', $4)`,
+      [event, p.actor, p.oauth?.clientName ?? null, JSON.stringify({ ...details, ...(p.oauth ? { via: p.oauth.clientName } : {}) })]
+    );
+  await log('settings.updated', { value });
+  if (requested.length) await log('embed_domain.requested', { origins: requested });
+  if (approver && added.length) await log('embed_domain.approved', { origins: added });
+  return { ...value, requested, ...(pending.length ? { approve_url: EMBED_DOMAINS_URL } : {}) };
 }
 
 // ---- sidebar menus -----------------------------------------------------------
@@ -252,7 +314,8 @@ export async function uiRoutes(app: FastifyInstance) {
   app.put<{ Params: { key: string }; Body: unknown }>('/v1/ui/settings/:key', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
-    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, dropdown_colors: validateDropdownColors, forms: validateFormsSettings };
+    if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
+    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, dropdown_colors: validateDropdownColors };
     const validate = validators[req.params.key];
     if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, forms)');
     const value = validate(req.body);
@@ -261,8 +324,7 @@ export async function uiRoutes(app: FastifyInstance) {
        on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
       [req.params.key, JSON.stringify(value), p.actor]
     );
-    if (req.params.key === 'forms') clearAllowedOriginsCache();
-    await logEvent(req, 'settings.updated', { target: { type: 'setting', id: req.params.key }, details: req.params.key === 'forms' ? { value } : {} });
+    await logEvent(req, 'settings.updated', { target: { type: 'setting', id: req.params.key } });
     return value;
   });
 

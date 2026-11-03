@@ -7,7 +7,7 @@ import {
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
-import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
 import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme, type ThemeKey } from '../lib/theme';
 import { HomeIcon, displayName, initials } from '../lib/display';
 import { navLink } from '../lib/nav';
@@ -268,27 +268,41 @@ function HexInput({ value, onChange }: { value: string; onChange: (hex: string) 
 }
 
 // Embed domains: websites allowed to embed forms and booking pages (embed.js). The CRM's own address is always
-// allowed, for the hosted /p/form/ page.
+// allowed, for the hosted /p/form/ page. Websites added outside the CRM (an AI over MCP, an API key) wait in
+// pending_origins until an admin allows them here (migration 0061).
+interface PendingOrigin {
+  origin: string;
+  requested_via: string | null;
+  requested_at: string;
+}
+
 function EmbedDomains() {
   const [origins, setOrigins] = useState<string[] | null>(null);
+  const [pending, setPending] = useState<PendingOrigin[]>([]);
   const [draft, setDraft] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const review = useReview();
 
   useEffect(() => {
-    api<{ forms?: { allowed_origins?: string[] } }>('GET', '/v1/ui/settings')
-      .then((s) => setOrigins(s.forms?.allowed_origins ?? []))
+    api<{ forms?: { allowed_origins?: string[]; pending_origins?: PendingOrigin[] } }>('GET', '/v1/ui/settings')
+      .then((s) => {
+        setOrigins(s.forms?.allowed_origins ?? []);
+        setPending(s.forms?.pending_origins ?? []);
+      })
       .catch((err) => setError((err as Error).message));
   }, []);
 
-  async function save(next: string[]) {
+  // next: the allowed websites; keep: the waiting ones to keep waiting
+  async function save(next: string[], keep = pending.map((x) => x.origin), message = 'Saved.') {
     setError(null);
     setSaved(null);
     try {
-      const res = await api<{ allowed_origins: string[] }>('PUT', '/v1/ui/settings/forms', { allowed_origins: next });
+      const res = await api<{ allowed_origins: string[]; pending_origins: PendingOrigin[] }>('PUT', '/v1/ui/settings/forms', { allowed_origins: next, pending_origins: keep });
       setOrigins(res.allowed_origins);
+      setPending(res.pending_origins);
       setDraft('');
-      setSaved('Saved.');
+      setSaved(message);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -300,6 +314,8 @@ function EmbedDomains() {
     save([...origins, /^https?:\/\//i.test(v) ? v : `https://${v}`]);
   }
 
+  const others = (o: string) => pending.map((x) => x.origin).filter((x) => x !== o);
+
   return (
     <SettingsPage
       title="Embed domains"
@@ -308,6 +324,29 @@ function EmbedDomains() {
         separately: <code>https://example.com</code> and <code>https://www.example.com</code> are different websites.
       </>}
     >
+      {origins && pending.length > 0 && (
+        <SettingsSection
+          title="Waiting for approval"
+          description="Added from outside the CRM, such as by an AI connected to it. Forms and booking pages only work on these websites once you allow them."
+          className={review === 'pending' ? 'reviewing' : undefined}
+        >
+          <ul className="origin-list" id="review-pending">
+            {pending.map((x) => (
+              <li key={x.origin}>
+                <Globe size={14} className="lead" />
+                <span className="origin-main">
+                  <span>{x.origin}</span>
+                  <span className="muted small">{x.requested_via ? `Added by ${x.requested_via}` : 'Added outside the CRM'}, {new Date(x.requested_at).toLocaleString()}</span>
+                </span>
+                <span className="push-right row-actions-inner">
+                  <button className="btn small primary" onClick={() => save([...origins, x.origin], others(x.origin), `${x.origin} allowed.`)}>Allow</button>
+                  <button className="btn small ghost" onClick={() => save(origins, others(x.origin), `${x.origin} dismissed.`)}>Dismiss</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </SettingsSection>
+      )}
       <SettingsSection
         title="Allowed websites"
         description="This stops other websites from using your forms and booking pages. Spam is handled by rate limits and hidden bot checks."
