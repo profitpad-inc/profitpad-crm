@@ -20,6 +20,7 @@ interface Subscription {
   object: string;
   event: EventName;
   properties: string[];
+  send_properties: string[];
   target_object: string | null;
   label_id: string | null;
   filter_groups: FilterGroup[];
@@ -50,6 +51,7 @@ interface Endpoint {
 interface Delivery {
   id: number;
   event_id: string;
+  endpoint_id: number;
   subscription_id: number | null;
   event: string;
   object: string;
@@ -76,6 +78,8 @@ const EVENT_LABELS: Record<EventName, string> = {
   property_cleared: 'Property cleared'
 };
 const PROPERTY_EVENTS: EventName[] = ['property_changed', 'property_cleared'];
+// property values a subscription may send with each delivery (0040)
+const MAX_SEND_PROPERTIES = 3;
 const ASSOCIATION_EVENTS: EventName[] = ['association_added', 'association_removed'];
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
@@ -99,6 +103,7 @@ interface SubscriptionDraft {
   object: string;
   event: EventName;
   properties: string[];
+  send_properties: string[];
   target_object: string;
   label_id: string;
   filter_groups: FilterGroup[];
@@ -177,9 +182,9 @@ export function WebhookSettings() {
       <p className="muted">
         Endpoints receive record events as JSON POSTs, such as an n8n webhook that runs when a contact's stage is set. Each endpoint has
         subscriptions: an object, an event (created, updated, merged, archived, restored, an association added or removed, a property
-        populated, changed or cleared) and optional WHERE conditions on the record. Every delivery carries the record's current values and is
+        populated, changed or cleared), optional WHERE conditions on the record and up to 3 property values to send. Every delivery is
         signed with the endpoint's secret in <code>X-PCRM-Signature</code> (<code>t=&lt;unix time&gt;,v1=&lt;HMAC-SHA256 of "t.body"&gt;</code>).
-        Failed deliveries are retried for about a day. An admin's AI can add and change webhooks through the MCP server.
+        Failed deliveries are retried for about a day, and the sent log below keeps 30 days. An admin's AI can add and change webhooks through the MCP server.
       </p>
       {error && <div className="error">{error}</div>}
 
@@ -281,11 +286,12 @@ export function WebhookSettings() {
                       {s.summary}
                       {!s.enabled && <span className="pill" style={{ marginLeft: 6 }}>Off</span>}
                       {s.description && <div className="muted small">{s.description}</div>}
+                      <div className="muted small">{s.send_properties.length ? `Sends ${s.send_properties.join(', ')}` : 'Sends no property values'}</div>
                     </td>
                     <td style={{ width: 1, whiteSpace: 'nowrap' }}>
                       <span className="field-row">
                         <button className="btn small" onClick={() => setSubDraft({
-                          editing: s.id, endpoint_id: e.id, object: s.object, event: s.event, properties: s.properties,
+                          editing: s.id, endpoint_id: e.id, object: s.object, event: s.event, properties: s.properties, send_properties: s.send_properties,
                           target_object: s.target_object ?? '', label_id: s.label_id ?? '', filter_groups: s.filter_groups,
                           description: s.description ?? '', enabled: s.enabled
                         })}>Edit</button>
@@ -306,7 +312,7 @@ export function WebhookSettings() {
           ) : (
             <div className="field-row" style={{ marginTop: 8 }}>
               <button className="btn small" onClick={() => setSubDraft({
-                editing: null, endpoint_id: e.id, object: 'contacts', event: 'created', properties: [], target_object: '', label_id: '',
+                editing: null, endpoint_id: e.id, object: 'contacts', event: 'created', properties: [], send_properties: [], target_object: '', label_id: '',
                 filter_groups: [], description: '', enabled: true
               })}><Plus size={12} /> Add subscription</button>
               <button className="btn small" onClick={() => setOpenLog(openLog === e.id ? null : e.id)}>{openLog === e.id ? 'Hide deliveries' : 'Recent deliveries'}</button>
@@ -315,6 +321,14 @@ export function WebhookSettings() {
           {openLog === e.id && <DeliveryLog endpoint={e} />}
         </div>
       ))}
+
+      {list && list.length > 0 && (
+        <>
+          <h3 style={{ marginTop: 24 }}>Sent log</h3>
+          <p className="muted small">Every delivery to every endpoint in the last 30 days, newest first.</p>
+          <DeliveryLog endpoints={list} />
+        </>
+      )}
     </section>
   );
 }
@@ -357,6 +371,7 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
     const body: Record<string, unknown> = {
       event: d.event,
       properties: takesProperties ? d.properties : [],
+      send_properties: d.send_properties,
       target_object: isAssociation && d.target_object ? d.target_object : null,
       label_id: isAssociation && d.label_id ? d.label_id : null,
       filter_groups: d.filter_groups,
@@ -378,7 +393,7 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
       <div className="field-row">
         <label>Object
           <select value={d.object} disabled={!!d.editing}
-            onChange={(e) => onChange({ ...d, object: e.target.value, properties: [], label_id: '', target_object: '', filter_groups: [] })}>
+            onChange={(e) => onChange({ ...d, object: e.target.value, properties: [], send_properties: [], label_id: '', target_object: '', filter_groups: [] })}>
             {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
           </select>
         </label>
@@ -424,6 +439,26 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
           </div>
         </div>
       )}
+      {schema && (
+        <div className="field">
+          <span>Send these values with each delivery (up to {MAX_SEND_PROPERTIES}, optional)</span>
+          <div className="field-row" style={{ flexWrap: 'wrap' }}>
+            {d.send_properties.map((name) => (
+              <span key={name} className="pill">
+                {properties.find((p) => p.api_name === name)?.label ?? name}{' '}
+                <button type="button" className="btn small" aria-label="Remove" onClick={() => onChange({ ...d, send_properties: d.send_properties.filter((x) => x !== name) })}>×</button>
+              </span>
+            ))}
+            {d.send_properties.length < MAX_SEND_PROPERTIES && (
+              <select value="" onChange={(e) => e.target.value && onChange({ ...d, send_properties: [...d.send_properties, e.target.value] })}>
+                <option value="">Add a property…</option>
+                {properties.filter((p) => !d.send_properties.includes(p.api_name)).map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
+              </select>
+            )}
+          </div>
+          {d.send_properties.length === 0 && <div className="muted small">Without any, deliveries carry the record id and the change but no property values.</div>}
+        </div>
+      )}
       <div className="field">
         <span>WHERE (optional): the record must match when the event is processed</span>
         {schema && d.filter_groups.length > 0 && (
@@ -450,23 +485,45 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
   );
 }
 
-function DeliveryLog({ endpoint }: { endpoint: Endpoint }) {
+// One endpoint's deliveries (endpoint given) or the whole sent log with
+// filters (endpoints given). The API keeps 30 days.
+function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?: Endpoint[] }) {
+  const { objects } = useApp();
   const [rows, setRows] = useState<Delivery[] | null>(null);
   const [next, setNext] = useState<number | null>(null);
+  const [totals, setTotals] = useState<Record<Delivery['status'], number> | null>(null);
   const [status, setStatus] = useState('');
+  const [endpointId, setEndpointId] = useState('');
+  const [event, setEvent] = useState('');
+  const [object, setObject] = useState('');
+  const [recordId, setRecordId] = useState('');
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<{ id: number; text: string } | null>(null);
+  const all = !endpoint;
+  const recordQuery = recordId.trim();
 
   const load = useCallback(async (before?: number) => {
-    const q = new URLSearchParams({ endpoint_id: String(endpoint.id), limit: '25' });
+    const q = new URLSearchParams({ limit: '25' });
+    if (endpoint) q.set('endpoint_id', String(endpoint.id));
+    else if (endpointId) q.set('endpoint_id', endpointId);
     if (status) q.set('status', status);
+    if (event) q.set('event', event);
+    if (object) q.set('object', object);
+    if (object && recordQuery) q.set('record_id', recordQuery);
+    // dates are local days: since from the start of that day, until through the end of it
+    if (since) q.set('since', new Date(`${since}T00:00`).toISOString());
+    if (until) q.set('until', new Date(new Date(`${until}T00:00`).getTime() + 86_400_000).toISOString());
     if (before) q.set('before', String(before));
-    const r = await api<{ results: Delivery[]; next_before: number | null }>('GET', `/v1/webhooks/deliveries?${q}`);
+    const r = await api<{ results: Delivery[]; next_before: number | null; totals: Record<Delivery['status'], number> }>('GET', `/v1/webhooks/deliveries?${q}`);
     setRows((old) => (before && old ? [...old, ...r.results] : r.results));
     setNext(r.next_before);
-  }, [endpoint.id, status]);
+    setTotals(r.totals);
+  }, [endpoint, endpointId, status, event, object, recordQuery, since, until]);
 
   useEffect(() => {
+    setError(null);
     load().catch((e) => setError((e as Error).message));
   }, [load]);
 
@@ -486,30 +543,64 @@ function DeliveryLog({ endpoint }: { endpoint: Endpoint }) {
     }
   }
 
+  const oldest = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const filtered = !!(status || endpointId || event || object || since || until);
+  const endpointName = (id: number) => endpoints?.find((e) => e.id === id)?.name ?? `Endpoint ${id}`;
+
   const color = (s: Delivery['status']) => (s === 'succeeded' ? 'var(--money)' : s === 'failed' ? 'var(--danger)' : undefined);
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div className="field-row">
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+      <div className="field-row" style={{ flexWrap: 'wrap' }}>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
           <option value="">Every status</option>
           <option value="pending">Waiting</option>
           <option value="succeeded">Delivered</option>
           <option value="failed">Failed</option>
         </select>
+        {all && (
+          <>
+            <select value={endpointId} onChange={(e) => setEndpointId(e.target.value)} aria-label="Endpoint">
+              <option value="">Every endpoint</option>
+              {endpoints?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+            <select value={event} onChange={(e) => setEvent(e.target.value)} aria-label="Event">
+              <option value="">Every event</option>
+              {(Object.keys(EVENT_LABELS) as EventName[]).map((k) => <option key={k} value={k}>{EVENT_LABELS[k]}</option>)}
+            </select>
+            <select value={object} onChange={(e) => { setObject(e.target.value); setRecordId(''); }} aria-label="Object">
+              <option value="">Every object</option>
+              {objects.map((o) => <option key={o.api_name} value={o.api_name}>{o.label_plural}</option>)}
+            </select>
+            {object && <input value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="Record id" aria-label="Record id" style={{ width: 120 }} />}
+            <label className="small">From <input type="date" value={since} min={oldest} max={today} onChange={(e) => setSince(e.target.value)} /></label>
+            <label className="small">To <input type="date" value={until} min={oldest} max={today} onChange={(e) => setUntil(e.target.value)} /></label>
+            {filtered && (
+              <button className="btn small" onClick={() => { setStatus(''); setEndpointId(''); setEvent(''); setObject(''); setRecordId(''); setSince(''); setUntil(''); }}>Clear filters</button>
+            )}
+          </>
+        )}
         <button className="btn small" onClick={() => load().catch((e) => setError((e as Error).message))}>Refresh</button>
       </div>
+      {totals && (
+        <div className="muted small" style={{ marginTop: 6 }}>
+          {totals.succeeded} delivered · {totals.failed} failed · {totals.pending} waiting{totals.cancelled ? ` · ${totals.cancelled} cancelled` : ''}
+          {all ? (filtered ? ' (filtered)' : ' in the last 30 days') : ' in the last 30 days'}
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       <div className="access-table" style={{ marginTop: 6 }}>
         <table className="grid">
           <thead>
-            <tr><th>When</th><th>Event</th><th>Record</th><th>Status</th><th /></tr>
+            <tr><th>When</th>{all && <th>Endpoint</th>}<th>Event</th><th>Record</th><th>Status</th><th /></tr>
           </thead>
           <tbody>
-            {rows?.length === 0 && <tr><td colSpan={5} className="muted">Nothing sent yet.</td></tr>}
+            {rows?.length === 0 && <tr><td colSpan={all ? 6 : 5} className="muted">{filtered ? 'Nothing matches these filters.' : 'Nothing sent in the last 30 days.'}</td></tr>}
             {rows?.map((r) => (
               <tr key={r.id}>
                 <td className="small">{when(r.created_at)}</td>
+                {all && <td className="small">{endpointName(r.endpoint_id)}</td>}
                 <td className="small">{r.event}</td>
                 <td className="small"><Link to={`/objects/${r.object}/${r.record_id}`}>{r.object} {r.record_id}</Link></td>
                 <td className="small">

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, Plus, X } from 'lucide-react';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { displayName, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
+import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
@@ -356,7 +356,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
           <FileField object={schema.api_name} record={record} property={p} canEdit={canEdit && p.row_status === 'active' && !p.read_only} onSaved={onSaved} />
         </div>
       ) : (
-        <div className="prop-value">{formatValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>
+        <div className="prop-value">{displayValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>
       )}
       {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
     </div>

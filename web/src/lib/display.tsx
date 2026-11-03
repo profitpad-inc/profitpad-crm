@@ -3,7 +3,9 @@ import {
   ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
   Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, type LucideIcon
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { CrmRecord, Property } from './api';
+import { ColorPill } from '../components/ColorPicker';
 
 const OBJECT_ICONS: Record<string, LucideIcon> = {
   users: User,
@@ -128,6 +130,28 @@ export function formatValue(p: Property, value: unknown): string {
   if (t === 'datetime') return dateTimeFmt.format(new Date(String(value)));
   if (Array.isArray(value)) return value.join(', ');
   return String(value);
+}
+
+// formatValue for showing on screen: dropdown choices with a colour get a
+// large dot or a pill, as the property's color_display says ('' when empty,
+// like formatValue).
+export function displayValue(p: Property, value: unknown): ReactNode {
+  const style = p.options.color_display;
+  if (p.type !== 'dropdown' || (style !== 'dot' && style !== 'pill') || value === null || value === undefined || value === '') return formatValue(p, value);
+  const values = (Array.isArray(value) ? value : [value]).map(String);
+  const options = values.map((v) => p.dropdown_options?.find((o) => o.api_value === v));
+  if (!options.some((o) => o?.color)) return formatValue(p, value);
+  return (
+    <span className="pill-list">
+      {values.map((v, i) => {
+        const o = options[i];
+        if (!o?.color) return <span key={v}>{o?.label ?? v}</span>;
+        return style === 'dot'
+          ? <span key={v} className="color-dot-value"><span className="color-dot" style={{ background: o.color }} />{o.label}</span>
+          : <ColorPill key={v} color={o.color}>{o.label}</ColorPill>;
+      })}
+    </span>
+  );
 }
 
 export function initials(name: string): string {

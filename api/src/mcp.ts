@@ -63,12 +63,13 @@ async function run(fn: () => Promise<unknown>): Promise<CallToolResult> {
   }
 }
 
-// pipeline-stage details, only where set, to keep describe_object short
+// option details (pipeline stages, colour), only where set, to keep describe_object short
 const optionDetails = (o: OptionDef) => ({
   ...(o.parent_values.length ? { parent_values: o.parent_values } : {}),
   ...(o.is_closed ? { is_closed: true } : {}),
   ...(o.is_won ? { is_won: true } : {}),
-  ...(o.probability !== null ? { probability: o.probability } : {})
+  ...(o.probability !== null ? { probability: o.probability } : {}),
+  ...(o.color ? { color: o.color } : {})
 });
 
 const canRead = (p: Principal, obj: ObjectDef) => !p.permissions || p.permissions.objects.get(obj.object_type_id)?.read === true;
@@ -493,12 +494,13 @@ function registerAdminTools(server: McpServer, p: Principal) {
     parent_values: z.array(z.string()).optional().describe('Values of the dropdown\'s parent_property this choice belongs to (e.g. the pipelines a stage is in); [] for all'),
     is_closed: z.boolean().optional().describe('A closed stage (won or lost); closed lost is always probability 0'),
     is_won: z.boolean().optional().describe('A won stage; also makes it closed and always probability 1'),
-    probability: z.number().min(0).max(1).nullable().optional().describe('Chance of winning for open stages, 0 to 1 (null clears); closed stages set it themselves')
+    probability: z.number().min(0).max(1).nullable().optional().describe('Chance of winning for open stages, 0 to 1 (null clears); closed stages set it themselves'),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional().describe('Colour the choice shows in, as #rrggbb (null clears)')
   };
 
   server.registerTool('add_dropdown_option', {
     title: 'Add dropdown option',
-    description: 'Adds a choice to a dropdown property. Stage-like dropdowns can also take parent_values, is_closed, is_won and probability (view_guide topic properties).',
+    description: 'Adds a choice to a dropdown property, optionally with a color (#rrggbb). Stage-like dropdowns can also take parent_values, is_closed, is_won and probability (view_guide topic properties).',
     inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string().describe('api_value'), label: z.string(), display_order: z.number().int().optional(), ...detailsArgs }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
@@ -506,7 +508,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_dropdown_option', {
     title: 'Update dropdown option',
-    description: 'Relabels or reorders a dropdown choice, or changes its stage details (parent_values, is_closed, is_won, probability). Its value (api_value) cannot change.',
+    description: 'Relabels or reorders a dropdown choice, or changes its color or stage details (parent_values, is_closed, is_won, probability). Its value (api_value) cannot change.',
     inputSchema: z.object({ object: objectArg, property: propertyArg, value: z.string(), label: z.string().optional(), display_order: z.number().int().optional(), ...detailsArgs }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
@@ -531,6 +533,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
   const subscriptionFields = {
     event: z.enum(EVENT_NAMES).describe(Object.entries(EVENTS).map(([k, v]) => `${k}: ${v}`).join('. ')),
     properties: z.array(z.string()).optional().describe('Property api_names (describe_object). Required for property_changed and property_cleared (fires when any of them changes); optional for updated (fires only when one of them changes).'),
+    send_properties: z.array(z.string()).max(3).optional().describe('Up to 3 property api_names whose current values are sent with every delivery (record.properties). Omit or [] to send none: the delivery still has record_id and the change.'),
     target_object: z.string().nullable().optional().describe('Association events: the other object api_name (omit for any object)'),
     label_id: z.string().nullable().optional().describe('Association events: one association label id (omit for any label)'),
     filter_groups: filterGroupsArg.describe('WHERE conditions on the record, same format as search_records: filters in a group are ANDed, groups ORed. E.g. [{"filters": [{"property": "first_name", "operator": "contains", "value": "chris"}]}]. Checked against the record as it is when the event is processed.'),
@@ -596,7 +599,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('create_webhook_subscription', {
     title: 'Create webhook subscription',
-    description: 'Subscribes an endpoint to one event on one object (any object from list_objects, including forms, form_submissions, views and users). Add one subscription per object and event. Each delivery carries the event, record_id, the record\'s current values and the change (changes, change, association or merged_ids). The answer\'s summary describes it in words; check it matches what the admin asked for.',
+    description: 'Subscribes an endpoint to one event on one object (any object from list_objects, including forms, form_submissions, views and users). Add one subscription per object and event. Each delivery carries the event, record_id, the change (changes, change, association or merged_ids) and the current values of up to 3 send_properties (none unless chosen; ask the admin which fields the receiver needs). The answer\'s summary describes it in words; check it matches what the admin asked for.',
     inputSchema: z.object({ endpoint_id: endpointIdArg, object: objectArg, ...subscriptionFields }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
@@ -623,11 +626,16 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('list_webhook_deliveries', {
     title: 'List webhook deliveries',
-    description: 'Recent deliveries, newest first: event, object, record_id, status (pending, succeeded, failed), attempts and the last error. Use it to check a subscription fires and the endpoint accepts it.',
+    description: 'The sent log (kept 30 days), newest first: event, object, record_id, status (pending, succeeded, failed), attempts and the last error, plus totals per status for the same filters. Use it to check a subscription fires and the endpoint accepts it.',
     inputSchema: z.object({
       endpoint_id: z.number().int().optional(),
       subscription_id: z.number().int().optional(),
       status: z.enum(['pending', 'succeeded', 'failed', 'cancelled']).optional(),
+      event: z.enum(EVENT_NAMES).optional(),
+      object: z.string().optional().describe('Object api_name'),
+      record_id: z.string().optional(),
+      since: z.string().optional().describe('Date or date-time (ISO), inclusive'),
+      until: z.string().optional().describe('Date or date-time (ISO), exclusive'),
       limit: z.number().int().min(1).max(100).optional(),
       before: z.number().int().optional().describe('next_before from the previous page')
     }),

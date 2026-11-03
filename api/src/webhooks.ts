@@ -44,6 +44,8 @@ const RESERVED_HEADERS = new Set([
 ]);
 const TIMEOUT_MS = 10_000;
 const MAX_PAYLOAD = 256_000;
+// property values a subscription may send with each delivery
+const MAX_SEND_PROPERTIES = 3;
 // minutes to wait after each failed attempt; a delivery is given up after the last
 const RETRY_MINUTES = [1, 5, 30, 120, 360, 720, 1440];
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -274,6 +276,7 @@ interface SubscriptionRow {
   object_type_id: string;
   event: WebhookEvent;
   properties: string[];
+  send_properties: string[];
   target_object_type_id: string | null;
   label_id: string | null;
   filter_groups: FilterGroup[];
@@ -335,6 +338,7 @@ function subscriptionOut(reg: Registry, s: SubscriptionRow) {
     object: reg.byKey.get(s.object_type_id)?.api_name ?? s.object_type_id,
     event: s.event,
     properties: s.properties,
+    send_properties: s.send_properties,
     target_object: s.target_object_type_id ? reg.byKey.get(s.target_object_type_id)?.api_name ?? s.target_object_type_id : null,
     label_id: s.label_id,
     filter_groups: s.filter_groups,
@@ -353,6 +357,7 @@ export interface SubscriptionInput {
   object?: unknown;
   event?: unknown;
   properties?: unknown;
+  send_properties?: unknown;
   target_object?: unknown;
   label_id?: unknown;
   filter_groups?: unknown;
@@ -374,7 +379,8 @@ async function checkSubscription(reg: Registry, s: Omit<SubscriptionRow, 'id' | 
   if (PROPERTY_EVENTS.has(s.event) && s.properties.length === 0) throw badRequest(`${s.event} needs properties: the property api_names to watch`);
   if (s.properties.length && s.event !== 'updated' && !PROPERTY_EVENTS.has(s.event)) throw badRequest(`properties only apply to updated, property_changed and property_cleared`);
   if (s.properties.length > 50) throw badRequest('at most 50 properties');
-  for (const name of s.properties) {
+  if (s.send_properties.length > MAX_SEND_PROPERTIES) throw badRequest(`send_properties: at most ${MAX_SEND_PROPERTIES} properties`);
+  for (const name of [...s.properties, ...s.send_properties]) {
     const prop = getProperty(obj, name);
     if (!prop || prop.row_status !== 'active' || prop.api_name === obj.id_column) throw badRequest(`${obj.api_name} has no property "${name}"`);
   }
@@ -397,9 +403,9 @@ function readFilterGroups(v: unknown): FilterGroup[] {
   return v as FilterGroup[];
 }
 
-function readProperties(v: unknown): string[] {
+function readProperties(v: unknown, field = 'properties'): string[] {
   if (v === null) return [];
-  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw badRequest('properties must be a list of property api_names');
+  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw badRequest(`${field} must be a list of property api_names`);
   return [...new Set(v as string[])];
 }
 
@@ -437,6 +443,7 @@ export async function createSubscription(p: Principal, input: SubscriptionInput,
     object_type_id: obj.object_type_id,
     event: input.event as WebhookEvent,
     properties: input.properties === undefined ? [] : readProperties(input.properties).map((n) => getProperty(obj, n)?.api_name ?? n),
+    send_properties: input.send_properties === undefined ? [] : readProperties(input.send_properties, 'send_properties').map((n) => getProperty(obj, n)?.api_name ?? n),
     target_object_type_id: input.target_object == null ? null : subscribableObject(reg, input.target_object, 'target_object').object_type_id,
     label_id: input.label_id == null ? null : String(input.label_id),
     filter_groups: input.filter_groups === undefined ? [] : readFilterGroups(input.filter_groups),
@@ -447,9 +454,9 @@ export async function createSubscription(p: Principal, input: SubscriptionInput,
   await checkSubscription(reg, s);
   const { rows } = await pool.query(
     `insert into auth.webhook_subscriptions
-       (endpoint_id, object_type_id, event, properties, target_object_type_id, label_id, filter_groups, description, enabled, created_by, updated_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10) returning *`,
-    [s.endpoint_id, s.object_type_id, s.event, s.properties, s.target_object_type_id, s.label_id, JSON.stringify(s.filter_groups), s.description, s.enabled, p.actor]
+       (endpoint_id, object_type_id, event, properties, send_properties, target_object_type_id, label_id, filter_groups, description, enabled, created_by, updated_by)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11) returning *`,
+    [s.endpoint_id, s.object_type_id, s.event, s.properties, s.send_properties, s.target_object_type_id, s.label_id, JSON.stringify(s.filter_groups), s.description, s.enabled, p.actor]
   );
   await audit(p, 'webhook.subscription_created', 'webhook_subscription', Number(rows[0].id), { endpoint_id: Number(endpoint.id), object: obj.api_name, event: s.event }, req);
   return subscriptionOut(reg, rows[0]);
@@ -464,6 +471,7 @@ export async function updateSubscription(p: Principal, id: unknown, input: Subsc
   const next = { ...current };
   if (input.event !== undefined) next.event = input.event as WebhookEvent;
   if (input.properties !== undefined) next.properties = readProperties(input.properties).map((n) => getProperty(obj, n)?.api_name ?? n);
+  if (input.send_properties !== undefined) next.send_properties = readProperties(input.send_properties, 'send_properties').map((n) => getProperty(obj, n)?.api_name ?? n);
   if (input.target_object !== undefined) next.target_object_type_id = input.target_object === null ? null : subscribableObject(reg, input.target_object, 'target_object').object_type_id;
   if (input.label_id !== undefined) next.label_id = input.label_id === null ? null : String(input.label_id);
   if (input.filter_groups !== undefined) next.filter_groups = readFilterGroups(input.filter_groups);
@@ -482,9 +490,9 @@ export async function updateSubscription(p: Principal, id: unknown, input: Subsc
   }
   await checkSubscription(reg, next);
   const { rows } = await pool.query(
-    `update auth.webhook_subscriptions set event = $2, properties = $3, target_object_type_id = $4, label_id = $5, filter_groups = $6,
-       description = $7, enabled = $8, updated_by = $9, updated_at = now() where id = $1 returning *`,
-    [current.id, next.event, next.properties, next.target_object_type_id, next.label_id, JSON.stringify(next.filter_groups), next.description, next.enabled, p.actor]
+    `update auth.webhook_subscriptions set event = $2, properties = $3, send_properties = $4, target_object_type_id = $5, label_id = $6,
+       filter_groups = $7, description = $8, enabled = $9, updated_by = $10, updated_at = now() where id = $1 returning *`,
+    [current.id, next.event, next.properties, next.send_properties, next.target_object_type_id, next.label_id, JSON.stringify(next.filter_groups), next.description, next.enabled, p.actor]
   );
   await audit(p, 'webhook.subscription_updated', 'webhook_subscription', Number(current.id), { fields: Object.keys(input) }, req);
   return subscriptionOut(reg, rows[0]);
@@ -522,8 +530,21 @@ export interface DeliveryQuery {
   endpoint_id?: unknown;
   subscription_id?: unknown;
   status?: unknown;
+  event?: unknown;
+  object?: unknown;
+  record_id?: unknown;
+  since?: unknown;
+  until?: unknown;
   limit?: unknown;
   before?: unknown;
+}
+
+const DELIVERY_STATUSES = ['pending', 'succeeded', 'failed', 'cancelled'] as const;
+
+function readTime(v: unknown, field: string): string {
+  const t = new Date(String(v));
+  if (Number.isNaN(t.getTime())) throw badRequest(`${field} must be a date or date-time, e.g. 2026-11-01 or 2026-11-01T09:00:00Z`);
+  return t.toISOString();
 }
 
 export async function listDeliveries(p: Principal, q: DeliveryQuery) {
@@ -537,8 +558,19 @@ export async function listDeliveries(p: Principal, q: DeliveryQuery) {
   };
   if (q.endpoint_id !== undefined) add('endpoint_id = ?', Number(q.endpoint_id));
   if (q.subscription_id !== undefined) add('subscription_id = ?', Number(q.subscription_id));
+  if (q.event !== undefined) {
+    if (!EVENT_NAMES.includes(q.event as WebhookEvent)) throw badRequest(`event must be one of ${EVENT_NAMES.join(', ')}`);
+    add('event = ?', q.event);
+  }
+  if (q.object !== undefined) add('object_type_id = ?', subscribableObject(reg, q.object, 'object').object_type_id);
+  if (q.record_id !== undefined) add('record_id = ?', String(q.record_id));
+  if (q.since !== undefined) add('created_at >= ?', readTime(q.since, 'since'));
+  if (q.until !== undefined) add('created_at < ?', readTime(q.until, 'until'));
+  // totals cover every status (and every page) of the filtered log
+  const totalsWhere = [...where];
+  const totalsParams = [...params];
   if (q.status !== undefined) {
-    if (!['pending', 'succeeded', 'failed', 'cancelled'].includes(String(q.status))) throw badRequest('status must be pending, succeeded, failed or cancelled');
+    if (!DELIVERY_STATUSES.includes(q.status as never)) throw badRequest('status must be pending, succeeded, failed or cancelled');
     add('status = ?', String(q.status));
   }
   if (q.before !== undefined) add('id < ?', Number(q.before));
@@ -547,9 +579,15 @@ export async function listDeliveries(p: Principal, q: DeliveryQuery) {
     `select * from auth.webhook_deliveries ${where.length ? 'where ' + where.join(' and ') : ''} order by id desc limit ${limit}`,
     params
   );
+  const { rows: counts } = await pool.query(
+    `select status, count(*)::int as n from auth.webhook_deliveries ${totalsWhere.length ? 'where ' + totalsWhere.join(' and ') : ''} group by status`,
+    totalsParams
+  );
   return {
     results: rows.map((d) => deliveryOut(reg, d, false)),
-    next_before: rows.length === limit ? Number(rows[rows.length - 1].id) : null
+    next_before: rows.length === limit ? Number(rows[rows.length - 1].id) : null,
+    totals: Object.fromEntries(DELIVERY_STATUSES.map((s) => [s, counts.find((c) => c.status === s)?.n ?? 0])),
+    kept_days: KEEP_DAYS
   };
 }
 
@@ -769,6 +807,14 @@ function eventsFor(reg: Registry, sub: SubscriptionRow, obj: ObjectDef, rows: Ou
 
 // Takes whole transactions from the outbox (up to ~500 rows' worth), makes the
 // deliveries they call for, and removes them, all in one transaction.
+// The record as sent: id and status, plus the subscription's send_properties
+// that are still active (a property archived since is left out).
+function recordFor(obj: ObjectDef, sub: SubscriptionRow, row: Record<string, unknown> | undefined) {
+  if (!row) return null;
+  const props = activeProperties(obj).filter((pr) => sub.send_properties?.includes(pr.api_name));
+  return serialize(obj, props, row);
+}
+
 async function processOutbox(log: { error: (o: unknown, m: string) => void }): Promise<number> {
   const client = await pool.connect();
   try {
@@ -834,17 +880,16 @@ async function processOutbox(log: { error: (o: unknown, m: string) => void }): P
       for (const e of list) if (ok.has(e.recordId)) keep.add(e);
     }
 
-    // the records' current values, for every payload
+    // the records' current rows; each payload carries only its subscription's send_properties
     const wanted = new Map<string, Set<string>>();
     for (const e of keep) wanted.set(e.obj.object_type_id, (wanted.get(e.obj.object_type_id) ?? new Set()).add(e.recordId));
-    const records = new Map<string, unknown>();
+    const records = new Map<string, Record<string, unknown>>();
     for (const [code, ids] of wanted) {
       const obj = reg.byKey.get(code)!;
-      const props = activeProperties(obj);
       const { rows: recs } = await client.query(
         `select t.* from crm.${quoteIdent(code)} t where t.${quoteIdent(obj.id_column)} = any($1)`, [[...ids]]
       );
-      for (const r of recs) records.set(`${code}:${r[obj.id_column]}`, serialize(obj, props, r));
+      for (const r of recs) records.set(`${code}:${r[obj.id_column]}`, r);
     }
 
     for (const e of keep) {
@@ -859,7 +904,7 @@ async function processOutbox(log: { error: (o: unknown, m: string) => void }): P
         subscription_id: Number(e.sub.id),
         endpoint_id: Number(e.sub.endpoint_id),
         ...e.extra,
-        record: records.get(`${e.obj.object_type_id}:${e.recordId}`) ?? null
+        record: recordFor(e.obj, e.sub, records.get(`${e.obj.object_type_id}:${e.recordId}`))
       };
       if (Buffer.byteLength(JSON.stringify(payload)) > MAX_PAYLOAD) {
         payload.record = null;

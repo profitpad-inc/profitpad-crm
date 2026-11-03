@@ -166,6 +166,10 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 - Needs `CALENDAR_TOKEN_KEY` (already set) for the signing secrets and secret headers.
 - Endpoints follow the same address rules as view integrations: https on a public address, or a host listed in `INTEGRATION_PRIVATE_HOSTS` (for an n8n on the same Docker network).
 
+## 14. Webhook values to send and the sent log (migration 0040)
+
+- Apply 0040, then deploy the API and the UI. Subscriptions made before it send no property values until up to 3 are chosen (the user chose this over sending every property).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

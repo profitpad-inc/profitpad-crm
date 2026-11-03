@@ -54,6 +54,12 @@ begin
     raise exception 'only association events take a target';
   exception when check_violation then null;
   end;
+  -- at most 3 properties sent with each delivery (0040)
+  begin
+    insert into auth.webhook_subscriptions (endpoint_id, object_type_id, event, send_properties) values (v_endpoint, 'pc_0010', 'created', '{a,b,c,d}');
+    raise exception 'send_properties takes at most 3';
+  exception when check_violation then null;
+  end;
 
   if not has_table_privilege('test_crm_api', 'meta.webhook_outbox', 'delete') then raise exception 'the API can take outbox rows'; end if;
   if has_table_privilege('test_crm_api', 'meta.webhook_outbox', 'insert') then raise exception 'the API cannot write outbox rows'; end if;

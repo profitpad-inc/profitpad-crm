@@ -4,6 +4,7 @@ import { api, clearSchemaCache, getSchema, type DropdownOption, type Property, t
 import { useApp } from '../lib/app-context';
 import { nameProperties, recordName } from '../lib/display';
 import { Menu, Modal } from '../components/ui';
+import { ColorPicker } from '../components/ColorPicker';
 
 // Admin page for an object's properties. Every change goes through the
 // /v1/schema endpoints, so the database (meta.* functions) enforces the
@@ -258,6 +259,8 @@ interface Choice {
   is_closed: boolean;
   is_won: boolean;
   percent: string;
+  // #rrggbb or null for no colour
+  color: string | null;
 }
 
 // closed stages have a fixed chance of winning: won 100%, lost 0%
@@ -297,7 +300,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       .map((o) => ({
         api_value: o.api_value, label: o.label, row_status: o.row_status, existing: o,
         parent_values: o.parent_values ?? [], is_closed: !!o.is_closed, is_won: !!o.is_won,
-        percent: o.probability === null || o.probability === undefined ? '' : String(Math.round(o.probability * 1000) / 10)
+        percent: o.probability === null || o.probability === undefined ? '' : String(Math.round(o.probability * 1000) / 10),
+        color: o.color ?? null
       }))
   );
   // stage details on choices: shown when asked for or already in use
@@ -308,6 +312,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   const parentChoices = (parent?.dropdown_options ?? []).filter((o) => o.row_status === 'active').sort((a, b) => a.display_order - b.display_order);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // choices get a colour swatch once the dropdown shows colours
+  const colored = options.color_display === 'dot' || options.color_display === 'pill';
 
   const locked = property?.is_base ?? false;
   const set = (k: string, v: unknown) => setOptions((o) => ({ ...o, [k]: v }));
@@ -345,7 +351,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     const keep: Record<PropType, string[]> = {
       text: ['single_line', 'display', 'regex', 'regex_scope', 'json_only', 'unique', 'case_insensitive'],
       number: ['format', 'prefix', 'suffix', 'decimals', 'min', 'max', 'currency_code', 'currency_property'],
-      dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users', 'default_value', 'parent_property'],
+      dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users', 'default_value', 'parent_property', 'color_display'],
       date: [],
       datetime: ['timezone'],
       file: ['max_files'],
@@ -357,6 +363,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     if (!out.regex) delete out.regex_scope;
     if (out.format !== 'currency') delete out.currency_code;
     if (!out.single_value) delete out.parent_property;
+    // unset means no colour; a dot is for single-choice dropdowns only
+    if (out.color_display === 'none') delete out.color_display;
+    if (out.color_display === 'dot' && !out.single_value) out.color_display = 'pill';
     return cleanOptions(out);
   }
 
@@ -388,12 +397,14 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           body.calc_output_type = calcType;
         }
         await api('POST', base, body);
-        // choices start without details; add them one by one
-        if (type === 'dropdown' && stages) {
+        // choices start without details or colours; add them one by one
+        if (type === 'dropdown') {
           for (const c of choices) {
-            const d = choiceDetails(c);
-            if (d.parent_values.length || d.is_closed || d.probability !== null) {
-              await api('PATCH', `${base}/${encodeURIComponent(apiName.trim())}/options/${encodeURIComponent(c.api_value.trim())}`, d);
+            const d = stages ? choiceDetails(c) : null;
+            const change: Record<string, unknown> = d && (d.parent_values.length || d.is_closed || d.probability !== null) ? { ...d } : {};
+            if (c.color) change.color = c.color;
+            if (Object.keys(change).length) {
+              await api('PATCH', `${base}/${encodeURIComponent(apiName.trim())}/options/${encodeURIComponent(c.api_value.trim())}`, change);
             }
           }
         }
@@ -422,7 +433,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         }
         for (const [i, c] of choices.entries()) {
           if (!c.existing) {
-            await api('POST', `${url}/options`, { api_value: c.api_value.trim(), label: c.label.trim(), display_order: i, ...(stages ? choiceDetails(c) : {}) });
+            await api('POST', `${url}/options`, {
+              api_value: c.api_value.trim(), label: c.label.trim(), display_order: i, ...(stages ? choiceDetails(c) : {}), ...(c.color ? { color: c.color } : {})
+            });
             continue;
           }
           const o = c.existing;
@@ -431,6 +444,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           if (o.display_order !== i) change.display_order = i;
           if (c.row_status !== o.row_status) change.row_status = c.row_status;
           if (detailsChanged(c)) Object.assign(change, detailsFor(c));
+          if (c.color !== (o.color ?? null)) change.color = c.color;
           if (Object.keys(change).length) await api('PATCH', `${url}/options/${encodeURIComponent(o.api_value)}`, change);
         }
       }
@@ -610,7 +624,11 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         {!locked && type === 'dropdown' && (
           <>
             <div className="checks">
-              <label><input type="checkbox" checked={bool('single_value')} onChange={(e) => set('single_value', e.target.checked)} /> One choice per record</label>
+              <label><input type="checkbox" checked={bool('single_value')} onChange={(e) => {
+                set('single_value', e.target.checked);
+                // multi-choice dropdowns can't show a dot
+                if (!e.target.checked && str('color_display') === 'dot') set('color_display', 'pill');
+              }} /> One choice per record</label>
               <label><input type="checkbox" checked={bool('allow_user_add')} onChange={(e) => set('allow_user_add', e.target.checked)} /> API writes may add new choices</label>
               <label><input type="checkbox" checked={bool('auto_append_users')} onChange={(e) => set('auto_append_users', e.target.checked)} /> Fill choices with every active user</label>
             </div>
@@ -646,12 +664,21 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                 ))}
               </select>
             </label>
+            <label className="field">
+              <span>Colours</span>
+              <select value={str('color_display') || 'none'} onChange={(e) => set('color_display', e.target.value)}>
+                <option value="none">No colour</option>
+                {bool('single_value') && <option value="dot">Large dot left of the choice</option>}
+                <option value="pill">Pill around each choice</option>
+              </select>
+            </label>
             <div className="field">
               <span>Choices</span>
               <div className="choice-list">
                 {choices.length === 0 && <div className="muted small">No choices yet.</div>}
                 {choices.map((c, i) => (
                   <div key={c.existing?.api_value ?? `new-${i}`} className={`choice-row${c.row_status === 'archived' ? ' archived' : ''}`}>
+                    {colored && <ColorPicker value={c.color} onChange={(color) => updateChoice(i, { color })} label={`Colour for ${c.label || 'this choice'}`} />}
                     <input value={c.label} maxLength={63} placeholder="Label" onChange={(e) => updateChoice(i, { label: e.target.value })} aria-label="Choice label" />
                     <input
                       className="mono"
@@ -717,7 +744,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                 ))}
               </div>
               <div>
-                <button className="btn small" onClick={() => setChoices((cs) => [...cs, { api_value: '', label: '', row_status: 'active', auto: true, parent_values: [], is_closed: false, is_won: false, percent: '' }])}>
+                <button className="btn small" onClick={() => setChoices((cs) => [...cs, { api_value: '', label: '', row_status: 'active', auto: true, parent_values: [], is_closed: false, is_won: false, percent: '', color: null }])}>
                   <Plus size={14} /> Add choice
                 </button>
               </div>

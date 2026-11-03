@@ -7,7 +7,7 @@ import {
   type Property, type SearchResult, type Sort, type View
 } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { defaultSortDirection, displayName, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
+import { defaultSortDirection, displayName, displayValue, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { AddLineModal } from '../components/AddLineModal';
 import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines';
@@ -662,7 +662,7 @@ function ObjectTableFor({ object }: { object: string }) {
                   }
                   return (
                     <td key={i} {...cellProps(ri, i, c, extra)}>
-                      {formatValue(prop, r.properties[prop.api_name]) || <span className="muted empty-value">--</span>}
+                      {displayValue(prop, r.properties[prop.api_name]) || <span className="muted empty-value">--</span>}
                       {editable && editButton(r, prop)}
                     </td>
                   );

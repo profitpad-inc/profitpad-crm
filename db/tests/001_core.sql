@@ -603,13 +603,60 @@ begin
   perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"is_closed": false}')$$, 'always closed');
   perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"probability": 2}')$$, 'from 0 to 1');
   perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"parent_values": ["nope"]}')$$, 'has no option nope');
-  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"colour": "red"}')$$, 'not an option detail');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'qualified', '{"rank": 1}')$$, 'not an option detail');
   perform meta._test_expect_error($$select meta.set_option_details('deals', 'pipeline', 'sales', '{"parent_values": ["sales"]}')$$, 'no parent_property');
   perform meta._test_expect_error($$select meta.update_property('deals', 'pipeline', null, null, '{"single_value": true, "parent_property": "pipeline"}')$$, 'another single-value dropdown');
   perform meta._test_expect_error($$select meta.update_property('deals', 'pipeline', null, null, '{"single_value": true, "parent_property": "amount"}')$$, 'another single-value dropdown');
 
   perform meta._test_check(exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'associations' and column_name = 'other_object'), 'associations carry object api_names');
   perform meta._test_check(has_table_privilege('test_crm_api', 'ui.view_errors', 'insert'), 'the API can log view errors');
+end $t$;
+
+
+-- 32. Closed stages have a fixed probability (0037)
+do $t$
+declare
+  v_p numeric;
+begin
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"probability": 0.5}');
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"is_closed": true, "is_won": true}');
+  select probability into v_p from reporting.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_p = 1, 'closed won is 100%');
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"is_won": false}');
+  select probability into v_p from reporting.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_p = 0, 'closed lost is 0%');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'proposal', '{"probability": 0.3}')$$, 'always has probability 0');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'proposal', '{"is_won": true, "probability": 0.9}')$$, 'always has probability 1');
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"is_closed": false, "is_won": false}');
+  select probability into v_p from reporting.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_p is null, 'reopening clears the fixed probability');
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"is_closed": false, "probability": 0.6}');
+  select probability into v_p from reporting.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_p = 0.6, 'open stages take a probability');
+  perform meta._test_expect_error($$update meta.pc_0003 o set probability = 0.5 from meta.pc_0002 p where p.pc_0002_id = o.property_id and p.object_type_id = 'pc_0012' and p.api_name = 'stage' and o.api_value = 'closed_won'$$, 'pc_0003_closed_probability');
+end $t$;
+
+-- 33. Dropdown option colours (0039)
+do $t$
+declare
+  v_c text;
+begin
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"color": "#3B82F6"}');
+  select color into v_c from reporting.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_c = '#3b82f6', 'option colours are stored lowercase');
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"probability": 0.2}');
+  select color into v_c from view_data.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_c = '#3b82f6', 'other details leave the colour alone');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'proposal', '{"color": "blue"}')$$, 'hex colour');
+  perform meta._test_expect_error($$select meta.set_option_details('deals', 'stage', 'proposal', '{"color": "#12345"}')$$, 'hex colour');
+  perform meta.set_option_details('deals', 'stage', 'proposal', '{"color": null}');
+  select color into v_c from reporting.property_options where object_type_id = 'pc_0012' and property = 'stage' and api_value = 'proposal';
+  perform meta._test_check(v_c is null, 'null clears the colour');
+
+  perform meta.update_property('deals', 'stage', null, null, (select options from meta.pc_0002 where object_type_id = 'pc_0012' and api_name = 'stage') || '{"color_display": "dot"}');
+  perform meta._test_check((select options ->> 'color_display' = 'dot' from meta.pc_0002 where object_type_id = 'pc_0012' and api_name = 'stage'), 'single-choice dropdowns can show a dot');
+  perform meta._test_expect_error($$select meta.update_property('deals', 'stage', null, null, (select (options - 'single_value' - 'parent_property' - 'default_value') from meta.pc_0002 where object_type_id = 'pc_0012' and api_name = 'stage'))$$, 'color_display dot needs single_value');
+  perform meta._test_expect_error($$select meta.update_property('deals', 'stage', null, null, (select options || '{"color_display": "glow"}' from meta.pc_0002 where object_type_id = 'pc_0012' and api_name = 'stage'))$$, 'invalid value');
 end $t$;
 
 rollback;

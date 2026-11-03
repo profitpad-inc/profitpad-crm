@@ -113,16 +113,17 @@ export async function setPropertyArchived(p: Principal, objectKey: string, name:
   return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
 }
 
-// Pipeline-stage details on an option (migration 0035); undefined keys are left alone.
+// Option details: pipeline-stage details (0035) and colour (0039); undefined keys are left alone.
 export interface OptionDetails {
   parent_values?: string[];
   is_closed?: boolean;
   is_won?: boolean;
   probability?: number | null;
+  color?: string | null;
 }
 
 function pickDetails(b: OptionDetails): Record<string, unknown> | null {
-  const out = Object.fromEntries((['parent_values', 'is_closed', 'is_won', 'probability'] as const).filter((k) => b[k] !== undefined).map((k) => [k, b[k]]));
+  const out = Object.fromEntries((['parent_values', 'is_closed', 'is_won', 'probability', 'color'] as const).filter((k) => b[k] !== undefined).map((k) => [k, b[k]]));
   return Object.keys(out).length ? out : null;
 }
 

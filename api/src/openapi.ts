@@ -182,13 +182,14 @@ function webhookPaths(): Record<string, Schema> {
     object: { type: 'string', description: 'Object api_name, e.g. contacts (create only)' },
     event: { type: 'string', enum: events },
     properties: { type: 'array', items: { type: 'string' }, description: 'property_changed / property_cleared: the properties watched (required). updated: optional, fire only when one of them changes.' },
+    send_properties: { type: 'array', items: { type: 'string' }, maxItems: 3, description: 'Up to 3 properties whose current values are sent with every delivery in record.properties. Empty (default) sends none.' },
     target_object: { type: 'string', nullable: true, description: 'Association events: the other object (null = any)' },
     label_id: { type: 'string', nullable: true, description: 'Association events: one association label (null = any)' },
     filter_groups: { type: 'array', maxItems: 5, items: { type: 'object', properties: { filters: { type: 'array', items: ref('Filter') } } }, description: 'Same as search: filters in a group are ANDed, groups are ORed. Checked against the record when the event is processed (seconds after the change)' },
     description: { type: 'string', nullable: true },
     enabled: { type: 'boolean' }
   } };
-  const delivery = 'Deliveries are POSTed as JSON {id, event, object, object_type_id, record_id, occurred_at, changed_by, source, subscription_id, endpoint_id, attempt, record (current values), changes | change | association | merged_ids}. Headers: X-PCRM-Event, X-PCRM-Event-Id (same on retries), X-PCRM-Delivery-Attempt, X-PCRM-Signature t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>. A 2xx answer within 10 seconds is success; otherwise retried after 1, 5, 30, 120, 360, 720 and 1440 minutes, then failed. Kept 30 days.';
+  const delivery = 'Deliveries are POSTed as JSON {id, event, object, object_type_id, record_id, occurred_at, changed_by, source, subscription_id, endpoint_id, attempt, record ({id, object_type_id, row_status, properties} with the current values of the subscription send_properties only), changes | change | association | merged_ids}. Headers: X-PCRM-Event, X-PCRM-Event-Id (same on retries), X-PCRM-Delivery-Attempt, X-PCRM-Signature t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>. A 2xx answer within 10 seconds is success; otherwise retried after 1, 5, 30, 120, 360, 720 and 1440 minutes, then failed. Kept 30 days.';
   return {
     '/v1/webhooks/events': { get: { tags, summary: 'Event types', operationId: 'list_webhook_events', responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/webhooks/endpoints': {
@@ -211,7 +212,15 @@ function webhookPaths(): Record<string, Schema> {
       patch: { tags, summary: 'Change a subscription (admin)', description: 'endpoint_id and object cannot change.', operationId: 'update_webhook_subscription', parameters: [id], requestBody: body(subscription), responses: { 200: json({ type: 'object' }), ...errors } },
       delete: { tags, summary: 'Delete a subscription (admin)', operationId: 'delete_webhook_subscription', parameters: [id], responses: { 204: { description: 'Deleted' }, ...errors } }
     },
-    '/v1/webhooks/deliveries': { get: { tags, summary: 'Deliveries, newest first (admin)', description: delivery, operationId: 'list_webhook_deliveries', parameters: ['endpoint_id', 'subscription_id', 'before'].map((name) => ({ name, in: 'query', required: false, schema: { type: 'integer' } })).concat([{ name: 'status', in: 'query', required: false, schema: { type: 'string', enum: ['pending', 'succeeded', 'failed', 'cancelled'] } } as never, { name: 'limit', in: 'query', required: false, schema: { type: 'integer', maximum: 200 } } as never]), responses: { 200: json({ type: 'object' }), ...errors } } },
+    '/v1/webhooks/deliveries': { get: { tags, summary: 'The sent log, newest first (admin)', description: `${delivery} The answer has results, next_before (pass as before for the next page), totals per status for the same filters (all pages) and kept_days.`, operationId: 'list_webhook_deliveries', parameters: ['endpoint_id', 'subscription_id', 'before'].map((name) => ({ name, in: 'query', required: false, schema: { type: 'integer' } })).concat([
+      { name: 'status', in: 'query', required: false, schema: { type: 'string', enum: ['pending', 'succeeded', 'failed', 'cancelled'] } } as never,
+      { name: 'event', in: 'query', required: false, schema: { type: 'string', enum: events } } as never,
+      { name: 'object', in: 'query', required: false, schema: { type: 'string' }, description: 'Object api_name' } as never,
+      { name: 'record_id', in: 'query', required: false, schema: { type: 'string' } } as never,
+      { name: 'since', in: 'query', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Inclusive; a date also works' } as never,
+      { name: 'until', in: 'query', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Exclusive; a date also works' } as never,
+      { name: 'limit', in: 'query', required: false, schema: { type: 'integer', maximum: 200 } } as never
+    ]), responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/webhooks/deliveries/{id}': { get: { tags, summary: 'A delivery with its payload (admin)', operationId: 'get_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } },
     '/v1/webhooks/deliveries/{id}/retry': { post: { tags, summary: 'Send a failed delivery again (admin)', operationId: 'retry_webhook_delivery', parameters: [id], responses: { 200: json({ type: 'object' }), ...errors } } }
   };

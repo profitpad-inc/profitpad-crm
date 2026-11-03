@@ -29,6 +29,8 @@ export interface OptionDef {
   is_closed: boolean;
   is_won: boolean;
   probability: number | null;
+  // #rrggbb or null (0039)
+  color: string | null;
 }
 
 export interface PropertyDef {
@@ -74,7 +76,7 @@ export async function getRegistry(): Promise<Registry> {
     pool.query(`select pc_0002_id, object_type_id, api_name, label, description, type, options, calc_sql, calc_output_type,
                        calc_last_error, is_base, is_native, read_only, row_status
                 from meta.pc_0002 order by object_type_id, is_base desc, pc_0002_id`),
-    pool.query(`select property_id, api_value, label, display_order, row_status, parent_values, is_closed, is_won, probability from meta.pc_0003 order by property_id, display_order, api_value`)
+    pool.query(`select property_id, api_value, label, display_order, row_status, parent_values, is_closed, is_won, probability, color from meta.pc_0003 order by property_id, display_order, api_value`)
   ]);
 
   const optionsByProp = new Map<string, OptionDef[]>();
@@ -82,7 +84,8 @@ export async function getRegistry(): Promise<Registry> {
     const list = optionsByProp.get(o.property_id) ?? [];
     list.push({
       api_value: o.api_value, label: o.label, display_order: o.display_order, row_status: o.row_status,
-      parent_values: o.parent_values, is_closed: o.is_closed, is_won: o.is_won, probability: o.probability === null ? null : Number(o.probability)
+      parent_values: o.parent_values, is_closed: o.is_closed, is_won: o.is_won, probability: o.probability === null ? null : Number(o.probability),
+      color: o.color
     });
     optionsByProp.set(o.property_id, list);
   }

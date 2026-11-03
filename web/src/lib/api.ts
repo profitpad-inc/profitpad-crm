@@ -69,6 +69,8 @@ export interface DropdownOption {
   is_closed?: boolean;
   is_won?: boolean;
   probability?: number | null;
+  // #rrggbb or null (migration 0039)
+  color?: string | null;
 }
 
 export interface Property {
