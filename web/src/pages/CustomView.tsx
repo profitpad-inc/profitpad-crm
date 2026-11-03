@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { api, ApiError } from '../lib/api';
+import { api, API_BASE, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
 import { MobileHeader } from '../components/MobileNav';
@@ -244,8 +244,12 @@ export function CustomView() {
       case 'openRecord':
         navigate(`/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`);
         return null;
-      case 'phoneRegions':
-        return api('GET', '/v1/public/phone/regions');
+      case 'phoneRegions': {
+        // a public route: without cookies, or the browser refuses the answer (no allow-credentials)
+        const res = await fetch(`${API_BASE}/v1/public/phone/regions`, { credentials: 'omit' });
+        if (!res.ok) throw new Error(`Could not load the phone countries (HTTP ${res.status})`);
+        return res.json();
+      }
       case 'checkPhone':
         if (typeof args[0] !== 'string') throw new Error('checkPhone takes the number as a string');
         return api('POST', '/v1/phone/validate', { number: args[0] });
