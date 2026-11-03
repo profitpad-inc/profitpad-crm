@@ -4,6 +4,8 @@ import {
 import { call, getInit, getParams, getViewport, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, Viewport } from './protocol';
 import { Select as Dropdown } from '../components/Select';
+import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
+import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
 
 // What views import from '@pcrm/view': data hooks, actions, layout and UI
 // pieces styled like the CRM, and formatters. Documented for the AI in
@@ -402,6 +404,37 @@ export function Select({ value, onChange, options, placeholder, small, style, cl
       onChange={onChange}
       options={placeholder !== undefined ? [{ value: '', label: placeholder }, ...options] : options}
     />
+  );
+}
+
+// The frame has no network: the page reads the country list and checks
+// numbers for it.
+let regionsOnce: Promise<PhoneRegions> | null = null;
+const VIEW_PHONE: PhoneSource = {
+  regions: () => {
+    regionsOnce ??= call<RawPhoneRegions>('phoneRegions', []).then(decorateRegions);
+    regionsOnce.catch(() => (regionsOnce = null));
+    return regionsOnce;
+  },
+  check: (number) => call<PhoneResult>('checkPhone', [number])
+};
+
+// The CRM's phone box: a country picker and the number, checked and formatted
+// (+1 613-222-0328 ext4) when the viewer leaves it, with a message under it
+// when it is not a valid number. onChange gets what to save: +<code> and the
+// number as typed, then the formatted number once checked. Use it for every
+// phone property (describe_object shows display: phone).
+export function PhoneInput({ value, onChange, small, style, className }: { value: string; onChange: (v: string) => void; small?: boolean } & Styled) {
+  return (
+    <div className={cx('v-phone', className)} style={style}>
+      <BasePhoneInput
+        value={value}
+        onChange={onChange}
+        source={VIEW_PHONE}
+        check
+        classes={{ input: cx('v-input', small && 'small'), select: cx('v-input v-select', small && 'small'), error: 'v-field-error' }}
+      />
+    </div>
   );
 }
 

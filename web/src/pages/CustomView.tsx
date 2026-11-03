@@ -244,6 +244,11 @@ export function CustomView() {
       case 'openRecord':
         navigate(`/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`);
         return null;
+      case 'phoneRegions':
+        return api('GET', '/v1/public/phone/regions');
+      case 'checkPhone':
+        if (typeof args[0] !== 'string') throw new Error('checkPhone takes the number as a string');
+        return api('POST', '/v1/phone/validate', { number: args[0] });
       case 'navigate': {
         const path = args[0];
         // only places inside the CRM

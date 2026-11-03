@@ -68,7 +68,12 @@ export function describeCreateForm(obj: ObjectDef, p: Principal) {
     shown_as: 'a modal: one column of labelled fields in this order, the first focused; Cancel and Create buttons at the bottom right',
     fields: form.fields.map((n) => {
       const pr = obj.byName.get(n)!;
-      return { api_name: n, label: pr.label, type: pr.type, ...(pr.options.single_value !== undefined ? { single_value: pr.options.single_value } : {}), ...(form.starts_as_me.includes(n) ? { starts_as: 'the signed-in user' } : {}) };
+      return {
+        api_name: n, label: pr.label, type: pr.type,
+        ...(pr.options.single_value !== undefined ? { single_value: pr.options.single_value } : {}),
+        ...(pr.type === 'text' && pr.options.display === 'phone' ? { display: 'phone', input: 'PhoneInput from @pcrm/view: a country picker and the number, checked and formatted when the viewer leaves it' } : {}),
+        ...(form.starts_as_me.includes(n) ? { starts_as: 'the signed-in user' } : {})
+      };
     }),
     required: [],
     required_note: 'No field is required: the API creates a record with any of them blank. Unique properties (like a page address) are refused when the value is taken.',

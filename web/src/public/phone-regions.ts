@@ -23,23 +23,31 @@ const cache = new Map<string, Promise<PhoneRegions>>();
 const flagOf = (region: string) =>
   /^[A-Z]{2}$/.test(region) ? String.fromCodePoint(...[...region].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : '';
 
+export interface RawPhoneRegions {
+  default: string;
+  regions: { region: string; code: number; main: boolean }[];
+}
+
+// The API's list with names and flags, the default region first, then by name.
+// Also used by custom views, which get the raw list through the page.
+export function decorateRegions(data: RawPhoneRegions): PhoneRegions {
+  let names: Intl.DisplayNames | null = null;
+  try {
+    names = new Intl.DisplayNames(undefined, { type: 'region' });
+  } catch {
+    // older browsers: codes only
+  }
+  const regions = data.regions.map((r) => ({ ...r, name: names?.of(r.region) ?? r.region, flag: flagOf(r.region) }));
+  regions.sort((a, b) => (a.region === data.default ? -1 : b.region === data.default ? 1 : a.name.localeCompare(b.name)));
+  return { default: data.default, regions };
+}
+
 export function loadPhoneRegions(apiBase: string): Promise<PhoneRegions> {
   let p = cache.get(apiBase);
   if (!p) {
     p = fetch(`${apiBase.replace(/\/$/, '')}/v1/public/phone/regions`, { credentials: 'omit' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`regions: ${r.status}`))))
-      .then((data: { default: string; regions: { region: string; code: number; main: boolean }[] }) => {
-        let names: Intl.DisplayNames | null = null;
-        try {
-          names = new Intl.DisplayNames(undefined, { type: 'region' });
-        } catch {
-          // older browsers: codes only
-        }
-        const regions = data.regions.map((r) => ({ ...r, name: names?.of(r.region) ?? r.region, flag: flagOf(r.region) }));
-        // the default region first, then by name
-        regions.sort((a, b) => (a.region === data.default ? -1 : b.region === data.default ? 1 : a.name.localeCompare(b.name)));
-        return { default: data.default, regions };
-      });
+      .then(decorateRegions);
     p.catch(() => cache.delete(apiBase));
     cache.set(apiBase, p);
   }

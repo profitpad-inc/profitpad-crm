@@ -160,6 +160,8 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
         api_name: pr.api_name,
         label: pr.label,
         type: pr.type,
+        // phone numbers: a view edits them with the kit's PhoneInput
+        ...(pr.type === 'text' && typeof pr.options.display === 'string' && pr.options.display !== 'plain' ? { display: pr.options.display } : {}),
         description: pr.description ?? undefined,
         writable: isWritable(pr) && p.permissions?.propertyAccess.get(pr.pc_0002_id) !== 'read_only',
         options: pr.type === 'dropdown'

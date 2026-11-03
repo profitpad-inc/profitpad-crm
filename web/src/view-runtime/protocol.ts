@@ -15,7 +15,8 @@ export interface ViewInit {
   view: { id: string; name: string | null; slug: string; draft: boolean };
 }
 
-export type BridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration';
+// phoneRegions and checkPhone serve the kit's PhoneInput (read only, never asked)
+export type BridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone';
 
 // Where the frame sits in the CRM page's visible area, in frame pixels:
 // scrollTop is how much of the frame is scrolled out of view above,

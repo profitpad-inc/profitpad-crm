@@ -4,6 +4,7 @@ import { pool } from './db.js';
 import { ApiError, badRequest } from './errors.js';
 import { requireScope, type Principal } from './auth.js';
 import { loadView, openView, runViewQuery } from './views.js';
+import { checkPhone, DEFAULT_REGION, phoneRegions } from './phone.js';
 
 // render_view (MCP): draws a custom view in a headless Chromium as the
 // caller and reports what it looks like: a screenshot, the boxes of the
@@ -333,6 +334,11 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
                 throw err;
               }
             }
+            // the kit's PhoneInput: read only, answered here
+            case 'phoneRegions':
+              return { ok: true, value: { default: DEFAULT_REGION, regions: phoneRegions() } };
+            case 'checkPhone':
+              return { ok: true, value: checkPhone(String(args[0] ?? '')) };
             case 'openRecord':
             case 'navigate':
               navigations.push(`${method}(${args.map((a) => JSON.stringify(a)).join(', ')})`);
