@@ -743,7 +743,15 @@ begin
   perform meta._test_check((select name = 'Robert' from crm.pc_0010 where pc_0010_id = v_b), 'first name alone has no trailing space');
   update crm.pc_0010 set first_name = null where pc_0010_id = v_b;
   perform meta.process_calc_queue();
-  perform meta._test_check((select name is null from crm.pc_0010 where pc_0010_id = v_b), 'no names gives an empty name');
+  perform meta._test_check((select name is null from crm.pc_0010 where pc_0010_id = v_b), 'no names, email or phone gives an empty name');
+  update crm.pc_0010 set phone = '+1 555 0100' where pc_0010_id = v_b;
+  perform meta.process_calc_queue();
+  perform meta._test_check((select name = '+1 555 0100' from crm.pc_0010 where pc_0010_id = v_b), 'phone when nothing else');
+  update crm.pc_0010 set email = 'robert@name.example' where pc_0010_id = v_b;
+  perform meta.process_calc_queue();
+  perform meta._test_check((select name = 'robert@name.example' from crm.pc_0010 where pc_0010_id = v_b), 'email before phone');
+  update crm.pc_0010 set email = null, phone = null where pc_0010_id = v_b;
+  perform meta.process_calc_queue();
   perform meta._test_expect_error($$select meta.archive_property('contacts', 'first_name')$$, 'calculations read');
   perform meta._test_expect_error($$select meta.set_name_calculation('contacts', 'r.first_name')$$, 'already a calculation');
   perform meta.merge_records('contacts', v_b, v_a);
