@@ -86,6 +86,8 @@ export function PropertySettings() {
   const [props, setProps] = useState<Property[] | null>(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'active' | 'archived'>('active');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [editing, setEditing] = useState<Property | 'new' | null>(null);
   const [deleting, setDeleting] = useState<Property | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +125,13 @@ export function PropertySettings() {
   const shown = (props ?? [])
     .filter((p) => p.record_status === status)
     .filter((p) => !q || p.label.toLowerCase().includes(q) || p.api_name.toLowerCase().includes(q))
+    .filter((p) => !typeFilter || p.type === typeFilter)
+    .filter((p) => !sourceFilter || source(p) === sourceFilter)
     .sort((a, b) => a.label.localeCompare(b.label));
+  // types on this object, plus the chosen one so the select never goes blank after switching objects
+  const types = [...new Set([...(props ?? []).map((p) => p.type), ...(typeFilter ? [typeFilter] : [])])]
+    .sort((a, b) => (TYPE_LABELS[a] ?? a).localeCompare(TYPE_LABELS[b] ?? b));
+  const filtered = !!(q || typeFilter || sourceFilter);
   const archivedCount = (props ?? []).filter((p) => p.record_status === 'archived').length;
   const base = `/v1/schema/${object}/properties`;
 
@@ -149,12 +157,20 @@ export function PropertySettings() {
           <option value="active">Active</option>
           <option value="archived">Archived ({archivedCount})</option>
         </select>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Type">
+          <option value="">All types</option>
+          {types.map((t) => <option key={t} value={t}>{TYPE_LABELS[t] ?? t}</option>)}
+        </select>
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} aria-label="Source">
+          <option value="">All sources</option>
+          {['Built in', 'Custom', 'System'].map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
         {props && <span className="muted small">{shown.length} {shown.length === 1 ? 'property' : 'properties'}</span>}
       </div>
       {!props && !error && <TableSkeleton rows={6} />}
       {props && shown.length === 0 && (
-        <EmptyState icon={<SlidersHorizontal size={18} />} title={q ? 'No matching properties' : `No ${status} properties`}>
-          {q ? 'Try a different search.' : status === 'archived' ? 'Archived properties show up here.' : 'Create a property to store a new field on these records.'}
+        <EmptyState icon={<SlidersHorizontal size={18} />} title={filtered ? 'No matching properties' : `No ${status} properties`}>
+          {filtered ? 'Try a different search or filter.' : status === 'archived' ? 'Archived properties show up here.' : 'Create a property to store a new field on these records.'}
         </EmptyState>
       )}
       {props && shown.length > 0 && (

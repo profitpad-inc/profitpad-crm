@@ -60,7 +60,18 @@ input, select, textarea {
   width: 100%;
 }
 textarea { resize: vertical; max-width: 100%; }
-input[type='checkbox'], input[type='color'] { width: auto; }
+input[type='color'] { width: auto; }
+/* Every checkbox is drawn as an on/off switch (the UI uses switches, never checkboxes) */
+input[type='checkbox'] { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 28px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px;
+  background: var(--border); cursor: pointer; vertical-align: middle; transition: background 0.15s; }
+input[type='checkbox']::before { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transition: transform 0.15s; }
+input[type='checkbox']:checked { background: var(--primary); }
+input[type='checkbox']:checked::before { transform: translateX(12px); }
+input[type='checkbox']:indeterminate { background: color-mix(in srgb, var(--primary) 55%, var(--border)); }
+input[type='checkbox']:indeterminate::before { transform: translateX(6px); }
+input[type='checkbox']:focus { box-shadow: none; }
+input[type='checkbox']:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
 /* Drawn chevron, a little in from the edge (the browser's own cannot be
    moved). Same arrow as CARET in web/src/public/phone-regions.ts. */
 select:not([multiple]), .phone-country-face {
@@ -608,6 +619,13 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .custom-view-bar { display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .custom-view-bar .spacer { flex: 1; }
 .custom-view-bar .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--primary) 10%, #fff); color: var(--primary); }
+/* line numbers: each line is a grid row; unwrapped, the number column sticks to the left while scrolling sideways */
+.view-code.numbered { padding: 10px 12px 10px 0; }
+.view-code.numbered .code-line { display: grid; grid-template-columns: calc(var(--gutter) + 24px) auto; }
+.view-code.numbered .ln { position: sticky; left: 0; padding: 0 12px; text-align: right; color: var(--muted-text); background: var(--surface); user-select: none; }
+.view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 24px) minmax(0, 1fr); }
+.view-code.numbered.wrap .lc { white-space: pre-wrap; overflow-wrap: anywhere; }
+.code-wrap-toggle { display: flex; align-items: center; gap: 8px; margin-right: 12px; align-self: center; white-space: nowrap; }
 .custom-view-frame { display: block; width: 100%; border: 0; background: var(--page-background); }
 .view-code { margin: 0; padding: 10px 12px; max-height: 520px; overflow: auto; background: var(--surface); border-radius: var(--radius); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }
 

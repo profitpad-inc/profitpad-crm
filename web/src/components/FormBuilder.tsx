@@ -46,7 +46,7 @@ interface Definition {
 
 const TYPE_LABELS: Partial<Record<FieldType, string>> = {
   text: 'Short text', textarea: 'Long text', number: 'Number', select: 'Dropdown', multiselect: 'Checkboxes (pick several)',
-  checkbox: 'Single checkbox', date: 'Date', datetime: 'Date and time'
+  checkbox: 'On/off switch', date: 'Date', datetime: 'Date and time'
 };
 const QUESTION_TYPES = Object.keys(TYPE_LABELS) as FieldType[];
 const FORMATS: { value: Format | ''; label: string }[] = [
@@ -586,7 +586,7 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
                   <Plus size={13} /> Add condition
                 </button>
               ) : (
-                <p className="ed-hint">Conditions use dropdown, checkbox or date fields placed above this one.</p>
+                <p className="ed-hint">Conditions use dropdown, on/off switch or date fields placed above this one.</p>
               )}
             </div>
           )}

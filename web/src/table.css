@@ -91,11 +91,11 @@
 .data-grid th.sorted { color: var(--text); }
 .data-grid tbody td { position: relative; }
 
-/* checkbox column and the first column stay put when scrolling sideways */
-.data-grid .pick-cell { position: sticky; left: 0; z-index: 1; width: 40px; min-width: 40px; max-width: 40px; padding: 0 0 0 14px; }
-.data-grid .lead-col { position: sticky; left: 40px; z-index: 1; box-shadow: inset -1px 0 0 var(--hairline); }
+/* pick column (switches) and the first column stay put when scrolling sideways */
+.data-grid .pick-cell { position: sticky; left: 0; z-index: 1; width: 52px; min-width: 52px; max-width: 52px; padding: 0 0 0 14px; }
+.data-grid .lead-col { position: sticky; left: 52px; z-index: 1; box-shadow: inset -1px 0 0 var(--hairline); }
 .data-grid th.pick-cell, .data-grid th.lead-col { z-index: 3; }
-.data-grid .pick-cell input { display: block; width: 15px; height: 15px; margin: 0; cursor: pointer; accent-color: var(--primary); }
+.data-grid .pick-cell input { display: block; }
 
 /* header cell: grip on the left, sort label, menu on the right, resize handle on the edge */
 .dg-head { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
@@ -196,7 +196,7 @@ body.dg-resizing, body.dg-resizing * { cursor: col-resize !important; user-selec
 .colpick-group { padding: 12px 8px 4px; font-size: 12px; font-weight: 500; color: var(--muted-text); }
 .colpick-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; }
 .colpick-row:hover { background: var(--surface); }
-.colpick-row input { margin: 0; accent-color: var(--primary); }
+.colpick-row input { margin: 0; }
 .colpick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 600; flex: none; }
 .colpick-hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted-text); flex: none; }
 .colpick-none { margin: 12px 8px; font-size: 13px; color: var(--muted-text); }

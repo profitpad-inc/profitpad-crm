@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
 import { MobileHeader } from '../components/MobileNav';
 import { Modal } from '../components/ui';
+import { useAddToMenu } from '../lib/use-add-to-menu';
 import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewInit } from '../view-runtime/protocol';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
@@ -97,6 +98,7 @@ export function CustomView() {
   // the latest values for the message handler, which is set up once per frame
   const latest = useRef({ slug, params, draft, view });
   latest.current = { slug, params, draft, view };
+  const menu = useAddToMenu(view?.status === 'published' ? view.slug : null);
 
   useEffect(() => {
     setView(null);
@@ -330,11 +332,16 @@ export function CustomView() {
             {view.status === 'published' && (
               <Link to={{ pathname: '/view/', search: draft ? '' : '?draft=1', hash: location.hash }}>{draft ? 'See published' : 'See draft'}</Link>
             )}
+            {menu && (
+              menu.inMenu
+                ? <Link to="/settings/navigation">In menu</Link>
+                : <button className="link-btn" disabled={menu.busy} onClick={menu.add}>Add to menu</button>
+            )}
             <Link to={`/objects/views/${view.id}`}>Code</Link>
           </div>
         )}
         {!slug && <div className="page"><p className="muted">No view picked. Admins can see every view under <Link to="/objects/views">Views</Link>.</p></div>}
-        {error && <div className="page"><div className="error">{error}</div></div>}
+        {(error ?? menu?.error) && <div className="page"><div className="error">{error ?? menu?.error}</div></div>}
         {view && !error && (
           <iframe
             key={frameKey}

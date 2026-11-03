@@ -123,6 +123,16 @@ export async function getRegistry(): Promise<Registry> {
   return cached;
 }
 
+// The last loaded registry's property and object by property id, without a
+// query (error messages use it; null before the first load).
+export function cachedPropertyById(id: string): { obj: ObjectDef; prop: PropertyDef } | null {
+  for (const obj of cached?.objects ?? []) {
+    const prop = obj.properties.find((p) => p.pc_0002_id === id);
+    if (prop) return { obj, prop };
+  }
+  return null;
+}
+
 export async function getObject(key: string): Promise<ObjectDef> {
   const reg = await getRegistry();
   const obj = reg.byKey.get(key);

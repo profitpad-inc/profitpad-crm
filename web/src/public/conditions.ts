@@ -16,7 +16,7 @@ export interface Condition {
 export const OPERATORS: Partial<Record<FieldType, { op: ConditionOperator; label: string }[]>> = {
   select: [{ op: 'is_any_of', label: 'is any of' }, { op: 'is_none_of', label: 'is none of' }, { op: 'is_not_empty', label: 'is answered' }, { op: 'is_empty', label: 'is not answered' }],
   multiselect: [{ op: 'is_any_of', label: 'includes any of' }, { op: 'is_none_of', label: 'includes none of' }, { op: 'is_not_empty', label: 'is answered' }, { op: 'is_empty', label: 'is not answered' }],
-  checkbox: [{ op: 'is_checked', label: 'is checked' }, { op: 'is_not_checked', label: 'is not checked' }],
+  checkbox: [{ op: 'is_checked', label: 'is on' }, { op: 'is_not_checked', label: 'is off' }],
   date: [{ op: 'is_before', label: 'is before' }, { op: 'is_after', label: 'is after' }, { op: 'is_on', label: 'is on' }, { op: 'is_not_empty', label: 'is answered' }, { op: 'is_empty', label: 'is not answered' }],
   datetime: [{ op: 'is_before', label: 'is before' }, { op: 'is_after', label: 'is after' }, { op: 'is_on', label: 'is on' }, { op: 'is_not_empty', label: 'is answered' }, { op: 'is_empty', label: 'is not answered' }]
 };

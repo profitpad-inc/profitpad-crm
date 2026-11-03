@@ -47,9 +47,17 @@ export const FORM_CSS = `
 .pcrm-form input:focus, .pcrm-form select:focus, .pcrm-form textarea:focus { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pcrm-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pcrm-primary) 22%, transparent); }
 .pcrm-form .pcrm-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; font-size: 15px; line-height: 1.45; margin: 0; cursor: pointer; }
-.pcrm-form .pcrm-check input { margin: 3px 0 0; width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--pcrm-primary); cursor: pointer; }
+.pcrm-form .pcrm-check input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 28px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px;
+  background: var(--pcrm-border); cursor: pointer; vertical-align: middle; transition: background 0.15s; }
+.pcrm-form .pcrm-check input::before { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transition: transform 0.15s; }
+.pcrm-form .pcrm-check input:checked { background: var(--pcrm-primary); }
+.pcrm-form .pcrm-check input:checked::before { transform: translateX(12px); }
+.pcrm-form .pcrm-check input:indeterminate { background: color-mix(in srgb, var(--pcrm-primary) 55%, var(--pcrm-border)); }
+.pcrm-form .pcrm-check input:indeterminate::before { transform: translateX(6px); }
 .pcrm-form .pcrm-check input:focus { box-shadow: none; }
-.pcrm-form .pcrm-check input:focus-visible { outline: 2px solid var(--pcrm-primary); outline-offset: 2px; box-shadow: none; }
+.pcrm-form .pcrm-check input:focus-visible { outline: 2px solid var(--pcrm-primary); outline-offset: 2px; }
+.pcrm-form .pcrm-check input:disabled { opacity: 0.5; cursor: default; }
+.pcrm-form .pcrm-check input { margin-top: 3px; }
 .pcrm-form .pcrm-choices { display: flex; flex-direction: column; gap: 8px; }
 .pcrm-form .pcrm-invalid input, .pcrm-form .pcrm-invalid select, .pcrm-form .pcrm-invalid textarea, .pcrm-form .pcrm-invalid .pcrm-country-face,
 .pcrm-form input.pcrm-invalid, .pcrm-form select.pcrm-invalid, .pcrm-form textarea.pcrm-invalid { border-color: #b42318; }

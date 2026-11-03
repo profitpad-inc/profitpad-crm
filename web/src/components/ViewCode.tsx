@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ViewIcon } from '../lib/lucide-icons';
+import { useAddToMenu } from '../lib/use-add-to-menu';
 import { useViewIconPicker } from './IconPicker';
 
 interface ViewCodeOut {
@@ -18,6 +19,32 @@ interface ViewCodeOut {
   queries: Record<string, { sql: string; params: Record<string, string> }>;
 }
 
+const WRAP_KEY = 'pcrm.viewCodeWrap';
+
+function readWrap(): boolean {
+  try {
+    return localStorage.getItem(WRAP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+// Code with line numbers (left out when copying). Unwrapped, long lines scroll
+// sideways and the numbers stay put; wrapped, a long line keeps one number.
+function CodeBlock({ text, wrap }: { text: string; wrap: boolean }) {
+  const lines = text.split('\n');
+  return (
+    <pre className={`view-code numbered${wrap ? ' wrap' : ''}`} style={{ ['--gutter' as string]: `${String(lines.length).length}ch` }}>
+      {lines.map((line, i) => (
+        <span key={i} className="code-line">
+          <span className="ln" aria-hidden>{i + 1}</span>
+          <span className="lc">{line || ' '}</span>
+        </span>
+      ))}
+    </pre>
+  );
+}
+
 // A custom view's record page: its React code and SQL queries (draft and
 // published), with Open and Publish. Views are written by admins' AI through
 // the MCP; this card is for reading and publishing.
@@ -28,8 +55,10 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   const [tab, setTab] = useState<'code' | 'queries'>('code');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wrap, setWrap] = useState(readWrap);
   const iconPicker = useViewIconPicker(record, onChanged);
   const icon = iconPicker.icon;
+  const menu = useAddToMenu(code?.slug);
 
   useEffect(() => {
     let live = true;
@@ -40,6 +69,14 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
       live = false;
     };
   }, [record.id, record.properties.updated_at]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WRAP_KEY, wrap ? '1' : '0');
+    } catch {
+      // per-viewer convenience only
+    }
+  }, [wrap]);
 
   async function publish() {
     if (!confirm('Publish the draft? Everyone who can open this view will see it.')) return;
@@ -74,19 +111,27 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
         </button>
         <Link className="btn small" to={{ pathname: '/view/', search: '?draft=1', hash: `#${code.slug}` }}>Open draft <ExternalLink size={12} /></Link>
         {code.status === 'published' && <Link className="btn small" to={{ pathname: '/view/', hash: `#${code.slug}` }}>Open <ExternalLink size={12} /></Link>}
+        {menu && (
+          menu.inMenu
+            ? <Link className="btn small" to="/settings/navigation">In menu</Link>
+            : <button className="btn small" disabled={menu.busy || code.status !== 'published'} title={code.status === 'published' ? undefined : 'Publish the view first'} onClick={menu.add}>Add to menu</button>
+        )}
         {code.unpublished_changes && code.draft_source && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
       </div>
-      {(error || iconPicker.error) && <div className="error">{error ?? iconPicker.error}</div>}
+      {(error || iconPicker.error || menu?.error) && <div className="error">{error ?? iconPicker.error ?? menu?.error}</div>}
       {iconPicker.picker}
       <div className="tabs">
         <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
         <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!code.source}>Published</button></div>
         <span style={{ flex: 1 }} />
+        <label className="small muted code-wrap-toggle">
+          <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
+        </label>
         <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>React</button></div>
         <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Queries ({Object.keys(queries ?? {}).length})</button></div>
       </div>
       {tab === 'code' ? (
-        source ? <pre className="view-code">{source}</pre> : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
+        source ? <CodeBlock text={source} wrap={wrap} /> : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
       ) : Object.keys(queries ?? {}).length === 0 ? (
         <p className="muted">No queries.</p>
       ) : (
@@ -96,7 +141,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
               <strong>{name}</strong>
               {Object.keys(q.params).length > 0 && <span className="muted"> ({Object.entries(q.params).map(([p, t]) => `${p}: ${t}`).join(', ')})</span>}
             </div>
-            <pre className="view-code">{q.sql}</pre>
+            <CodeBlock text={q.sql} wrap={wrap} />
           </div>
         ))
       )}

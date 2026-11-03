@@ -1,3 +1,5 @@
+import { cachedPropertyById } from './registry.js';
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -33,5 +35,12 @@ export function fromPg(err: unknown): ApiError | null {
   if (!code || !PG_STATUS[code]) return null;
   const [status, kind] = PG_STATUS[code];
   const pgErr = err as { message: string; detail?: string; constraint?: string };
+  // unique properties are enforced by indexes named pci_<property id>_uq
+  const unique = code === '23505' && /^pci_(\w+)_uq$/.exec(pgErr.constraint ?? '');
+  const found = unique ? cachedPropertyById(unique[1]) : null;
+  if (found) {
+    return new ApiError(status, `Another ${found.obj.label_singular.toLowerCase()} already uses this ${found.prop.label.toLowerCase()}. Choose a different one.`, kind,
+      { property: found.prop.api_name });
+  }
   return new ApiError(status, pgErr.message, kind, pgErr.detail ? { detail: pgErr.detail, constraint: pgErr.constraint } : undefined);
 }
