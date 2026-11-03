@@ -4,8 +4,8 @@ import { badRequest } from '../errors.js';
 import { requireScope } from '../auth.js';
 import { ICON_NAMES } from '../icons.js';
 import {
-  canEditViews, createView, listViewErrors, listViews, loadView, logViewErrors, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery,
-  saveDraft, viewOut, type DraftInput
+  allowWrites, canEditViews, createView, listViewErrors, listViews, loadView, logViewErrors, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery,
+  saveDraft, viewOut, writesAllowed, type DraftInput
 } from '../views.js';
 
 type SlugParams = { slug: string };
@@ -31,7 +31,15 @@ export async function viewRoutes(app: FastifyInstance) {
   app.get<{ Params: SlugParams; Querystring: { draft?: string } }>('/v1/views/:slug', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
-    return openView(p, await loadView(pool, req.params.slug), isDraft(req.query));
+    const v = await loadView(pool, req.params.slug);
+    return { ...openView(p, v, isDraft(req.query)), writes_allowed: await writesAllowed(v.id) };
+  });
+
+  // Someone allowed the view's record changes: nobody is asked again (0062).
+  app.post<{ Params: SlugParams; Querystring: { draft?: string } }>('/v1/views/:slug/allow-writes', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    return allowWrites(p, req.params.slug, isDraft(req.query));
   });
 
   // The source and queries, draft and published (admins).

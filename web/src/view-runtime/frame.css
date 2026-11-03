@@ -111,7 +111,7 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .v-phone { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .v-phone .phone-input { display: flex; gap: 6px; min-width: 0; }
 .v-phone .phone-input input { flex: 1; min-width: 0; }
-.v-phone .phone-country { width: auto; flex: none; }
+.v-phone .phone-country { width: auto; flex: none; order: -1; }
 .v-input[aria-invalid] { border-color: var(--danger); }
 .v-field-error { font-size: 12px; color: var(--danger); }
 /* the open list of a Select (components/Select.tsx, shared with the CRM) */

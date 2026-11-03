@@ -92,20 +92,6 @@ export function PhoneInput({ value, onChange, autoFocus, onCommit, source, check
           if (check) checkNow();
         }}
       >
-        {regions && (
-          // the closed picker shows the flag; the open list has the names
-          <Select
-            className={['phone-country', classes?.select].filter(Boolean).join(' ')}
-            value={region}
-            face={regionShort(picked)}
-            aria-label="Country"
-            options={regions.regions.map((r) => ({ value: r.region, label: regionLabel(r) }))}
-            onChange={(v) => {
-              setRegion(v);
-              emit(text, regions.regions.find((r) => r.region === v));
-            }}
-          />
-        )}
         <input
           type="tel"
           className={classes?.input}
@@ -122,6 +108,22 @@ export function PhoneInput({ value, onChange, autoFocus, onCommit, source, check
             if (e.key === 'Enter' && onCommit) onCommit(composePhone(text, picked));
           }}
         />
+        {regions && (
+          // the closed picker shows the flag; the open list has the names. It
+          // comes after the number in the page so that a click on the field's
+          // <label> goes to the number, not the picker; CSS draws it on the left.
+          <Select
+            className={['phone-country', classes?.select].filter(Boolean).join(' ')}
+            value={region}
+            face={regionShort(picked)}
+            aria-label="Country"
+            options={regions.regions.map((r) => ({ value: r.region, label: regionLabel(r) }))}
+            onChange={(v) => {
+              setRegion(v);
+              emit(text, regions.regions.find((r) => r.region === v));
+            }}
+          />
+        )}
       </div>
       {error && <div className={classes?.error ?? 'error prop-error'} role="alert">{error}</div>}
     </>

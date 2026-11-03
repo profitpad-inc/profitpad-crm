@@ -23,7 +23,7 @@ interface Integration extends Approval {
   last_error: string | null;
   // the shape of data views send (migration 0046)
   data_example: unknown;
-  // called while the viewer types: asked once per page visit (0060)
+  // called while the viewer types: 120 calls a minute instead of 30 (0060)
   interactive: boolean;
 }
 
@@ -141,7 +141,7 @@ export function IntegrationSettings() {
       title="View integrations"
       description={<>
         Outside services that custom views can send data to, such as an n8n webhook that posts to Slack. A view calls one by its key with{' '}
-        <code>callIntegration('key', data)</code>; the viewer is asked to allow each send, then the CRM's server makes the request, so the
+        <code>callIntegration('key', data)</code> without asking the viewer (turning it on here is the approval); the CRM's server makes the request, so the
         secret header never reaches a browser. The service receives a JSON POST with <code>data</code>, the <code>view</code> and the{' '}
         <code>user</code> who sent it, and its answer goes back to the view.
       </>}
@@ -197,7 +197,7 @@ export function IntegrationSettings() {
             <label className="check">
               <input type="checkbox" checked={d.enabled} onChange={(e) => setDraft({ ...d, enabled: e.target.checked })} /> On
             </label>
-            <label className="check" title="For lookups while the viewer types, like address autocomplete: the viewer allows it once per page visit, and up to 120 calls a minute">
+            <label className="check" title="For lookups while the viewer types, like address autocomplete: up to 120 calls a minute per person instead of 30">
               <input type="checkbox" checked={d.interactive} onChange={(e) => setDraft({ ...d, interactive: e.target.checked })} /> Called while typing
             </label>
           </div>

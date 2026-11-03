@@ -499,7 +499,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     data_example: z.unknown().optional().describe('An example of the data views send (the contract with the workflow); calls whose data does not match its shape are still sent, with a warning in the view\'s runtime errors. null removes it'),
     audience: z.enum(['admins', 'everyone']).optional().describe('Who may call it from a view they can open (default admins)'),
     enabled: z.boolean().optional().describe('Only false does anything: you can turn an integration off but not on. New ones start off until an admin turns them on (approve_url)'),
-    interactive: z.boolean().optional().describe('For calls made while the viewer types (autocomplete, lookups): the viewer is asked once per page visit instead of on every call, and up to 120 calls a minute per viewer instead of 30. Default false'),
+    interactive: z.boolean().optional().describe('For calls made while the viewer types (autocomplete, lookups): up to 120 calls a minute per viewer instead of 30 (no integration asks the viewer before sending). Only for calls that send what the viewer typed or picked. Default false'),
     secret_header: z.string().nullable().optional().describe('Header sent with every call, e.g. X-Webhook-Secret for n8n header auth (null removes it)'),
     secret_value: z.string().optional().describe('The value of secret_header; never shown again')
   };

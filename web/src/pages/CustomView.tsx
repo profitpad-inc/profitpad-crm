@@ -25,6 +25,8 @@ interface ViewPayload {
   can_edit: boolean;
   // admins only: the draft differs from the published version
   unpublished_changes?: boolean;
+  // someone allowed the view's record changes, so nobody is asked (0062)
+  writes_allowed?: boolean;
 }
 
 const FRAME_URL = `${import.meta.env.BASE_URL}view-frame/index.html`;
@@ -39,11 +41,10 @@ function parseHash(hash: string): { slug: string; params: Params } {
   return { slug, params };
 }
 
-// interactive: the key of an integration called while the viewer types, allowed once per page visit
-type Ask = { title: string; lines: string[]; send?: boolean; interactive?: string };
+type Ask = { title: string; lines: string[] };
 
-// What a view asks to change or send, in words for the confirmation (values cut short)
-function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration', args: unknown[]): Ask {
+// What a view asks to change, in words for the confirmation (values cut short)
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords', args: unknown[]): Ask {
   const short = (v: unknown) => {
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 79) + '…' : s;
@@ -53,11 +54,6 @@ function describeChange(label: (o: string) => string, method: 'createRecord' | '
     return [...entries.slice(0, 12).map(([k, x]) => `${k}: ${x === null ? '(cleared)' : short(x)}`), ...(entries.length > 12 ? [`and ${entries.length - 12} more`] : [])];
   };
   const obj = String(args[0] ?? '');
-  if (method === 'callIntegration') {
-    const data = args[1];
-    const lines = data === null || data === undefined ? ['(no data)'] : typeof data === 'object' && !Array.isArray(data) ? props(data) : [short(data)];
-    return { title: `Send to ${label(obj)}`, lines, send: true };
-  }
   if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
   if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
   return { title: 'Link two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `to ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
@@ -84,19 +80,13 @@ export function CustomView() {
   const [frameKey, setFrameKey] = useState(0);
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
-  // a view's record changes wait for the viewer's yes (or "don't ask again"
-  // for this view while the page is open)
+  // A view's record changes are asked about once per view: the first yes
+  // allows them for everyone, from then on (0062). Calls made while the
+  // question is open wait for the same answer. Integrations are never asked:
+  // an admin turning one on is the approval.
   const [asking, setAsking] = useState<(Ask & { resolve: (ok: boolean) => void }) | null>(null);
-  const [dontAsk, setDontAsk] = useState(false);
   const allowWrites = useRef(false);
-  // the same for sending to integrations, asked separately
-  const allowSends = useRef(false);
-  // integration labels for the confirmation, loaded on a view's first call
-  const integrationLabels = useRef<Map<string, { label: string; interactive: boolean }> | null>(null);
-  // interactive integrations the viewer allowed on this page, and the asks
-  // still open (calls made while typing wait for the same answer)
-  const allowedInteractive = useRef(new Set<string>());
-  const pendingInteractive = useRef(new Map<string, Promise<boolean>>());
+  const pendingAsk = useRef<Promise<boolean> | null>(null);
   // the frame loads once; a second load means the view navigated it away
   const frameLoads = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -114,6 +104,7 @@ export function CustomView() {
       .then((v) => {
         if (!live) return;
         setView(v);
+        allowWrites.current = v.writes_allowed === true;
         setFrameKey((k) => k + 1);
         document.title = `${v.name ?? v.slug} · ProfitPad CRM`;
       })
@@ -125,10 +116,7 @@ export function CustomView() {
 
   useEffect(() => {
     allowWrites.current = false;
-    allowSends.current = false;
-    integrationLabels.current = null;
-    allowedInteractive.current = new Set();
-    pendingInteractive.current = new Map();
+    pendingAsk.current = null;
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
@@ -181,24 +169,21 @@ export function CustomView() {
   }, []);
 
   const confirmWrite = useCallback((change: Ask) => {
-    const key = change.interactive;
-    if (key) {
-      if (allowedInteractive.current.has(key)) return Promise.resolve(true);
-      const pending = pendingInteractive.current.get(key);
-      if (pending) return pending;
-    } else if ((change.send ? allowSends : allowWrites).current) return Promise.resolve(true);
-    setDontAsk(false);
+    if (allowWrites.current) return Promise.resolve(true);
+    if (pendingAsk.current) return pendingAsk.current;
     const asked = new Promise<boolean>((resolve) => setAsking({ ...change, resolve }));
-    if (key) {
-      pendingInteractive.current.set(key, asked);
-      asked.then(() => pendingInteractive.current.delete(key));
-    }
+    pendingAsk.current = asked;
+    asked.then(() => (pendingAsk.current = null));
     return asked;
   }, []);
 
   function answer(ok: boolean) {
-    if (ok && asking?.interactive) allowedInteractive.current.add(asking.interactive);
-    else if (ok && dontAsk && asking) (asking.send ? allowSends : allowWrites).current = true;
+    if (ok) {
+      allowWrites.current = true;
+      const { slug: s, draft: d } = latest.current;
+      // remembered for everyone; if it fails, only this visit is allowed
+      if (s) api('POST', `/v1/views/${encodeURIComponent(s)}/allow-writes${d ? '?draft=1' : ''}`).catch(() => undefined);
+    }
     asking?.resolve(ok);
     setAsking(null);
   }
@@ -276,18 +261,9 @@ export function CustomView() {
         if (!(await confirmWrite(describeChange(label, method, args)))) throw new Error('The viewer did not allow this change');
         break;
       }
-      case 'callIntegration': {
-        const key = str(args[0], 'integration key');
-        if (!integrationLabels.current) {
-          const list = await api<{ results: { key: string; label: string; interactive?: boolean }[] }>('GET', '/v1/view-integrations').catch(() => ({ results: [] }));
-          integrationLabels.current = new Map(list.results.map((i) => [i.key, { label: i.label, interactive: !!i.interactive }]));
-        }
-        const labels = integrationLabels.current;
-        const ask = describeChange((k) => labels.get(k)?.label ?? k, method, args);
-        if (labels.get(key)?.interactive) ask.interactive = key;
-        if (!(await confirmWrite(ask))) throw new Error('The viewer did not allow sending this');
-        return api('POST', `/v1/views/${str(s, 'slug')}/integrations/${key}${d ? '?draft=1' : ''}`, { data: args[1] ?? null });
-      }
+      case 'callIntegration':
+        // not asked: an admin enabled the integration and chose who may use it
+        return api('POST', `/v1/views/${str(s, 'slug')}/integrations/${str(args[0], 'integration key')}${d ? '?draft=1' : ''}`, { data: args[1] ?? null });
     }
     switch (method) {
       case 'createRecord':
@@ -389,24 +365,19 @@ export function CustomView() {
       </div>
       {asking && (
         <Modal
-          title={asking.send ? 'Allow sending this?' : 'Allow this change?'}
+          title="Allow this view to make changes?"
           onClose={() => answer(false)}
           footer={
             <>
-              {asking.interactive ? <span style={{ marginRight: 'auto' }} /> : (
-                <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
-                  <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} /> Don't ask again on this page
-                </label>
-              )}
               <button className="btn" onClick={() => answer(false)}>Don't allow</button>
               <button className="btn primary" onClick={() => answer(true)}>Allow</button>
             </>
           }
         >
-          <p className="muted small" style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to {asking.send ? 'send this as you' : 'make this change as you'}:</p>
+          <p className="muted small" style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to make this change as you:</p>
           <p style={{ fontWeight: 500 }}>{asking.title}</p>
           {asking.lines.length > 0 && <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{asking.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
-          {asking.interactive && <p className="muted small" style={{ marginBottom: 0 }}>This view sends to it while you type. Allowing it once covers the rest of this visit to the page.</p>}
+          <p className="muted small" style={{ marginBottom: 0 }}>Allowing it lets this view make changes for everyone who uses it, from now on, without asking again. Each person's changes still follow their own permissions.</p>
         </Modal>
       )}
     </>

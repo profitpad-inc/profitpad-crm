@@ -347,6 +347,20 @@ export function openView(p: Principal, v: ViewRow, draft: boolean) {
   };
 }
 
+// Record changes from a view are asked about once per view, for everyone
+// (0062): whether someone has allowed them, and recording that they did.
+export async function writesAllowed(viewId: string): Promise<boolean> {
+  const { rows } = await pool.query('select 1 from ui.view_write_approvals where view_id = $1', [viewId]);
+  return rows.length > 0;
+}
+
+export async function allowWrites(p: Principal, slug: string, draft: boolean): Promise<{ writes_allowed: true }> {
+  const v = await loadView(pool, slug);
+  if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');
+  await pool.query('insert into ui.view_write_approvals (view_id, approved_by) values ($1, $2) on conflict (view_id) do nothing', [v.id, p.actor]);
+  return { writes_allowed: true };
+}
+
 export async function runViewQuery(p: Principal, slug: string, name: string, params: Record<string, unknown>, draft: boolean): Promise<QueryResult> {
   const v = await loadView(pool, slug);
   if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');

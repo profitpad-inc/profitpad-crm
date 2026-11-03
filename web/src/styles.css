@@ -592,7 +592,7 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 /* Phone properties: country picker + number */
 .phone-input { display: flex; gap: 6px; min-width: 0; }
 .phone-input input { flex: 1; min-width: 0; }
-.phone-input .phone-country { width: auto; flex: none; }
+.phone-input .phone-country { width: auto; flex: none; order: -1; }
 .prop-error { margin: 4px 0 0; }
 
 /* Toast notification (bottom centre) */
