@@ -8,8 +8,8 @@ import { DatePicker } from './DatePicker';
 
 // locked: Escape and clicks outside do nothing; only the X (or the footer's
 // own buttons) close it.
-export function Modal({ title, onClose, children, footer, wide, locked }: {
-  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; locked?: boolean;
+export function Modal({ title, onClose, children, footer, wide, locked, className }: {
+  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; locked?: boolean; className?: string;
 }) {
   useEffect(() => {
     if (locked) return;
@@ -19,7 +19,7 @@ export function Modal({ title, onClose, children, footer, wide, locked }: {
   }, [onClose, locked]);
   return (
     <div className="overlay" onMouseDown={locked ? undefined : onClose}>
-      <div className={`modal${wide ? ' wide' : ''}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
+      <div className={`modal${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">

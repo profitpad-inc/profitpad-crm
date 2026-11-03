@@ -21,8 +21,8 @@ const TYPE_LABELS: Record<string, string> = {
   datetime: 'Date and time',
   calculation: 'Calculation',
   file: 'File',
-  id: 'Record id',
-  id_list: 'Record ids'
+  id: 'Record ID',
+  id_list: 'Record IDs'
 };
 
 const NEW_TYPES: PropType[] = ['text', 'number', 'dropdown', 'date', 'datetime', 'file', 'calculation'];
@@ -766,6 +766,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     </Modal>
     {confirmClose && (
       <Modal
+        className="discard-confirm"
         title={isNew ? 'Discard this property?' : 'Discard your changes?'}
         onClose={() => setConfirmClose(false)}
         footer={
