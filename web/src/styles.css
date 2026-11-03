@@ -61,7 +61,7 @@ input, select, textarea {
 }
 textarea { resize: vertical; max-width: 100%; }
 input[type='color'] { width: auto; }
-/* Every checkbox is drawn as an on/off switch (the UI uses switches, never checkboxes) */
+/* Every checkbox is drawn as an on/off switch, except the table's row picking (table.css) */
 input[type='checkbox'] { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 28px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px;
   background: var(--border); cursor: pointer; vertical-align: middle; transition: background 0.15s; }
 input[type='checkbox']::before { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transition: transform 0.15s; }
@@ -619,6 +619,16 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .custom-view-bar { display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .custom-view-bar .spacer { flex: 1; }
 .custom-view-bar .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--primary) 10%, #fff); color: var(--primary); }
+.view-integrations { display: flex; flex-direction: column; gap: 10px; }
+.view-integration { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+.view-integration p { margin: 4px 0 0; }
+.view-integration .pill { margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--surface); color: var(--muted-text); }
+.view-integration .pill.danger { background: color-mix(in srgb, var(--danger) 12%, #fff); color: var(--danger); }
+.view-integration dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; }
+.view-integration dt { color: var(--muted-text); }
+.view-integration dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.view-integration .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.view-integration .error-text { color: var(--danger); }
 /* line numbers: each line is a grid row; unwrapped, the number column sticks to the left while scrolling sideways */
 .view-code.numbered { padding: 10px 12px 10px 0; }
 .view-code.numbered .code-line { display: grid; grid-template-columns: calc(var(--gutter) + 24px) auto; }

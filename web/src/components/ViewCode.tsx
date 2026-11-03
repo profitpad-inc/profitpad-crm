@@ -45,6 +45,89 @@ function CodeBlock({ text, wrap }: { text: string; wrap: boolean }) {
   );
 }
 
+// An integration as GET /v1/view-integrations returns it (url and status for admins only)
+interface Integration {
+  key: string;
+  label: string;
+  description: string | null;
+  audience: 'admins' | 'everyone';
+  url?: string;
+  enabled?: boolean;
+  last_called_at?: string | null;
+  last_status?: number | null;
+  last_error?: string | null;
+}
+
+// The integration keys a view's code sends to: callIntegration('key', ...)
+// with a written-out key. dynamic counts calls whose key is built in code.
+function integrationKeys(source: string | null): { keys: string[]; dynamic: number } {
+  if (!source) return { keys: [], dynamic: 0 };
+  const keys = new Set<string>();
+  for (const m of source.matchAll(/callIntegration\s*(?:<[^>()]*>)?\s*\(\s*(['"`])([^'"`$\\]+)\1/g)) keys.add(m[2]);
+  const calls = [...source.matchAll(/callIntegration\s*(?:<[^>()]*>)?\s*\(/g)].length;
+  const literal = [...source.matchAll(/callIntegration\s*(?:<[^>()]*>)?\s*\(\s*(['"`])[^'"`$\\]+\1/g)].length;
+  return { keys: [...keys].sort(), dynamic: Math.max(0, calls - literal) };
+}
+
+function ViewIntegrations({ source }: { source: string | null }) {
+  const [all, setAll] = useState<Integration[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api<{ results: Integration[] }>('GET', '/v1/view-integrations')
+      .then((r) => live && setAll(r.results))
+      .catch((e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const { keys, dynamic } = integrationKeys(source);
+  if (error) return <div className="error">{error}</div>;
+  if (!all) return <p className="muted">Loading…</p>;
+  if (keys.length === 0 && dynamic === 0) return <p className="muted">This view sends nothing to integrations.</p>;
+  const byKey = new Map(all.map((i) => [i.key, i]));
+  return (
+    <div className="view-integrations">
+      {keys.map((k) => {
+        const i = byKey.get(k);
+        if (!i) {
+          return (
+            <div key={k} className="view-integration">
+              <div><strong>{k}</strong> <span className="pill danger">Not set up</span></div>
+              <p className="small muted">The code calls this key, but no integration has it. Add one in <Link to="/settings/view-integrations">View integrations</Link>.</p>
+            </div>
+          );
+        }
+        return (
+          <div key={k} className="view-integration">
+            <div>
+              <strong>{i.label}</strong> <span className="muted small">{i.key}</span>
+              {i.enabled === false && <span className="pill">Off</span>}
+            </div>
+            {i.description && <p className="small">{i.description}</p>}
+            <dl className="small">
+              {i.url && <><dt>Sends to</dt><dd className="mono">{i.url}</dd></>}
+              <dt>Who can use it</dt><dd>{i.audience === 'everyone' ? 'Everyone who can open the view' : 'Admins'}</dd>
+              {i.url !== undefined && (
+                <>
+                  <dt>Last call</dt>
+                  <dd>
+                    {i.last_called_at ? new Date(i.last_called_at).toLocaleString() : 'Never'}
+                    {i.last_status != null && <span className="muted"> · HTTP {i.last_status}</span>}
+                    {i.last_error && <div className="error-text">{i.last_error}</div>}
+                  </dd>
+                </>
+              )}
+            </dl>
+          </div>
+        );
+      })}
+      {dynamic > 0 && <p className="small muted">{dynamic === 1 ? '1 call builds its key' : `${dynamic} calls build their key`} in code, so it is not listed here.</p>}
+      <p className="small muted">Integrations are set up in <Link to="/settings/view-integrations">Settings, View integrations</Link>.</p>
+    </div>
+  );
+}
+
 // A custom view's record page: its React code and SQL queries (draft and
 // published), with Open and Publish. Views are written by admins' AI through
 // the MCP; this card is for reading and publishing.
@@ -52,7 +135,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   const { toast, reloadCustomViews } = useApp();
   const [code, setCode] = useState<ViewCodeOut | null>(null);
   const [which, setWhich] = useState<'draft' | 'published'>('draft');
-  const [tab, setTab] = useState<'code' | 'queries'>('code');
+  const [tab, setTab] = useState<'code' | 'queries' | 'integrations'>('code');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [wrap, setWrap] = useState(readWrap);
@@ -124,13 +207,18 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
         <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
         <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!code.source}>Published</button></div>
         <span style={{ flex: 1 }} />
-        <label className="small muted code-wrap-toggle">
-          <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
-        </label>
+        {tab !== 'integrations' && (
+          <label className="small muted code-wrap-toggle">
+            <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
+          </label>
+        )}
         <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>React</button></div>
         <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Queries ({Object.keys(queries ?? {}).length})</button></div>
+        <div className={`tab${tab === 'integrations' ? ' active' : ''}`}><button onClick={() => setTab('integrations')}>Integrations ({integrationKeys(source).keys.length})</button></div>
       </div>
-      {tab === 'code' ? (
+      {tab === 'integrations' ? (
+        <ViewIntegrations source={source} />
+      ) : tab === 'code' ? (
         source ? <CodeBlock text={source} wrap={wrap} /> : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
       ) : Object.keys(queries ?? {}).length === 0 ? (
         <p className="muted">No queries.</p>

@@ -369,6 +369,43 @@ function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: 
   }
 }
 
+// A menu row's label: click to rename in place. Enter or leaving the box keeps
+// it, Escape cancels. Emptied, a link goes back to its own name (fallback);
+// a section needs a label, so emptying one keeps the old label.
+function EditableLabel({ value, fallback, onSave }: { value: string; fallback: string | null; onSave: (label: string | undefined) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (draft === null) {
+    return <button type="button" className="nav-edit-name" title="Rename" onClick={() => setDraft(value)}>{value}</button>;
+  }
+  const done = (keep: boolean) => {
+    const v = draft.trim();
+    setDraft(null);
+    if (!keep || v === value) return;
+    if (!v || v === fallback) {
+      if (fallback !== null) onSave(undefined);
+      return;
+    }
+    onSave(v);
+  };
+  return (
+    <input
+      className="nav-edit-input"
+      autoFocus
+      value={draft}
+      maxLength={63}
+      placeholder={fallback ?? 'Section name'}
+      aria-label="Label"
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={() => done(true)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); done(true); }
+        if (e.key === 'Escape') { e.preventDefault(); done(false); }
+      }}
+    />
+  );
+}
+
 // what kind of link a row is, shown in small text after its label where the label alone does not say
 function itemKind(item: NavItem): string | null {
   switch (item.type) {
@@ -504,7 +541,16 @@ function NavSettings() {
     const kind = itemKind(it);
     return (
       <div key={i} className={`nav-edit-row ${it.type}${child ? ' child' : ''}`}>
-        <span className="nav-edit-label">{label}{kind && it.type !== 'section' && <span className="kind">{kind}</span>}</span>
+        <span className="nav-edit-label">
+          {it.type === 'home' || it.type === 'divider' ? label : (
+            <EditableLabel
+              value={label}
+              fallback={it.type === 'section' ? null : itemLabel({ ...it, label: undefined } as NavItem, objectLabel, viewName, customViewName)}
+              onSave={(l) => change((ls) => ls.map((x, j) => (j === i ? ({ ...x, label: l } as NavItem) : x)))}
+            />
+          )}
+          {kind && it.type !== 'section' && <span className="kind">{kind}</span>}
+        </span>
         <button className="icon-btn" onClick={() => change((l) => move(l, i, -1))} disabled={i === 0} aria-label={`Move ${label} up`}><ArrowUp size={14} /></button>
         <button className="icon-btn" onClick={() => change((l) => move(l, i, 1))} disabled={i === list.length - 1} aria-label={`Move ${label} down`}><ArrowDown size={14} /></button>
         <button className="icon-btn" onClick={() => change((l) => l.filter((_, j) => j !== i))} aria-label={`Remove ${label}`}><Trash2 size={14} /></button>
