@@ -23,6 +23,8 @@ interface Integration {
   last_error: string | null;
   // the shape of data views send (migration 0046)
   data_example: unknown;
+  // called while the viewer types: asked once per page visit (0060)
+  interactive: boolean;
 }
 
 interface Draft {
@@ -40,6 +42,7 @@ interface Draft {
   had_secret: boolean;
   // JSON text, '' for none
   data_example: string;
+  interactive: boolean;
 }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
@@ -47,7 +50,7 @@ const keyFrom = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-
 
 const EMPTY: Draft = {
   editing: null, key: '', keyTouched: false, label: '', description: '', url: '', audience: 'admins', enabled: true,
-  secret_header: '', secret_value: '', had_secret: false, data_example: ''
+  secret_header: '', secret_value: '', had_secret: false, data_example: '', interactive: false
 };
 
 // the example as the box shows it, and back (undefined when it is not JSON)
@@ -90,7 +93,8 @@ export function IntegrationSettings() {
 
   function save(d: Draft) {
     const body: Record<string, unknown> = {
-      label: d.label, description: d.description, url: d.url, audience: d.audience, enabled: d.enabled, data_example: parseExample(d.data_example)
+      label: d.label, description: d.description, url: d.url, audience: d.audience, enabled: d.enabled, data_example: parseExample(d.data_example),
+      interactive: d.interactive
     };
     const header = d.secret_header.trim();
     if (!header) {
@@ -185,6 +189,9 @@ export function IntegrationSettings() {
             <label className="check">
               <input type="checkbox" checked={d.enabled} onChange={(e) => setDraft({ ...d, enabled: e.target.checked })} /> On
             </label>
+            <label className="check" title="For lookups while the viewer types, like address autocomplete: the viewer allows it once per page visit, and up to 120 calls a minute">
+              <input type="checkbox" checked={d.interactive} onChange={(e) => setDraft({ ...d, interactive: e.target.checked })} /> Called while typing
+            </label>
           </div>
         </EditPanel>
       )}
@@ -224,7 +231,7 @@ export function IntegrationSettings() {
                       <button className="btn small ghost" onClick={() => setDraft({
                         editing: i.key, key: i.key, keyTouched: true, label: i.label, description: i.description ?? '', url: i.url, audience: i.audience,
                         enabled: i.enabled, secret_header: i.secret_header ?? '', secret_value: '', had_secret: i.has_secret,
-                        data_example: exampleText(i.data_example)
+                        data_example: exampleText(i.data_example), interactive: i.interactive
                       })}>Edit</button>
                       <button className="btn small ghost" onClick={() => sendTest(i)}>Send test</button>
                       <button className="btn small ghost danger-text" onClick={() => window.confirm(`Delete "${i.label}"? Views that call ${i.key} stop working.`) && run(() => api('DELETE', `/v1/view-integrations/${encodeURIComponent(i.key)}`), 'Integration deleted')}>Delete</button>

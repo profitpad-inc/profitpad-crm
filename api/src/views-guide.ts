@@ -98,6 +98,7 @@ Types you can import for your own maps and props (types are stripped, not checke
 ## Data display
 - <Stat label value hint tone="money"|"danger"|"muted" />: a KPI tile (a card of its own). tone colors the value: money is green (#1e7a4c), danger red (#b42318), muted grey; no tone is the normal text color. Use tone="money" for money amounts.
 - <Table columns rows loading error onRowClick selected empty maxHeight />
+  - To match the CRM's own table for an object (/objects/<object>), read get_object_list_config: its columns in order with labels and widths, and the sorts. get_object_create_form gives the native "Create" form's fields in order, for a create panel that matches it.
   - columns: [{ key, label, align?: 'left'|'right'|'center', width?, render?: (row) => node, hideOnMobile? }]. hideOnMobile: true leaves the column out below 720px wide, so wide tables fit a phone without scrolling sideways; keep the name and one or two key figures.
   - Empty values show "--". Right-aligned columns use tabular figures.
   - onRowClick makes rows clickable; selected(row) highlights one. Rows are keyed by row.id when present, so select an id column.
@@ -280,11 +281,13 @@ Views have no network access of their own. To reach an outside service (an n8n w
 - list_view_integrations shows the ones that exist: key, label, description, audience, enabled, host and a masked url (where it points), the last call's status, and data_example: the data the other end expects.
 - data_example is the contract between the view and the workflow. Build data to match it (same fields and types). A call whose data does not match still goes out, but the mismatch is logged in get_view_runtime_errors (kind "integration", "data for <key> does not match its example: ...") and the call's answer carries warnings. When you build both sides, record the shape with update_view_integration data_example first, and make the workflow read those fields.
 - test_integration(key, data?) sends data now (data_example when none is given) and returns the status and answer, so the workflow can be checked without a person clicking the view's button. It really runs the workflow (a test Slack message is really posted): say so to the admin first.
+- test_integration_url(url, data?) checks a workflow before it is saved as an integration: one call from the CRM's server (which can reach addresses your own shell may not) with the same payload shape plus dry_run: true, returning the status and answer. It also really runs the workflow; confirm the URL and data with the admin first.
 - create_view_integration and update_view_integration add or change one. They send CRM data to an outside address: show the admin the URL and the data first and wait for their yes, as with webhooks. Admins can also do it in Settings, View integrations.
 - In the view: import { callIntegration } from '@pcrm/view'; then await callIntegration('slack-message', { channel: '#sales', text }) from a button's onClick.
 - The viewer first sees "Allow sending this?" with the data listed (they can tick "Don't ask again on this page"). Never call it on load or in an effect.
+- Calls made while the viewer types (address autocomplete, lookups) need an integration with interactive: true (create_view_integration or update_view_integration; "Called while typing" in Settings). The viewer is then asked once per visit to the page, calls made while that question is open wait for the same answer, and the limit is 120 calls a minute instead of 30. Still debounce the input (300 ms or so) and only call from what the viewer types or clicks.
 - It resolves with { status, data }: data is the service's answer (parsed JSON, or text). It rejects with an Error whose message explains why: "The viewer did not allow sending this", the service's HTTP error ("Slack message answered HTTP 500: ..."), a timeout (15 seconds), or the viewer not being allowed to use it (audience "admins" means only admins can). Show the message, and disable the button while it runs.
-- Limits: data up to 250 KB of JSON, 30 calls a minute per person per integration, answers up to 1 MB.
+- Limits: data up to 250 KB of JSON, 30 calls a minute per person per integration (120 for interactive ones), answers up to 1 MB.
 - Failed calls show up in get_view_runtime_errors as kind "integration".
 
 ## What the service receives

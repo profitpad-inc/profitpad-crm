@@ -99,6 +99,9 @@ export interface ObjectDef extends ObjectSummary {
   // what the signed-in user may do with this object's records
   permissions: { create: boolean; edit: boolean; delete: boolean };
   properties: Property[];
+  // the create form: fields in order, user pickers that start on the signed-in
+  // user, and values every new record starts with (api/src/native-ui.ts)
+  create_form: { fields: string[]; starts_as_me: string[]; starts_with: Record<string, unknown> };
 }
 
 export interface AssociatedRecord {

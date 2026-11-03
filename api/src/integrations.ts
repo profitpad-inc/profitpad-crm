@@ -23,6 +23,8 @@ const MAX_BODY = 256_000;
 const MAX_RESPONSE = 1_000_000;
 const TIMEOUT_MS = 15_000;
 const CALLS_PER_MINUTE = 30;
+// interactive integrations (0060) are called while the viewer types
+const INTERACTIVE_CALLS_PER_MINUTE = 120;
 
 // Hosts that may resolve to private addresses and be called over http, for
 // an n8n on the same Docker network (INTEGRATION_PRIVATE_HOSTS=n8n). Every
@@ -46,6 +48,8 @@ interface IntegrationRow {
   last_error: string | null;
   // what views send as data (0046), or null
   data_example: unknown;
+  // called while the viewer types: asked once per page visit (0060)
+  interactive: boolean;
 }
 
 const isAdmin = (p: Principal) => p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
@@ -131,14 +135,17 @@ function adminOut(i: IntegrationRow) {
     last_called_at: i.last_called_at,
     last_status: i.last_status,
     last_error: i.last_error,
-    data_example: i.data_example ?? null
+    data_example: i.data_example ?? null,
+    interactive: i.interactive
   };
 }
 
 export type AdminIntegration = ReturnType<typeof adminOut>;
 
 // What a view builder or viewer needs to know
-const publicOut = (i: IntegrationRow) => ({ key: i.key, label: i.label, description: i.description, audience: i.audience, data_example: i.data_example ?? null });
+const publicOut = (i: IntegrationRow) => ({
+  key: i.key, label: i.label, description: i.description, audience: i.audience, data_example: i.data_example ?? null, interactive: i.interactive
+});
 
 async function loadIntegration(key: string): Promise<IntegrationRow> {
   const { rows } = await pool.query('select * from auth.view_integrations where key = $1', [key]);
@@ -185,6 +192,7 @@ export interface IntegrationInput {
   audience?: unknown;
   enabled?: unknown;
   data_example?: unknown;
+  interactive?: unknown;
 }
 
 // Checks the fields given; the secret is sealed here and never returned.
@@ -208,6 +216,10 @@ function readInput(input: IntegrationInput, creating: boolean): Record<string, u
   if (input.enabled !== undefined) {
     if (typeof input.enabled !== 'boolean') throw badRequest('enabled must be true or false');
     out.enabled = input.enabled;
+  }
+  if (input.interactive !== undefined) {
+    if (typeof input.interactive !== 'boolean') throw badRequest('interactive must be true or false');
+    out.interactive = input.interactive;
   }
   if (input.data_example !== undefined) {
     // any JSON value; null (or "") removes it
@@ -282,11 +294,11 @@ export async function deleteIntegration(p: Principal, key: string): Promise<void
 // ---- calling ------------------------------------------------------------------
 
 const calls = new Map<string, number[]>();
-function rateLimit(p: Principal, key: string): void {
+function rateLimit(p: Principal, key: string, limit = CALLS_PER_MINUTE): void {
   const id = `${p.actor}:${key}`;
   const now = Date.now();
   const recent = (calls.get(id) ?? []).filter((t) => now - t < 60_000);
-  if (recent.length >= CALLS_PER_MINUTE) throw new ApiError(429, `at most ${CALLS_PER_MINUTE} calls a minute to one integration`, 'rate_limited');
+  if (recent.length >= limit) throw new ApiError(429, `at most ${limit} calls a minute to one integration`, 'rate_limited');
   recent.push(now);
   calls.set(id, recent);
   if (calls.size > 10_000) for (const [k, v] of calls) if (v.every((t) => now - t >= 60_000)) calls.delete(k);
@@ -313,15 +325,27 @@ interface OutsideAnswer {
   body: string;
 }
 
-function send(i: IntegrationRow, payload: string): Promise<OutsideAnswer> {
-  const url = new URL(i.url);
+// where a call goes: a saved integration, or test_integration_url's address
+interface Target {
+  key: string | null;
+  url: string;
+  secret_header: string | null;
+  secret: string | null;
+}
+
+const targetOf = (i: IntegrationRow): Target => ({
+  key: i.key, url: i.url, secret_header: i.secret_header, secret: i.secret_header && i.secret_value ? open(i.secret_value) : null
+});
+
+function send(t: Target, payload: string): Promise<OutsideAnswer> {
+  const url = new URL(t.url);
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'content-length': String(Buffer.byteLength(payload)),
     'user-agent': 'ProfitPad-CRM-Integrations/1.0',
-    'x-pcrm-integration': i.key
+    ...(t.key ? { 'x-pcrm-integration': t.key } : {})
   };
-  if (i.secret_header && i.secret_value) headers[i.secret_header] = open(i.secret_value);
+  if (t.secret_header && t.secret) headers[t.secret_header] = t.secret;
   return new Promise<OutsideAnswer>((resolve, reject) => {
     const request = url.protocol === 'https:' ? httpsRequest : httpRequest;
     const req = request(url, { method: 'POST', lookup: guardedLookup as never, headers, timeout: TIMEOUT_MS }, (res: IncomingMessage) => {
@@ -356,19 +380,25 @@ function parseAnswer(a: OutsideAnswer): unknown {
   return a.body;
 }
 
-async function callOut(p: Principal, i: IntegrationRow, data: unknown, view: { slug: string; name: string | null; draft: boolean } | null) {
+async function payloadFor(p: Principal, key: string | null, data: unknown, view: { slug: string; name: string | null; draft: boolean } | null, dryRun = false) {
   const { rows } = p.userId ? await pool.query('select name, email from crm.pc_0000 where pc_0000_id = $1', [p.userId]) : { rows: [] };
   const payload = JSON.stringify({
-    integration: i.key,
+    integration: key,
     data: data ?? null,
     view,
     user: p.userId ? { id: p.userId, name: rows[0]?.name ?? null, email: rows[0]?.email ?? null } : null,
-    sent_at: new Date().toISOString()
+    sent_at: new Date().toISOString(),
+    ...(dryRun ? { dry_run: true } : {})
   });
   if (Buffer.byteLength(payload) > MAX_BODY) throw badRequest('data is too large (up to 250 KB)');
+  return payload;
+}
+
+async function callOut(p: Principal, i: IntegrationRow, data: unknown, view: { slug: string; name: string | null; draft: boolean } | null) {
+  const payload = await payloadFor(p, i.key, data, view);
   let answer: OutsideAnswer;
   try {
-    answer = await send(i, payload);
+    answer = await send(targetOf(i), payload);
   } catch (err) {
     const message = (err as Error).message;
     await pool.query('update auth.view_integrations set last_called_at = now(), last_status = null, last_error = $2 where key = $1', [i.key, message.slice(0, 500)]);
@@ -391,7 +421,7 @@ export async function callFromView(p: Principal, slug: string, key: string, data
   if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');
   const i = await loadIntegration(key).catch(() => null);
   if (!i || !canUse(p, i)) throw (i && i.enabled ? forbidden(`you cannot use the integration "${key}"`) : notFound(`no integration "${key}"`));
-  rateLimit(p, key);
+  rateLimit(p, key, i.interactive ? INTERACTIVE_CALLS_PER_MINUTE : CALLS_PER_MINUTE);
   try {
     // data that does not match the example still goes out; the builder sees why in the view's errors
     const warnings = payloadMismatches(i.data_example, data ?? null);
@@ -418,4 +448,32 @@ export async function testIntegration(p: Principal, key: string, data: unknown) 
   const warnings = data === undefined || data === null ? [] : payloadMismatches(i.data_example, data);
   const out = await callOut(p, i, sent, null);
   return { ...out, sent, ...(warnings.length ? { warnings } : {}) };
+}
+
+// MCP test_integration_url (admins): one call to an address that is not saved
+// as an integration, to check a workflow before asking to save it. Same
+// payload as a real call, with integration set to key (or null) and
+// dry_run: true; nothing is stored and no view's errors are logged.
+export async function testIntegrationUrl(p: Principal, input: { url: unknown; data?: unknown; key?: string; secret_header?: string; secret_value?: string }) {
+  requireAdmin(p);
+  const url = checkUrl(input.url);
+  if (input.key !== undefined && !KEY_RE.test(input.key)) throw badRequest('key must be 2 to 40 characters: lowercase letters, digits, - and _, starting with a letter');
+  if ((input.secret_header === undefined) !== (input.secret_value === undefined)) throw badRequest('give both secret_header and secret_value, or neither');
+  if (input.secret_header !== undefined) {
+    if (!HEADER_RE.test(input.secret_header) || RESERVED_HEADERS.has(input.secret_header.toLowerCase())) throw badRequest('secret_header must be a header name like X-Webhook-Secret');
+    if (!input.secret_value || /[\r\n]/.test(input.secret_value) || input.secret_value.length > 2000) throw badRequest('secret_value must be text up to 2000 characters, on one line');
+  }
+  rateLimit(p, `url:${new URL(url).host}`);
+  const sent = input.data ?? { test: true };
+  const payload = await payloadFor(p, input.key ?? null, sent, null, true);
+  let answer: OutsideAnswer;
+  try {
+    answer = await send({ key: input.key ?? null, url, secret_header: input.secret_header ?? null, secret: input.secret_value ?? null }, payload);
+  } catch (err) {
+    throw new ApiError(502, `${new URL(url).host} could not be reached: ${(err as Error).message}`, 'integration_failed');
+  }
+  const ok = answer.status >= 200 && answer.status < 300;
+  const value = parseAnswer(answer);
+  if (!ok) throw new ApiError(502, `${new URL(url).host} answered HTTP ${answer.status}${answer.body ? `: ${answer.body.slice(0, 300)}` : ''}`, 'integration_failed', { status: answer.status, data: value });
+  return { status: answer.status, data: value, sent };
 }

@@ -3,6 +3,7 @@ import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { propertyAccess, requireScope, type Principal } from '../auth.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
+import { createForm } from '../native-ui.js';
 
 // Schema changes always go through the meta.* functions, which enforce the
 // naming, typing and dependency rules and log to meta.schema_changes.
@@ -201,7 +202,8 @@ export async function schemaRoutes(app: FastifyInstance) {
     return {
       ...objectOut(obj),
       permissions: callerPermissions(p, obj),
-      properties: obj.properties.filter((pr) => pr.record_status === 'active').map((pr) => propertyOut(pr, p))
+      properties: obj.properties.filter((pr) => pr.record_status === 'active').map((pr) => propertyOut(pr, p)),
+      create_form: createForm(obj, p)
     };
   });
 

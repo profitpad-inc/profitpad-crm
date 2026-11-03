@@ -3,31 +3,9 @@ import { api, ApiError, type CrmRecord, type ObjectDef } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable } from './ui';
 
-// Create form: the identifying fields first, then the object's other native
-// properties. Contacts get a name built from first + last when left blank.
-const PREFERRED: Record<string, string[]> = {
-  contacts: ['first_name', 'last_name', 'email', 'phone', 'job_title', 'lifecycle_stage', 'owner'],
-  companies: ['name', 'domain', 'industry', 'phone', 'owner'],
-  deals: ['name', 'amount', 'currency', 'pipeline', 'stage', 'close_date', 'owner'],
-  tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'owner'],
-  users: ['first_name', 'last_name', 'email', 'status'],
-  // the builder, the link card and Status on the record page do the rest
-  forms: ['name', 'description'],
-  // the rest is filled in on the record page; they start as drafts
-  quotes: ['name', 'expiration_date'],
-  invoices: ['name', 'due_date'],
-  // key, lengths and start times are set in the editor; status starts as draft
-  booking_pages: ['name', 'description', 'host']
-};
-// User pickers that start on the signed-in user.
-const STARTS_AS_ME = ['owner', 'host'];
-// Values every new record of the object starts with, not asked.
-const STARTS_WITH: Record<string, Record<string, unknown>> = {
-  forms: { status: 'draft' },
-  quotes: { status: 'draft' },
-  invoices: { status: 'draft' },
-  booking_pages: { status: 'draft' }
-};
+// Create form: the fields, their order and starting values come from the API
+// (create_form in the object's schema, api/src/native-ui.ts), which also
+// describes this form to AI view builders.
 
 // associations: records the new one is linked to (a quote made from a deal).
 // copyLines: offers to copy that record's line items onto the new one.
@@ -43,14 +21,12 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
 }) {
   const { me } = useApp();
   const editable = object.properties.filter((p) => isEditable(p) && p.api_name !== 'created_at');
-  const preferred = PREFERRED[object.api_name];
-  const fields = preferred
-    ? preferred.map((n) => editable.find((p) => p.api_name === n)).filter((p): p is NonNullable<typeof p> => !!p)
-    : [editable.find((p) => p.api_name === 'name'), ...editable.filter((p) => !p.is_base).slice(0, 6)].filter((p): p is NonNullable<typeof p> => !!p);
+  const form = object.create_form;
+  const fields = form.fields.map((n) => editable.find((p) => p.api_name === n)).filter((p): p is NonNullable<typeof p> => !!p);
   const [values, setValues] = useState<Record<string, string>>(() => {
     const defaults: Record<string, string> = {};
     for (const p of editable) {
-      if (!STARTS_AS_ME.includes(p.api_name) || !me.user) continue;
+      if (!form.starts_as_me.includes(p.api_name) || !me.user) continue;
       if (p.dropdown_options?.some((o) => o.api_value === me.user!.id && o.record_status === 'active')) defaults[p.api_name] = me.user.id;
     }
     return defaults;
@@ -64,7 +40,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   async function save() {
     setBusy(true);
     setError(null);
-    const properties: Record<string, unknown> = { ...STARTS_WITH[object.api_name] };
+    const properties: Record<string, unknown> = { ...form.starts_with };
     for (const [k, v] of Object.entries(startWith ?? {})) {
       const p = object.properties.find((x) => x.api_name === k && isEditable(x));
       if (!p || v === null || v === undefined || v === '') continue;

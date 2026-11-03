@@ -202,6 +202,24 @@ function canEditView(p: Principal, view: { owner: string | null }): boolean {
 
 const viewOut = (v: Record<string, unknown>, p: Principal) => ({ ...v, shared: v.owner === null, editable: canEditView(p, v as { owner: string | null }) });
 
+// An object's table views: shared ones plus the caller's own, in tab order (the
+// first is the one the table opens on). A default shared view is created on
+// first use. Also read by the MCP's get_object_list_config.
+export async function tableViews(p: Principal, obj: ObjectDef) {
+  const list = () =>
+    pool.query('select * from ui.views where object_type_id = $1 and (owner is null or owner = $2) order by position, id', [obj.object_type_id, p.actor]);
+  let { rows } = await list();
+  if (!rows.some((v) => v.owner === null)) {
+    await pool.query(
+      `insert into ui.views (object_type_id, name, owner, columns, sorts, created_by)
+       select $1, $2, null, $3, $4, 'system' where not exists (select 1 from ui.views where object_type_id = $1 and owner is null)`,
+      [obj.object_type_id, `All ${obj.label_plural.toLowerCase()}`, JSON.stringify(defaultColumns(obj)), JSON.stringify([{ property: 'created_at', direction: 'desc' }])]
+    );
+    ({ rows } = await list());
+  }
+  return rows.map((v) => viewOut(v, p));
+}
+
 export async function uiRoutes(app: FastifyInstance) {
   app.get('/v1/me', async (req) => {
     const p = req.principal!;
@@ -319,19 +337,7 @@ export async function uiRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'read');
     if (!req.query.object) throw badRequest('object is required');
-    const obj = await getObject(req.query.object);
-    const list = () =>
-      pool.query('select * from ui.views where object_type_id = $1 and (owner is null or owner = $2) order by position, id', [obj.object_type_id, p.actor]);
-    let { rows } = await list();
-    if (!rows.some((v) => v.owner === null)) {
-      await pool.query(
-        `insert into ui.views (object_type_id, name, owner, columns, sorts, created_by)
-         select $1, $2, null, $3, $4, 'system' where not exists (select 1 from ui.views where object_type_id = $1 and owner is null)`,
-        [obj.object_type_id, `All ${obj.label_plural.toLowerCase()}`, JSON.stringify(defaultColumns(obj)), JSON.stringify([{ property: 'created_at', direction: 'desc' }])]
-      );
-      ({ rows } = await list());
-    }
-    return { results: rows.map((v) => viewOut(v, p)) };
+    return { results: await tableViews(p, await getObject(req.query.object)) };
   });
 
   app.post<{ Body: { object: string; name: string; columns?: unknown; sorts?: unknown; shared?: boolean } }>('/v1/ui/views', async (req, reply) => {

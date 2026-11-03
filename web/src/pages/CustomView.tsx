@@ -39,7 +39,8 @@ function parseHash(hash: string): { slug: string; params: Params } {
   return { slug, params };
 }
 
-type Ask = { title: string; lines: string[]; send?: boolean };
+// interactive: the key of an integration called while the viewer types, allowed once per page visit
+type Ask = { title: string; lines: string[]; send?: boolean; interactive?: string };
 
 // What a view asks to change or send, in words for the confirmation (values cut short)
 function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration', args: unknown[]): Ask {
@@ -91,7 +92,11 @@ export function CustomView() {
   // the same for sending to integrations, asked separately
   const allowSends = useRef(false);
   // integration labels for the confirmation, loaded on a view's first call
-  const integrationLabels = useRef<Map<string, string> | null>(null);
+  const integrationLabels = useRef<Map<string, { label: string; interactive: boolean }> | null>(null);
+  // interactive integrations the viewer allowed on this page, and the asks
+  // still open (calls made while typing wait for the same answer)
+  const allowedInteractive = useRef(new Set<string>());
+  const pendingInteractive = useRef(new Map<string, Promise<boolean>>());
   // the frame loads once; a second load means the view navigated it away
   const frameLoads = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -122,6 +127,8 @@ export function CustomView() {
     allowWrites.current = false;
     allowSends.current = false;
     integrationLabels.current = null;
+    allowedInteractive.current = new Set();
+    pendingInteractive.current = new Map();
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
@@ -174,13 +181,24 @@ export function CustomView() {
   }, []);
 
   const confirmWrite = useCallback((change: Ask) => {
-    if ((change.send ? allowSends : allowWrites).current) return Promise.resolve(true);
+    const key = change.interactive;
+    if (key) {
+      if (allowedInteractive.current.has(key)) return Promise.resolve(true);
+      const pending = pendingInteractive.current.get(key);
+      if (pending) return pending;
+    } else if ((change.send ? allowSends : allowWrites).current) return Promise.resolve(true);
     setDontAsk(false);
-    return new Promise<boolean>((resolve) => setAsking({ ...change, resolve }));
+    const asked = new Promise<boolean>((resolve) => setAsking({ ...change, resolve }));
+    if (key) {
+      pendingInteractive.current.set(key, asked);
+      asked.then(() => pendingInteractive.current.delete(key));
+    }
+    return asked;
   }, []);
 
   function answer(ok: boolean) {
-    if (ok && dontAsk && asking) (asking.send ? allowSends : allowWrites).current = true;
+    if (ok && asking?.interactive) allowedInteractive.current.add(asking.interactive);
+    else if (ok && dontAsk && asking) (asking.send ? allowSends : allowWrites).current = true;
     asking?.resolve(ok);
     setAsking(null);
   }
@@ -252,11 +270,13 @@ export function CustomView() {
       case 'callIntegration': {
         const key = str(args[0], 'integration key');
         if (!integrationLabels.current) {
-          const list = await api<{ results: { key: string; label: string }[] }>('GET', '/v1/view-integrations').catch(() => ({ results: [] }));
-          integrationLabels.current = new Map(list.results.map((i) => [i.key, i.label]));
+          const list = await api<{ results: { key: string; label: string; interactive?: boolean }[] }>('GET', '/v1/view-integrations').catch(() => ({ results: [] }));
+          integrationLabels.current = new Map(list.results.map((i) => [i.key, { label: i.label, interactive: !!i.interactive }]));
         }
         const labels = integrationLabels.current;
-        if (!(await confirmWrite(describeChange((k) => labels.get(k) ?? k, method, args)))) throw new Error('The viewer did not allow sending this');
+        const ask = describeChange((k) => labels.get(k)?.label ?? k, method, args);
+        if (labels.get(key)?.interactive) ask.interactive = key;
+        if (!(await confirmWrite(ask))) throw new Error('The viewer did not allow sending this');
         return api('POST', `/v1/views/${str(s, 'slug')}/integrations/${key}${d ? '?draft=1' : ''}`, { data: args[1] ?? null });
       }
     }
@@ -364,9 +384,11 @@ export function CustomView() {
           onClose={() => answer(false)}
           footer={
             <>
-              <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
-                <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} /> Don't ask again on this page
-              </label>
+              {asking.interactive ? <span style={{ marginRight: 'auto' }} /> : (
+                <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
+                  <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} /> Don't ask again on this page
+                </label>
+              )}
               <button className="btn" onClick={() => answer(false)}>Don't allow</button>
               <button className="btn primary" onClick={() => answer(true)}>Allow</button>
             </>
@@ -375,6 +397,7 @@ export function CustomView() {
           <p className="muted small" style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to {asking.send ? 'send this as you' : 'make this change as you'}:</p>
           <p style={{ fontWeight: 500 }}>{asking.title}</p>
           {asking.lines.length > 0 && <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{asking.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+          {asking.interactive && <p className="muted small" style={{ marginBottom: 0 }}>This view sends to it while you type. Allowing it once covers the rest of this visit to the page.</p>}
         </Modal>
       )}
     </>

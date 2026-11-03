@@ -25,8 +25,9 @@ import { FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { renderView } from './render.js';
 import { findIcons } from './icons.js';
 import {
-  auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, updateIntegration, type AdminIntegration
+  auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
 } from './integrations.js';
+import { describeCreateForm, listConfig } from './native-ui.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
   updateEndpoint, updateSubscription
@@ -129,14 +130,26 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
 
   server.registerTool('describe_object', {
     title: 'Describe object',
-    description: "Lists an object's properties: api_name, label, type, whether you can write it, and dropdown values.",
+    description: "Lists an object's properties: api_name, label, type, whether you can write it, and dropdown values. schema_version goes up with every schema change in the CRM (compare it with an earlier answer to know whether to look again); recent_renames lists properties renamed in the last 30 days (old api_name to new), the usual cause of an unknown column or property error.",
     inputSchema: z.object({ object: objectArg }),
     annotations: { readOnlyHint: true }
   }, async ({ object }) => run(async () => {
     requireScope(p, 'read');
     const obj = await readableObject(p, object);
+    const reg = await getRegistry();
+    const { rows: changes } = await pool.query(
+      `select max(changed_at) over () as last_change, action, details, changed_at
+       from meta.schema_changes where object_type_id = $1 order by id desc limit 200`, [obj.object_type_id]
+    );
+    const since = Date.now() - 30 * 86_400_000;
+    const renames = changes
+      .filter((c) => c.action === 'rename_property' && new Date(c.changed_at).getTime() > since && obj.byName.has(String(c.details.api_name).toLowerCase()))
+      .map((c) => ({ from: c.details.previous_api_name, to: c.details.api_name, at: c.changed_at }));
     return {
       api_name: obj.api_name,
+      schema_version: reg.version,
+      ...(changes[0] ? { schema_changed_at: changes[0].last_change } : {}),
+      ...(renames.length ? { recent_renames: renames } : {}),
       label: obj.label_singular,
       ...(obj.aliases.length ? { aliases: obj.aliases } : {}),
       links_to: obj.links_to,
@@ -155,6 +168,26 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
         parent_property: (pr.options.parent_property as string | undefined) ?? undefined
       }))
     };
+  }));
+
+  server.registerTool('get_object_list_config', {
+    title: 'Get object list config',
+    description: "How the CRM's own table page for an object (/objects/<object>) looks: its table views (tabs) as you see them, the first being the one the page opens on, each with its columns in order (property api_name and label, or an association column; width in pixels when someone set one) and sorts, plus what the page has around the table. Use it to make a custom view's table match the native one.",
+    inputSchema: z.object({ object: objectArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ object }) => run(async () => {
+    requireScope(p, 'read');
+    return listConfig(await readableObject(p, object), p);
+  }));
+
+  server.registerTool('get_object_create_form', {
+    title: 'Get object create form',
+    description: "The CRM's own \"Create <object>\" form: its fields in order (api_name, label, type, which start on the signed-in user), values every new record starts with, which fields are required, and what happens after creating. Fields you cannot edit are left out, as in the form. Use it to make a custom view's create panel match the native one, then add extras.",
+    inputSchema: z.object({ object: objectArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ object }) => run(async () => {
+    requireScope(p, 'read');
+    return describeCreateForm(await readableObject(p, object), p);
   }));
 
   server.registerTool('search_records', {
@@ -447,7 +480,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
   }, async () => run(async () => (await listIntegrations(p)).map((i) => {
     const admin = 'url' in i ? (i as AdminIntegration) : null;
     return {
-      key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: admin ? admin.enabled : true,
+      key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: admin ? admin.enabled : true, interactive: i.interactive,
       ...(admin ? { ...maskUrl(admin.url), has_secret: admin.has_secret, last_called_at: admin.last_called_at, last_status: admin.last_status, last_error: admin.last_error } : {}),
       data_example: i.data_example
     };
@@ -460,6 +493,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     data_example: z.unknown().optional().describe('An example of the data views send (the contract with the workflow); calls whose data does not match its shape are still sent, with a warning in the view\'s runtime errors. null removes it'),
     audience: z.enum(['admins', 'everyone']).optional().describe('Who may call it from a view they can open (default admins)'),
     enabled: z.boolean().optional(),
+    interactive: z.boolean().optional().describe('For calls made while the viewer types (autocomplete, lookups): the viewer is asked once per page visit instead of on every call, and up to 120 calls a minute per viewer instead of 30. Default false'),
     secret_header: z.string().nullable().optional().describe('Header sent with every call, e.g. X-Webhook-Secret for n8n header auth (null removes it)'),
     secret_value: z.string().optional().describe('The value of secret_header; never shown again')
   };
@@ -487,6 +521,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
       data_example: integrationFields.data_example,
       audience: integrationFields.audience,
       enabled: integrationFields.enabled,
+      interactive: integrationFields.interactive,
       secret_header: integrationFields.secret_header,
       secret_value: integrationFields.secret_value
     }),
@@ -510,6 +545,27 @@ function registerAdminTools(server: McpServer, p: Principal) {
       return { ok: true, ...(await testIntegration(p, key, data)) };
     } catch (err) {
       // a failed send is an answer to report, not a tool error
+      if (err instanceof ApiError && err.code === 'integration_failed') return { ok: false, error: err.message, ...((err.details as object | undefined) ?? {}) };
+      throw err;
+    }
+  }));
+
+  server.registerTool('test_integration_url', {
+    title: 'Test an integration URL',
+    description: 'Sends one call to an address that is not saved as an integration yet, from the CRM server (so it reaches what your own shell may not), and returns what it answered. The payload has the shape a real integration call has, {integration: key or null, data, view: null, user, sent_at}, plus dry_run: true. Use it to check an n8n webhook before asking the admin to save it with create_view_integration. It really runs the workflow on the other end and sends data there, so confirm the URL and the data with the admin first. Nothing is saved.',
+    inputSchema: z.object({
+      url: z.string().describe('https on a public address, e.g. an n8n webhook URL'),
+      data: z.unknown().optional().describe('What a view would send as data (default {"test": true})'),
+      key: z.string().optional().describe('The key you plan to give the integration, sent as integration'),
+      secret_header: z.string().optional().describe('Header to send, e.g. X-Webhook-Secret'),
+      secret_value: z.string().optional().describe('Its value; not stored')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    scopeChallenge: schemaChallenge
+  }, async (input) => run(async () => {
+    try {
+      return { ok: true, ...(await testIntegrationUrl(p, input)) };
+    } catch (err) {
       if (err instanceof ApiError && err.code === 'integration_failed') return { ok: false, error: err.message, ...((err.details as object | undefined) ?? {}) };
       throw err;
     }
