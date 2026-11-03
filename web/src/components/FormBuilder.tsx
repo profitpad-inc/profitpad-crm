@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Code, Eye, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, Code, Eye, Globe, ListPlus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { API_BASE, api, getSchema, type CrmRecord, type ObjectDef, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { OPERATORS, type Condition, type FieldType } from '../public/conditions';
 import { formHtml, injectFormCss, renderForm } from '../public/form-renderer';
 import { parseQueryParams } from '../public/public-api';
+import { EmptyState, StatusPill } from './settings';
+import '../editors.css';
 
 // Form builder on a form's record page. Edits the form's definition (see
 // api/src/forms.ts for the format and the rules the API enforces on save):
@@ -251,31 +253,48 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   const status = Array.isArray(record.properties.status) ? record.properties.status[0] : record.properties.status;
 
   return (
-    <div className="form-builder">
-      <div className="fb-toolbar">
-        <h2>Form</h2>
-        <div className="fb-modes">
-          <button className={`btn small${preview ? '' : ' active'}`} onClick={() => setPreview(false)}><Pencil size={13} /> Edit</button>
-          <button className={`btn small${preview ? ' active' : ''}`} onClick={() => setPreview(true)}><Eye size={13} /> Preview</button>
+    <div className="ed-sheet form-builder">
+      <header className="ed-head">
+        <div className="ed-head-text">
+          <h2>Form</h2>
+          <div className="ed-head-meta">
+            {status === 'published' ? <StatusPill tone="on">Live</StatusPill> : <StatusPill tone="warn">Not live</StatusPill>}
+            <span>{def.fields.length === 1 ? '1 field' : `${def.fields.length} fields`}</span>
+          </div>
         </div>
-        <button className="btn primary push-right" onClick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save form'}</button>
-      </div>
-      {status !== 'published' && <div className="muted small">The form is not live until it is published (Publish in the Public form card).</div>}
-      {error && <div className="error">{error}</div>}
-      {saved && !dirty && <div className="muted small">{saved}</div>}
+        <div className="ed-head-actions">
+          <div className="ed-segment" role="group" aria-label="Edit or preview the form">
+            <button type="button" aria-pressed={!preview} onClick={() => setPreview(false)}><Pencil size={13} /> Edit</button>
+            <button type="button" aria-pressed={preview} onClick={() => setPreview(true)}><Eye size={13} /> Preview</button>
+          </div>
+          <button className="btn primary" onClick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save form'}</button>
+        </div>
+      </header>
 
-      <div className="fb-html">
-        <Code size={15} />
+      {(status !== 'published' || error || (saved && !dirty)) && (
+        <div className="ed-notices">
+          {status !== 'published' && <p className="ed-note">The form is not live until it is published (Publish in the Public form card).</p>}
+          {error && <div className="error">{error}</div>}
+          {saved && !dirty && <p className="ed-note">{saved}</p>}
+        </div>
+      )}
+
+      <div className={`ed-strip${html ? ' custom' : ''}`}>
+        <Code size={15} aria-hidden="true" />
         {html ? (
           <>
-            <span className="small">This form uses <strong>custom HTML</strong> (the HTML property on the left). Fields added here must be added to the HTML too, or saving fails.</span>
-            <button className="btn small" onClick={generateHtml}>Regenerate</button>
-            <button className="btn small" onClick={() => confirm('Remove the custom HTML and generate the form from its fields?') && setHtml(null)}>Remove</button>
+            <span className="ed-strip-text">This form uses <strong>custom HTML</strong> (the HTML property on the left). Fields added here must be added to the HTML too, or saving fails.</span>
+            <span className="ed-strip-actions">
+              <button className="btn small ghost" onClick={generateHtml}>Regenerate</button>
+              <button className="btn small ghost danger-text" onClick={() => confirm('Remove the custom HTML and generate the form from its fields?') && setHtml(null)}>Remove</button>
+            </span>
           </>
         ) : (
           <>
-            <span className="small muted">The form's markup is generated from these fields.</span>
-            <button className="btn small" onClick={generateHtml} disabled={def.fields.length === 0}>Customize HTML</button>
+            <span className="ed-strip-text">The form's markup is generated from these fields.</span>
+            <span className="ed-strip-actions">
+              <button className="btn small ghost" onClick={generateHtml} disabled={def.fields.length === 0}>Customize HTML</button>
+            </span>
           </>
         )}
       </div>
@@ -289,64 +308,89 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
         />
       ) : (
         <>
-          <div className="fb-add">
-            {(['contacts', 'tickets'] as FormObject[]).map((o) => (
-              <select key={o} value="" onChange={(e) => e.target.value && addProperty(o, e.target.value)} aria-label={`Add ${OBJECT_LABEL[o].toLowerCase()} property`}>
-                <option value="">+ {OBJECT_LABEL[o]} property…</option>
-                {formProperties(schemas[o]).filter((p) => !used.has(`${o}.${p.api_name}`)).map((p) => (
-                  <option key={p.api_name} value={p.api_name}>{p.label}</option>
+          <section className="ed-section">
+            <div className="ed-section-head">
+              <h3>Fields</h3>
+              <p>
+                Contact properties update the contact with the same email, or create one. Ticket properties create a new ticket for each submission, linked to the contact.
+                Any field can be prefilled from the page URL with <code>?key=value</code>.
+              </p>
+            </div>
+            <div className="ed-add-bar">
+              {(['contacts', 'tickets'] as FormObject[]).map((o) => (
+                <span key={o} className="ed-add">
+                  <Plus size={14} aria-hidden="true" />
+                  <select value="" onChange={(e) => e.target.value && addProperty(o, e.target.value)} aria-label={`Add ${OBJECT_LABEL[o].toLowerCase()} property`}>
+                    <option value="">{OBJECT_LABEL[o]} property</option>
+                    {formProperties(schemas[o]).filter((p) => !used.has(`${o}.${p.api_name}`)).map((p) => (
+                      <option key={p.api_name} value={p.api_name}>{p.label}</option>
+                    ))}
+                  </select>
+                </span>
+              ))}
+              <span className="ed-add">
+                <Plus size={14} aria-hidden="true" />
+                <select value="" onChange={(e) => e.target.value && addQuestion(e.target.value)} aria-label="Add a question">
+                  <option value="">Question</option>
+                  {QUESTION_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                  <option value="from_url">Hidden field (from the URL)</option>
+                </select>
+              </span>
+            </div>
+
+            {def.fields.length === 0 ? (
+              <EmptyState icon={<ListPlus size={18} />} title="No fields yet">
+                Add contact or ticket properties, or questions of your own, with the pickers above.
+              </EmptyState>
+            ) : (
+              <ol className="ed-items">
+                {def.fields.map((f, i) => (
+                  <FieldRow
+                    key={f.name}
+                    field={resolved(f)}
+                    property={propOf(f)}
+                    index={i}
+                    count={def.fields.length}
+                    earlier={def.fields.slice(0, i).map(resolved)}
+                    all={def.fields}
+                    open={open === f.name}
+                    onToggle={() => setOpen(open === f.name ? null : f.name)}
+                    onChange={(patch) => updateField(f.name, patch)}
+                    onRename={(name) => {
+                      if (def.fields.some((x) => x.name === name)) return;
+                      change({
+                        ...def,
+                        fields: def.fields.map((x) => x.name === f.name ? { ...x, name } : x.conditions ? { ...x, conditions: x.conditions.map((c) => (c.field === f.name ? { ...c, field: name } : c)) } : x)
+                      });
+                      setOpen(name);
+                    }}
+                    onMove={(by) => move(i, by)}
+                    onRemove={() => remove(f)}
+                  />
                 ))}
-              </select>
-            ))}
-            <select value="" onChange={(e) => e.target.value && addQuestion(e.target.value)} aria-label="Add a question">
-              <option value="">+ Question…</option>
-              {QUESTION_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-              <option value="from_url">Hidden field (from the URL)</option>
-            </select>
-          </div>
-          <div className="muted small">
-            Contact properties update the contact with the same email, or create one. Ticket properties create a new ticket for each submission, linked to the contact.
-            Any field can be prefilled from the page URL with <code>?key=value</code>.
-          </div>
+              </ol>
+            )}
+          </section>
 
-          {def.fields.length === 0 && <div className="fb-empty muted">No fields yet. Add contact or ticket properties, or questions of your own.</div>}
-          <ol className="fb-fields">
-            {def.fields.map((f, i) => (
-              <FieldRow
-                key={f.name}
-                field={resolved(f)}
-                property={propOf(f)}
-                index={i}
-                count={def.fields.length}
-                earlier={def.fields.slice(0, i).map(resolved)}
-                all={def.fields}
-                open={open === f.name}
-                onToggle={() => setOpen(open === f.name ? null : f.name)}
-                onChange={(patch) => updateField(f.name, patch)}
-                onRename={(name) => {
-                  if (def.fields.some((x) => x.name === name)) return;
-                  change({
-                    ...def,
-                    fields: def.fields.map((x) => x.name === f.name ? { ...x, name } : x.conditions ? { ...x, conditions: x.conditions.map((c) => (c.field === f.name ? { ...c, field: name } : c)) } : x)
-                  });
-                  setOpen(name);
-                }}
-                onMove={(by) => move(i, by)}
-                onRemove={() => remove(f)}
-              />
-            ))}
-          </ol>
-
-          <div className="fb-settings">
-            <label className="field">
-              <span>Submit button</span>
-              <input value={def.submit_label} onChange={(e) => change({ ...def, submit_label: e.target.value })} />
-            </label>
-            <label className="field">
-              <span>Message after sending</span>
-              <textarea rows={2} value={def.success_message} onChange={(e) => change({ ...def, success_message: e.target.value })} />
-            </label>
-          </div>
+          <section className="ed-section">
+            <div className="ed-section-head">
+              <h3>Sending</h3>
+            </div>
+            <div className="ed-rows">
+              <div className="ed-row">
+                <label className="ed-row-label" htmlFor="fb-submit-label">Submit button</label>
+                <div className="ed-row-control">
+                  <input id="fb-submit-label" value={def.submit_label} onChange={(e) => change({ ...def, submit_label: e.target.value })} />
+                </div>
+              </div>
+              <div className="ed-row">
+                <label className="ed-row-label" htmlFor="fb-success">Message after sending</label>
+                <div className="ed-row-control">
+                  <textarea id="fb-success" rows={2} value={def.success_message} onChange={(e) => change({ ...def, success_message: e.target.value })} />
+                </div>
+              </div>
+            </div>
+          </section>
         </>
       )}
     </div>
@@ -379,24 +423,31 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
     if (v === 'fixed') onChange({ hidden: true, from_url: undefined, required: false, conditions: undefined, placeholder: undefined, help: undefined });
   }
 
+  const source = f.property ? `${OBJECT_LABEL[f.property.object]} property: ${property?.label ?? f.property.name}` : TYPE_LABELS[f.type] ?? f.type;
+
   return (
-    <li className={`fb-field${open ? ' open' : ''}`}>
-      <div className="fb-field-head">
-        <button className="fb-field-title" onClick={onToggle} aria-expanded={open}>
-          {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-          <span className="fb-label">{visibility === 'fixed' ? (property?.label ?? f.label) : f.label || f.name}</span>
-          <span className="fb-kind">{f.property ? `${OBJECT_LABEL[f.property.object]} · ${property?.label ?? f.property.name}` : TYPE_LABELS[f.type] ?? f.type}</span>
-          {tags.map((t) => <span key={t} className="fb-tag">{t}</span>)}
+    <li className={`ed-item${open ? ' open' : ''}${missing || badConditions.length ? ' has-error' : ''}`}>
+      <div className="ed-item-head">
+        <span className="ed-item-num" aria-hidden="true">{index + 1}</span>
+        <button className="ed-item-title" onClick={onToggle} aria-expanded={open}>
+          <span className="ed-item-text">
+            <span className="ed-item-label">{visibility === 'fixed' ? (property?.label ?? f.label) : f.label || f.name}</span>
+            <span className="ed-item-kind">{source}</span>
+          </span>
+          {tags.length > 0 && <span className="ed-tags">{tags.map((t) => <span key={t} className="ed-tag">{t}</span>)}</span>}
+          <ChevronDown size={15} className="ed-chevron" aria-hidden="true" />
         </button>
-        <button className="icon-btn" onClick={() => onMove(-1)} disabled={index === 0} aria-label="Move up"><ArrowUp size={14} /></button>
-        <button className="icon-btn" onClick={() => onMove(1)} disabled={index === count - 1} aria-label="Move down"><ArrowDown size={14} /></button>
-        <button className="icon-btn" onClick={onRemove} aria-label="Remove field"><Trash2 size={14} /></button>
+        <span className="ed-item-actions">
+          <button className="icon-btn" onClick={() => onMove(-1)} disabled={index === 0} aria-label="Move up"><ArrowUp size={14} /></button>
+          <button className="icon-btn" onClick={() => onMove(1)} disabled={index === count - 1} aria-label="Move down"><ArrowDown size={14} /></button>
+          <button className="icon-btn danger" onClick={onRemove} aria-label="Remove field"><Trash2 size={14} /></button>
+        </span>
       </div>
-      {missing && <div className="error">This property was archived or can no longer be filled by a form. Remove the field.</div>}
-      {badConditions.length > 0 && <div className="error">A condition points at a field that is not above this one. Move the field or remove the condition.</div>}
+      {missing && <div className="error ed-item-error">This property was archived or can no longer be filled by a form. Remove the field.</div>}
+      {badConditions.length > 0 && <div className="error ed-item-error">A condition points at a field that is not above this one. Move the field or remove the condition.</div>}
 
       {open && (
-        <div className="fb-editor">
+        <div className="ed-item-body">
           {!contactEmail && (
             <label className="field">
               <span>Shown on the form</span>
@@ -409,8 +460,8 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
           )}
 
           {visibility === 'fixed' && property && (
-            <div className="fb-hidden">
-              <span className="small">Every submission sets {property.label} to</span>
+            <div className="ed-group">
+              <span className="ed-group-title">Every submission sets {property.label} to</span>
               <HiddenValue field={f} property={property} onChange={(value) => onChange({ value })} />
             </div>
           )}
@@ -428,7 +479,7 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
             </label>
           )}
 
-          <div className="fb-row">
+          <div className="ed-pair">
             {!f.property && (
               <label className="field">
                 <span>Type</span>
@@ -450,9 +501,10 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
               <label className="field">
                 <span>Key (URL parameter)</span>
                 {f.property ? (
-                  <input value={f.name} readOnly />
+                  <input className="mono" value={f.name} readOnly />
                 ) : (
                   <input
+                    className="mono"
                     value={key}
                     onChange={(e) => setKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
                     onBlur={() => {
@@ -465,8 +517,8 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
               </label>
             )}
           </div>
-          {visibility === 'url' && <div className="muted small">Filled only from <code>?{f.name}=…</code> in the page URL; left empty when the URL does not have it.</div>}
-          {visibility === 'asked' && <div className="muted small">Prefilled when the page URL has <code>?{f.name}=…</code>.</div>}
+          {visibility === 'url' && <p className="ed-hint">Filled only from <code>?{f.name}=…</code> in the page URL; left empty when the URL does not have it.</p>}
+          {visibility === 'asked' && <p className="ed-hint">Prefilled when the page URL has <code>?{f.name}=…</code>.</p>}
 
           {f.property && property?.type === 'text' && property.options.single_line !== true && visibility !== 'fixed' && (
             <label className="field">
@@ -501,19 +553,19 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
             </label>
           )}
           {f.property && (f.type === 'select' || f.type === 'multiselect') && visibility !== 'fixed' && (
-            <div className="muted small">Options come from the {property?.label ?? 'property'} property: {(f.options ?? []).map((o) => `${o.label} (${o.value})`).join(', ') || 'none'}. URL parameters use the value in brackets.</div>
+            <p className="ed-hint">Options come from the {property?.label ?? 'property'} property: {(f.options ?? []).map((o) => `${o.label} (${o.value})`).join(', ') || 'none'}. URL parameters use the value in brackets.</p>
           )}
 
           {visibility === 'asked' && (
-            <label className="field inline fb-check">
+            <label className="ed-check">
               <input type="checkbox" checked={f.required} disabled={contactEmail} onChange={(e) => onChange({ required: e.target.checked })} />
               <span>Required{contactEmail ? ' (contacts are matched by email)' : f.conditions?.length ? ' when shown' : ''}</span>
             </label>
           )}
 
           {visibility === 'asked' && !contactEmail && (
-            <div className="fb-conditions">
-              <div className="small"><strong>Show this field</strong> {f.conditions?.length ? 'only when all of these are true:' : 'always.'}</div>
+            <div className="ed-group ed-conditions">
+              <span className="ed-group-title">Show this field <span className="ed-group-rest">{f.conditions?.length ? 'only when all of these are true:' : 'always.'}</span></span>
               {(f.conditions ?? []).map((c, ci) => (
                 <ConditionRow
                   key={ci}
@@ -527,14 +579,14 @@ function FieldRow({ field: f, property, index, count, earlier, all, open, onTogg
                 />
               ))}
               {sources.length > 0 ? (
-                <button className="btn small" onClick={() => {
+                <button className="btn small ghost ed-group-add" onClick={() => {
                   const s = sources[sources.length - 1];
                   onChange({ conditions: [...(f.conditions ?? []), { field: s.name, operator: OPERATORS[s.type]![0].op, ...(s.options ? { value: [] } : {}) }] });
                 }}>
                   <Plus size={13} /> Add condition
                 </button>
               ) : (
-                <div className="muted small">Conditions use dropdown, checkbox or date fields placed above this one.</div>
+                <p className="ed-hint">Conditions use dropdown, checkbox or date fields placed above this one.</p>
               )}
             </div>
           )}
@@ -559,7 +611,7 @@ function FormatEditor({ field: f, locked, onChange }: { field: Field; locked: bo
     }
   }
   return (
-    <div className="fb-format">
+    <div className="ed-format">
       <label className="field">
         <span>Validate field format</span>
         <select value={f.format ?? ''} disabled={locked} onChange={(e) => {
@@ -569,10 +621,10 @@ function FormatEditor({ field: f, locked, onChange }: { field: Field; locked: bo
           {FORMATS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
         </select>
       </label>
-      {locked && <div className="muted small">The contact email is always checked as an email address.</div>}
+      {locked && <p className="ed-hint">The contact email is always checked as an email address.</p>}
       {f.format === 'regex' && (
         <>
-          <div className="fb-row">
+          <div className="ed-pair">
             <label className="field">
               <span>Regular expression (must match the whole answer)</span>
               <input className="mono" value={f.pattern ?? ''} placeholder="[A-Z]{2}-\d{4}" onChange={(e) => onChange({ pattern: e.target.value || undefined })} />
@@ -583,10 +635,10 @@ function FormatEditor({ field: f, locked, onChange }: { field: Field; locked: bo
             </label>
           </div>
           {regexError && <div className="error">Not a valid regular expression: {regexError}</div>}
-          <label className="field inline">
+          <label className="ed-try">
             <span>Try it</span>
             <input value={sample} onChange={(e) => setSample(e.target.value)} placeholder="Type a sample answer" />
-            {matches !== null && <span className={matches ? 'fb-ok' : 'fb-bad'}>{matches ? 'Matches' : 'Does not match'}</span>}
+            {matches !== null && <StatusPill tone={matches ? 'on' : 'failed'}>{matches ? 'Matches' : 'Does not match'}</StatusPill>}
           </label>
         </>
       )}
@@ -606,9 +658,9 @@ function HiddenValue({ field: f, property, onChange }: { field: Field; property:
   if (f.type === 'multiselect') {
     const current = Array.isArray(f.value) ? (f.value as string[]) : [];
     return (
-      <div className="fb-options">
+      <div className="ed-options">
         {(f.options ?? []).map((o) => (
-          <label key={o.value} className="fb-check">
+          <label key={o.value} className="ed-check">
             <input type="checkbox" checked={current.includes(o.value)} onChange={(e) => onChange(e.target.checked ? [...current, o.value] : current.filter((x) => x !== o.value))} />
             <span>{o.label}</span>
           </label>
@@ -636,8 +688,8 @@ function ConditionRow({ condition: c, sources, onChange, onRemove }: {
   const needsDate = c.operator === 'is_before' || c.operator === 'is_after' || c.operator === 'is_on';
   const chosen = Array.isArray(c.value) ? c.value : [];
   return (
-    <div className="fb-condition">
-      <div className="fb-condition-line">
+    <div className="ed-condition">
+      <div className="ed-condition-line">
         <select value={c.field} onChange={(e) => {
           const s = sources.find((x) => x.name === e.target.value)!;
           onChange({ field: s.name, operator: OPERATORS[s.type]![0].op, ...(s.options ? { value: [] } : {}) });
@@ -654,12 +706,12 @@ function ConditionRow({ condition: c, sources, onChange, onRemove }: {
           {ops.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
         </select>
         {needsDate && <input type="date" value={typeof c.value === 'string' ? c.value : ''} onChange={(e) => onChange({ ...c, value: e.target.value })} aria-label="Date" />}
-        <button className="icon-btn push-right" onClick={onRemove} aria-label="Remove condition"><X size={14} /></button>
+        <button className="icon-btn ed-condition-remove" onClick={onRemove} aria-label="Remove condition"><X size={14} /></button>
       </div>
       {needsOptions && source?.options && (
-        <div className="fb-options">
+        <div className="ed-options">
           {source.options.map((o) => (
-            <label key={o.value} className="fb-check">
+            <label key={o.value} className="ed-check">
               <input type="checkbox" checked={chosen.includes(o.value)} onChange={(e) => onChange({ ...c, value: e.target.checked ? [...chosen, o.value] : chosen.filter((x) => x !== o.value) })} />
               <span>{o.label}</span>
             </label>
@@ -687,16 +739,27 @@ function Preview({ def, html, name, primary }: { def: Definition; html: string |
     });
   }, [form, run, query]);
   return (
-    <div className="fb-preview">
-      <div className="muted small fb-preview-note">
-        Preview{html ? ' with the custom HTML' : ''}. Conditions work; sending only checks the answers. Fixed hidden values are not shown.
-        <button className="btn small" onClick={() => setRun((n) => n + 1)}>Reset</button>
+    <div className="ed-preview">
+      <div className="ed-browser">
+        <div className="ed-browser-bar">
+          <label className="ed-address">
+            <Globe size={13} aria-hidden="true" />
+            <span className="ed-address-base">Page URL</span>
+            <input aria-label="Page URL query" spellCheck={false} value={query} placeholder="?topic=Sales&utm_source=newsletter" onChange={(e) => setQuery(e.target.value)} />
+          </label>
+          <button className="btn small ghost" onClick={() => setRun((n) => n + 1)}><RotateCcw size={13} /> Reset</button>
+        </div>
+        <div className="ed-browser-page">
+          <div className="ed-browser-form">
+            <h3 className="ed-preview-title">{name}</h3>
+            <div ref={ref} />
+          </div>
+        </div>
       </div>
-      <label className="field inline">
-        <span>Page URL query</span>
-        <input className="mono" value={query} placeholder="?topic=Sales&utm_source=newsletter" onChange={(e) => setQuery(e.target.value)} />
-      </label>
-      <div className="card"><h3 className="fb-preview-title">{name}</h3><div ref={ref} /></div>
+      <p className="ed-hint">
+        Preview{html ? ' with the custom HTML' : ''}. Conditions work; sending only checks the answers. Fixed hidden values are not shown.
+        Type a query in the address bar to try URL prefills.
+      </p>
     </div>
   );
 }

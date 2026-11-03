@@ -28,17 +28,19 @@ export function paymentBox(p: PublicPayment | null, actions: PaymentActions): HT
   }
   if (p.status === 'pending') {
     const how = p.pending_method ? METHOD[p.pending_method] : null;
-    return el('div', { class: 'pp-note', role: 'status' },
+    return el('div', { class: 'pp-note wait', role: 'status' },
       p.pending_method === 'etransfer'
-        ? `Thanks, we'll confirm your ${how} of ${amount} when it arrives.`
+        ? `Thanks, we’ll confirm your ${how} of ${amount} when it arrives.`
         : `Your ${how ?? 'payment'} of ${amount} is processing. Bank payments can take a few business days to clear.`);
   }
   if (!p.can_pay) return null;
 
-  const box = el('div', { class: 'pp-pay' },
-    el('h2', {}, p.kind === 'deposit' ? `Pay the deposit: ${amount}` : `Pay ${amount}`));
+  const box = el('section', { class: 'pp-pay' },
+    el('div', { class: 'pp-pay-head' },
+      el('h2', {}, p.kind === 'deposit' ? 'Pay the deposit' : 'Pay now'),
+      el('span', { class: 'pp-pay-amount' }, amount)));
   const error = el('div', { class: 'pp-error', role: 'alert' });
-  const buttons = el('div', { class: 'pp-actions', style: 'margin-top:0' });
+  const buttons = el('div', { class: 'pp-actions' });
   const detail = el('div', {});
 
   if (p.online) {
@@ -74,17 +76,17 @@ function etransferForm(et: NonNullable<PublicPayment['etransfer']>, amount: stri
   const email = el('input', { type: 'email', name: 'email', autocomplete: 'email', required: true, maxlength: '254' });
   name.value = actions.contact?.name ?? '';
   email.value = actions.contact?.email ?? '';
-  const submit = el('button', { class: 'pp-btn primary', type: 'submit' }, "I've sent it");
+  const submit = el('button', { class: 'pp-btn primary', type: 'submit' }, 'I’ve sent it');
   const form = el('form', { class: 'pp-respond', novalidate: true },
     el('dl', { class: 'pp-meta' },
       el('dt', {}, 'Amount'), el('dd', {}, amount),
       el('dt', {}, 'Send to'), el('dd', {}, et.email),
       el('dt', {}, 'Message'), el('dd', {}, et.reference)),
     et.instructions ? el('p', { class: 'pp-muted pp-instructions' }, et.instructions) : null,
-    el('p', { class: 'pp-muted' }, 'Once you have sent it, let us know:'),
+    el('p', { class: 'pp-muted', style: 'margin:0' }, 'Once you have sent it, let us know:'),
     el('label', {}, 'Your name', name),
     el('label', {}, 'Your email', email),
-    el('div', { class: 'pp-actions', style: 'margin-top:0' }, submit));
+    el('div', { class: 'pp-actions' }, submit));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     error.textContent = '';

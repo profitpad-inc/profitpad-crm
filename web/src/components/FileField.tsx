@@ -73,7 +73,7 @@ export function FileField({ object, record, property, canEdit, onSaved }: {
     <div className="file-field" onClick={(e) => e.stopPropagation()}>
       {files?.map((f) => (
         <div key={f.id} className="file-row">
-          <Paperclip size={14} strokeWidth={1.75} />
+          <Paperclip size={14} strokeWidth={1.75} aria-hidden />
           <button className="link-btn file-name" title={f.name ?? ''} onClick={() => open(f.id)} disabled={f.status !== 'ready'}>{f.name}</button>
           <span className="muted small">{f.status === 'ready' ? formatBytes(f.size_bytes) : 'uploading'}</span>
           {f.status === 'ready' && (

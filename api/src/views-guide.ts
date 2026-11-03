@@ -21,7 +21,7 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 4. Write and test each query with try_view_query until it returns what you expect.
 5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again. For changes, send save_view_draft edits (find and replace: [{"old_str", "new_str"}], each old_str matching exactly one place) instead of the whole source, and set_queries / remove_queries for single queries. Saves answer with a short summary, including publish_state (whether the published version is behind the draft, and by how many saves; someone may publish from the CRM while you work). get_view shows the current draft code; to find old_str without reading all of it, use get_view with search (matching lines with context) or lines [start, end].
 6. run_view_query runs a saved draft query. Then give the user the draft_url from create_view / save_view_draft (/view/?draft=1#<slug>) so they can preview it, and ask whether to publish.
-6b. render_view draws the draft in a headless browser as you and returns a screenshot and a report: element boxes (with text_cut, overflow and off_right flagged), console errors and failed queries. Check every change with it (also at width 390 for phones, and scrolled with scroll_y for sticky headers) before giving the user the draft_url, so they see a view that already looks right. It cannot click, and refuses record changes and integration calls.
+6b. render_view draws the draft in a headless browser as you and returns a screenshot and a report: element boxes (with text_cut, overflow and off_right flagged), console errors and failed queries. Check every change with it (also at width 390 for phones, and scrolled with scroll_y for sticky headers) before giving the user the draft_url, so they see a view that already looks right. It can click (by text or CSS selector) before the screenshot, runs in the time zone of the person viewing (default: yours; pass timezone to check another), and refuses record changes and integration calls.
 7. After the user has opened the draft, get_view_runtime_errors lists what went wrong in their browser since the last save: crashes, uncaught errors, console errors and failed queries, with the frame width. Check it after every change the user tries; no errors listed only means nothing failed while someone had it open.
 8. publish_view only when the user says to publish. Never publish on your own, even for a small change: publishing replaces what everyone sees. Drafts never affect the published version.
 9. Give the view an icon for menus: a Lucide icon name (lucide.dev/icons) such as chart-column, set with create_view or update_view_settings. find_icons searches the names. Admins can also pick one on the view's page.
@@ -64,7 +64,7 @@ Anything else fails to save.
 ## Actions (from @pcrm/view, all return promises)
 - openRecord(object, id): opens a record page in the CRM, e.g. openRecord('deals', row.id).
 - navigate(path): goes to a CRM path, e.g. '/objects/contacts' or '/view/#other-view'.
-- setParams({ key: value }): merges into the address params (undefined or '' removes one). Use it for filters and tabs so links and refreshes keep them.
+- setParams({ key: value }): merges into the address params (undefined or '' removes one). Use it for filters, tabs and the selected item (a picked row, an open detail panel: setParams({ page: row.id })) rather than React state, so links, refreshes and the back button keep them, and render_view can draw that state with params.
 - createRecord(object, properties, associations?), updateRecord(object, id, properties), linkRecords(object, id, toObject, toId): change data with the viewer's permissions. The CRM first asks the viewer to allow each change (they can tick "don't ask again on this page"), so call these only from a button the viewer clicked, never on load. Property values follow the CRM API (dropdowns take api_values). They reject with an Error whose message explains why (including "The viewer did not allow this change"); show it. Call refresh() on the affected queries afterwards.
 - callIntegration(key, data?): sends data to an outside service an admin set up (topic "integrations"). Resolves with { status, data } (the service's answer, parsed when it is JSON). Like record changes, the viewer is asked to allow each send, so call it only from a click.
 
@@ -85,6 +85,8 @@ Use these instead of building your own, so views look like the rest of the CRM.
 
 Every component below also takes style and className, added to its own (style={{ minWidth: 220 }}), so adjust a kit piece rather than rebuilding it.
 
+Types you can import for your own maps and props (types are stripped, not checked): BadgeTone ('primary'|'money'|'danger'|'warning'|'muted'), StatTone ('money'|'danger'|'muted'), ButtonVariant ('primary'|'danger'), Align, Column<Row>, QueryState<Row>, Viewport, Styled. E.g. import { Badge, type BadgeTone } from '@pcrm/view'; const toneFor: Record<string, BadgeTone> = { won: 'money', lost: 'danger' }.
+
 ## Layout
 - <Page title subtitle actions>children</Page>: the page frame with padding. Use one per view, as the root.
 - <Grid columns={2|3|4} gap={12}>: side-by-side cells; one column on phones.
@@ -96,7 +98,7 @@ Every component below also takes style and className, added to its own (style={{
 ## Data display
 - <Stat label value hint tone="money"|"danger"|"muted" />: a KPI tile (a card of its own). tone colors the value: money is green (#1e7a4c), danger red (#b42318), muted grey; no tone is the normal text color. Use tone="money" for money amounts.
 - <Table columns rows loading error onRowClick selected empty maxHeight />
-  - columns: [{ key, label, align?: 'left'|'right'|'center', width?, render?: (row) => node }]
+  - columns: [{ key, label, align?: 'left'|'right'|'center', width?, render?: (row) => node, hideOnMobile? }]. hideOnMobile: true leaves the column out below 720px wide, so wide tables fit a phone without scrolling sideways; keep the name and one or two key figures.
   - Empty values show "--". Right-aligned columns use tabular figures.
   - onRowClick makes rows clickable; selected(row) highlights one. Rows are keyed by row.id when present, so select an id column.
   - When it sits directly in a Card, the table runs to the card's edges.
@@ -114,7 +116,7 @@ Sizes: Button, TextInput and Select are 34px tall, or 28px with small, so contro
 
 ## Formatters
 - formatNumber(v, decimals?), formatMoney(v, currency = 'USD'), formatPercent(fraction, decimals = 0) (0.25 gives 25%)
-- formatDate(v) gives YYYY-MM-DD, formatDateTime(v) gives YYYY-MM-DD HH:MM (local time), as in the rest of the CRM.
+- formatDate(v) gives YYYY-MM-DD, formatDateTime(v) gives YYYY-MM-DD HH:MM in the viewer's own time zone (their browser's), as in the rest of the CRM. Datetimes arrive as UTC; do not shift them yourself. render_view says which zone it drew in.
 - chartColors: 8 series colors, in order: [0] the tenant's primary color (var(--primary), cobalt #2445b8 by default), [1] green #0e9f6e, [2] orange #d97706, [3] violet #7c3aed, [4] pink #db2777, [5] cyan #0891b2, [6] lime #65a30d, [7] slate #64748b. Pick by index, or use any CSS color string.
 
 ## Charts (recharts)
@@ -160,6 +162,7 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 - Single-value dropdowns are text (the api_value) plus <name>__label (the label). Multi-value dropdowns are text[] plus <name>__label (text[] of labels). Filter on the api_value, show the label.
 - owner is a dropdown of user ids (owner__label is the user's name).
 - users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name". Records can be owned by users who are archived or deactivated, and those are not in that list (or, when archived, not in users at all), so add the owners found on the records: "select pc_0000_id as id, name from users where status = 'active' union select owner, owner__label from deals where owner is not null order by 2".
+- How CRM features link records (meetings to the booking page they were booked on, submissions to forms, lines to their parent, payments and invoices to quotes): see "How it is linked" for that object in topic schema, or how_linked in describe_object. Links listed as linked_only_by_crm are made only by the feature, so they mean exactly that (every call linked to a booking page was booked through it).
 - associations: one row per link, seen from both sides: association_id, label_id, label, object_type_id, record_id, other_object_type_id, other_record_id, side, created_at, object, other_object (the last two are api_names, like 'deals' and 'contacts'). It holds links between every pair of objects, so always filter both object and other_object; joining contacts on other_record_id without other_object = 'contacts' matches ids of unrelated records. A deal's contacts:
   "select ct.pc_0010_id as id, ct.name from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' and a.record_id = :deal"
   Contacts per deal, for a board: "select a.record_id as deal_id, string_agg(distinct ct.name, ', ') as contacts from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' group by a.record_id"
@@ -259,6 +262,22 @@ export default function SlackNote() {
 }
 \`\`\``;
 
+// How CRM features link the records they make (all through associations,
+// unlabeled unless said). Shown with the object in the schema topic and by
+// describe_object. Keep in step with the features (routes/booking.ts,
+// forms.ts, payments/fulfil.ts, migrations 0016, 0022, 0028).
+export const FEATURE_LINKS: Record<string, string> = {
+  booking_pages: 'A meeting booked on a booking page is a calls record (call_type meeting) linked to the page. Only bookings make this link (users cannot add or remove it), so every call linked to a booking page was booked through it; to count bookings per page, count calls linked to it. A cancelled booking keeps its link with call status cancelled. The meeting is also linked to the contact (found or created by the attendee email) and to the form submissions of the page\'s forms.',
+  calls: 'Meetings booked through a booking page are linked to that page (a link only bookings make), to the contact and to the form submissions. Other calls are linked by people as usual.',
+  forms: 'Each submission is a form_submissions record linked to its form; only the form makes this link.',
+  form_submissions: 'Linked to its form (a link only the form makes), to the contact it filled in, and to the ticket when the form creates tickets.',
+  lines: 'A line is linked to at most one product and at most one parent: a deal, quote, invoice, payment, cart, order or custom object record. Archiving or deleting the parent does the same to its lines.',
+  payments: 'A payment is linked to the quote or invoice it pays and to that record\'s contacts and companies.',
+  invoices: 'A paid quote creates a paid invoice linked to the quote, the payment, and the quote\'s deals, contacts and companies.',
+  users: 'Users link only to teams.',
+  views: 'Views link to nothing.'
+};
+
 // ---- dynamic topics ---------------------------------------------------------------
 
 function columnType(p: PropertyDef): string {
@@ -276,6 +295,8 @@ function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
   const props = o.properties.filter((pr) => pr.record_status === 'active' && pr.api_name !== 'object_type_id' && propertyAccess(p, pr) !== 'hidden');
   const lines = [`## ${o.api_name} (${o.label_plural}, code ${o.object_type_id}, id column ${o.id_column})`];
   if (o.description) lines.push(o.description);
+  if (o.aliases.length) lines.push(`Also called: ${o.aliases.join(', ')}`);
+  if (FEATURE_LINKS[o.api_name]) lines.push(`How it is linked: ${FEATURE_LINKS[o.api_name]}`);
   for (const pr of props) {
     let line = `- ${pr.api_name}: ${columnType(pr)}${pr.label !== pr.api_name ? `, "${pr.label}"` : ''}`;
     if (pr.type === 'dropdown') {

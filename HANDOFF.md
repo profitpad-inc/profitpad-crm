@@ -28,8 +28,55 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
 
 ## Where we're at (2026-10-31)
 
+- 2026-11-03 (view tooling, round 3 of AI feedback, `~/Downloads/test-crm-mcp-feedback.md`, from building a "Booking forms" view): migration `0047_object_aliases.sql` (object aliases, seeded for native objects); `list_objects` links in the short form plus `linked_only_by_crm`; `FEATURE_LINKS` notes on how features link records (`how_linked` in `describe_object`, schema topic); `render_view` `timezone` (default the caller's, the renderer itself runs in UTC) and `click`; kit types and `hideOnMobile` columns; guide recommends selections in params (details in `docs/architecture.md`, "Round 3" bullet). Checks: both SQL suites (new section 33) on the throwaway cluster on port 5496; 20 in-process checks with a real Chromium through a local Playwright browser server (short links, aliases, how_linked, set_object_aliases, Toronto time shown as 09:00 for 14:00 UTC, clicks and params, kit type imports, hideOnMobile at 390 and 1024px); API and web typecheck, web build. Not tried in a real browser, not committed, 0047 not applied to the server.
 - 2026-11-03 (view tooling, round 2 of AI feedback, `~/Downloads/test-crm-mcp-feedback-round-2.md`): migration `0046_integration_examples.sql` (`data_example` on view integrations) plus API, MCP, kit, Settings and guide changes (details in `docs/architecture.md` "Custom views", "Round 2" bullet): integration host and masked url, data contract with mismatch warnings, MCP `create_view_integration`/`update_view_integration`/`test_integration`; `get_view` `lines`/`search` excerpts; `publish_state` with saves since publishing; kit control heights (34/28px) and `small` on TextInput/Select; `<ScrollX>`; guide notes on Sticky lag, the overflow trap and archived owners. Checks: both SQL suites pass on a separate throwaway cluster (port 5496; the usual 5499 one was in use by another session); 27 in-process checks (MCP tools over `app.inject`, a local fake workflow, mismatch logging, excerpts, publish state, guide) pass; API and web typecheck, web build. Later the same day: `render_view` (MCP) draws a view in headless Chromium in a new `renderer` container and returns a screenshot, element boxes with layout issues, console errors and failed queries (`api/src/render.ts`, `deploy/renderer/`, `docs/deploy.md` section 17; `playwright-core` 1.64.1 added to the API). 16 checks pass against a real Chromium through a local Playwright browser server (screenshot, cut placeholder flagged, 28px small controls, off-screen content, console errors, failed query, createRecord refused and nothing created, ScrollX header pinned at scroll 900, phone width, fill view with native sticky, crash reported); screenshots looked right. The Docker image was not built here (Docker is not running on this Mac). Not tried in a browser, not committed, 0046 not applied to the server. `IntegrationSettings.tsx`, `mcp.ts` and the guide were also being edited by another session at the same time.
 - 2026-11-03: the user confirmed every migration in `db/migrations` is applied to the server, so older "not yet applied" notes below are out of date.
+- 2026-11-03 (CRM-wide redesign, after Settings): the same design system now runs through the rest of the CRM. Four subagents did the work in parallel, one per area, then the lead merged it and checked it in the browser.
+  - **Shared kit.** `web/src/kit.css` is imported in `main.tsx`. It holds the pieces that used to be Settings-only: status pills, empty states, skeletons, edit panels, callouts, copy fields, the save bar, person avatars, and the tokens `--primary-soft`, `--primary-line` and `--hairline` on `:root`. Components are still in `components/settings.tsx`.
+  - **Tables** (`table.css`, `ObjectTable.tsx`, `ColumnPicker.tsx`):
+    - calmer frame and toolbar, with Active/Archived as a segmented control
+    - a primary-soft selection bar, and ticked rows get a primary rail
+    - the first column stays put when the table scrolls sideways
+    - directed empty states and skeleton rows
+    - the hover card is now `.assoc-hovercard` (it collided with the record page's `.assoc-card`)
+  - **Record pages** (`record.css`, `RecordPage.tsx` and the cards: PublicLinkCard, QuoteSigningCard, PaymentConfirmCard, FileCard, AddLineModal):
+    - same three-column layout, header tile, the object type above the name
+    - ledger day headings stay pinned
+    - change chips, StatusPills, edge-to-edge association lists, directed empty cards and a flatpickr restyle
+    - the draft strip on the customer link card reads "Publish so customers can open the quote" (publishing sends no email)
+  - **Editors** (`editors.css`, `booking.css`, FormBuilder, BookingPageEditor):
+    - a white sheet with hairline sections
+    - numbered field list with an open-field rail
+    - Edit/Preview segmented control, with the preview inside a browser frame
+    - booking "Week at a glance" hours grid, length pills, and a sticky "hours not saved" footer
+  - **Public pages** (`web/src/public/*`):
+    - quotes and invoices look like a paper document, with a ledger of lines and the total closed by a double rule
+    - the signature pad has an × and a signing line
+    - the booker's open days are tiles with a fullness bar, and times are grouped Morning/Afternoon/Evening
+    - the form and embed styles were refreshed; embedded forms still use fixed neutral colours on customer sites
+    - Montserrat stays for public titles
+  - **Home** lists objects in two columns with icon tiles and a ⌘K hint. **Login** has a primary glow on the backdrop and one line saying which account to use.
+  - **Removed** 96 unused rules from `styles.css`.
+  - **No API, data or behaviour changes**, apart from:
+    - a Clear filters button on an empty Changes tab
+    - the first table column now stays in view
+    - small copy changes, with no em dashes or " · " strings
+  - **Checks.** Web typecheck and full build pass. In the browser pane against the local copy, at 1440×900 and the mobile preset, I checked:
+    - Home, the contacts table and its selection bar
+    - contact, deal and quote records; a form record (field rows, open field, preview, save)
+    - the booking page editor, Settings again
+    - public quote (with the accept panel), invoice and form
+    - the public booker, drawn with stand-in booking replies in the page, since a real one needs a connected calendar
+    - no sideways scroll on phones
+  - **Local copy test data.** I filled the local copy with `scripts/generate_sample_data.py`, through a scratchpad copy with valid phone numbers and files skipped. The project script fails on its 555 phone numbers and on read-only file fields, and it saves form fields as bare names, which the builder and public form cannot read. Test user `0000000008`, key "Design check" and the sessions were revoked afterwards.
+  - **Not checked:**
+    - a quote with line items on the public page
+    - the embed on a real host site
+    - payments on public pages
+    - the Changes tab with data
+    - keyboard editing of property rows (still mouse-only, as before)
+  - **Follow-up:** the quote PDF (`api/src/pdf/quote.ts`) now looks different from the public quote page (Helvetica, no double rule or signing line).
+  - Not committed.
 - 2026-11-03 (Settings redesign, frontend-design skill): plan in `~/.claude/plans/using-the-frontend-design-graceful-moler.md`.
   - **Rail.** Settings has a grouped rail: Your account, Workspace, People and access, Integrations, Security. Each link has a Lucide icon. The `GROUPS` array in `Settings.tsx` drives both the rail and the route gating. On mobile the rail is a strip of chips across the top.
   - **Page header.** Every page starts with the same header: title, description, and the main action at the top right.
@@ -46,6 +93,7 @@ The design applies lessons from a previous HubSpot-to-Postgres mirror: single as
     - Theme, Navigation menus and Payments track unsaved changes against what was last loaded or saved.
     - Roles is two panes: a role list on the left, the editor on the right.
     - Webhook endpoint cards move Reveal secret, New secret, Turn off and Delete into a ⋯ menu. The signing and batching details moved to a "How deliveries work" section.
+    - Navigation menus shows a preview of the mobile bottom bar (`BottomBarPreview` in `Settings.tsx`). It uses the real bar's `.bottom-bar`/`.bottom-item` classes and `navLink` inside a 390px frame, so it looks like what phones show. Checked in the browser pane.
     - All inline styles in the settings pages are gone.
   - **Copy changes.**
     - Account no longer shows "Signed in with Google", because `me` has no provider field and Microsoft sign-in also exists.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import {
   api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -14,6 +14,8 @@ import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines'
 import { FileUploadButton } from '../components/FileUploadButton';
 import { ColumnPicker, associationColumnLabel, moveTo } from '../components/ColumnPicker';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
+import { EmptyState, TableSkeleton } from '../components/settings';
+import '../table.css';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -281,12 +283,12 @@ function ObjectTableFor({ object }: { object: string }) {
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      document.body.classList.remove('col-resizing');
+      document.body.classList.remove('dg-resizing');
       if (latest !== columns) changeView({ columns: latest });
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-    document.body.classList.add('col-resizing');
+    document.body.classList.add('dg-resizing');
   }
 
   function dropColumn() {
@@ -299,7 +301,7 @@ function ObjectTableFor({ object }: { object: string }) {
   // drag handle, drop target and resize handle shared by every header cell
   function headerProps(i: number) {
     return {
-      className: `${dropAt === i ? 'drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}`,
+      className: `${i === 0 ? 'lead-col' : ''}${dropAt === i ? ' drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}`,
       style: widthStyle(columns[i]),
       onDragOver: (e: React.DragEvent<HTMLElement>) => {
         if (dragFrom.current === null) return;
@@ -317,7 +319,7 @@ function ObjectTableFor({ object }: { object: string }) {
     return (
       <>
         <span
-          className="grip th-grip"
+          className="dg-grip"
           draggable
           title="Drag to move column"
           onDragStart={(e) => {
@@ -327,9 +329,9 @@ function ObjectTableFor({ object }: { object: string }) {
           }}
           onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
         >
-          <GripVertical size={14} />
+          <GripVertical size={12} />
         </span>
-        <span className="col-resize" onMouseDown={(e) => startResize(e, i)} onClick={(e) => e.stopPropagation()} title="Drag to resize" />
+        <span className="dg-resize" onMouseDown={(e) => startResize(e, i)} onClick={(e) => e.stopPropagation()} title="Drag to resize" />
       </>
     );
   }
@@ -364,7 +366,7 @@ function ObjectTableFor({ object }: { object: string }) {
     };
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      if (!t.closest?.('.grid tbody')) setSel(null);
+      if (!t.closest?.('.data-grid tbody')) setSel(null);
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !editing && setSel(null);
     const onCopy = (e: ClipboardEvent) => {
@@ -392,13 +394,14 @@ function ObjectTableFor({ object }: { object: string }) {
   // props shared by every body cell: width, selection and editing state
   function cellProps(row: number, col: number, c: Column, extra: string[] = []) {
     const classes = [...extra];
+    if (col === 0) classes.push('lead-col'); // stays in view when the table scrolls sideways
     if (isSelected(row, col)) classes.push('selected');
     if (sel && sel.anchor.row === row && sel.anchor.col === col) classes.push('sel-anchor');
     return {
       className: classes.join(' ') || undefined,
       style: widthStyle(c),
       onMouseDown: (e: React.MouseEvent) => {
-        if (e.button !== 0 || (e.target as HTMLElement).closest('.cell-edit')) return;
+        if (e.button !== 0 || (e.target as HTMLElement).closest('.dg-edit')) return;
         e.preventDefault(); // no text selection; links still open on click
         (document.activeElement as HTMLElement | null)?.blur();
         selecting.current = true;
@@ -413,7 +416,7 @@ function ObjectTableFor({ object }: { object: string }) {
 
   function editButton(r: CrmRecord, prop: Property) {
     return (
-      <button className="cell-edit" onClick={(e) => startEdit(e, r, prop)} aria-label={`Edit ${prop.label.toLowerCase()}`} title={`Edit ${prop.label.toLowerCase()}`}>
+      <button className="dg-edit" onClick={(e) => startEdit(e, r, prop)} aria-label={`Edit ${prop.label.toLowerCase()}`} title={`Edit ${prop.label.toLowerCase()}`}>
         <Pencil size={13} />
       </button>
     );
@@ -475,44 +478,49 @@ function ObjectTableFor({ object }: { object: string }) {
   if (error && !schema) return <div className="page"><div className="error">{error}</div></div>;
   if (!schema || !summary) return <div className="page muted">Loading…</div>;
   const Icon = objectIcon(object);
+  const plural = schema.label_plural.toLowerCase();
+  const singular = schema.label_singular.toLowerCase();
+
+  // files are uploaded rather than created: a file record without bytes is no use
+  const createButton = object === 'files' ? (
+    <FileUploadButton
+      onError={setError}
+      onUploaded={(ids) => {
+        if (ids.length === 1) {
+          navigate(`/objects/files/${ids[0]}`);
+          return;
+        }
+        toast(`${ids.length} files uploaded`);
+        fetchPage();
+      }}
+    />
+  ) : (
+    <button className="btn primary" onClick={() => setShowCreate(true)}>
+      <Plus size={16} /> Create {singular}
+    </button>
+  );
+  const searchedFields = schema.search_properties.map((n) => schema.properties.find((p) => p.api_name === n)?.label.toLowerCase() ?? n).join(', ');
 
   return (
     <div className="page table-page">
-      <header className="page-head">
-        <div className="title-row">
-          <Icon size={22} strokeWidth={1.75} />
+      <header className="table-head">
+        <div className="table-title">
+          <Icon size={20} strokeWidth={1.75} aria-hidden />
           <h1>{schema.label_plural}</h1>
-          {data && <span className="count">{data.total.toLocaleString()} {data.total === 1 ? 'record' : 'records'}</span>}
+          {data && <span className="table-count">{data.total.toLocaleString()} {data.total === 1 ? 'record' : 'records'}</span>}
         </div>
-        {object === 'files' ? (
-          // a file record without bytes is no use, so files are uploaded instead of created
-          <FileUploadButton
-            onError={setError}
-            onUploaded={(ids) => {
-              if (ids.length === 1) {
-                navigate(`/objects/files/${ids[0]}`);
-                return;
-              }
-              toast(`${ids.length} files uploaded`);
-              fetchPage();
-            }}
-          />
-        ) : (
-          <button className="btn primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Create {schema.label_singular.toLowerCase()}
-          </button>
-        )}
+        <div className="table-head-actions">{createButton}</div>
       </header>
 
-      <div className="tabs">
+      <nav className="view-tabs" aria-label="Views">
         {views.map((v) => (
-          <div key={v.id} className={`tab${v.id === activeView?.id ? ' active' : ''}`}>
-            <button onClick={() => showView(v.id)}>{v.name}</button>
+          <div key={v.id} className={`view-tab${v.id === activeView?.id ? ' active' : ''}`}>
+            <button className="view-tab-name" onClick={() => showView(v.id)} aria-current={v.id === activeView?.id ? 'page' : undefined}>{v.name}</button>
             {v.id === activeView?.id && (
               <Menu
                 align="left"
                 trigger={(toggle) => (
-                  <button className="tab-menu" onClick={toggle} aria-label="View options">
+                  <button className="icon-btn view-tab-menu" onClick={toggle} aria-label="View options">
                     <EllipsisVertical size={14} />
                   </button>
                 )}
@@ -528,49 +536,51 @@ function ObjectTableFor({ object }: { object: string }) {
             )}
           </div>
         ))}
-        <button className="tab-add" onClick={() => setViewDialog({ mode: 'create', name: '' })}>
+        <button className="btn small ghost view-tab-add" onClick={() => setViewDialog({ mode: 'create', name: '' })}>
           <Plus size={14} /> Add view
         </button>
-      </div>
+      </nav>
 
       {picked.size > 0 ? (
-        <div className="toolbar bulk-bar">
-          <span className="bulk-count">{picked.size.toLocaleString()} selected</span>
+        <div className="table-toolbar selection-bar" role="region" aria-label="Selected records">
+          <span className="selection-count" role="status">{picked.size.toLocaleString()} selected</span>
           {archived && schema?.permissions.delete && (
-            <button className="btn small" onClick={restorePicked} disabled={restoring}>
+            <button className="btn small ghost" onClick={restorePicked} disabled={restoring}>
               <RotateCcw size={14} /> {restoring ? 'Restoring…' : 'Restore all'}
             </button>
           )}
           {!archived && schema?.permissions.edit && (
-            <button className="btn small" onClick={() => setBulk('edit')}>
+            <button className="btn small ghost" onClick={() => setBulk('edit')}>
               <Pencil size={14} /> Edit all
             </button>
           )}
           {!archived && schema?.permissions.delete && (
-            <button className="btn small bulk-delete" onClick={() => setBulk('delete')}>
+            <button className="btn small ghost danger-text" onClick={() => setBulk('delete')}>
               <Trash2 size={14} /> Delete all
             </button>
           )}
-          <button className="btn small" onClick={() => setPicked(new Set())}>Clear selection</button>
+          <button className="btn small ghost selection-clear" onClick={() => setPicked(new Set())}>
+            <X size={14} /> Clear selection
+          </button>
         </div>
       ) : (
-        <div className="toolbar">
-          <div className="searchbox">
-            <Search size={16} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${schema.label_plural.toLowerCase()}`}
-              title={`Searches ${schema.search_properties.map((n) => schema.properties.find((p) => p.api_name === n)?.label.toLowerCase() ?? n).join(', ')}`} />
+        <div className="table-toolbar">
+          <div className="table-search">
+            <Search size={15} aria-hidden />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${plural}`}
+              aria-label={`Search ${plural}`} title={`Searches ${searchedFields}`} />
             {query && (
               <button className="icon-btn" onClick={() => setQuery('')} aria-label="Clear search">
                 <X size={14} />
               </button>
             )}
           </div>
-          <select value={archived ? 'archived' : 'active'} onChange={(e) => showArchived(e.target.value === 'archived')} aria-label="Which records">
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-          </select>
-          {dirty && <span className="muted small">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
-          <button className="btn" onClick={() => setShowColumns(true)}>
+          <div className="segmented" role="group" aria-label="Which records">
+            <button type="button" aria-pressed={!archived} onClick={() => archived && showArchived(false)}>Active</button>
+            <button type="button" aria-pressed={archived} onClick={() => !archived && showArchived(true)}>Archived</button>
+          </div>
+          {dirty && <span className="table-note">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
+          <button className="btn table-columns" onClick={() => setShowColumns(true)}>
             <Columns3 size={16} /> Edit columns
           </button>
         </div>
@@ -578,8 +588,8 @@ function ObjectTableFor({ object }: { object: string }) {
 
       {error && <div className="error">{error}</div>}
 
-      <div className="table-wrap">
-        <table className="grid">
+      <div className="table-frame">
+        <table className="data-grid">
           <thead>
             <tr>
               <th className="pick-cell">
@@ -603,8 +613,8 @@ function ObjectTableFor({ object }: { object: string }) {
                   return (
                     <th key={i} {...hp}>
                       {headerHandles(i)}
-                      <div className="th">
-                        <span className="th-text">{associationColumnLabel(c, other, labels, object, objectByName)}</span>
+                      <div className="dg-head">
+                        <span className="dg-label">{associationColumnLabel(c, other, labels, object, objectByName)}</span>
                         <ColumnMenu onRemove={() => changeView({ columns: columns.filter((_, j) => j !== i) })} />
                       </div>
                     </th>
@@ -615,12 +625,12 @@ function ObjectTableFor({ object }: { object: string }) {
                 const sorted = sorts[0]?.property === prop.api_name ? sorts[0].direction : null;
                 const hp = headerProps(i);
                 return (
-                  <th key={i} {...hp} className={`${hp.className}${sorted ? ' sorted' : ''}`}>
+                  <th key={i} {...hp} className={`${hp.className}${sorted ? ' sorted' : ''}`} aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}>
                     {headerHandles(i)}
-                    <div className="th">
-                      <button className="th-label" onClick={() => clickHeader(prop.api_name)}>
-                        {prop.label}
-                        {sorted === 'asc' ? <ArrowUp size={14} /> : sorted === 'desc' ? <ArrowDown size={14} /> : <ArrowUpDown size={14} className="faint" />}
+                    <div className="dg-head">
+                      <button className="dg-sort" onClick={() => clickHeader(prop.api_name)}>
+                        <span className="dg-label">{prop.label}</span>
+                        {sorted === 'asc' ? <ArrowUp size={13} /> : sorted === 'desc' ? <ArrowDown size={13} /> : <ArrowUpDown size={13} className="dg-sort-idle" />}
                       </button>
                       <ColumnMenu
                         onSort={(direction) => changeView({ sorts: [{ property: prop.api_name, direction }] })}
@@ -655,7 +665,7 @@ function ObjectTableFor({ object }: { object: string }) {
                   if (i === 0 || prop.api_name === 'name') {
                     return (
                       <td key={i} {...cellProps(ri, i, c, ['primary-cell', ...extra])}>
-                        <Link to={`/objects/${object}/${r.id}`}>{cellText(r, c, i)}</Link>
+                        <Link className="dg-name" to={`/objects/${object}/${r.id}`}>{cellText(r, c, i)}</Link>
                         {editable && editButton(r, prop)}
                       </td>
                     );
@@ -671,19 +681,41 @@ function ObjectTableFor({ object }: { object: string }) {
             ))}
           </tbody>
         </table>
+        {/* first load, or a new search while nothing is shown */}
+        {(!data || (loading && data.results.length === 0)) && !error && <TableSkeleton rows={8} />}
         {data && data.results.length === 0 && !loading && (
-          <div className="empty">
-            {debounced
-              ? `No ${archived ? 'archived ' : ''}${schema.label_plural.toLowerCase()} match "${debounced}".`
-              : archived ? `No archived ${schema.label_plural.toLowerCase()}.` : `No ${schema.label_plural.toLowerCase()} yet.`}
+          <div className="table-empty">
+            {debounced ? (
+              <EmptyState
+                icon={<Search size={18} />}
+                title={`No ${archived ? 'archived ' : ''}${plural} match "${debounced}"`}
+                action={<button className="btn" onClick={() => setQuery('')}>Clear search</button>}
+              >
+                The search looks at {searchedFields}.
+              </EmptyState>
+            ) : archived ? (
+              <EmptyState
+                icon={<Archive size={18} />}
+                title={`No archived ${plural}`}
+                action={<button className="btn" onClick={() => showArchived(false)}>Show active {plural}</button>}
+              >
+                Deleted {plural} are kept here, and can be restored from this list.
+              </EmptyState>
+            ) : (
+              <EmptyState icon={<Icon size={18} />} title={`No ${plural} yet`} action={createButton}>
+                {object === 'files' ? 'Upload a file and it shows up here.' : `Create the first ${singular} and it shows up here.`}
+              </EmptyState>
+            )}
           </div>
         )}
-        {loading && <div className="empty muted">Loading…</div>}
-        {data?.next && !loading && (
-          <div className="load-more">
-            <button className="btn" onClick={() => fetchPage(data.next!)}>
-              Load more ({data.results.length.toLocaleString()} of {data.total.toLocaleString()})
-            </button>
+        {data && data.results.length > 0 && (loading || data.next) && (
+          <div className="table-foot">
+            <span>{data.results.length.toLocaleString()} of {data.total.toLocaleString()} shown</span>
+            {loading ? (
+              <span className="table-foot-loading" role="status">Loading…</span>
+            ) : (
+              <button className="btn small" onClick={() => fetchPage(data.next!)}>Load more</button>
+            )}
           </div>
         )}
       </div>
@@ -868,7 +900,7 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
     width
   };
   return createPortal(
-    <div className="cell-editor" ref={boxRef} style={style}>
+    <div className="grid-editor" ref={boxRef} style={style}>
       <PropertyInput
         property={property}
         value={draft}
@@ -881,7 +913,7 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
         onCommit={needsSave ? undefined : commit}
       />
       {(needsSave || error || saving) && (
-        <div className="cell-editor-foot">
+        <div className="grid-editor-foot">
           {error && <span className="error-text">{error}</span>}
           {saving && <span className="muted small">Saving…</span>}
           {needsSave && !saving && (
@@ -1043,7 +1075,7 @@ function ColumnMenu({ onSort, onRemove }: { onSort?: (d: 'asc' | 'desc') => void
     <Menu
       align="right"
       trigger={(toggle) => (
-        <button className="th-menu" onClick={toggle} aria-label="Column options">
+        <button className="icon-btn dg-menu" onClick={toggle} aria-label="Column options">
           <EllipsisVertical size={14} />
         </button>
       )}
@@ -1084,13 +1116,13 @@ function AssociationCell({ record, column, pluralLabel }: { record: CrmRecord; c
   };
   return (
     <>
-      <span className="assoc-many" tabIndex={0} onMouseEnter={(e) => show(e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(e.currentTarget)} onBlur={hide}>
+      <span className="dg-many" tabIndex={0} onMouseEnter={(e) => show(e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(e.currentTarget)} onBlur={hide}>
         {items.length} {pluralLabel}
       </span>
       {anchor &&
         createPortal(
           <div
-            className="hovercard"
+            className="assoc-hovercard"
             style={{ top: anchor.bottom + 4, left: Math.min(anchor.left, window.innerWidth - 260) }}
             onMouseEnter={() => clearTimeout(hideTimer.current)}
             onMouseLeave={hide}

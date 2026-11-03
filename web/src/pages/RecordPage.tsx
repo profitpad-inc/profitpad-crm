@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, Plus, X } from 'lucide-react';
+import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, Lock, Pencil, Plus, X } from 'lucide-react';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
@@ -18,6 +18,8 @@ import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines
 import { AddLineModal } from '../components/AddLineModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { SearchSelect } from '../components/SearchSelect';
+import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
+import '../record.css';
 
 interface Link_ {
   association_id: string;
@@ -171,7 +173,7 @@ export function RecordPage() {
   }
 
   if (error) return <div className="page"><div className="error">{error}</div></div>;
-  if (!schema || !record) return <div className="page muted">Loading…</div>;
+  if (!schema || !record) return <RecordSkeleton />;
   const name = recordName(record);
   const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
   const linksTo = objectByName.get(object)?.links_to ?? [];
@@ -185,6 +187,7 @@ export function RecordPage() {
   const isUser = object === 'users';
   // views link to nothing, so they have no association cards: no right column
   const noRight = isUser || object === 'views';
+  const KindIcon = objectIcon(object);
 
   return (
     <div className={`record-page${noRight ? ' two-col' : ''}`}>
@@ -210,16 +213,18 @@ export function RecordPage() {
             </Menu>
           </div>
           {record.record_status === 'archived' && (
-            <div className="record-archived">
-              <span className="small">This record is archived (in the recycle bin).</span>
+            <div className="record-archived" role="status">
+              <Archive size={15} strokeWidth={1.75} aria-hidden />
+              <span>This record is archived (in the recycle bin).</span>
               {schema.permissions.delete && <button className="btn small" onClick={restore}>Restore</button>}
             </div>
           )}
           <div className="record-identity">
             {object === 'views' ? <ViewIconAvatar record={record} onChanged={setRecord} /> : <span className="record-avatar">{initials(name)}</span>}
             <div className="record-title">
+              <div className="record-kind"><KindIcon size={13} strokeWidth={2} aria-hidden /> {schema.label_singular}</div>
               <h1>{name}</h1>
-              {subtitle && subtitle !== name && <div className="muted">{subtitle}</div>}
+              {subtitle && subtitle !== name && <div className="record-subtitle">{subtitle}</div>}
             </div>
           </div>
         </div>
@@ -331,19 +336,27 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
     const open = !closed[key];
     const Chevron = open ? ChevronDown : ChevronRight;
     return (
-      <section className="prop-section">
+      <section className={`prop-section ${key}`}>
         <button className="prop-section-head" aria-expanded={open} onClick={() => setClosed((c) => ({ ...c, [key]: open }))}>
           <Chevron size={16} />
           <h3>{title}</h3>
+          {key === 'main' && !canEdit && <span className="push-right"><StatusPill tone="off">View only</StatusPill></span>}
+          {!open && <span className="prop-section-count">{props.length}</span>}
         </button>
-        {open && <div className="prop-section-body">{props.map(row)}</div>}
+        {open && <div className="prop-section-body">{props.map((p) => row(p, key === 'main' && canEdit))}</div>}
       </section>
     );
   };
 
-  const row = (p: Property) => (
-    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
-      <div className="prop-label">{p.label}</div>
+  // showLock: mark properties nobody can edit here (calculations, read-only),
+  // in the main section only; System is all set by the CRM
+  const row = (p: Property, showLock: boolean) => (
+    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
+      <div className="prop-label">
+        <span>{p.label}</span>
+        {editable(p) && editing !== p.api_name && <Pencil className="prop-hint" size={12} aria-hidden />}
+        {showLock && !editable(p) && p.type !== 'file' && <Lock className="prop-lock" size={12} aria-label="Read only" />}
+      </div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
           <PropertyInput property={p} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} />
@@ -392,6 +405,8 @@ interface HistoryFacets {
   changed_by: { changed_by: string; name: string | null }[];
   via: HistoryVia[];
 }
+
+const TASK_TONES: Record<string, Tone> = { not_started: 'off', in_progress: 'info', waiting: 'pending', completed: 'on' };
 
 const VIA_LABELS: Record<HistoryVia, string> = { crm_ui: 'CRM UI', api: 'API', mcp: 'MCP', calculation: 'Calculation', other: 'Other' };
 
@@ -450,6 +465,7 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
   }
 
   const linksTo = objectByName.get(object)?.links_to ?? [];
+  const countOf = (o: string) => associated.find((a) => a.object === o)?.records.length ?? 0;
   const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
 
   return (
@@ -457,22 +473,34 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
       <div className="tabs">
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
-            <button onClick={() => setTab(t)}>{t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural}</button>
+            <button onClick={() => setTab(t)}>
+              {t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural}
+              {t !== 'activity' && t !== 'changes' && countOf(t) > 0 && <span className="tab-count">{countOf(t)}</span>}
+            </button>
           </div>
         ))}
       </div>
       {error && <div className="error">{error}</div>}
       {(tab === 'activity' || tab === 'notes') && objectByName.has('notes') && linksTo.includes('notes') && (
         <div className="composer">
-          <textarea rows={3} placeholder="Write a note…" value={note} onChange={(e) => setNote(e.target.value)} />
-          <button className="btn primary" onClick={addNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
+          <textarea rows={3} placeholder="Write a note…" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
+          <div className="composer-foot">
+            <span className="small muted">Saved to this {schema.label_singular.toLowerCase()}'s activity</span>
+            <button className="btn primary small" onClick={addNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
+          </div>
         </div>
       )}
       {tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
       ) : (
         <div className="timeline">
-          {items.length === 0 && <div className="muted">No activity yet.</div>}
+          {items.length === 0 && (
+            <EmptyState icon={<Inbox size={18} />} title={tab === 'activity' ? 'No activity yet' : `No ${(objectByName.get(tab)?.label_plural ?? '').toLowerCase()} yet`}>
+              {tab === 'activity'
+                ? `Calls, emails, notes and tasks linked to this ${schema.label_singular.toLowerCase()} show here, newest first.`
+                : `${objectByName.get(tab)?.label_plural} linked to this ${schema.label_singular.toLowerCase()} show here.`}
+            </EmptyState>
+          )}
           {byDay(items, (x) => x.at).map(({ day, rows }) => (
             <LedgerDay key={day} day={day}>
           {rows.map(({ object: o, record: r, at, quoteResponse }) => {
@@ -486,7 +514,7 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
                 : Number(p.amount).toLocaleString(undefined, { style: 'currency', currency: typeof p.currency === 'string' && p.currency ? p.currency : 'USD' });
               return (
                 <Link key={`quote-response-${r.id}`} to={`/objects/quotes/${r.id}`} className="activity-item">
-                  <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={16} strokeWidth={1.75} /></span>
+                  <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={15} strokeWidth={1.75} /></span>
                   <div className="activity-body">
                     <div className="activity-head">
                       <strong>Quote {verb}</strong>
@@ -508,14 +536,14 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
             const body = plain(o === 'tasks' ? p.body : p.body);
             return (
               <Link key={`${o}-${r.id}`} to={`/objects/${o}/${r.id}`} className="activity-item">
-                <span className="activity-icon"><Icon size={16} strokeWidth={1.75} /></span>
+                <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
                 <div className="activity-body">
                   <div className="activity-head">
                     <strong>{title}</strong>
-                    <span className="muted small push-right">{objectByName.get(o)?.label_singular}</span>
+                    <span className="activity-kind push-right">{objectByName.get(o)?.label_singular}</span>
                     {at && <time className="ledger-time" dateTime={at}>{timeOf(at)}</time>}
                   </div>
-                  {o === 'tasks' && p.status ? <div className="small muted">Status: {String(p.status).replace(/_/g, ' ')}</div> : null}
+                  {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
                   {body && <div className="activity-text">{body.length > 400 ? `${body.slice(0, 400)}…` : body}</div>}
                   {o === 'form_submissions' && <Answers record={r} limit={6} />}
                 </div>
@@ -624,8 +652,16 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      {history === null && !error && <div className="muted">Loading…</div>}
-      {history?.length === 0 && <div className="muted">{filtered ? 'No changes match these filters.' : 'No changes recorded.'}</div>}
+      {history === null && !error && <TableSkeleton rows={4} />}
+      {history?.length === 0 && (
+        <EmptyState
+          icon={<History size={18} />}
+          title={filtered ? 'No changes match these filters' : 'No changes recorded'}
+          action={filtered ? <button className="btn small" onClick={() => { setProperty(''); setChangedBy(''); setVia(''); }}>Clear filters</button> : undefined}
+        >
+          {filtered ? 'Try another property, person or way.' : 'Edits to properties and associations show here, with who made them and how.'}
+        </EmptyState>
+      )}
       {history && byDay(history, (h) => h.changed_at).map(({ day, rows }) => (
         <LedgerDay key={day} day={day}>
           {rows.map((h, i) => (
@@ -634,22 +670,41 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
               <div className="change-body">
                 <div className="change-head">
                   <strong>{propLabel(h.property)}</strong>
-                  <span className="muted small push-right">
-                    <span title={h.changed_by_name ?? undefined}>{h.changed_by}</span>
-                    {' · '}{VIA_LABELS[h.via]}
-                    {h.api_key_name && <> · key <span title={`API key ${h.api_key_id}`}>{h.api_key_name}</span></>}
-                    {h.source !== h.via && h.source !== 'api' && <> · {h.source}</>}
-                  </span>
                   <time className="ledger-time" dateTime={h.changed_at} title={h.changed_at}>{isoLocal(h.changed_at)}</time>
                 </div>
-                <div className="small">
-                  <span className="faint">{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span> → {h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}
+                <div className="change-values">
+                  <span className={`change-value old${h.old_value === null ? ' none' : ''}`}>{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span>
+                  <ArrowRight size={13} className="change-arrow" aria-label="to" />
+                  <span className={`change-value${h.new_value === null ? ' none' : ''}`}>{h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}</span>
+                </div>
+                <div className="change-meta">
+                  <span title={h.changed_by_name ?? undefined}>{h.changed_by}</span>
+                  <span className="change-tag">{VIA_LABELS[h.via]}</span>
+                  {h.api_key_name && <span className="change-tag">Key <span title={`API key ${h.api_key_id}`}>{h.api_key_name}</span></span>}
+                  {h.source !== h.via && h.source !== 'api' && <span className="change-tag">{h.source}</span>}
                 </div>
               </div>
             </div>
           ))}
         </LedgerDay>
       ))}
+    </div>
+  );
+}
+
+// Shown while the record loads: the three columns' shapes, so nothing jumps.
+function RecordSkeleton() {
+  return (
+    <div className="record-page record-skeleton" aria-busy="true" aria-label="Loading record">
+      <aside className="record-left">
+        <div className="record-head skeleton-block tall" />
+        <div className="prop-section skeleton-block" />
+      </aside>
+      <section className="record-middle"><TableSkeleton rows={4} /></section>
+      <aside className="record-right">
+        <div className="card skeleton-block" />
+        <div className="card skeleton-block" />
+      </aside>
     </div>
   );
 }
@@ -766,8 +821,8 @@ function SignInHistory({ id }: { id: string }) {
     }
   }
 
-  if (error) return <div className="muted">{error}</div>;
-  if (!data) return <div className="muted">Loading…</div>;
+  if (error) return <div className="error">{error}</div>;
+  if (!data) return <TableSkeleton rows={4} />;
   const active = data.sessions.filter((s) => s.status === 'active');
   const others = active.filter((s) => !s.current);
   return (
@@ -786,7 +841,7 @@ function SignInHistory({ id }: { id: string }) {
       )}
       {actionError && <div className="error">{actionError}</div>}
       {data.identities.length === 0 ? (
-        <div className="muted">No sign-in method linked yet. The user is linked the first time they sign in.</div>
+        <EmptyState compact title="No sign-in method linked yet">The user is linked the first time they sign in.</EmptyState>
       ) : (
         data.identities.map((i) => (
           <div key={`${i.provider}-${i.created_at}`} className="change">
@@ -803,14 +858,14 @@ function SignInHistory({ id }: { id: string }) {
         <div key={s.id} className="change">
           <div className="change-head">
             <strong>{device(s.user_agent)}</strong>
-            <span className="muted small">{when(s.created_at)}{s.ip ? ` · ${s.ip}` : ''}</span>
+            <span className="muted small">{when(s.created_at)}{s.ip ? `, ${s.ip}` : ''}</span>
           </div>
-          <div className="small">
-            <span className={`session-status ${s.status}`}>{SESSION_STATUS[s.status]}{s.current ? ' (this browser)' : ''}</span>
+          <div className="small session-line">
+            <StatusPill tone={s.status === 'active' ? 'on' : 'off'}>{SESSION_STATUS[s.status]}{s.current ? ' (this browser)' : ''}</StatusPill>
             <span className="muted">
-              {s.status === 'active' && ` · until ${when(s.expires_at)}`}
-              {s.status === 'signed_out' && s.revoked_at && ` · ${when(s.revoked_at)}`}
-              {s.status === 'expired' && ` · ${when(s.expires_at)}`}
+              {s.status === 'active' && `Until ${when(s.expires_at)}`}
+              {s.status === 'signed_out' && s.revoked_at && when(s.revoked_at)}
+              {s.status === 'expired' && when(s.expires_at)}
             </span>
             {canEnd && s.status === 'active' && !s.current && (
               <button className="btn small session-end" onClick={() => end(() => api('DELETE', `/v1/users/${id}/sessions/${s.id}`), 'Session ended')}>
@@ -916,10 +971,11 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
   const canCreate = self === 'deals' && (other === 'quotes' || other === 'invoices');
   const label = meta.label_singular.toLowerCase();
   return (
-    <div className="card">
+    <div className="card assoc-card">
       <div className="card-head">
-        <Icon size={16} strokeWidth={1.75} />
-        <h3>{meta.label_plural} <span className="muted">({items.length})</span></h3>
+        <span className="card-icon"><Icon size={15} strokeWidth={1.75} /></span>
+        <h3>{meta.label_plural}</h3>
+        <span className="card-count" aria-label={`${items.length} linked`}>{items.length}</span>
         {editable && !full && !(other === 'lines' && self === 'products') && (
           canCreate && !adding ? (
             <Menu
@@ -974,7 +1030,12 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      {items.length === 0 && !adding && <div className="muted small">No {meta.label_plural.toLowerCase()} yet.</div>}
+      {items.length === 0 && !adding && (
+        <div className="card-empty">
+          No {meta.label_plural.toLowerCase()} yet.
+          {editable && !(other === 'lines' && self === 'products') && <> Use <Plus size={12} aria-label="the add button" /> to {newLines ? 'add one' : canCreate ? 'create or link one' : 'link one'}.</>}
+        </div>
+      )}
       {items.map(({ record, labels }) => (
         <div key={record.id} className="card-row">
           <div className="card-row-main">
@@ -1068,14 +1129,14 @@ function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: stri
 
   const Icon = parent ? objectIcon(parent.object) : Plus;
   return (
-    <div className="card">
+    <div className="card assoc-card">
       <div className="card-head">
-        <Icon size={16} strokeWidth={1.75} />
+        <span className="card-icon"><Icon size={15} strokeWidth={1.75} /></span>
         <h3>Belongs to</h3>
       </div>
       {error && <div className="error">{error}</div>}
       {offer && (
-        <div className="line-deal-offer">
+        <div className="line-deal-offer callout">
           <div className="small">The {label(offer.object)}'s line items now total {money(offer.total, offer.currency)}; its amount is {money(offer.amount, offer.currency)}.</div>
           <div className="public-link-actions">
             <button className="btn primary small" onClick={updateDeal}>Update {label(offer.object)} amount</button>
@@ -1095,7 +1156,7 @@ function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: stri
         </div>
       ) : (
         <div className="card-add">
-          <div className="muted small">Not on any record yet.</div>
+          <div className="card-empty">Not on any record yet. Pick one to add this line item to.</div>
           <SearchSelect
             value={target}
             ariaLabel="Kind of record"
@@ -1165,9 +1226,9 @@ function SubmissionAnswers({ record }: { record: CrmRecord }) {
       <h2>Answers</h2>
       <div className="muted small">
         {typeof p.submitted_at === 'string' && when(p.submitted_at)}
-        {page && <> · from <a href={page} target="_blank" rel="noreferrer">{page.replace(/^https?:\/\//, '')}</a></>}
+        {page && <>{typeof p.submitted_at === 'string' ? ', from ' : 'From '}<a href={page} target="_blank" rel="noreferrer">{page.replace(/^https?:\/\//, '')}</a></>}
       </div>
-      {answers.length === 0 ? <div className="muted">No answers recorded.</div> : (
+      {answers.length === 0 ? <EmptyState compact title="No answers recorded" /> : (
         <dl className="answers">
           {answers.map((a) => (
             <div key={a.name}>

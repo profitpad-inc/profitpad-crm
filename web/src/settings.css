@@ -3,11 +3,6 @@
    tables, and cards are kept for things. Colours are theme tokens or mixes of them, so tenant themes carry through. */
 
 .page.settings { padding: 0; }
-.settings {
-  --primary-soft: color-mix(in srgb, var(--primary) 9%, var(--page-background));
-  --primary-line: color-mix(in srgb, var(--primary) 35%, var(--border));
-  --hairline: color-mix(in srgb, var(--border) 70%, var(--page-background));
-}
 .settings-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100%; }
 
 /* rail */
@@ -82,52 +77,12 @@
 .load-more { display: flex; justify-content: center; padding-top: 4px; }
 
 /* person cell */
-.person { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
-.person-avatar {
-  width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center;
-  background: var(--primary-soft); color: var(--primary); font-size: 11px; font-weight: 600;
-}
-.person-avatar.large { width: 56px; height: 56px; font-size: 18px; }
 
 /* pills */
-.status-pill {
-  display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px;
-  font-size: 12px; font-weight: 500; line-height: 20px; white-space: nowrap; vertical-align: middle;
-  --tone: var(--muted-text);
-  color: color-mix(in srgb, var(--tone) 92%, var(--text)); background: color-mix(in srgb, var(--tone) 11%, var(--page-background));
-}
-.status-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
-.status-pill.on { --tone: var(--money); }
-.status-pill.failed { --tone: var(--danger); }
-.status-pill.pending, .status-pill.warn { --tone: var(--warn); }
-.status-pill.info { --tone: var(--primary); }
-.status-pill.off { --tone: var(--muted-text); background: var(--surface); }
 
 /* edit panels: a form being filled in */
-.edit-panel {
-  border: 1px solid var(--primary-line); border-radius: var(--radius-lg); background: var(--page-background);
-  box-shadow: 0 0 0 4px var(--primary-soft); animation: panel-in 120ms ease-out;
-}
-.edit-panel-head { padding: 12px 16px; font-weight: 600; border-bottom: 1px solid var(--hairline); }
-.edit-panel-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-.edit-panel-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 50%, var(--page-background)); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
-.edit-panel-foot .note { margin-right: auto; font-size: 12px; color: var(--muted-text); }
-.edit-panel .field-row { gap: 12px; }
-.edit-panel .field-row > label, .edit-panel .field-row > .field { flex: 1 1 180px; }
-.edit-panel label { display: grid; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted-text); }
-.edit-panel label > input, .edit-panel label > select, .edit-panel label > textarea { color: var(--text); font-weight: 400; }
-.edit-panel label.check, .settings label.check { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text); }
-.edit-panel .field-row > label.check { flex: 0 0 auto; align-self: flex-end; min-height: 36px; }
-.edit-panel .narrow { flex: 0 0 120px !important; }
-@keyframes panel-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* callouts (a secret shown once, an address to copy) */
-.callout { border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
-.callout.success { background: color-mix(in srgb, var(--money) 8%, var(--page-background)); border: 1px solid color-mix(in srgb, var(--money) 30%, var(--border)); }
-.callout-title { font-weight: 600; }
-.callout .actions { justify-content: flex-end; }
-.copy-field { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); padding: 4px 4px 4px 12px; min-width: 0; }
-.copy-field code { flex: 1; min-width: 0; background: none !important; padding: 0 !important; font-size: 12.5px; word-break: break-all; }
 
 /* things: endpoints, calendars, the Stripe account */
 .thing {
@@ -145,32 +100,8 @@
 .thing-list { display: flex; flex-direction: column; gap: 14px; }
 
 /* empty and loading */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px;
-  padding: 36px 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg);
-}
-.empty-state-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); margin-bottom: 6px; }
-.empty-state-title { font-weight: 600; }
-.empty-state p { color: var(--muted-text); max-width: 46ch; font-size: 13px; line-height: 1.5; }
-.empty-state-action { margin-top: 10px; }
-.empty-state.compact { padding: 12px 14px; align-items: center; flex-direction: row; text-align: left; gap: 10px; border-style: solid; border-color: var(--hairline); }
-.empty-state.compact .empty-state-icon { margin: 0; width: 28px; height: 28px; }
-.table-skeleton { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.table-skeleton span { height: 48px; border-top: 1px solid var(--hairline); background: linear-gradient(90deg, transparent, var(--surface), transparent) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
-.table-skeleton span:first-child { border-top: 0; height: 38px; }
-@keyframes shimmer { to { background-position: -200% 0; } }
 
 /* save bar */
-.save-bar {
-  position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: 8px -16px 0; padding: 12px 16px; background: color-mix(in srgb, var(--page-background) 92%, transparent);
-  backdrop-filter: blur(6px); border-top: 1px solid var(--border);
-}
-.save-bar.dirty { box-shadow: 0 -8px 24px rgba(24, 32, 43, 0.08); }
-.save-bar.dirty .save-bar-note { color: var(--text); font-weight: 500; }
-.save-bar-note { font-size: 13px; color: var(--muted-text); }
-.save-bar-note.failed { color: var(--danger); }
-.save-bar-actions { display: flex; gap: 8px; margin-left: auto; }
 
 /* Account */
 .profile { display: flex; align-items: center; gap: 16px; }
@@ -243,10 +174,11 @@
 .nav-edit-children:empty::before { content: 'Empty section'; font-size: 12px; color: var(--muted-text); padding: 6px 10px; }
 .nav-add { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
 .nav-add label { flex: 1 1 160px; }
-.bottom-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; max-width: 420px; padding: 6px; border-radius: var(--radius-lg); background: var(--sidebar-background); }
-.bottom-strip span { display: grid; place-items: center; text-align: center; height: 40px; padding: 0 4px; border-radius: var(--radius); font-size: 11px; color: var(--sidebar-text); overflow: hidden; line-height: 1.2; }
-.bottom-strip span.fixed { background: var(--sidebar-active); }
-.bottom-strip span.free { border: 1px dashed color-mix(in srgb, var(--sidebar-text) 35%, transparent); opacity: 0.7; }
+
+/* a phone-width frame around the real bottom bar's markup */
+.bottom-bar-preview { width: min(390px, 100%); flex: none; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-card); }
+.bottom-bar-preview .bottom-bar { border-top: 0; padding-bottom: 0; }
+.bottom-bar-preview .bottom-item { cursor: default; }
 
 /* Users and roles */
 .settings .role-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -309,8 +241,6 @@
   .nav-edit-row .icon-btn { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .edit-panel { animation: none; }
-  .table-skeleton span { animation: none; }
 }
 @media (max-width: 767px) {
   .settings-layout { grid-template-columns: minmax(0, 1fr); }
@@ -332,7 +262,6 @@
   .thing-actions { width: 100%; }
 }
 .setting-row-control > .stretch { align-self: stretch; }
-.callout.warn { background: color-mix(in srgb, var(--warn) 8%, var(--page-background)); border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--border)); color: color-mix(in srgb, var(--warn) 70%, var(--text)); }
 .cal-write { max-width: 360px; }
 .thing-main { min-width: 0; flex: 1 1 320px; }
 .thing-sub.plain { overflow-wrap: normal; }
@@ -343,7 +272,6 @@
 .prop-editor input.input-xs, .prop-editor .field-row .field input.input-xs { width: 90px; }
 .prop-editor input.input-sm, .prop-editor .field-row .field input.input-sm { width: 120px; }
 .settings .grid button.link-btn { font-weight: 500; }
-.empty-state.compact p { max-width: none; flex: 1; }
 .settings-toolbar input[type='date'] { width: 150px; padding-right: 6px; }
 .thing-body .field-row { gap: 12px; }
 .thing-body .field-row > .field.grow { flex: 1 1 260px; }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Copy, ExternalLink, Globe } from 'lucide-react';
 import { API_BASE, api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { StatusPill } from './settings';
 
 // Record page card for quotes, invoices, forms and booking pages: Publish
 // (quote to Sent, invoice to Open, form and booking page to Published, making
@@ -102,19 +103,22 @@ export function PublicLinkCard({ object, record, onChanged }: {
   return (
     <div className="card public-link">
       <div className="card-head">
-        <Globe size={16} strokeWidth={1.75} />
+        <span className="card-icon"><Globe size={15} strokeWidth={1.75} /></span>
         <h3>{isDoc ? 'Customer link' : isBooking ? 'Booking link' : 'Public form'}</h3>
+        <span className="push-right">
+          <StatusPill tone={isDraft ? 'off' : live ? 'on' : 'warn'}>{isDraft ? 'Draft' : live ? 'Live' : 'Hidden'}</StatusPill>
+        </span>
       </div>
       {isDraft && (
         <div className="public-link-publish">
-          <span className="small muted">Draft</span>
+          <span className="small">{`Publish so customers can open the ${kind}.`}</span>
           <button className="btn primary small" onClick={publish} disabled={busy}>{busy ? 'Publishing…' : 'Publish'}</button>
         </div>
       )}
       <label className="field">
         <span>Page address</span>
-        <div className="public-link-row">
-          <span className="muted small">/p/{PATH[object]}/#</span>
+        <div className="public-link-row slug">
+          <span className="public-link-prefix">/p/{PATH[object]}/#</span>
           <input value={slug} placeholder={SLUG_EXAMPLE[object]} maxLength={60} aria-label="Page address"
             onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
             onKeyDown={(e) => e.key === 'Enter' && slug !== savedSlug && saveSlug()} />
@@ -124,7 +128,7 @@ export function PublicLinkCard({ object, record, onChanged }: {
       </label>
       {!key && <div className="muted small">{isDoc ? `No link yet. Publish, or make one to share this ${kind} with the customer.` : isBooking ? 'No link yet. Publish, or make one to share this booking page.' : 'No key yet. Publish, or make one to host or embed this form.'}</div>}
       {pageUrl && (
-        <div className="public-link-row">
+        <div className="public-link-row url">
           <input readOnly value={pageUrl} onFocus={(e) => e.target.select()} aria-label="Link" />
           <button className="icon-btn" onClick={() => copy(pageUrl, 'link')} aria-label="Copy link"><Copy size={15} /></button>
           <a className="icon-btn" href={pageUrl} target="_blank" rel="noreferrer" aria-label="Open link"><ExternalLink size={15} /></a>
@@ -132,10 +136,10 @@ export function PublicLinkCard({ object, record, onChanged }: {
       )}
       {snippet && (
         <>
-          <div className="small muted">Embed on a website</div>
+          <div className="public-link-label">Embed on a website</div>
           <textarea readOnly className="public-link-snippet" value={snippet} rows={3} onFocus={(e) => e.target.select()} aria-label="Embed snippet" />
           <div className="small muted">
-            The website must be listed in {me.is_admin ? <Link to="/settings/embed-domains">Settings → Embed domains</Link> : 'Settings → Embed domains'}.
+            The website must be listed under {me.is_admin ? <Link to="/settings/embed-domains">Embed domains</Link> : 'Embed domains'} in Settings.
           </div>
         </>
       )}
@@ -147,7 +151,7 @@ export function PublicLinkCard({ object, record, onChanged }: {
         )}
         {snippet && <button className="btn small" onClick={() => copy(snippet, 'snippet')}>Copy snippet</button>}
         {key && isQuote && status && status !== 'draft' && <a className="btn small" href={`${API_BASE}/v1/public/quotes/${encodeURIComponent(key)}/pdf`}>PDF</a>}
-        {copied && <span className="small muted">Copied</span>}
+        {copied && <span className="small muted" role="status">Copied</span>}
       </div>
     </div>
   );

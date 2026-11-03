@@ -134,6 +134,7 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) 
         ) : (
           <p className="muted">Sign-in is not configured. Contact an administrator.</p>
         )}
+        {hasAny && !reauth && <p className="login-note">Sign in with the account whose email your admin added to the CRM.</p>}
         {error && <div className="error">{error}</div>}
         {onCancel && <button className="btn" onClick={onCancel}>Cancel</button>}
       </div>

@@ -14,6 +14,8 @@ export interface ObjectDef {
   // among them that only the system links (meta.association_system_only)
   links_to: string[];
   system_links: string[];
+  // other names people use for it (0047)
+  aliases: string[];
   id_column: string;
   properties: PropertyDef[];
   byName: Map<string, PropertyDef>;
@@ -67,7 +69,7 @@ export async function getRegistry(): Promise<Registry> {
   if (cached && cached.version === version) return cached;
 
   const [objects, properties, options] = await Promise.all([
-    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties,
+    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties, o.aliases,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
                                and meta.association_allowed(o.object_type_id, x.object_type_id) order by x.object_type_id) as links_to,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'

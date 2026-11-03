@@ -1,0 +1,246 @@
+/* Table pages (ObjectTable): a title row, the view tabs on one hairline, a toolbar that becomes the selection bar
+   while rows are ticked, then one framed grid that fills the window and scrolls inside itself. Hairlines over boxes;
+   the one loud thing is the selection. Colours are theme tokens or mixes of them, so tenant themes carry through.
+   Also styles the column picker dialog (ColumnPicker.tsx). */
+
+.page.table-page { height: 100%; min-width: 0; display: flex; flex-direction: column; padding-bottom: 16px; }
+.table-page > * { flex-shrink: 0; }
+.table-page > .error { margin: 0 0 12px; }
+
+/* title row */
+.table-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.table-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.table-title > svg { color: var(--muted-text); flex: none; align-self: center; }
+.table-title h1 { font-size: 22px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-count { color: var(--muted-text); font-size: 13px; white-space: nowrap; }
+.table-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* view tabs: underlined, on the same hairline */
+.view-tabs {
+  display: flex; align-items: center; gap: 2px; margin-top: 14px; border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: thin;
+}
+.view-tab { position: relative; display: flex; align-items: center; flex: none; }
+.view-tab::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; }
+.view-tab.active::after { background: var(--primary); }
+.view-tab-name {
+  border: 0; background: none; padding: 10px 10px 11px; color: var(--muted-text); font-weight: 500; white-space: nowrap;
+  border-radius: var(--radius-sm);
+}
+.view-tab-name:hover { color: var(--text); }
+.view-tab.active .view-tab-name { color: var(--text); padding-right: 2px; }
+.view-tab-name:focus-visible, .view-tab-menu:focus-visible, .view-tab-add:focus-visible { outline-offset: -2px; }
+.view-tab-menu { margin-right: 6px; padding: 3px; }
+.view-tab-add { flex: none; margin-left: 4px; }
+.view-tab-add svg { color: var(--primary); }
+
+/* toolbar, and the selection bar that takes its place (same height, so nothing jumps) */
+.table-toolbar { display: flex; align-items: center; gap: 8px; min-height: 38px; margin: 12px 0; }
+.table-search {
+  display: flex; align-items: center; gap: 8px; width: 300px; max-width: 100%; height: 32px; padding: 0 4px 0 10px;
+  border: 1px solid transparent; border-radius: var(--radius); background: var(--surface); color: var(--muted-text);
+}
+.table-search:hover { border-color: var(--border); }
+.table-search:focus-within { background: var(--page-background); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.table-search input { flex: 1; min-width: 0; height: 100%; border: 0; padding: 0; background: none; }
+.table-search input:focus { outline: none; }
+.table-search .icon-btn { padding: 3px; }
+.table-search .icon-btn:focus-visible { outline-offset: 0; }
+
+.segmented { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--radius); background: var(--surface); }
+.segmented button {
+  height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: none;
+  color: var(--muted-text); font-size: 13px; font-weight: 500;
+}
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-pressed='true'] { background: var(--page-background); color: var(--text); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(24, 32, 43, 0.06); }
+.segmented button:focus-visible { outline-offset: 0; }
+
+.table-note { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--muted-text); }
+.table-note::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.table-toolbar .table-columns { margin-left: auto; height: 32px; padding: 0 12px; }
+.table-columns svg { color: var(--muted-text); }
+
+.selection-bar {
+  gap: 4px; padding: 0 4px 0 12px; border: 1px solid var(--primary-line); border-radius: var(--radius);
+  background: var(--primary-soft); animation: selection-in 140ms ease-out;
+}
+.selection-count { margin-right: 8px; color: var(--primary); font-weight: 600; white-space: nowrap; }
+.selection-bar .btn.small { height: 28px; padding: 0 10px; font-size: 13px; color: var(--text); }
+.selection-bar .btn.ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 12%, var(--page-background)); color: var(--text); }
+.selection-bar .btn.ghost.danger-text { color: var(--danger); }
+.selection-bar .btn.ghost.danger-text:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, var(--page-background)); color: var(--danger); }
+.selection-bar .selection-clear { margin-left: auto; color: var(--muted-text); }
+@keyframes selection-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+
+/* the frame: fills the rest of the window, scrolls both ways inside itself */
+.table-page > .table-frame { flex: 1 1 auto; min-height: 0; }
+.table-frame { position: relative; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--page-background); }
+
+/* separate borders so the sticky header and first column keep their lines while scrolling */
+.data-grid { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 13.5px; }
+.data-grid th, .data-grid td {
+  height: 38px; padding: 0 12px; text-align: left; vertical-align: middle; white-space: nowrap;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+  background: var(--page-background); border-bottom: 1px solid var(--hairline);
+}
+.data-grid th {
+  position: sticky; top: 0; z-index: 2; height: 36px; padding-left: 16px; overflow: visible;
+  font-size: 12.5px; font-weight: 500; color: var(--muted-text); border-bottom-color: var(--border);
+}
+.data-grid th.sorted { color: var(--text); }
+.data-grid tbody td { position: relative; }
+
+/* checkbox column and the first column stay put when scrolling sideways */
+.data-grid .pick-cell { position: sticky; left: 0; z-index: 1; width: 40px; min-width: 40px; max-width: 40px; padding: 0 0 0 14px; }
+.data-grid .lead-col { position: sticky; left: 40px; z-index: 1; box-shadow: inset -1px 0 0 var(--hairline); }
+.data-grid th.pick-cell, .data-grid th.lead-col { z-index: 3; }
+.data-grid .pick-cell input { display: block; width: 15px; height: 15px; margin: 0; cursor: pointer; accent-color: var(--primary); }
+
+/* header cell: grip on the left, sort label, menu on the right, resize handle on the edge */
+.dg-head { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+.dg-head .menu-anchor { margin-left: auto; flex: none; }
+.dg-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dg-sort {
+  display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 0; border: 0; border-radius: var(--radius-sm);
+  background: none; color: inherit; font-weight: 500;
+}
+.dg-sort:hover { color: var(--text); }
+.dg-sort svg { flex: none; }
+.data-grid th.sorted .dg-sort svg { color: var(--primary); }
+.dg-sort-idle { visibility: hidden; color: var(--muted-text); opacity: 0.7; }
+.data-grid th:hover .dg-sort-idle, .dg-sort:focus-visible .dg-sort-idle { visibility: visible; }
+.dg-menu { padding: 3px; visibility: hidden; }
+.data-grid th:hover .dg-menu, .dg-head:focus-within .dg-menu { visibility: visible; }
+.dg-sort:focus-visible, .dg-menu:focus-visible { outline-offset: -2px; }
+.dg-grip {
+  position: absolute; left: 1px; top: 50%; transform: translateY(-50%); display: grid; place-items: center;
+  width: 14px; height: 22px; border-radius: var(--radius-sm); color: var(--muted-text); cursor: grab; visibility: hidden;
+}
+.data-grid th:hover .dg-grip { visibility: visible; }
+.dg-grip:hover { background: var(--surface); color: var(--text); }
+.dg-resize { position: absolute; top: 0; right: -4px; bottom: 0; z-index: 1; width: 8px; cursor: col-resize; }
+.dg-resize::after { content: ''; position: absolute; top: 8px; bottom: 8px; left: 3px; width: 2px; border-radius: 1px; background: transparent; }
+.data-grid th:hover .dg-resize::after { background: var(--border); }
+.data-grid th .dg-resize:hover::after, body.dg-resizing .dg-resize:hover::after { background: var(--primary); }
+body.dg-resizing, body.dg-resizing * { cursor: col-resize !important; user-select: none; }
+.data-grid th.drop-before { box-shadow: inset 2px 0 0 var(--primary); }
+.data-grid th.drop-after { box-shadow: inset -2px 0 0 var(--primary); }
+.data-grid th.lead-col.drop-before { box-shadow: inset 2px 0 0 var(--primary), inset -1px 0 0 var(--hairline); }
+.data-grid th.lead-col.drop-after { box-shadow: inset -2px 0 0 var(--primary); }
+
+/* body cells */
+.data-grid td.primary-cell .dg-name { color: var(--text); font-weight: 500; }
+.data-grid td.primary-cell .dg-name:hover { color: var(--primary); text-underline-offset: 2px; }
+.data-grid .empty-value { opacity: 0.6; }
+.dg-many { color: var(--primary); cursor: default; border-bottom: 1px dotted var(--primary-line); }
+.dg-edit {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: inline-grid; place-items: center;
+  width: 24px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--page-background); color: var(--muted-text); box-shadow: 0 1px 2px rgba(24, 32, 43, 0.06);
+  visibility: hidden; cursor: pointer;
+}
+.dg-edit:hover { color: var(--primary); border-color: var(--primary-line); }
+.data-grid td:hover > .dg-edit, .dg-edit:focus-visible { visibility: visible; }
+
+/* row states, quietest first: hover, ticked, then the copy selection and the cell being edited */
+.data-grid tbody tr:hover td { background: color-mix(in srgb, var(--surface) 70%, var(--page-background)); }
+.data-grid tbody tr.picked td { background: color-mix(in srgb, var(--primary) 6%, var(--page-background)); }
+.data-grid tbody tr.picked:hover td { background: color-mix(in srgb, var(--primary) 9%, var(--page-background)); }
+.data-grid tbody tr.picked td.pick-cell { box-shadow: inset 3px 0 0 var(--primary); }
+.data-grid tbody td.selected { background: color-mix(in srgb, var(--primary) 11%, var(--page-background)); }
+.data-grid tbody td.sel-anchor, .data-grid tbody td.editing { box-shadow: inset 0 0 0 2px var(--primary); }
+
+/* loading, empty and the footer; sticky left so they stay put when the grid is wider than the frame */
+.table-frame .table-skeleton { position: sticky; left: 0; border: 0; border-radius: 0; }
+.table-frame .table-skeleton span, .table-frame .table-skeleton span:first-child { height: 38px; border-top: 0; border-bottom: 1px solid var(--hairline); }
+.table-empty { position: sticky; left: 0; display: grid; place-items: center; padding: 56px 16px; }
+.table-empty .empty-state { border: 0; padding: 0; }
+.table-foot {
+  position: sticky; left: 0; display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 10px 12px; font-size: 12.5px; color: var(--muted-text);
+}
+
+/* the box over a cell while it is edited (rendered on <body>) */
+.grid-editor {
+  position: fixed; z-index: 46; display: flex; flex-direction: column; gap: 8px; padding: 6px;
+  border: 1px solid var(--primary-line); border-radius: var(--radius); background: var(--page-background);
+  box-shadow: var(--shadow-pop), 0 0 0 3px var(--primary-soft); animation: panel-in 100ms ease-out;
+}
+.grid-editor .checks { max-height: 220px; overflow: auto; }
+.grid-editor-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.grid-editor-foot .error-text { margin-right: auto; color: var(--danger); font-size: 12px; }
+
+/* names of several associated records, on hover (rendered on <body>) */
+.assoc-hovercard {
+  position: fixed; z-index: 45; display: flex; flex-direction: column; min-width: 180px; max-width: 260px; padding: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); box-shadow: var(--shadow-pop);
+}
+.assoc-hovercard a { padding: 6px 8px; border-radius: var(--radius-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assoc-hovercard a:hover { background: var(--surface); color: var(--primary); text-decoration: none; }
+.assoc-hovercard .muted { padding: 4px 8px 6px; font-size: 12px; }
+
+/* column picker: available on the left, shown columns in order on the right, edge to edge in the dialog */
+.colpick-modal .modal-body { padding: 0; overflow: hidden; display: flex; min-height: 0; }
+.colpick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; height: min(460px, 62vh); }
+.colpick-pane { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 16px 20px; }
+.colpick-pane.chosen { border-left: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 45%, var(--page-background)); }
+.colpick-scroll { flex: 1; min-height: 0; overflow: auto; margin: 0 -8px; padding: 0 8px; }
+.colpick-search {
+  display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; flex: none;
+  border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted-text); background: var(--page-background);
+}
+.colpick-search:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.colpick-search input { flex: 1; min-width: 0; border: 0; padding: 0; height: 100%; background: none; }
+.colpick-search input:focus { outline: none; }
+.colpick-group { padding: 12px 8px 4px; font-size: 12px; font-weight: 500; color: var(--muted-text); }
+.colpick-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; }
+.colpick-row:hover { background: var(--surface); }
+.colpick-row input { margin: 0; accent-color: var(--primary); }
+.colpick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 600; flex: none; }
+.colpick-hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted-text); flex: none; }
+.colpick-none { margin: 12px 8px; font-size: 13px; color: var(--muted-text); }
+.colpick-list { display: flex; flex-direction: column; gap: 6px; padding-top: 2px; padding-bottom: 2px; }
+.colpick-chip {
+  display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 2px 4px 2px 2px; flex: none;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background);
+}
+.colpick-chip:first-child { border-color: var(--primary-line); }
+.colpick-chip.drop-before { box-shadow: 0 -2px 0 var(--primary); }
+.colpick-chip.drop-after { box-shadow: 0 2px 0 var(--primary); }
+.colpick-grip { display: grid; place-items: center; padding: 4px 2px; border-radius: var(--radius-sm); color: var(--muted-text); cursor: grab; }
+.colpick-grip:hover { background: var(--surface); color: var(--text); }
+.colpick-chip-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colpick-chip-actions { display: flex; gap: 2px; visibility: hidden; }
+.colpick-chip:hover .colpick-chip-actions, .colpick-chip:focus-within .colpick-chip-actions { visibility: visible; }
+
+/* touch screens have no hover, so hover-only controls stay visible */
+@media (hover: none) {
+  .dg-menu, .dg-sort-idle, .colpick-chip-actions { visibility: visible; }
+  .data-grid tbody tr:hover .dg-edit { visibility: visible; }
+}
+
+@media (max-width: 767px) {
+  .page.table-page { padding: 16px 16px 12px; }
+  .table-head { flex-wrap: wrap; gap: 10px; }
+  .table-title h1 { font-size: 20px; }
+  .view-tabs { margin-top: 10px; }
+  .table-toolbar { flex-wrap: wrap; margin: 10px 0; }
+  .table-search { width: auto; flex: 1 1 100%; height: 36px; }
+  .table-note { order: 5; flex-basis: 100%; }
+  .selection-bar { padding: 4px 4px 4px 12px; }
+  .data-grid th, .data-grid td { padding: 0 10px; max-width: 220px; }
+  .data-grid th { padding-left: 14px; }
+  .data-grid .pick-cell { padding: 0 0 0 12px; }
+  /* a pinned first column narrow enough to leave room for the rest */
+  .data-grid .lead-col { width: 44vw !important; min-width: 0 !important; max-width: 44vw !important; }
+  .table-empty { padding: 40px 16px; }
+
+  .colpick { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); height: 70dvh; }
+  .colpick-pane { padding: 14px 16px; }
+  .colpick-pane.chosen { border-left: 0; border-top: 1px solid var(--hairline); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-bar, .grid-editor { animation: none; }
+}

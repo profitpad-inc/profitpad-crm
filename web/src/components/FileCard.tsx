@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Copy, Download, ExternalLink, File as FileIcon, Globe } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { StatusPill } from './settings';
 import { fileInfo, fileLink, formatBytes, openFile, type FileInfo } from '../lib/files';
 
 const PREVIEW = /^(image\/(png|jpeg|gif|webp|avif)|video\/|audio\/)/;
@@ -59,15 +60,16 @@ export function FileCard({ record }: { record: CrmRecord }) {
   return (
     <div className="card file-card">
       <div className="card-head">
-        <FileIcon size={16} strokeWidth={1.75} />
+        <span className="card-icon"><FileIcon size={15} strokeWidth={1.75} /></span>
         <h3>File</h3>
       </div>
+      {!file && !error && <div className="file-preview-skeleton" aria-busy="true" aria-label="Loading file" />}
       {file && file.status !== 'ready' && <div className="muted small">This file has not finished uploading.</div>}
       {preview && type.startsWith('image/') && <img className="file-preview" src={preview} alt={file?.name ?? ''} />}
       {preview && type.startsWith('video/') && <video className="file-preview" src={preview} controls preload="metadata" />}
       {preview && type.startsWith('audio/') && <audio src={preview} controls preload="metadata" />}
       {file && (
-        <div className="muted small">{[type || 'Unknown type', formatBytes(file.size_bytes)].filter(Boolean).join(' · ')}</div>
+        <div className="muted small">{[type || 'Unknown type', formatBytes(file.size_bytes)].filter(Boolean).join(', ')}</div>
       )}
       {file?.status === 'ready' && (
         <>
@@ -75,21 +77,24 @@ export function FileCard({ record }: { record: CrmRecord }) {
             <button className="btn small" onClick={() => open(false)}><ExternalLink size={14} /> Open</button>
             <button className="btn small" onClick={() => open(true)}><Download size={14} /> Download</button>
           </div>
-          <div className="small muted file-public-head"><Globe size={13} /> Public link</div>
+          <div className="file-public-head">
+            <Globe size={13} aria-hidden /> Public link
+            <span className="push-right"><StatusPill tone={file.public_url ? 'on' : 'off'}>{file.public_url ? 'On' : 'Off'}</StatusPill></span>
+          </div>
           {file.public_url ? (
             <>
-              <div className="public-link-row">
+              <div className="public-link-row url">
                 <input readOnly value={file.public_url} onFocus={(e) => e.target.select()} aria-label="Public link" />
                 <button className="icon-btn" onClick={() => copy(file.public_url!)} aria-label="Copy link"><Copy size={15} /></button>
                 <a className="icon-btn" href={file.public_url} target="_blank" rel="noreferrer" aria-label="Open public link"><ExternalLink size={15} /></a>
               </div>
               <div className="public-link-actions">
-                <button className="btn small" disabled={busy} onClick={() => setPublic(false)}>Turn off</button>
+                <button className="btn small ghost danger-text" disabled={busy} onClick={() => setPublic(false)}>Turn off</button>
               </div>
             </>
           ) : (
             <>
-              <div className="muted small">Off. Only people who can see this file in the CRM can open it.</div>
+              <div className="muted small">Only people who can see this file in the CRM can open it.</div>
               <div className="public-link-actions">
                 <button className="btn small" disabled={busy} onClick={() => setPublic(true)}>Make public link</button>
               </div>

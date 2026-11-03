@@ -92,8 +92,8 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     const facts = [lengthsText(), page.host_name ? `with ${page.host_name}` : null, page.location_type ? LOCATION[page.location_type] : null].filter(Boolean);
     const main = [
       el('h1', {}, page.name ?? 'Book a meeting'),
-      el('div', { class: 'bk-facts' }, ...facts.map((f) => el('span', {}, f as string))),
-      page.description ? el('p', { class: 'pp-muted' }, page.description) : null,
+      el('div', { class: 'bk-facts' }, ...facts.map((f) => el('span', { class: 'bk-fact' }, f as string))),
+      page.description ? el('p', { class: 'pp-muted bk-intro' }, page.description) : null,
       step === 'done' || manageKey ? null : stepPills(steps, step),
       notice ? el('p', { class: 'pp-error', role: 'alert' }, notice) : null,
       el('div', { class: 'bk-step' }, ...content)
@@ -104,7 +104,8 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     notice = null;
     // embedded: bring the top of a new step into view
     if (opts.embedded && lastStep !== null && step !== lastStep && root.getBoundingClientRect().top < 0) {
-      root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      root.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
     }
     lastStep = step;
   }
@@ -115,7 +116,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     const back: Partial<Record<Step, () => void>> = { before: showBefore, time: () => void showPicker() };
     const parts: HTMLElement[] = [];
     steps.forEach(([s, label], i) => {
-      if (i > 0) parts.push(el('span', { class: 'bk-step-sep', 'aria-hidden': 'true' }, '>'));
+      if (i > 0) parts.push(el('span', { class: 'bk-step-sep', 'aria-hidden': 'true' }, '›'));
       const go = i < at ? back[s] : undefined;
       if (go) {
         const b = el('button', { class: 'bk-step-pill', type: 'button' }, label);
@@ -230,15 +231,24 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     const title = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(month.y, month.m - 1, 1)));
 
     const { start, cells: count } = grid();
-    const cells: HTMLElement[] = DOW.map((d) => el('div', { class: 'bk-dow' }, d));
+    const cells: HTMLElement[] = DOW.map((d) => el('div', { class: 'bk-dow', 'aria-hidden': 'true' }, d));
+    // the bar under each open day: its number of open times against the busiest day shown
+    const most = Math.max(1, ...[...slotsByDay.values()].map((t) => t.length));
+    const dayName = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
     for (let i = 0; i < count; i++) {
       const k = utcDayKey(start + i * 86400000);
       const open = slotsByDay.has(k);
+      const n = slotsByDay.get(k)?.length ?? 0;
       // days of the months before and after are shown faded; open ones can still be picked
       const other = !inMonth(k);
+      const name = dayName.format(new Date(start + i * 86400000));
       const b = el('button', {
-        class: `bk-date${open ? ' open' : ''}${other ? ' other' : ''}${k === pickedDay ? ' picked' : ''}`,
-        type: 'button', disabled: !open, 'aria-label': open ? `${k}, open times` : k
+        class: `bk-date${open ? ' open' : ''}${other ? ' other' : ''}${k === pickedDay ? ' picked' : ''}${k === today ? ' today' : ''}`,
+        type: 'button', disabled: !open,
+        'aria-label': open ? `${name}, ${n} open ${n === 1 ? 'time' : 'times'}` : `${name}, no open times`,
+        'aria-pressed': open ? String(k === pickedDay) : undefined,
+        'aria-current': k === today ? 'date' : undefined,
+        style: open ? `--fill: ${Math.max(0.15, n / most).toFixed(2)}` : undefined
       }, String(Number(k.slice(8))));
       if (open) b.addEventListener('click', () => { pickedDay = k; drawPicker(); });
       cells.push(b);
@@ -249,12 +259,21 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     next.addEventListener('click', async () => { shiftMonth(1); await loadMonth(); drawPicker(); });
 
     const times = pickedDay ? slotsByDay.get(pickedDay) ?? [] : [];
+    // the day's times as a timetable: morning, afternoon, evening (in the visitor's zone)
+    const hourOf = (s: string) => Number(fmt({ hour: 'numeric', hourCycle: 'h23' }).format(new Date(s)));
+    const parts: [string, string[]][] = [['Morning', []], ['Afternoon', []], ['Evening', []]];
+    for (const s of times) {
+      const h = hourOf(s);
+      parts[h < 12 ? 0 : h < 17 ? 1 : 2][1].push(s);
+    }
     const timeList = el('div', { class: 'bk-times' },
-      ...times.map((s) => {
-        const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)));
-        b.addEventListener('click', () => pick(s));
-        return b;
-      }),
+      ...parts.filter(([, list]) => list.length).map(([label, list]) => el('div', { class: 'bk-part', role: 'group', 'aria-label': label },
+        el('p', { class: 'bk-part-title', 'aria-hidden': 'true' }, label),
+        el('div', { class: 'bk-part-times' }, ...list.map((s) => {
+          const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)));
+          b.addEventListener('click', () => pick(s));
+          return b;
+        })))),
       ...(!pickedDay ? [el('p', { class: 'pp-muted' }, slotsByDay.size ? 'Pick a day.' : 'No open times this month.')] : []));
     // a fade at the bottom while there are more times below
     const timesBox = el('div', { class: 'bk-times-box' }, timeList);
@@ -293,7 +312,9 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     ], el('div', { class: 'bk-side-col' },
       el('label', { class: 'bk-tz' }, 'Times are shown in', zoneSelect),
       lengths,
-      pickedDay ? el('strong', { class: 'bk-day-title' }, longDate(new Date(times[0]))) : null,
+      pickedDay ? el('div', { class: 'bk-day' },
+        el('strong', { class: 'bk-day-title' }, longDate(new Date(times[0]))),
+        el('span', { class: 'bk-day-count' }, `${times.length} open ${times.length === 1 ? 'time' : 'times'}`)) : null,
       timesBox));
   }
 

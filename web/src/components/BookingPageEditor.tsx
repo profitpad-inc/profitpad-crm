@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Clock, Plus, Trash2 } from 'lucide-react';
+import { CalendarCheck, CircleAlert, Clock, Plus, Trash2 } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { DatePicker } from './DatePicker';
 import { SearchSelect } from './SearchSelect';
+import { StatusPill } from './settings';
+import '../editors.css';
 import '../booking.css';
 
 // Booking page editor on a booking page's record page: meeting lengths (the
@@ -166,13 +168,13 @@ function Ranges({ ranges, onChange }: { ranges: Range[]; onChange: (r: Range[]) 
       {ranges.map(([a, b], i) => (
         <div className="bk-range" key={i}>
           <TimeSelect value={a} label="From" onChange={(v) => set(i, [v, toMin(b) > toMin(v) ? b : hourAfter(v)])} />
-          <span className="muted">to</span>
+          <span className="bk-to">to</span>
           <TimeSelect value={b} label="To" after={a} onChange={(v) => set(i, [a, v])} />
-          <button className="icon-btn" onClick={() => onChange(ranges.filter((_, j) => j !== i))} aria-label="Remove hours"><Trash2 size={14} /></button>
+          <button className="icon-btn danger" onClick={() => onChange(ranges.filter((_, j) => j !== i))} aria-label="Remove hours"><Trash2 size={14} /></button>
         </div>
       ))}
       <div>
-        <button className="btn small" onClick={() => {
+        <button className="btn small ghost" onClick={() => {
           const lastEnd = ranges.length ? toMin(ranges[ranges.length - 1][1]) : null;
           onChange([...ranges, lastEnd === null ? ['09:00', '17:00'] : lastEnd >= 23 * 60 ? ['23:00', '24:00'] : [toHHMM(lastEnd), hourAfter(toHHMM(lastEnd))]]);
         }}>
@@ -196,7 +198,48 @@ function ZoneClock({ zone }: { zone: string }) {
   } catch {
     return null;
   }
-  return <span className="bk-zone-now">({text})</span>;
+  return <span className="bk-zone-now"><Clock size={13} aria-hidden="true" /> Now {text}</span>;
+}
+
+// Week at a glance: each day as a 24-hour track with its open hours filled in,
+// drawn from the hours being edited (unsaved changes show straight away).
+const hourLabel = new Intl.DateTimeFormat(undefined, { hour: 'numeric', timeZone: 'UTC' });
+const TICKS = [0, 6, 12, 18].map((h) => ({ at: (h / 24) * 100, label: hourLabel.format(new Date(Date.UTC(2000, 0, 1, h))) }));
+
+function WeekGlance({ weekly }: { weekly: Availability['weekly'] }) {
+  return (
+    <div className="bk-week">
+      <div className="bk-week-scale" aria-hidden="true">
+        <span />
+        <span className="bk-week-ticks">
+          {TICKS.map((t) => <span key={t.at} style={{ left: `${t.at}%` }}>{t.label}</span>)}
+        </span>
+        <span />
+      </div>
+      <ul aria-label="Weekly hours at a glance">
+        {SUN_FIRST.map((d) => {
+          const ranges = weekly[d];
+          const total = ranges.reduce((n, [a, b]) => n + toMin(b) - toMin(a), 0);
+          const name = DAYS.find(([k]) => k === d)![1];
+          const said = ranges.length ? ranges.map(([a, b]) => `${timeLabel(a)} to ${timeLabel(b)}`).join(', ') : 'closed';
+          return (
+            <li key={d} className={ranges.length ? '' : 'closed'}>
+              <span className="ed-sr">{name}: {said}</span>
+              <span className="bk-week-day" aria-hidden="true">{name.slice(0, 3)}</span>
+              <span className="bk-week-track" aria-hidden="true">
+                {TICKS.slice(1).map((t) => <i key={t.at} className="bk-week-rule" style={{ left: `${t.at}%` }} />)}
+                {ranges.map(([a, b]) => (
+                  <span key={`${a}-${b}`} className="bk-week-bar" title={`${timeLabel(a)} to ${timeLabel(b)}`}
+                    style={{ left: `${(toMin(a) / 1440) * 100}%`, width: `${((toMin(b) - toMin(a)) / 1440) * 100}%` }} />
+                ))}
+              </span>
+              <span className="bk-week-total" aria-hidden="true">{total ? lengthLabel(total) : 'Closed'}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 // "15 min", "1 hr", "1 hr 30 min"
@@ -228,19 +271,21 @@ function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolea
   };
 
   return (
-    <div className="card">
-      <h3>Meeting lengths</h3>
-      <p className="small muted">Visitors pick one. The default is picked at first.</p>
+    <section className="ed-section">
+      <div className="ed-section-head">
+        <h3>Meeting lengths</h3>
+        <p>Visitors pick one. The default is picked at first.</p>
+      </div>
       <div className="bk-lengths">
-        {lengths.length === 0 && <span className="muted small">No length yet.</span>}
+        {lengths.length === 0 && <span className="ed-hint">No length yet. Add one below.</span>}
         {lengths.map((n) => (
           <span key={n} className={`bk-length${n === def ? ' default' : ''}`}>
             <strong>{lengthLabel(n)}</strong>
-            {n === def ? <span className="cal-tag">Default</span> : (
-              <button className="bk-link small" disabled={saving} onClick={() => save(lengths, n, `${lengthLabel(n)} is the default`)}>Make default</button>
+            {n === def ? <span className="bk-length-default">Default</span> : (
+              <button className="bk-link" disabled={saving} onClick={() => save(lengths, n, `${lengthLabel(n)} is the default`)}>Make default</button>
             )}
             {lengths.length > 1 && (
-              <button className="icon-btn" disabled={saving} aria-label={`Remove ${lengthLabel(n)}`}
+              <button className="icon-btn danger" disabled={saving} aria-label={`Remove ${lengthLabel(n)}`}
                 onClick={() => {
                   const next = lengths.filter((x) => x !== n);
                   save(next, n === def ? next[0] : def, 'Length removed');
@@ -249,12 +294,15 @@ function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolea
           </span>
         ))}
       </div>
-      <div className="bk-actions">
-        <input type="number" min={5} max={1440} step={5} placeholder="Minutes" value={adding} style={{ width: 110 }} aria-label="Length in minutes"
-          onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+      <div className="bk-length-add">
+        <span className="bk-minutes">
+          <input type="number" min={5} max={1440} step={5} placeholder="30" value={adding} aria-label="Length in minutes"
+            onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+          <span aria-hidden="true">min</span>
+        </span>
         <button className="btn small" disabled={saving || !adding} onClick={add}><Plus size={13} /> Add length</button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -345,127 +393,162 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   const when = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const formPicker = (key: 'form_before_id' | 'form_after_id', label: string) => {
     const value = str(record.properties[key]);
+    const id = `bk-${key}`;
     return (
-      <div className="field">
-        <label className="field">
-          <span>{label}</span>
-          <select value={value} disabled={saving} onChange={(e) => save({ [key]: e.target.value || null })}>
+      <div className="ed-row">
+        <label className="ed-row-label" htmlFor={id}>{label}</label>
+        <div className="ed-row-control">
+          <select id={id} value={value} disabled={saving} onChange={(e) => save({ [key]: e.target.value || null })}>
             <option value="">None</option>
             {forms.map((f) => <option key={f.id} value={f.id}>{f.name}{f.published ? '' : ' (not published)'}</option>)}
             {value && !forms.some((f) => f.id === value) && <option value={value}>Form {value}</option>}
           </select>
-        </label>
-        <div className="bk-form-links">
-          {value && <Link className="small" to={`/objects/forms/${value}`}>Open form</Link>}
-          <button className="bk-link small" disabled={saving} onClick={() => createForm(key, label)}><Plus size={12} /> Create a new form</button>
+          <div className="bk-form-links">
+            {value && <Link to={`/objects/forms/${value}`}>Open form</Link>}
+            <button className="bk-link" disabled={saving} onClick={() => createForm(key, label)}><Plus size={12} /> Create a new form</button>
+          </div>
         </div>
       </div>
     );
   };
 
-  return (
-    <div className="booking-editor">
-      <h2>Booking page</h2>
-      {error && <div className="error">{error}</div>}
+  const ready = check && check.problems.length === 0;
 
-      <div className="card bk-status">
-        <h3>Taking bookings</h3>
-        {!check && <div className="muted">Checking…</div>}
+  return (
+    <div className="ed-sheet booking-editor">
+      <header className="ed-head">
+        <div className="ed-head-text">
+          <h2>Booking page</h2>
+          <div className="ed-head-meta">
+            {!check ? <StatusPill tone="pending">Checking</StatusPill> : ready ? <StatusPill tone="on">Ready to take bookings</StatusPill> : <StatusPill tone="warn">Not ready yet</StatusPill>}
+          </div>
+        </div>
+      </header>
+      {error && <div className="ed-notices"><div className="error">{error}</div></div>}
+
+      <section className="ed-section bk-status">
+        <div className="ed-section-head">
+          <h3>Taking bookings</h3>
+        </div>
+        {!check && <p className="ed-hint">Checking…</p>}
         {check && check.problems.length > 0 && (
           <>
-            <div>Not yet. To publish this page:</div>
-            <ul>{check.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+            <p>Not yet. To publish this page:</p>
+            <ul className="bk-todo">
+              {check.problems.map((p) => <li key={p}><CircleAlert size={15} aria-hidden="true" /><span>{p}</span></li>)}
+            </ul>
           </>
         )}
-        {check && check.problems.length === 0 && (
+        {ready && (
           <>
-            <div className="bk-ready">Ready{check.calendar ? `: checks ${PROVIDER[check.calendar.provider]}${check.calendar.email ? ` (${check.calendar.email})` : ''}` : ''}</div>
+            <p className="bk-ready">
+              <CalendarCheck size={16} aria-hidden="true" />
+              <span>Ready{check.calendar ? `: checks ${PROVIDER[check.calendar.provider]}${check.calendar.email ? ` (${check.calendar.email})` : ''}` : ''}</span>
+            </p>
             {check.slot_error && <div className="error">{check.slot_error}</div>}
             {check.next_slots.length > 0 ? (
-              <>
-                <div className="small muted">Next open times ({zone})</div>
+              <div className="bk-next">
+                <span className="ed-group-title">Next open times ({zone})</span>
                 <div className="bk-slots">{check.next_slots.map((s) => <span key={s} className="bk-slot">{when.format(new Date(s))}</span>)}</div>
-              </>
-            ) : !check.slot_error && <div className="muted small">No open times in the next 14 days.</div>}
-            <div className="small muted">Visitors can book once the page is published (Publish in the Booking link card).</div>
+              </div>
+            ) : !check.slot_error && <p className="ed-hint">No open times in the next 14 days.</p>}
+            <p className="ed-hint">Visitors can book once the page is published (Publish in the Booking link card).</p>
           </>
         )}
-      </div>
+      </section>
 
       <Lengths record={record} saving={saving} onSave={(p, m) => void save(p, m)} />
 
-      <div className="card">
-        <h3>Forms</h3>
-        <p className="small muted">
-          Regular forms: their answers fill contact properties exactly as a form submission does. One of them must ask for the contact's email,
-          which also gets the calendar invite.
-        </p>
-        <div className="bk-row">
+      <section className="ed-section">
+        <div className="ed-section-head">
+          <h3>Forms</h3>
+          <p>
+            Regular forms: their answers fill contact properties exactly as a form submission does. One of them must ask for the contact's email,
+            which also gets the calendar invite.
+          </p>
+        </div>
+        <div className="ed-rows">
           {formPicker('form_before_id', 'Before picking a time')}
           {formPicker('form_after_id', 'After picking a time')}
         </div>
-      </div>
+      </section>
 
-      <div className="card">
-        <h3>Available hours</h3>
-        <div className="bk-zone">
-          <label className="field">
-            <span>Time zone</span>
-            <select value={zone} onChange={(e) => { setZone(e.target.value); setDirty(true); }}>
-              {!zoneList.includes(zone) && <option value={zone}>{zone}</option>}
-              {zoneList.map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
-            </select>
-          </label>
-          <ZoneClock zone={zone} />
+      <section className="ed-section bk-hours">
+        <div className="ed-section-head">
+          <h3>Available hours</h3>
+          <p>When visitors can book, in the page's time zone.</p>
         </div>
-        <div className="bk-windows">
-          {rows.map((r, i) => (
-            <div className="bk-window" key={i}>
-              <SearchSelect className="bk-days-select" ariaLabel="Days" value={r.days} options={DAY_SETS} onChange={(v) => setRow(i, { ...r, days: v as DaySet })} />
-              <span className="muted">from</span>
-              <TimeSelect value={r.start} label="From" onChange={(v) => setRow(i, { ...r, start: v, end: toMin(r.end) > toMin(v) ? r.end : hourAfter(v) })} />
-              <span className="muted">to</span>
-              <TimeSelect value={r.end} label="To" after={r.start} onChange={(v) => setRow(i, { ...r, end: v })} />
-              <button className="icon-btn" onClick={() => editRows(rows.filter((_, j) => j !== i))} aria-label="Remove hours"><Trash2 size={14} /></button>
+        <div className="ed-rows">
+          <div className="ed-row">
+            <label className="ed-row-label" htmlFor="bk-zone">Time zone</label>
+            <div className="ed-row-control">
+              <select id="bk-zone" value={zone} onChange={(e) => { setZone(e.target.value); setDirty(true); }}>
+                {!zoneList.includes(zone) && <option value={zone}>{zone}</option>}
+                {zoneList.map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
+              </select>
+              <ZoneClock zone={zone} />
             </div>
-          ))}
-          {rows.length === 0 && <div className="muted small">No weekly hours: only the dates below can be booked.</div>}
-        </div>
-        <div className="bk-actions">
-          <button className="btn small" onClick={() => editRows([...rows, { days: 'weekdays', start: '09:00', end: '17:00' }])}>
-            <Plus size={13} /> Add hours
-          </button>
+          </div>
         </div>
 
-        <h3 style={{ marginTop: 16 }}>Date overrides</h3>
-        <p className="small muted">Hours for one date instead of its weekday's. No hours means closed that day.</p>
-        <div className="bk-days">
-          {hours.overrides.map((o, i) => (
-            <div className="bk-override" key={i}>
-              <div className="bk-override-date">
-                <DatePicker value={o.date} ariaLabel="Date" onChange={(v) => setOverride(i, { ...o, date: v })} />
+        <WeekGlance weekly={hours.weekly} />
+
+        <div className="ed-sub">
+          <h4>Weekly hours</h4>
+          <div className="bk-windows">
+            {rows.map((r, i) => (
+              <div className="bk-window" key={i}>
+                <SearchSelect className="bk-days-select" ariaLabel="Days" value={r.days} options={DAY_SETS} onChange={(v) => setRow(i, { ...r, days: v as DaySet })} />
+                <span className="bk-times">
+                  <TimeSelect value={r.start} label="From" onChange={(v) => setRow(i, { ...r, start: v, end: toMin(r.end) > toMin(v) ? r.end : hourAfter(v) })} />
+                  <span className="bk-to">to</span>
+                  <TimeSelect value={r.end} label="To" after={r.start} onChange={(v) => setRow(i, { ...r, end: v })} />
+                </span>
+                <button className="icon-btn danger" onClick={() => editRows(rows.filter((_, j) => j !== i))} aria-label="Remove hours"><Trash2 size={14} /></button>
               </div>
-              {o.ranges.length ? <Ranges ranges={o.ranges} onChange={(r) => setOverride(i, { ...o, ranges: r })} /> : (
-                <div className="bk-range">
-                  <span className="bk-closed">Closed</span>
-                  <button className="btn small" onClick={() => setOverride(i, { ...o, ranges: NINE_TO_FIVE })}><Plus size={13} /> Add hours</button>
-                </div>
-              )}
-              <button className="icon-btn" onClick={() => setOverride(i, null)} aria-label="Remove date" title="Remove date"><Trash2 size={14} /></button>
-            </div>
-          ))}
-        </div>
-        <div className="bk-actions">
-          <button className="btn small" onClick={() => edit({ ...hours, overrides: [...hours.overrides, { date: new Date().toISOString().slice(0, 10), ranges: [] }] })}>
-            <Plus size={13} /> Add a date
-          </button>
+            ))}
+            {rows.length === 0 && <p className="ed-hint">No weekly hours: only the dates below can be booked.</p>}
+          </div>
+          <div>
+            <button className="btn small ghost" onClick={() => editRows([...rows, { days: 'weekdays', start: '09:00', end: '17:00' }])}>
+              <Plus size={13} /> Add hours
+            </button>
+          </div>
         </div>
 
-        <div className="bk-actions">
-          <button className="btn primary" onClick={saveHours} disabled={!dirty || saving}>Save hours</button>
-          {dirty && <span className="small muted">{stored ? 'Unsaved changes' : 'Not saved yet'}</span>}
+        <div className="ed-sub">
+          <h4>Date overrides</h4>
+          <p className="ed-hint">Hours for one date instead of its weekday's. No hours means closed that day.</p>
+          {hours.overrides.length > 0 && (
+            <div className="bk-overrides">
+              {hours.overrides.map((o, i) => (
+                <div className="bk-override" key={i}>
+                  <div className="bk-override-date">
+                    <DatePicker value={o.date} ariaLabel="Date" onChange={(v) => setOverride(i, { ...o, date: v })} />
+                  </div>
+                  {o.ranges.length ? <Ranges ranges={o.ranges} onChange={(r) => setOverride(i, { ...o, ranges: r })} /> : (
+                    <div className="bk-range">
+                      <span className="bk-closed">Closed</span>
+                      <button className="btn small ghost" onClick={() => setOverride(i, { ...o, ranges: NINE_TO_FIVE })}><Plus size={13} /> Add hours</button>
+                    </div>
+                  )}
+                  <button className="icon-btn danger" onClick={() => setOverride(i, null)} aria-label="Remove date" title="Remove date"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div>
+            <button className="btn small ghost" onClick={() => edit({ ...hours, overrides: [...hours.overrides, { date: new Date().toISOString().slice(0, 10), ranges: [] }] })}>
+              <Plus size={13} /> Add a date
+            </button>
+          </div>
         </div>
-      </div>
+
+        <div className={`ed-savebar${dirty ? ' dirty' : ''}`}>
+          <span className="ed-savebar-note" role="status">{dirty ? (stored ? 'Unsaved changes to the hours' : 'Hours not saved yet') : 'Hours saved'}</span>
+          <button className="btn primary" onClick={saveHours} disabled={!dirty || saving}>Save hours</button>
+        </div>
+      </section>
     </div>
   );
 }

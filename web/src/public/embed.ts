@@ -29,8 +29,12 @@ const API_BASE = (import.meta.env.VITE_API_URL || (script?.src ? new URL(script.
 // element, never on the website's page.
 const BOOKING_CSS = `
 :host { display: block; }
-.pp-embed { font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.45; color: var(--text); text-align: left; }
+/* inherited text styles from the website stop here */
+.pp-embed { font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 15px; font-weight: 400; font-style: normal;
+  line-height: 1.5; letter-spacing: normal; word-spacing: normal; text-transform: none; text-align: left; text-indent: 0;
+  white-space: normal; color: var(--text); -webkit-font-smoothing: antialiased; }
 .pp-embed .pp-page { max-width: none; padding: 0; }
+.pp-embed .pp-card { box-shadow: none; }
 ${publicCss}
 ${bookCss}`;
 

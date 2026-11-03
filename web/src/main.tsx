@@ -7,6 +7,7 @@ import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
 import 'flatpickr/dist/flatpickr.min.css'; // before styles.css, which overrides it
 import './styles.css';
+import './kit.css';
 import { api, type Me } from './lib/api';
 import { finishReauth, onReauthChange, reauthPending } from './lib/reauth';
 import { AppProvider } from './lib/app-context';

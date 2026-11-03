@@ -67,12 +67,12 @@ export function QuoteSigningCard({ record, onChanged }: { record: CrmRecord; onC
   return (
     <div className="card signing-card">
       <div className="card-head">
-        <PenLine size={16} strokeWidth={1.75} />
+        <span className="card-icon"><PenLine size={15} strokeWidth={1.75} /></span>
         <h3>Signing</h3>
       </div>
 
       {status === 'pending_countersign' && (
-        <div className="signing-pending">
+        <div className="signing-pending callout warn">
           <div className="small">The customer signed. This quote is accepted once it is countersigned.</div>
           <button className="btn small primary" onClick={() => setCountersigning(true)}>Countersign</button>
         </div>
@@ -88,7 +88,7 @@ export function QuoteSigningCard({ record, onChanged }: { record: CrmRecord; onC
       )}
       <Signature title="Countersignature" png={str(p.countersigner_signature)} who={str(p.countersigner_name)} at={str(p.countersigned_at)} />
 
-      <label className="small muted" htmlFor={`signing-fields-${record.id}`}>Fields the customer fills in before signing (JSON)</label>
+      <label className="signing-label" htmlFor={`signing-fields-${record.id}`}>Fields the customer fills in before signing (JSON)</label>
       <textarea
         id={`signing-fields-${record.id}`}
         className="signing-json"
@@ -113,9 +113,9 @@ function Signature({ title, png, who, at }: { title: string; png: string | null;
   if (!png) return null;
   return (
     <div className="signing-signature">
-      <div className="small muted">{title}</div>
-      <img src={png} alt={`${title}${who ? ` of ${who}` : ''}`} />
-      <div className="small">{[who, when(at)].filter(Boolean).join(', ')}</div>
+      <div className="signing-label">{title}</div>
+      <div className="signing-sheet"><img src={png} alt={`${title}${who ? ` of ${who}` : ''}`} /></div>
+      <div className="small muted">{[who, when(at)].filter(Boolean).join(', ')}</div>
     </div>
   );
 }

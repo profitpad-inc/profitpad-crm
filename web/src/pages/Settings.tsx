@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
   ShieldCheck, SlidersHorizontal, Trash2, User, Users, Webhook
 } from 'lucide-react';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -9,7 +9,9 @@ import { useApp } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme, type ThemeKey } from '../lib/theme';
-import { displayName, initials } from '../lib/display';
+import { HomeIcon, displayName, initials } from '../lib/display';
+import { navLink } from '../lib/nav';
+import { ViewIcon } from '../lib/lucide-icons';
 import { RoleSettings, UserSettings } from './AccessSettings';
 import { ApiKeySettings, SecurityLog } from './SecuritySettings';
 import { ConnectedApps } from './ConnectedApps';
@@ -515,12 +517,6 @@ function NavSettings() {
     list.map((it, i) => row(it, i, list, (fn) => update(section, fn), section !== null,
       it.type === 'section' && section === null ? <div className="nav-edit-children">{renderList(it.items, i)}</div> : undefined));
 
-  const slots = [
-    bottomLeft === 'menu' ? 'Menu' : 'Home',
-    ...bottom.map((it) => itemLabel(it, objectLabel, viewName, customViewName)),
-    ...Array.from({ length: BOTTOM_MAX - bottom.length }, () => null),
-    'Search'
-  ];
 
   return (
     <SettingsPage
@@ -547,9 +543,7 @@ function NavSettings() {
       </SettingsSection>
 
       <SettingsSection title="Mobile bottom bar" description={`Shown along the bottom of the screen on mobile: the left button, up to ${BOTTOM_MAX} links, then Search.`}>
-        <div className="bottom-strip" aria-label="Bottom bar preview">
-          {slots.map((s, i) => <span key={i} className={s === null ? 'free' : i === 0 || i === slots.length - 1 ? 'fixed' : ''}>{s ?? 'Free'}</span>)}
-        </div>
+        <BottomBarPreview left={bottomLeft} items={bottom} />
         <div className="setting-rows">
           <SettingRow label="Left button" htmlFor="bottom-left">
             <select id="bottom-left" value={bottomLeft} onChange={(e) => setBottomLeft(e.target.value as 'menu' | 'home')}>
@@ -637,5 +631,35 @@ function NavSettings() {
         <button className="btn primary" onClick={save}>Save menu</button>
       </SaveBar>
     </SettingsPage>
+  );
+}
+
+// The phone's bottom bar as BottomBar (components/MobileNav.tsx) draws it, with the same classes and links, but not
+// clickable. Like the real bar, links this admin cannot open are left out.
+function BottomBarPreview({ left, items }: { left: 'menu' | 'home'; items: NavItem[] }) {
+  const { objectByName, customViews } = useApp();
+  return (
+    <div className="bottom-bar-preview" aria-label="Bottom bar preview">
+      <div className="bottom-bar">
+        <span className="bottom-item">
+          {left === 'menu' ? <MenuIcon size={22} strokeWidth={1.75} /> : <HomeIcon size={22} strokeWidth={1.75} />}
+          <span>{left === 'menu' ? 'Menu' : 'Home'}</span>
+        </span>
+        {items.map((item, i) => {
+          const link = navLink(item, objectByName, customViews);
+          if (!link) return null;
+          return (
+            <span key={i} className="bottom-item">
+              <ViewIcon icon={link.iconName} fallback={link.Icon} size={22} strokeWidth={1.75} />
+              <span>{link.label}</span>
+            </span>
+          );
+        })}
+        <span className="bottom-item">
+          <Search size={22} strokeWidth={1.75} />
+          <span>Search</span>
+        </span>
+      </div>
+    </div>
   );
 }

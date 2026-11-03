@@ -659,5 +659,18 @@ begin
   perform meta._test_expect_error($$select meta.update_property('deals', 'stage', null, null, (select options || '{"color_display": "glow"}' from meta.pc_0002 where object_type_id = 'pc_0012' and api_name = 'stage'))$$, 'invalid value');
 end $t$;
 
+
+-- 33. Object aliases (0047)
+do $t$
+begin
+  perform meta._test_check((select 'booking forms' = any(aliases) from meta.pc_0001 where api_name = 'booking_pages'), 'booking pages start with aliases');
+  perform meta.set_object_aliases('booking_pages', array[' Booking Forms ', 'booking forms', 'Meeting pages', '']);
+  perform meta._test_check((select aliases = '{"booking forms","meeting pages"}' from meta.pc_0001 where api_name = 'booking_pages'), 'aliases are trimmed, lowercased and deduplicated');
+  perform meta._test_expect_error($$select meta.set_object_aliases('contacts', array['a','b','c','d','e','f','g','h','i','j','k'])$$, 'at most 10');
+  perform meta._test_expect_error($$select meta.set_object_aliases('contacts', array[repeat('x', 64)])$$, '1 to 63');
+  perform meta.set_object_aliases('contacts', '{}');
+  perform meta._test_check((select aliases = '{}' from meta.pc_0001 where api_name = 'contacts'), 'aliases can be cleared');
+end $t$;
+
 rollback;
 \echo all core tests passed

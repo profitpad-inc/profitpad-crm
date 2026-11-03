@@ -223,6 +223,33 @@ export interface RenderOptions {
   full_page?: boolean;
   screenshot?: boolean;
   styles?: boolean;
+  // IANA zone the browser runs in; default the caller's (users.timezone)
+  timezone?: string;
+  // clicked in order before the screenshot: visible text, or a CSS selector
+  click?: { text?: string; selector?: string }[];
+}
+
+const validZone = (z: string) => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: z });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// The zone dates should show in: the caller's own, else the one most users
+// have, else UTC. There is no tenant-wide time zone setting.
+async function defaultZone(p: Principal): Promise<{ zone: string; from: string }> {
+  if (p.userId) {
+    const { rows } = await pool.query('select timezone from crm.pc_0000 where pc_0000_id = $1', [p.userId]);
+    if (rows[0]?.timezone && validZone(rows[0].timezone)) return { zone: rows[0].timezone, from: 'your user record' };
+  }
+  const { rows } = await pool.query(
+    `select timezone from crm.pc_0000 where timezone is not null and timezone <> '' group by timezone order by count(*) desc, timezone limit 1`
+  );
+  if (rows[0]?.timezone && validZone(rows[0].timezone)) return { zone: rows[0].timezone, from: 'the zone most users have (yours is not set)' };
+  return { zone: 'UTC', from: 'no user has a time zone set' };
 }
 
 export async function renderView(p: Principal, slug: string, o: RenderOptions = {}) {
@@ -235,6 +262,13 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
   if (!(scrollY >= 0 && scrollY <= 100_000)) throw badRequest('scroll_y must be 0 to 100000');
   const params = Object.fromEntries(Object.entries(o.params ?? {}).map(([k, v]) => [k, String(v)]));
   const draft = !o.published;
+  if (o.timezone !== undefined && !validZone(o.timezone)) throw badRequest(`"${o.timezone}" is not a time zone (use names like America/Toronto)`);
+  const zone = o.timezone ? { zone: o.timezone, from: 'the timezone you gave' } : await defaultZone(p);
+  const clicks = o.click ?? [];
+  if (clicks.length > 5) throw badRequest('at most 5 clicks');
+  for (const c of clicks) {
+    if (!c || (typeof c.text === 'string') === (typeof c.selector === 'string')) throw badRequest('each click needs either text or selector');
+  }
 
   const v = await loadView(pool, slug);
   const opened = openView(p, v, draft);
@@ -256,7 +290,7 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
 
   return slot(async () => {
     const b = await getBrowser();
-    const context = await b.newContext({ viewport: { width, height }, deviceScaleFactor: 1, serviceWorkers: 'block', acceptDownloads: false });
+    const context = await b.newContext({ viewport: { width, height }, deviceScaleFactor: 1, serviceWorkers: 'block', acceptDownloads: false, timezoneId: zone.zone });
     const logs: { kind: string; message: string }[] = [];
     const seen = new Set<string>();
     const note = (kind: string, message: string) => {
@@ -318,6 +352,24 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
       let settled = await settle();
       const fill = await page.evaluate('window.__pcrm.fill()') as boolean;
       const view = page.frames().find((f) => f.url() === FRAME_URL);
+      // clicks, each followed by whatever it loads
+      const clicked: { click: string; ok: boolean; error?: string }[] = [];
+      for (const c of clicks) {
+        const what = c.text !== undefined ? `text "${c.text}"` : `selector ${c.selector}`;
+        if (!view) {
+          clicked.push({ click: what, ok: false, error: 'the view did not load' });
+          continue;
+        }
+        try {
+          const target = c.text !== undefined ? view.getByText(c.text).first() : view.locator(c.selector!).first();
+          await target.click({ timeout: 3000 });
+          clicked.push({ click: what, ok: true });
+        } catch (err) {
+          clicked.push({ click: what, ok: false, error: (err as Error).message.split('\n')[0].slice(0, 300) });
+        }
+        await page.waitForTimeout(100);
+        settled = (await settle()) && settled;
+      }
       if (scrollY > 0) {
         if (fill && view) await view.evaluate(`window.scrollTo(0, ${scrollY})`);
         else await page.evaluate(`window.scrollTo(0, ${scrollY})`);
@@ -353,6 +405,9 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
           width,
           height,
           scroll_y: scrollY,
+          timezone: zone.zone,
+          timezone_from: zone.from,
+          ...(clicked.length ? { clicked } : {}),
           frame: fill ? 'fill' : 'grow',
           page_height: fill ? height : Math.round(iframe.docHeight),
           page_width: layout.page_width,

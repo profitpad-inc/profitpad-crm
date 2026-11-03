@@ -1,10 +1,11 @@
 import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/montserrat/700.css';
 import './public.css';
 import { applyTheme } from '../lib/theme';
 import { el, keyFromHash, publicApi, type PublicInvoice } from './public-api';
-import { day, linesTable, money } from './document';
+import { attention, day, linesTable, parties, totalRow } from './document';
 import { afterCheckout, paymentBox } from './payment-box';
 
 // Customer view of an invoice: /p/invoice/#<public key>. View it and pay it
@@ -24,22 +25,20 @@ function message(text: string): void {
 function render(inv: PublicInvoice): void {
   const title = inv.invoice_number ? `Invoice ${inv.invoice_number}` : inv.name ?? 'Invoice';
   document.title = title;
-  const meta = el('dl', { class: 'pp-meta' });
-  const add = (label: string, value: string | null | undefined) => {
-    if (value) meta.append(el('dt', {}, label), el('dd', {}, value));
-  };
-  add('Billed to', inv.company);
-  add('Attention', inv.contact?.name ? `${inv.contact.name}${inv.contact.email ? ` (${inv.contact.email})` : ''}` : inv.contact?.email);
-  add('Due', inv.due_date ? day(inv.due_date) : null);
+  const meta = parties([
+    ['Billed to', inv.company],
+    ['Attention', ...attention(inv.contact)],
+    ['Due', inv.due_date ? day(inv.due_date) : null]
+  ]);
 
   root.replaceChildren(el('main', { class: 'pp-page' },
     el('div', { class: 'pp-card' },
       el('div', { class: 'pp-head' },
         el('h1', {}, title),
-        el('span', { class: `pp-pill ${inv.status === 'paid' ? 'accepted' : ''}` }, STATUS[inv.status])),
+        el('span', { class: `pp-pill ${inv.status}` }, STATUS[inv.status])),
       meta,
       linesTable(inv.lines, inv.currency),
-      el('div', { class: 'pp-total' }, el('span', {}, 'Total'), el('span', {}, money(inv.amount, inv.currency) || 'n/a')),
+      totalRow(inv.amount, inv.currency),
       paymentBox(inv.payment, {
         pay: () => api.pay('invoices', key),
         etransferSent: (body) => api.etransferSent('invoices', key, body),

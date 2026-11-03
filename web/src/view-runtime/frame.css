@@ -49,6 +49,7 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .v-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .v-grid { display: grid; grid-template-columns: repeat(var(--v-cols, 2), minmax(0, 1fr)); }
 @media (max-width: 720px) {
+  .v-hide-mobile { display: none; }
   .v-grid { grid-template-columns: minmax(0, 1fr); }
   .v-page { padding: 12px 12px 20px; }
 }

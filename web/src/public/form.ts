@@ -1,4 +1,5 @@
 import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/montserrat/700.css';
 import './public.css';
@@ -25,10 +26,10 @@ async function load(): Promise<void> {
     injectFormCss();
     const holder = el('div', {});
     root.replaceChildren(el('main', { class: 'pp-page' },
-      el('div', { class: 'pp-card', style: 'max-width:640px;margin:0 auto' },
+      el('div', { class: 'pp-card pp-form-card' },
         el('h1', {}, form.name ?? 'Form'),
-        form.description ? el('p', { class: 'pp-muted' }, form.description) : null,
-        el('div', { style: 'margin-top:20px' }, holder))));
+        form.description ? el('p', { class: 'pp-muted pp-intro' }, form.description) : null,
+        el('div', { class: 'pp-form-body' }, holder))));
     renderForm(holder, { apiBase: API_BASE, key, form });
   } catch (err) {
     const status = (err as { status?: number }).status;

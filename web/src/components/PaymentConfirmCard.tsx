@@ -31,12 +31,12 @@ export function PaymentConfirmCard({ record, onChanged }: { record: CrmRecord; o
   }
 
   return (
-    <div className="card">
+    <div className="card payment-confirm">
       <div className="card-head">
-        <Banknote size={16} strokeWidth={1.75} />
+        <span className="card-icon"><Banknote size={15} strokeWidth={1.75} /></span>
         <h3>e-Transfer to confirm</h3>
       </div>
-      <div className="small muted">
+      <div className="small">
         {typeof p.payer_name === 'string' && p.payer_name ? `${p.payer_name} says they sent it` : 'The customer says they sent it'}
         {typeof p.reference === 'string' && p.reference ? ` with the message "${p.reference}"` : ''}. Check your bank, then:
       </div>

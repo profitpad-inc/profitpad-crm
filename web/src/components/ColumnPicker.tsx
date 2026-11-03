@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpToLine, GripVertical, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpToLine, GripVertical, Search, X } from 'lucide-react';
 import type { AssociationLabel, Column, ObjectDef, ObjectSummary } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Modal } from './ui';
@@ -75,6 +75,7 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
   return (
     <Modal
       wide
+      className="colpick-modal"
       title="Edit columns"
       onClose={onClose}
       footer={
@@ -84,55 +85,74 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
         </>
       }
     >
-      <div className="columns-picker">
-        <div className="picker-available">
-          <input placeholder="Search properties and associations" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus />
-          {['Properties', 'Associations'].map((group) => (
-            <div key={group}>
-              <div className="picker-group">{group}</div>
-              {shown.filter((a) => a.group === group).map((a) => (
-                <label key={key(a.column)} className="picker-row">
-                  <input type="checkbox" checked={chosen.has(key(a.column))} onChange={() => toggle(a.column)} />
-                  {a.label}
-                </label>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div className="picker-selected">
-          <div className="picker-group">Selected columns ({selected.length})</div>
-          {selected.map((c, i) => (
-            <div
-              key={key(c)}
-              className={`picker-chip${dropAt === i ? ' drop-before' : ''}${dropAt === selected.length && i === selected.length - 1 ? ' drop-after' : ''}`}
-              onDragOver={(e) => {
-                if (dragFrom.current === null) return;
-                e.preventDefault();
-                const r = e.currentTarget.getBoundingClientRect();
-                setDropAt(e.clientY < r.top + r.height / 2 ? i : i + 1);
-              }}
-              onDrop={(e) => { e.preventDefault(); drop(); }}
-            >
-              <span
-                className="grip"
-                draggable
-                title="Drag to reorder"
-                onDragStart={(e) => {
-                  dragFrom.current = i;
-                  e.dataTransfer.effectAllowed = 'move';
-                  e.dataTransfer.setDragImage(e.currentTarget.parentElement!, 12, 12);
+      <div className="colpick">
+        <section className="colpick-pane" aria-label="Available columns">
+          <div className="colpick-search">
+            <Search size={15} aria-hidden />
+            <input placeholder="Search properties and associations" aria-label="Search properties and associations" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus />
+          </div>
+          <div className="colpick-scroll">
+            {['Properties', 'Associations'].map((group) => {
+              const rows = shown.filter((a) => a.group === group);
+              if (rows.length === 0) return null;
+              return (
+                <div key={group}>
+                  <div className="colpick-group">{group}</div>
+                  {rows.map((a) => (
+                    <label key={key(a.column)} className="colpick-row">
+                      <input type="checkbox" checked={chosen.has(key(a.column))} onChange={() => toggle(a.column)} />
+                      <span>{a.label}</span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+            {shown.length === 0 && <p className="colpick-none">Nothing matches "{filter}". Try part of the name.</p>}
+          </div>
+        </section>
+        <section className="colpick-pane chosen" aria-label="Shown columns">
+          <div className="colpick-head">
+            <span>Shown columns</span>
+            <span className="muted">{selected.length}</span>
+          </div>
+          <p className="colpick-hint">Drag to reorder. The first column links to the record and stays in view when the table scrolls sideways.</p>
+          <div className="colpick-scroll colpick-list">
+            {selected.length === 0 && <p className="colpick-none">Tick at least one column on the left.</p>}
+            {selected.map((c, i) => (
+              <div
+                key={key(c)}
+                className={`colpick-chip${dropAt === i ? ' drop-before' : ''}${dropAt === selected.length && i === selected.length - 1 ? ' drop-after' : ''}`}
+                onDragOver={(e) => {
+                  if (dragFrom.current === null) return;
+                  e.preventDefault();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setDropAt(e.clientY < r.top + r.height / 2 ? i : i + 1);
                 }}
-                onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
+                onDrop={(e) => { e.preventDefault(); drop(); }}
               >
-                <GripVertical size={14} />
-              </span>
-              <span className="picker-chip-label">{labelOf(c)}</span>
-              <button className="icon-btn" onClick={() => setSelected((s) => moveTo(s, i, 0))} disabled={i === 0} aria-label="Move to top" title="Move to top"><ArrowUpToLine size={14} /></button>
-              <button className="icon-btn" onClick={() => setSelected((s) => moveTo(s, i, s.length))} disabled={i === selected.length - 1} aria-label="Move to bottom" title="Move to bottom"><ArrowDownToLine size={14} /></button>
-              <button className="icon-btn" onClick={() => toggle(c)} aria-label="Remove"><X size={14} /></button>
-            </div>
-          ))}
-        </div>
+                <span
+                  className="colpick-grip"
+                  draggable
+                  title="Drag to reorder"
+                  onDragStart={(e) => {
+                    dragFrom.current = i;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setDragImage(e.currentTarget.parentElement!, 12, 12);
+                  }}
+                  onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
+                >
+                  <GripVertical size={14} />
+                </span>
+                <span className="colpick-chip-label">{labelOf(c)}</span>
+                <span className="colpick-chip-actions">
+                  <button className="icon-btn" onClick={() => setSelected((s) => moveTo(s, i, 0))} disabled={i === 0} aria-label="Move to top" title="Move to top"><ArrowUpToLine size={14} /></button>
+                  <button className="icon-btn" onClick={() => setSelected((s) => moveTo(s, i, s.length))} disabled={i === selected.length - 1} aria-label="Move to bottom" title="Move to bottom"><ArrowDownToLine size={14} /></button>
+                  <button className="icon-btn" onClick={() => toggle(c)} aria-label="Remove" title="Remove"><X size={14} /></button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </Modal>
   );

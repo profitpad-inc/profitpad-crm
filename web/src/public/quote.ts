@@ -1,11 +1,12 @@
 import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/montserrat/700.css';
 import './public.css';
 import { applyTheme } from '../lib/theme';
 import { el, keyFromHash, publicApi, queryParamsFromLocation, type PublicQuote } from './public-api';
 import { attachSignaturePad } from './signature-pad';
-import { day, linesTable, money } from './document';
+import { attention, day, linesTable, parties, totalRow } from './document';
 import { afterCheckout, paymentBox } from './payment-box';
 
 // Customer view of a quote: /p/quote/#<public key>. View, accept (fill in the
@@ -33,13 +34,11 @@ function message(text: string): void {
 
 function render(q: PublicQuote): void {
   document.title = q.name ?? 'Quote';
-  const meta = el('dl', { class: 'pp-meta' });
-  const add = (label: string, value: string | null | undefined) => {
-    if (value) meta.append(el('dt', {}, label), el('dd', {}, value));
-  };
-  add('Prepared for', q.company);
-  add('Attention', q.contact?.name ? `${q.contact.name}${q.contact.email ? ` (${q.contact.email})` : ''}` : q.contact?.email);
-  add('Valid until', q.expiration_date ? day(q.expiration_date) : null);
+  const meta = parties([
+    ['Prepared for', q.company],
+    ['Attention', ...attention(q.contact)],
+    ['Valid until', q.expiration_date ? day(q.expiration_date) : null]
+  ]);
 
   const lines = linesTable(q.lines, q.currency);
 
@@ -52,17 +51,17 @@ function render(q: PublicQuote): void {
     decline.addEventListener('click', () => respondDecline(q, respondBox));
     actions.append(accept, decline);
   }
-  actions.append(el('a', { class: 'pp-btn', href: api.quotePdfUrl(key), download: '' }, 'Download PDF'));
+  actions.append(el('a', { class: q.status === 'sent' ? 'pp-btn quiet' : 'pp-btn', href: api.quotePdfUrl(key), download: '' }, 'Download PDF'));
 
   let note: HTMLElement | null = null;
   if (q.status === 'accepted' || q.status === 'rejected') {
     const when = q.responded_at ? ` on ${day(q.responded_at)}` : '';
-    note = el('div', { class: 'pp-note', role: 'status' },
+    note = el('div', { class: `pp-note ${q.status === 'accepted' ? 'good' : 'bad'}`, role: 'status' },
       `${q.status === 'accepted' ? 'Accepted' : 'Declined'} by ${q.responder_name ?? 'the customer'}${when}.`,
       q.status === 'rejected' && q.decline_reason ? el('div', { class: 'pp-muted' }, `Reason: ${q.decline_reason}`) : null);
   } else if (q.status === 'pending_countersign') {
     const when = q.customer_signed_at ? ` on ${utc(q.customer_signed_at)}` : '';
-    note = el('div', { class: 'pp-note', role: 'status' },
+    note = el('div', { class: 'pp-note wait', role: 'status' },
       `Signed by ${q.responder_name ?? 'the customer'}${when}. We will countersign and confirm shortly.`);
   } else if (q.status === 'expired') {
     note = el('div', { class: 'pp-note' }, 'This quote has expired. Contact us if you would like an updated one.');
@@ -75,7 +74,7 @@ function render(q: PublicQuote): void {
         el('span', { class: `pp-pill ${q.status}` }, STATUS[q.status])),
       meta,
       lines,
-      el('div', { class: 'pp-total' }, el('span', {}, 'Total'), el('span', {}, money(q.amount, q.currency) || 'n/a')),
+      totalRow(q.amount, q.currency),
       note,
       signatures(q),
       paymentBox(q.payment, {
@@ -100,8 +99,9 @@ function signatures(q: PublicQuote): HTMLElement | null {
     png
       ? el('div', { class: 'pp-signature' },
           el('h2', {}, title),
-          el('img', { src: png, alt: `${title} of ${who ?? 'signer'}` }),
-          el('div', { class: 'pp-muted' }, [who, when ? `Signed ${utc(when)}` : null].filter(Boolean).join(', ')))
+          el('div', { class: 'pp-sig-line' }, el('img', { src: png, alt: `${title} of ${who ?? 'signer'}` })),
+          who ? el('div', { class: 'pp-sig-who' }, who) : null,
+          when ? el('div', { class: 'pp-muted' }, `Signed ${utc(when)}`) : null)
       : null;
   const answered = q.signing_fields.filter((f) => q.signed_fields?.[f.key]);
   const fields = answered.length
@@ -130,11 +130,11 @@ function responseForm(title: string, submitLabel: string, box: HTMLElement, ...b
   const submit = el('button', { class: 'pp-btn primary', type: 'submit' }, submitLabel);
   const cancel = el('button', { class: 'pp-btn', type: 'button' }, 'Cancel');
   cancel.addEventListener('click', () => box.replaceChildren());
-  const form = el('form', { class: 'pp-respond', novalidate: true },
+  const form = el('form', { class: 'pp-respond pp-panel', novalidate: true },
     el('h2', {}, title),
     ...body,
     error,
-    el('div', { class: 'pp-actions', style: 'margin-top:0' }, submit, cancel));
+    el('div', { class: 'pp-actions' }, submit, cancel));
   return { form, error, submit };
 }
 
@@ -155,7 +155,7 @@ function respondDecline(q: PublicQuote, box: HTMLElement): void {
   const { form, error, submit } = responseForm('Decline this quote', 'Confirm decline', box,
     el('label', {}, 'Your name', name),
     el('label', {}, 'Your email', email),
-    el('label', {}, 'Reason (optional)', reason));
+    el('label', {}, el('span', {}, 'Reason ', el('span', { class: 'pp-opt' }, '(optional)')), reason));
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     error.textContent = '';
@@ -184,8 +184,9 @@ function respondAccept(q: PublicQuote, box: HTMLElement): void {
   const { form, error, submit } = responseForm('Accept this quote', 'Sign and accept', box,
     el('label', {}, 'Your name', name),
     el('label', {}, 'Your email', email),
-    ...inputs.map(({ field, input }) => el('label', {}, field.required ? field.label : `${field.label} (optional)`, input)),
-    el('div', { class: 'pp-sig-box' }, 'Signature', canvas,
+    ...inputs.map(({ field, input }) => el('label', {},
+      field.required ? field.label : el('span', {}, `${field.label} `, el('span', { class: 'pp-opt' }, '(optional)')), input)),
+    el('div', { class: 'pp-sig-box' }, 'Signature', el('div', { class: 'pp-sig-pad' }, canvas),
       el('div', { class: 'pp-sig-row' }, el('span', {}, 'Draw your signature above.'), clear)));
   form.addEventListener('submit', (e) => {
     e.preventDefault();

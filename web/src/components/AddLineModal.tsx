@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { Package, X } from 'lucide-react';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { formatValue } from '../lib/display';
 import { AMOUNT_PARENTS, lineAmount, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
@@ -138,7 +138,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
       }
     >
       <div className="form">
-        <div className="tabs line-mode" role="tablist">
+        <div className="line-mode" role="tablist">
           {(['product', 'custom'] as const).map((m) => (
             <div key={m} className={`tab${mode === m ? ' active' : ''}`}>
               <button role="tab" aria-selected={mode === m} onClick={() => switchMode(m)}>{m === 'product' ? 'Product' : 'Custom line'}</button>
@@ -147,21 +147,22 @@ export function AddLineModal({ parent, onClose, onCreated }: {
         </div>
         {mode === 'product' && (product ? (
           <div className="line-product">
-            <div>
-              <div>{String(product.properties.name ?? product.id)}</div>
+            <span className="card-icon"><Package size={15} strokeWidth={1.75} /></span>
+            <div className="line-product-main">
+              <div className="line-product-name">{String(product.properties.name ?? product.id)}</div>
               <div className="small muted">
-                {[product.properties.sku, priceProp && product.properties.price != null ? formatValue(priceProp, product.properties.price) : null].filter(Boolean).join(' · ')}
+                {[product.properties.sku, priceProp && product.properties.price != null ? formatValue(priceProp, product.properties.price) : null].filter(Boolean).join(', ')}
               </div>
             </div>
             <button className="icon-btn push-right" onClick={() => setProduct(null)} aria-label="Pick another product"><X size={16} /></button>
           </div>
         ) : (
-          <div className="card-add">
+          <div className="card-add line-search">
             <input autoFocus placeholder="Search products" value={q} onChange={(e) => setQ(e.target.value)} />
             {results.map((r) => (
               <button key={r.id} className="card-pick" onClick={() => pickProduct(r)}>
-                {String(r.properties.name ?? r.id)}
-                {priceProp && r.properties.price != null && <span className="muted"> · {formatValue(priceProp, r.properties.price)}</span>}
+                <span className="card-pick-name">{String(r.properties.name ?? r.id)}</span>
+                {priceProp && r.properties.price != null && <span className="muted">{formatValue(priceProp, r.properties.price)}</span>}
               </button>
             ))}
             {results.length === 0 && <div className="muted small">No products found.</div>}
@@ -178,7 +179,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
           <div className="checks">
             <label>
               <input type="checkbox" checked={updateDeal} onChange={(e) => setUpdateDeal(e.target.checked)} />
-              Update the {parentLabel} amount: {money(deal.amount, deal.currency)} → {money(deal.total + lineAmount(values), deal.currency)}
+              Update the {parentLabel} amount from {money(deal.amount, deal.currency)} to {money(deal.total + lineAmount(values), deal.currency)}
             </label>
           </div>
         )}

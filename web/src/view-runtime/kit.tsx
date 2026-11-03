@@ -162,10 +162,18 @@ export const chartColors = ['var(--primary)', '#0e9f6e', '#d97706', '#7c3aed', '
 // ---- layout ---------------------------------------------------------------------------
 
 // Every UI piece takes style and className, added to its own.
-interface Styled {
+export interface Styled {
   style?: CSSProperties;
   className?: string;
 }
+
+// Prop types views can import (types only: they are stripped, not checked),
+// e.g. const toneFor: Record<string, BadgeTone> = { won: 'money', lost: 'danger' }
+export type BadgeTone = 'primary' | 'money' | 'danger' | 'warning' | 'muted';
+export type StatTone = 'money' | 'danger' | 'muted';
+export type ButtonVariant = 'primary' | 'danger';
+export type Align = 'left' | 'right' | 'center';
+export type { Viewport };
 const cx = (...names: (string | false | null | undefined)[]) => names.filter(Boolean).join(' ');
 
 export function Page({ title, subtitle, actions, children, style, className }: { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode } & Styled) {
@@ -269,7 +277,7 @@ export function Card({ title, subtitle, actions, children, style, className }: {
   );
 }
 
-export function Stat({ label, value, hint, tone, style, className }: { label: ReactNode; value: ReactNode; hint?: ReactNode; tone?: 'money' | 'danger' | 'muted' } & Styled) {
+export function Stat({ label, value, hint, tone, style, className }: { label: ReactNode; value: ReactNode; hint?: ReactNode; tone?: StatTone } & Styled) {
   return (
     <div className={cx('v-card v-stat', className)} style={style}>
       <div className="v-stat-label">{label}</div>
@@ -284,9 +292,11 @@ export function Stat({ label, value, hint, tone, style, className }: { label: Re
 export interface Column<Row> {
   key: string;
   label: ReactNode;
-  align?: 'left' | 'right' | 'center';
+  align?: Align;
   width?: number | string;
   render?: (row: Row) => ReactNode;
+  // left out below 720px wide (phones), so wide tables fit without scrolling sideways
+  hideOnMobile?: boolean;
 }
 
 export function Table<Row extends Record<string, any>>({
@@ -306,7 +316,7 @@ export function Table<Row extends Record<string, any>>({
     <div className={cx('v-table-wrap', className)} style={{ ...(maxHeight ? { maxHeight } : {}), ...style }}>
       <table className="v-table">
         <thead>
-          <tr>{columns.map((c) => <th key={c.key} style={{ textAlign: c.align ?? 'left', width: c.width }}>{c.label}</th>)}</tr>
+          <tr>{columns.map((c) => <th key={c.key} style={{ textAlign: c.align ?? 'left', width: c.width }} className={c.hideOnMobile ? 'v-hide-mobile' : undefined}>{c.label}</th>)}</tr>
         </thead>
         <tbody>
           {loading ? (
@@ -317,7 +327,7 @@ export function Table<Row extends Record<string, any>>({
             rows.map((r, i) => (
               <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined} className={`${onRowClick ? 'clickable' : ''}${selected?.(r) ? ' selected' : ''}`}>
                 {columns.map((c) => (
-                  <td key={c.key} style={{ textAlign: c.align ?? 'left' }} className={c.align === 'right' ? 'figures' : undefined}>
+                  <td key={c.key} style={{ textAlign: c.align ?? 'left' }} className={cx(c.align === 'right' && 'figures', c.hideOnMobile && 'v-hide-mobile') || undefined}>
                     {c.render ? c.render(r) : r[c.key] == null || r[c.key] === '' ? <span className="muted">--</span> : String(r[c.key])}
                   </td>
                 ))}
@@ -340,12 +350,12 @@ export function Tabs({ tabs, value, onChange, style, className }: { tabs: { key:
   );
 }
 
-export function Badge({ tone, children, style, className }: { tone?: 'primary' | 'money' | 'danger' | 'warning' | 'muted'; children?: ReactNode } & Styled) {
+export function Badge({ tone, children, style, className }: { tone?: BadgeTone; children?: ReactNode } & Styled) {
   return <span className={cx('v-badge', tone && 'tone-' + tone, className)} style={style}>{children}</span>;
 }
 
 export function Button({ variant, small, disabled, onClick, children, type = 'button', style, className }: {
-  variant?: 'primary' | 'danger'; small?: boolean; disabled?: boolean; onClick?: () => void; children?: ReactNode; type?: 'button' | 'submit';
+  variant?: ButtonVariant; small?: boolean; disabled?: boolean; onClick?: () => void; children?: ReactNode; type?: 'button' | 'submit';
 } & Styled) {
   return <button type={type} className={cx('v-btn', variant, small && 'small', className)} style={style} disabled={disabled} onClick={onClick}>{children}</button>;
 }

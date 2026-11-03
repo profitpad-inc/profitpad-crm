@@ -21,7 +21,7 @@ import {
   createView, listViewErrors, listViews, loadView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut,
   viewSummary, publishState, sourceExcerpt, type ViewRow
 } from './views.js';
-import { GUIDE_TOPICS, viewGuide } from './views-guide.js';
+import { FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { renderView } from './render.js';
 import { findIcons } from './icons.js';
 import {
@@ -103,19 +103,28 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
 
   server.registerTool('list_objects', {
     title: 'List objects',
-    description: 'Lists the CRM objects (record types) you can read, with the objects each can be linked to.',
+    description: 'Lists the CRM objects (record types) you can read: api_name, label, description, aliases (other names people use, e.g. "booking forms" for booking_pages), and which objects each can be linked to: links_to "all" (every other object), links_to_all_except [...], or a links_to list; linked_only_by_crm lists links only a CRM feature makes (meaning: made by that feature, see view_guide topic schema). describe_object has the full list.',
     annotations: { readOnlyHint: true }
   }, async () => run(async () => {
     requireScope(p, 'read');
     const reg = await getRegistry();
     const readable = reg.objects.filter((o) => o.record_status === 'active' && canRead(p, o));
     const names = new Set(readable.map((o) => o.api_name));
-    return readable.map((o) => ({
-      api_name: o.api_name,
-      label: o.label_plural,
-      description: o.description,
-      links_to: o.links_to.filter((n) => names.has(n))
-    }));
+    // links in the shorter form: most objects link to nearly everything
+    return readable.map((o) => {
+      const linked = o.links_to.filter((n) => names.has(n) && n !== o.api_name);
+      const others = readable.filter((x) => x.api_name !== o.api_name).map((x) => x.api_name);
+      const not = others.filter((n) => !linked.includes(n));
+      const system = o.system_links.filter((n) => names.has(n));
+      return {
+        api_name: o.api_name,
+        label: o.label_plural,
+        description: o.description,
+        ...(o.aliases.length ? { aliases: o.aliases } : {}),
+        ...(linked.length === 0 ? { links_to: [] } : not.length === 0 ? { links_to: 'all' } : not.length < linked.length ? { links_to_all_except: not } : { links_to: linked }),
+        ...(system.length ? { linked_only_by_crm: system } : {})
+      };
+    });
   }));
 
   server.registerTool('describe_object', {
@@ -129,6 +138,10 @@ function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes
     return {
       api_name: obj.api_name,
       label: obj.label_singular,
+      ...(obj.aliases.length ? { aliases: obj.aliases } : {}),
+      links_to: obj.links_to,
+      ...(obj.system_links.length ? { linked_only_by_crm: obj.system_links } : {}),
+      ...(FEATURE_LINKS[obj.api_name] ? { how_linked: FEATURE_LINKS[obj.api_name] } : {}),
       search_properties: obj.search_properties,
       properties: visibleProperties(obj, p).map((pr) => ({
         api_name: pr.api_name,
@@ -355,7 +368,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('render_view', {
     title: 'Render custom view',
-    description: 'Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look. Nothing is changed while rendering: record changes and integration calls are refused (listed in not_run), and clicks are not simulated. screenshot: false returns the report only (cheaper).',
+    description: 'Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look. The browser runs in timezone (default: your user\'s zone, else the one most users have; the report says which), so formatDateTime shows what that person sees. click clicks elements (by visible text or CSS selector, in order) before the screenshot, to check a selected row, an open panel or a tab; selections kept in address params can be rendered with params instead. Nothing is changed while rendering: record changes and integration calls are refused (listed in not_run). screenshot: false returns the report only (cheaper).',
     inputSchema: z.object({
       view: viewArg,
       width: z.number().int().min(320).max(2400).optional().describe('Screen width in pixels (default 1280; 390 for a phone)'),
@@ -365,7 +378,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
       full_page: z.boolean().optional().describe('The whole page instead of one screen (grow views; at most 8000px tall)'),
       screenshot: z.boolean().optional().describe('false: only the report'),
       styles: z.boolean().optional().describe('Add each box\'s font size, line height and weight'),
-      published: z.boolean().optional().describe('Render the published version instead of the draft')
+      published: z.boolean().optional().describe('Render the published version instead of the draft'),
+      timezone: z.string().optional().describe('IANA time zone, like America/Toronto'),
+      click: z.array(z.object({ text: z.string().optional(), selector: z.string().optional() })).max(5).optional()
+        .describe('Up to 5 clicks before the screenshot, each {text} (visible text, first match) or {selector} (CSS); the report says which worked')
     }),
     annotations: { readOnlyHint: true }
   }, async ({ view, ...opts }) => {
@@ -615,6 +631,20 @@ function registerAdminTools(server: McpServer, p: Principal) {
     probability: z.number().min(0).max(1).nullable().optional().describe('Chance of winning for open stages, 0 to 1 (null clears); closed stages set it themselves'),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional().describe('Colour the choice shows in, as #rrggbb (null clears)')
   };
+
+  server.registerTool('set_object_aliases', {
+    title: 'Set object aliases',
+    description: 'Sets the other names people use for an object (e.g. booking_pages: "booking forms", "scheduling pages"), shown by list_objects so requests in everyday words find the right object. Replaces the list; up to 10, kept lowercase. Ask the admin first.',
+    inputSchema: z.object({ object: objectArg, aliases: z.array(z.string()).max(10) }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ object, aliases }) => run(async () => {
+    requireScope(p, 'schema');
+    const obj = await readableObject(p, object);
+    await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_object_aliases($1, $2)', [obj.object_type_id, aliases]));
+    const reg = await getRegistry();
+    return { object: obj.api_name, aliases: reg.byKey.get(obj.object_type_id)?.aliases ?? [] };
+  }));
 
   server.registerTool('add_dropdown_option', {
     title: 'Add dropdown option',

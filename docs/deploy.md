@@ -189,6 +189,10 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 Keep `playwright-core` in `api/package.json` and the renderer image on the same version: the client refuses a server of another version. Locally, `RENDERER_LOCAL=1` launches Chromium in the API process (`npx playwright-core install chromium` once), or run `npx playwright@1.64.1 run-server --port 3456` and set `RENDERER_WS_URL=ws://127.0.0.1:3456/`.
 
+## 18. Object aliases (migration 0047)
+
+Apply `0047_object_aliases.sql` with the API deploy: the new API reads `meta.pc_0001.aliases`, so the old one keeps working before it, but the new one fails without it. It also sets starting aliases on native objects (an update of setup rows, not records).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.
