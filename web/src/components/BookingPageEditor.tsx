@@ -5,7 +5,6 @@ import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { DatePicker } from './DatePicker';
 import { SearchSelect } from './SearchSelect';
-import { StatusPill } from './settings';
 import '../editors.css';
 import '../booking.css';
 
@@ -419,9 +418,6 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
       <header className="ed-head">
         <div className="ed-head-text">
           <h2>Booking page</h2>
-          <div className="ed-head-meta">
-            {!check ? <StatusPill tone="pending">Checking</StatusPill> : ready ? <StatusPill tone="on">Ready to take bookings</StatusPill> : <StatusPill tone="warn">Not ready yet</StatusPill>}
-          </div>
         </div>
       </header>
       {error && <div className="ed-notices"><div className="error">{error}</div></div>}

@@ -16,13 +16,12 @@
 .record-page .record-head-bar { border-bottom: 0; padding: 8px 8px 0 10px; }
 .record-page .back { color: var(--muted-text); gap: 2px; padding: 4px 6px 4px 2px; margin-left: -2px; border-radius: var(--radius-sm); }
 .record-page .back:hover { color: var(--text); text-decoration: none; background: var(--surface); }
-.record-page .record-identity { align-items: flex-start; gap: 14px; padding: 8px 16px 18px; }
+.record-page .record-identity { align-items: center; gap: 14px; padding: 8px 16px 18px; }
 .record-page .record-avatar {
   width: 46px; height: 46px; border-radius: 12px; font-size: 15px; letter-spacing: 0.01em;
   background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 .record-page .record-avatar-btn:hover { background: color-mix(in srgb, var(--primary) 16%, var(--page-background)); box-shadow: inset 0 0 0 1px var(--primary-line); }
-.record-kind { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--muted-text); margin: 1px 0 3px; }
 .record-page .record-identity h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
 .record-subtitle { margin-top: 4px; font-size: 13px; color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .record-page .record-archived {
@@ -125,6 +124,16 @@
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .activity-status { margin-top: 4px; }
+.record-page .activity-item.selected { background: color-mix(in srgb, var(--surface) 60%, var(--page-background)); }
+
+/* Activity detail (opened from the stream) */
+.activity-detail .modal-head { gap: 12px; }
+.activity-detail .modal-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-detail .modal-body { display: flex; flex-direction: column; gap: 14px; }
+.activity-detail .answers { margin-top: 0; }
+.activity-detail .submission h2 { font-size: 16px; }
+.activity-html { display: block; width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.activity-plain { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .record-page .timeline > .empty-state { margin-top: 4px; }
 .record-page .timeline > .table-skeleton { margin-top: 4px; }
 
@@ -311,6 +320,7 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
   .record-page .record-right { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: start; }
 }
 @media (max-width: 767px) {
+  .activity-detail .modal-actions .btn-label { display: none; }
   .record-page .record-middle { padding: 16px 16px 32px; }
   .record-page .ledger-day { position: static; }
   .record-page .record-identity h1 { font-size: 19px; }

@@ -173,11 +173,12 @@ begin
   perform meta.associate('companies', '0000000001', 'contacts', '0000000001');
   perform meta._test_check((select count(*) from crm.pc_0005) = 1, 'linking twice in either direction is a no-op');
 
-  select pc_0004_id into v_label from meta.pc_0004 where from_object_type = 'pc_0010' and to_object_type = 'pc_0011' and label = 'Primary company';
+  perform meta._test_check(not exists (select 1 from meta.pc_0004 where label ilike 'primary%'), 'no primary labels');
+  v_label := meta.create_association_label('contacts', 'companies', 'Billing company', 'Billing contact', p_max_to_per_from => 1);
   perform meta.associate('contacts', '0000000002', 'companies', '0000000001', v_label);
   insert into crm.pc_0011 (name) values ('Other co');
   perform meta._test_expect_error(format($f$select meta.associate('contacts', '0000000002', 'companies', '0000000002', %L)$f$, v_label), 'at most 1');
-  perform meta._test_check((select label from crm.associations_both where object_type_id = 'pc_0011' and record_id = '0000000001' and other_record_id = '0000000002') = 'Primary contact', 'inverse label from the other side');
+  perform meta._test_check((select label from crm.associations_both where object_type_id = 'pc_0011' and record_id = '0000000001' and other_record_id = '0000000002') = 'Billing contact', 'inverse label from the other side');
 
   perform meta.associate('contacts', '0000000005', 'contacts', '0000000003');
   perform meta._test_check((select from_id from crm.pc_0005 where from_object_type = 'pc_0010' and to_object_type = 'pc_0010') = '0000000003', 'same-object default links are symmetric and ordered');

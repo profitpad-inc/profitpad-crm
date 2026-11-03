@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, Lock, Pencil, Plus, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, Link2, Lock, Pencil, Plus, X } from 'lucide-react';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
-import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
+import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
@@ -120,7 +120,7 @@ export function RecordPage() {
         if (cancelled) return;
         setSchema(s);
         setRecord(r);
-        if (r.id !== id) navigate(`/objects/${object}/${r.id}`, { replace: true }); // merged id
+        if (r.id !== id) navigate(`/objects/${object}/${r.id}${window.location.search}`, { replace: true }); // merged id
       })
       .catch((err) => !cancelled && setError((err as Error).message));
     // users have no association cards or activity stream
@@ -187,7 +187,6 @@ export function RecordPage() {
   const isUser = object === 'users';
   // views link to nothing, so they have no association cards: no right column
   const noRight = isUser || object === 'views';
-  const KindIcon = objectIcon(object);
 
   return (
     <div className={`record-page${noRight ? ' two-col' : ''}`}>
@@ -222,7 +221,6 @@ export function RecordPage() {
           <div className="record-identity">
             {object === 'views' ? <ViewIconAvatar record={record} onChanged={setRecord} /> : <span className="record-avatar">{initials(name)}</span>}
             <div className="record-title">
-              <div className="record-kind"><KindIcon size={13} strokeWidth={2} aria-hidden /> {schema.label_singular}</div>
               <h1>{name}</h1>
               {subtitle && subtitle !== name && <div className="record-subtitle">{subtitle}</div>}
             </div>
@@ -422,9 +420,31 @@ function plain(text: unknown): string {
   return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// The tab is in ?tab= and an opened activity in ?pc_<object code>=<record id>,
+// so a copied link brings back both.
+function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string; id: string } | null, codes: string[]): string {
+  const next = new URLSearchParams(params);
+  if (tab === 'activity') next.delete('tab');
+  else next.set('tab', tab);
+  for (const c of codes) next.delete(c);
+  if (open) next.set(open.code, open.id);
+  const q = next.toString();
+  return q ? `?${q}` : '';
+}
+
 function ActivityStream({ object, id, record, associated, onChanged, schema }: { object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef }) {
   const { objectByName } = useApp();
-  const [tab, setTab] = useState<Tab>('activity');
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const linksTo = objectByName.get(object)?.links_to ?? [];
+  const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
+  const tabParam = params.get('tab') as Tab | null;
+  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : 'activity';
+  const codeOf = (o: string) => objectByName.get(o)?.object_type_id ?? '';
+  const codes = ACTIVITY_OBJECTS.map(codeOf).filter(Boolean);
+  const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
+  const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes);
+  const go = (search: string) => navigate({ search }, { replace: true });
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -464,16 +484,25 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
     }
   }
 
-  const linksTo = objectByName.get(object)?.links_to ?? [];
   const countOf = (o: string) => associated.find((a) => a.object === o)?.records.length ?? 0;
-  const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
+
+  // a link to an activity scrolls to it once it has loaded
+  const scrolledTo = useRef<string | null>(null);
+  const openedKey = opened ? `${opened.object}-${opened.id}` : null;
+  const openedListed = items.some((x) => !x.quoteResponse && `${x.object}-${x.record.id}` === openedKey);
+  useEffect(() => {
+    if (!openedKey || !openedListed || scrolledTo.current === openedKey) return;
+    scrolledTo.current = openedKey;
+    document.getElementById(`activity-${openedKey}`)?.scrollIntoView({ block: 'center' });
+  }, [openedKey, openedListed]);
+  const openedInitial = opened ? associated.find((a) => a.object === opened.object)?.records.find((r) => r.record.id === opened.id)?.record : undefined;
 
   return (
     <div className="activity">
       <div className="tabs">
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
-            <button onClick={() => setTab(t)}>
+            <button onClick={() => go(searchFor(t, opened?.object ?? null, opened?.id))}>
               {t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural}
               {t !== 'activity' && t !== 'changes' && countOf(t) > 0 && <span className="tab-count">{countOf(t)}</span>}
             </button>
@@ -535,7 +564,8 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
             const title = o === 'emails' ? (p.subject as string) || 'Email' : o === 'notes' ? 'Note' : displayName(p, r.id);
             const body = plain(o === 'tasks' ? p.body : p.body);
             return (
-              <Link key={`${o}-${r.id}`} to={`/objects/${o}/${r.id}`} className="activity-item">
+              <Link key={`${o}-${r.id}`} id={`activity-${o}-${r.id}`} to={{ search: searchFor(tab, o, r.id) }} replace
+                className={`activity-item${openedKey === `${o}-${r.id}` ? ' selected' : ''}`}>
                 <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
                 <div className="activity-body">
                   <div className="activity-head">
@@ -554,7 +584,122 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
           ))}
         </div>
       )}
+      {opened && (
+        <ActivityDetail
+          key={openedKey}
+          object={opened.object}
+          id={opened.id}
+          initial={openedInitial}
+          link={`${window.location.origin}${window.location.pathname}${searchFor(opened.object as Tab, opened.object, opened.id)}`}
+          onClose={() => go(searchFor(tab, null))}
+        />
+      )}
     </div>
+  );
+}
+
+const DETAIL_SKIP = new Set(['name', 'subject', 'body', 'summary', 'submission_values', 'created_at']);
+
+// Email and note bodies are HTML from outside: render them in a sandboxed
+// frame with scripts, forms and plugins off. allow-same-origin (without
+// allow-scripts) only lets this page read the frame's height.
+function HtmlBody({ html }: { html: string }) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(80);
+  const fit = () => {
+    const doc = frame.current?.contentDocument;
+    if (doc) setHeight(Math.max(40, doc.documentElement.scrollHeight));
+  };
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>
+    html, body { margin: 0; } body { padding: 14px 16px; font: 14px/1.55 Inter, system-ui, sans-serif; color: #1f2328; background: #fff; overflow-wrap: anywhere; }
+    img { max-width: 100%; height: auto; } table { max-width: 100%; } pre { white-space: pre-wrap; }
+  </style></head><body>${html}</body></html>`;
+  return (
+    <iframe ref={frame} className="activity-html" title="Message body" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      srcDoc={doc} style={{ height }} onLoad={fit} />
+  );
+}
+
+function ActivityDetail({ object, id, initial, link, onClose }: { object: string; id: string; initial?: CrmRecord; link: string; onClose: () => void }) {
+  const { objectByName, toast } = useApp();
+  const [record, setRecord] = useState<CrmRecord | null>(initial ?? null);
+  const [props, setProps] = useState<Property[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getSchema(object), api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)])
+      .then(([s, r]) => {
+        if (cancelled) return;
+        setProps(s.properties);
+        setRecord(r);
+      })
+      .catch((err) => !cancelled && setError((err as Error).message));
+    return () => {
+      cancelled = true;
+    };
+  }, [object, id]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast('Link copied');
+    } catch {
+      toast('Could not copy the link');
+    }
+  }
+
+  const label = objectByName.get(object)?.label_singular ?? object;
+  const p = record?.properties ?? {};
+  const title = !record ? label : object === 'emails' ? (p.subject as string) || 'Email' : object === 'notes' ? 'Note' : displayName(p, record.id);
+  const body = typeof p.body === 'string' ? p.body.trim() : '';
+  const at = record ? activityTime(object, record) : '';
+  const meta = (ACTIVITY_PROPS[object] ?? [])
+    .filter((name) => !DETAIL_SKIP.has(name))
+    .map((name) => ({ prop: props.find((x) => x.api_name === name), value: p[name] }))
+    .filter((m): m is { prop: Property; value: unknown } => !!m.prop && m.value !== null && m.value !== undefined && m.value !== '');
+
+  return (
+    <Modal
+      title={title}
+      onClose={onClose}
+      wide
+      className="activity-detail"
+      actions={
+        <>
+          <button className="btn small" onClick={copy}><Link2 size={14} /> Copy link</button>
+          <Link className="btn small" to={`/objects/${object}/${id}`} aria-label={`Open ${label.toLowerCase()}`}><span className="btn-label">Open {label.toLowerCase()}</span> <ArrowRight size={14} /></Link>
+        </>
+      }
+    >
+      {error && <div className="error">{error}</div>}
+      {!record && !error && <TableSkeleton rows={3} />}
+      {record && (
+        <>
+          <div className="activity-detail-meta muted small">
+            {label}{at && <>, {when(at)}</>}
+          </div>
+          {object === 'form_submissions' ? (
+            <SubmissionAnswers record={record} />
+          ) : (
+            <>
+              {meta.length > 0 && (
+                <dl className="answers compact">
+                  {meta.map(({ prop, value }) => (
+                    <div key={prop.api_name}><dt>{prop.label}</dt><dd>{displayValue(prop, value)}</dd></div>
+                  ))}
+                </dl>
+              )}
+              {body ? (
+                /<[a-z][\s\S]*>/i.test(body) ? <HtmlBody html={body} /> : <div className="activity-plain">{body}</div>
+              ) : (
+                <EmptyState compact title={object === 'calls' ? 'No call notes' : 'No body'} />
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 

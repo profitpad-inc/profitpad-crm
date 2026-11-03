@@ -164,14 +164,19 @@
 .ed-preview-title { margin: 0 0 16px; font-size: 18px; letter-spacing: -0.015em; }
 .ed-preview > .ed-hint { padding: 0 4px; }
 
-/* sticky save footer for a section with its own Save (booking hours) */
+/* save footer for a section with its own Save (booking hours): sticks to the bottom only while there is something
+   to save */
 .ed-savebar {
-  position: sticky; bottom: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  position: relative; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   margin: 4px -20px -20px; padding: 12px 20px; border-top: 1px solid var(--hairline);
   background: color-mix(in srgb, var(--page-background) 92%, transparent); backdrop-filter: blur(6px);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
-.ed-savebar.dirty { box-shadow: 0 -8px 24px rgba(24, 32, 43, 0.08); }
+.ed-savebar.dirty { position: sticky; bottom: 0; box-shadow: 0 -8px 24px rgba(24, 32, 43, 0.08); }
+/* on wide screens the record page's middle column is the scroller, and sticky stops at its bottom padding */
+@media (min-width: 768px) {
+  .record-page .record-middle .ed-savebar.dirty { bottom: -40px; }
+}
 .ed-savebar-note { font-size: 13px; color: var(--muted-text); }
 .ed-savebar.dirty .ed-savebar-note { color: var(--text); font-weight: 500; }
 

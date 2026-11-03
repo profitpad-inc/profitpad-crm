@@ -182,9 +182,8 @@ class Generator:
                              "lifecycle_stage": random.choice(["lead", "mql", "sql", "opportunity", "customer", "other"]),
                              "owner": owner(), "created_at": iso(past(700))})
         self.create("contacts", contacts)
-        primary_company = label("contacts", "companies", "Primary company")
         for cid in self.ids["contacts"]:
-            self.link("contacts", cid, "companies", random.choice(self.ids["companies"]), primary_company)
+            self.link("contacts", cid, "companies", random.choice(self.ids["companies"]))
         for a, b in zip(self.ids["contacts"][0:10:2], self.ids["contacts"][1:10:2]):
             self.link("contacts", a, "contacts", b)
 
@@ -195,9 +194,8 @@ class Generator:
                   "close_date": day(future(180) if random.random() < 0.6 else past(180)), "owner": owner(),
                   "created_at": iso(past(400))} for _ in range(COUNTS["deals"])]
         self.create("deals", deals)
-        primary_deal_company = label("deals", "companies", "Primary company")
         for did in self.ids["deals"]:
-            self.link("deals", did, "companies", random.choice(self.ids["companies"]), primary_deal_company)
+            self.link("deals", did, "companies", random.choice(self.ids["companies"]))
         self.link_some("deals", "contacts", 1, 3)
 
         self.create("tickets", [{"name": "Issue with %s" % random.choice(PRODUCTS).lower(), "description": sentence(),

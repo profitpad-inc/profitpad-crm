@@ -5,7 +5,7 @@ import { useApp } from '../lib/app-context';
 import { Modal } from './ui';
 
 // Column header for an association column: "Companies" for every link to
-// companies, or the label's name ("Primary company") for one label.
+// companies, or the label's name ("Billing company") for one label.
 export function associationColumnLabel(
   c: { object: string; label_id: string | null }, other: ObjectSummary, labels: AssociationLabel[], self: string,
   objectByName: Map<string, ObjectSummary>
