@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
@@ -31,7 +31,6 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   const moreOpen = moreTop !== null;
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const location = useLocation();
-  const navigate = useNavigate();
 
   useEffect(() => {
     try {
@@ -131,10 +130,10 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
               {expanded && <span>Collapse</span>}
             </button>
           )}
-          <button className="avatar-btn" onClick={() => navigate('/settings')} title={`${userName} · Settings`}>
+          <Link to="/settings" className="avatar-btn" title={`${userName} · Settings`}>
             <span className="avatar">{initials(userName)}</span>
             {expanded && <span className="avatar-name">{userName}</span>}
-          </button>
+          </Link>
         </div>
       </nav>
       {!drawer && moreTop !== null && <MoreMenu objects={objects.map((o) => o.api_name)} anchorTop={moreTop} onClose={() => setMoreTop(null)} />}

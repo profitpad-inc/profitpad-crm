@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { ColorInput } from '../components/ColorPicker';
 import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme } from '../lib/theme';
 import { displayName, initials } from '../lib/display';
 import { RoleSettings, UserSettings } from './AccessSettings';
@@ -118,7 +119,7 @@ function ThemeSettings() {
       <div className="theme-grid">
         {THEME_FIELDS.map((f) => (
           <label key={f.key} className="color-field">
-            <input type="color" value={draft[f.key]} onChange={(e) => update({ ...draft, [f.key]: e.target.value })} />
+            <ColorInput value={draft[f.key]} onChange={(hex) => update({ ...draft, [f.key]: hex })} label={f.label} />
             <span>{f.label}</span>
             <HexInput value={draft[f.key]} onChange={(hex) => update({ ...draft, [f.key]: hex })} />
           </label>
@@ -129,7 +130,7 @@ function ThemeSettings() {
       <div className="theme-grid dropdown-color-grid">
         {colors.map((c, i) => (
           <label key={i} className="color-field">
-            <input type="color" value={c} onChange={(e) => updateColor(i, e.target.value)} />
+            <ColorInput value={c} onChange={(hex) => updateColor(i, hex)} label={dropdownColorName(c, i)} />
             <span>{dropdownColorName(c, i)}</span>
             <HexInput value={c} onChange={(hex) => updateColor(i, hex)} />
           </label>
