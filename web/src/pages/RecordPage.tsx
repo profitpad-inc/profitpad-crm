@@ -1169,65 +1169,63 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
             return (
               <div key={bi} className="change-batch">
                 <div className="change-batch-head">
+                  <span className={`change-avatar${actor.key ? ' key' : ''}`} aria-hidden="true">
+                    {actor.key ? <KeyRound size={13} /> : initials(actor.name)}
+                  </span>
                   <div className="change-meta">
-                    <span className="change-actor" title={h.api_key_id ? `${h.changed_by}, API key ${h.api_key_id}` : h.changed_by}>
-                      {actor.key && <KeyRound size={12} aria-label="API key" />}
-                      {actor.name}
-                    </span>
+                    <span className="change-actor" title={h.api_key_id ? `${h.changed_by}, API key ${h.api_key_id}` : h.changed_by}>{actor.name}</span>
                     <span className="change-tag">{VIA_LABELS[h.via]}</span>
                     {h.source !== h.via && h.source !== 'api' && <span className="change-tag">{h.source}</span>}
                   </div>
                   <time className="ledger-time" dateTime={h.changed_at}>{isoLocal(h.changed_at)}</time>
                 </div>
-                {batch.map((e, i) => {
-                  if (e.kind === 'link') {
-                    const other = byCode.get(e.objectType);
-                    const n = e.links.length;
-                    const noun = n === 1 ? other?.label_singular ?? 'Record' : `${n} ${(other?.label_plural ?? 'records').toLowerCase()}`;
-                    const Icon = e.linked ? Link2 : Unlink;
-                    return (
-                      <div key={i} className={`ledger-entry link-change${e.linked ? '' : ' unlinked'}`}>
-                        <span className="change-dot link-dot" aria-hidden="true"><Icon size={13} /></span>
-                        <div className="change-body">
-                          <div className="change-head">
-                            <strong>{noun} {e.linked ? 'associated' : 'disassociated'}</strong>
+                <div className="change-batch-items">
+                  {batch.map((e, i) => {
+                    if (e.kind === 'link') {
+                      const other = byCode.get(e.objectType);
+                      const n = e.links.length;
+                      const noun = n === 1 ? other?.label_singular ?? 'Record' : `${n} ${(other?.label_plural ?? 'records').toLowerCase()}`;
+                      const Icon = e.linked ? Link2 : Unlink;
+                      return (
+                        <div key={i} className={`ledger-entry link-change${e.linked ? '' : ' unlinked'}`}>
+                          <span className="change-dot link-dot" aria-hidden="true"><Icon size={12} /></span>
+                          <div className="change-body">
+                            <strong className="change-what">{noun} {e.linked ? 'associated' : 'disassociated'}</strong>
+                            <ul className="change-links">
+                              {e.links.map((l) => {
+                                const name = names.get(`${l.object_type_id}:${l.record_id}`);
+                                const label = labels.get(l.label_id);
+                                return (
+                                  <li key={l.association_id}>
+                                    {other ? (
+                                      <Link to={`/objects/${other.api_name}/${l.record_id}`} className={name ? undefined : 'muted'}>{name ?? `${other.label_singular} ${l.record_id}`}</Link>
+                                    ) : <span className="muted">{l.record_id}</span>}
+                                    {label && <span className="change-tag">{label}</span>}
+                                  </li>
+                                );
+                              })}
+                            </ul>
                           </div>
-                          <ul className="change-links">
-                            {e.links.map((l) => {
-                              const name = names.get(`${l.object_type_id}:${l.record_id}`);
-                              const label = labels.get(l.label_id);
-                              return (
-                                <li key={l.association_id}>
-                                  {other ? (
-                                    <Link to={`/objects/${other.api_name}/${l.record_id}`} className={name ? undefined : 'muted'}>{name ?? `${other.label_singular} ${l.record_id}`}</Link>
-                                  ) : <span className="muted">{l.record_id}</span>}
-                                  {label && <span className="change-tag">{label}</span>}
-                                </li>
-                              );
-                            })}
-                          </ul>
+                        </div>
+                      );
+                    }
+                    const r = e.row;
+                    const prop = schema.properties.find((p) => p.api_name === r.property);
+                    return (
+                      <div key={i} className="ledger-entry">
+                        <span className="change-dot" aria-hidden="true" />
+                        <div className="change-body">
+                          <strong className="change-what">{propLabel(r.property)}</strong>
+                          <div className="change-values">
+                            <span className={`change-value old${r.old_value === null ? ' none' : ''}`}>{r.old_value === null ? 'Empty' : historyValue(prop, r.old_value)}</span>
+                            <ArrowRight size={13} className="change-arrow" aria-label="to" />
+                            <span className={`change-value${r.new_value === null ? ' none' : ''}`}>{r.new_value === null ? 'Empty' : historyValue(prop, r.new_value)}</span>
+                          </div>
                         </div>
                       </div>
                     );
-                  }
-                  const r = e.row;
-                  const prop = schema.properties.find((p) => p.api_name === r.property);
-                  return (
-                    <div key={i} className="ledger-entry">
-                      <span className="change-dot" aria-hidden="true" />
-                      <div className="change-body">
-                        <div className="change-head">
-                          <strong>{propLabel(r.property)}</strong>
-                        </div>
-                        <div className="change-values">
-                          <span className={`change-value old${r.old_value === null ? ' none' : ''}`}>{r.old_value === null ? 'Empty' : historyValue(prop, r.old_value)}</span>
-                          <ArrowRight size={13} className="change-arrow" aria-label="to" />
-                          <span className={`change-value${r.new_value === null ? ' none' : ''}`}>{r.new_value === null ? 'Empty' : historyValue(prop, r.new_value)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                  })}
+                </div>
               </div>
             );
           })}

@@ -214,17 +214,35 @@
   padding: 0 7px; border-radius: 999px; font-size: 11.5px; font-weight: 500; line-height: 18px;
   border: 1px solid var(--border); color: var(--muted-text); background: var(--page-background);
 }
-/* Changes made together: one who-how-when line, then each change on the rail */
+/* Changes made together: the person's initials on the day's rail with one
+   who-how-when line, then each change on its own inner rail, one line each */
 .change-batch { display: flex; flex-direction: column; }
-.change-batch + .change-batch { margin-top: 10px; padding-top: 10px; }
-.change-batch-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap;
-  padding: 0 10px 2px 44px; min-width: 0;
-}
+.change-batch + .change-batch { margin-top: 14px; }
+.change-batch-head { display: flex; align-items: center; gap: 6px 14px; padding-right: 10px; min-width: 0; }
 .change-batch-head .change-meta { margin-top: 0; }
-.change-batch .ledger-entry { padding-top: 5px; padding-bottom: 5px; }
-.change-actor { display: inline-flex; align-items: center; gap: 4px; color: var(--text); font-weight: 500; }
-.change-actor svg { flex: none; color: var(--muted-text); }
+.change-batch-head .ledger-time { margin-left: auto; }
+.change-avatar {
+  position: relative; z-index: 1; flex: none; width: 30px; height: 30px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  background: var(--primary-soft); color: var(--primary); box-shadow: 0 0 0 3px var(--page-background);
+}
+.change-avatar.key { background: var(--surface); color: var(--muted-text); }
+.change-batch-items { position: relative; margin: 4px 0 0 44px; }
+.change-batch-items::before { content: ''; position: absolute; left: 10.5px; top: 14px; bottom: 14px; width: 1px; background: var(--hairline); }
+.record-page .change-batch .ledger-entry { gap: 12px; padding: 4px 10px 4px 0; }
+.record-page .change-batch .change-dot { width: 22px; height: 22px; margin-top: 0; }
+.record-page .change-batch .change-body {
+  padding-top: 0; display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr); gap: 2px 16px; align-items: center; min-height: 22px;
+}
+.change-what { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+.change-batch .change-values, .change-batch .change-links { margin-top: 0; }
+.change-batch .change-links { flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
+@media (max-width: 640px) {
+  .change-batch-head { flex-wrap: wrap; }
+  .record-page .change-batch .change-body { grid-template-columns: minmax(0, 1fr); }
+}
+.change-actor { color: var(--text); font-weight: 500; font-size: 13px; }
 
 /* Links: the rail marker is the link icon itself, and the linked records read as a list of names */
 .record-page .link-dot { height: 26px; margin-top: 1px; color: var(--primary); }

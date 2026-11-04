@@ -26,20 +26,20 @@ import { SignedInAsBanner } from './components/SignedInAsBanner';
 
 // Desktop: sidebar rail on the left. Phone: bottom bar, with the full menu
 // in a hamburger drawer on the home page.
-// A Super Admin signed in as another user sees a banner above everything
-// that cannot be closed.
+// A Super Admin signed in as another user sees a banner above the page
+// (beside the sidebar) that cannot be closed.
 function Layout() {
   const mobile = useIsMobile();
   return (
-    <div className={`app-shell${mobile ? ' mobile' : ''}`}>
-      <SignedInAsBanner />
-      <div className={`app${mobile ? ' mobile' : ''}`}>
-        {!mobile && <Sidebar />}
+    <div className={`app${mobile ? ' mobile' : ''}`}>
+      {!mobile && <Sidebar />}
+      <div className="main-col">
+        <SignedInAsBanner />
         <main className="main">
           <Outlet />
         </main>
-        {mobile && <BottomBar />}
       </div>
+      {mobile && <BottomBar />}
     </div>
   );
 }

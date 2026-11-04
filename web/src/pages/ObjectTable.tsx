@@ -275,10 +275,15 @@ function ObjectTableFor({ object }: { object: string }) {
     const th = (e.currentTarget as HTMLElement).closest('th')!;
     const startX = e.clientX;
     const startWidth = th.getBoundingClientRect().width;
+    // Pin every column at its current width so only this one moves; the filler
+    // column at the end takes up (or gives back) the leftover space.
+    const measured = new Map<number, number>();
+    th.parentElement?.querySelectorAll<HTMLElement>('th[data-col]').forEach((el) => measured.set(Number(el.dataset.col), Math.round(el.getBoundingClientRect().width)));
+    const pinned = columns.map((c, j) => (measured.has(j) ? { ...c, width: measured.get(j)! } : c));
     let latest = columns;
     const onMove = (ev: MouseEvent) => {
       const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + ev.clientX - startX)));
-      latest = columns.map((c, j) => (j === i ? { ...c, width } : c));
+      latest = pinned.map((c, j) => (j === i ? { ...c, width } : c));
       setColumns(latest);
     };
     const onUp = () => {
@@ -303,6 +308,7 @@ function ObjectTableFor({ object }: { object: string }) {
   function headerProps(i: number) {
     return {
       className: `${i === 0 ? 'lead-col' : ''}${dropAt === i ? ' drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}`,
+      'data-col': i,
       style: widthStyle(columns[i]),
       onDragOver: (e: React.DragEvent<HTMLElement>) => {
         if (dragFrom.current === null) return;
@@ -649,6 +655,19 @@ function ObjectTableFor({ object }: { object: string }) {
                   </th>
                 );
               })}
+              <th
+                className="dg-fill"
+                aria-hidden="true"
+                onDragOver={(e) => {
+                  if (dragFrom.current === null) return;
+                  e.preventDefault();
+                  setDropAt(columns.length);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dropColumn();
+                }}
+              />
             </tr>
           </thead>
           <tbody>
@@ -686,6 +705,7 @@ function ObjectTableFor({ object }: { object: string }) {
                     </td>
                   );
                 })}
+                <td className="dg-fill" aria-hidden="true" />
               </tr>
             ))}
           </tbody>
