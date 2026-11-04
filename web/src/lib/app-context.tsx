@@ -21,6 +21,9 @@ interface AppState {
   reloadCustomViews: () => Promise<void>;
   theme: Theme;
   reloadNav: () => Promise<void>;
+  // Settings, Navigation menus: shows the menu being edited in the sidebar and bottom bar until cleared (null)
+  navPreview: NavPreview | null;
+  setNavPreview: (p: NavPreview | null) => void;
   reloadObjects: () => Promise<void>;
   setTheme: (t: Partial<Theme>) => void;
   // the 16 colours offered for dropdown choices (Settings, Theme)
@@ -31,6 +34,13 @@ interface AppState {
   setLogo: (logo: string | null) => void;
   signOut: () => void;
   toast: (message?: string) => void;
+}
+
+export interface NavPreview {
+  label: string;
+  items: NavItem[];
+  bottomLeft: 'menu' | 'home';
+  bottom: NavItem[];
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -48,6 +58,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const [navCanEdit, setNavCanEdit] = useState(false);
   const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
   const [bottomNav, setBottomNav] = useState<NavItem[]>([]);
+  const [navPreview, setNavPreview] = useState<NavPreview | null>(null);
   const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
   const [theme, setThemeState] = useState<Theme>(() => applyTheme(undefined));
   const [dropdownColors, setDropdownColors] = useState<string[]>(defaultDropdownColors);
@@ -112,7 +123,10 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   return (
     <Ctx.Provider
       value={{
-        me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, navCanEdit, bottomLeft, bottomNav, customViews, theme,
+        me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])),
+        nav: navPreview?.items ?? nav, navSource, navCanEdit,
+        bottomLeft: navPreview?.bottomLeft ?? bottomLeft, bottomNav: navPreview?.bottom ?? bottomNav,
+        navPreview, setNavPreview, customViews, theme,
         reloadNav, reloadObjects, reloadCustomViews, setTheme, dropdownColors, setDropdownColors, logo, setLogo, signOut, toast
       }}
     >

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Ellipsis, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Ellipsis, Eye, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
 import { MORE_GROUPS, initials, objectIcon } from '../lib/display';
@@ -24,7 +24,7 @@ function readExpanded(): boolean {
 // 'rail' is the desktop sidebar; 'drawer' is the same menu, always expanded,
 // inside the phone hamburger drawer (More opens inline there).
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, navCanEdit, objectByName, objects, customViews, logo } = useApp();
+  const { me, nav, navCanEdit, navPreview, objectByName, objects, customViews, logo } = useApp();
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
@@ -103,6 +103,12 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
             {expanded && <span>Search</span>}
           </button>
         </div>
+        {navPreview && (
+          <div className="nav-preview-note" title={`Previewing ${navPreview.label}. Your own menu comes back when you leave this page.`}>
+            <Eye size={16} strokeWidth={1.75} />
+            {expanded && <span>Previewing {navPreview.label}</span>}
+          </div>
+        )}
         <div className="sidebar-items">
           {nav.map((item, i) => renderItem(item, String(i)))}
           <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => {

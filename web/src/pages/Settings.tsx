@@ -622,7 +622,7 @@ function moveNav(all: NavItem[], from: Spot, to: Spot): NavItem[] {
 // Targets: 'me' (the signed-in user's own menu, where the editor opens), 'default' (everyone not in a
 // group), 'group:<id>' and 'user:<id>'. Users who are not admins only get 'me'.
 function NavSettings() {
-  const { me, objects, objectByName, reloadNav, customViews } = useApp();
+  const { me, objects, objectByName, reloadNav, customViews, setNavPreview } = useApp();
   const navigate = useNavigate();
   const isAdmin = me.is_admin;
   const myId = me.user?.id ?? null;
@@ -704,6 +704,14 @@ function NavSettings() {
   }
 
   const dirty = loaded && JSON.stringify({ items, bottomLeft, bottom }) !== savedJson;
+
+  // While another menu (Default, a group or a user) is open here, the sidebar and mobile bar show it,
+  // unsaved changes included, so the admin sees what those people will see. Leaving the page puts theirs back.
+  useEffect(() => {
+    if (!loaded || target === 'me') setNavPreview(null);
+    else setNavPreview({ label: targetLabel(target), items, bottomLeft, bottom });
+  }, [loaded, target, items, bottomLeft, bottom, groups, users]);
+  useEffect(() => () => setNavPreview(null), [setNavPreview]);
 
   // With unsaved changes, a click on a link to another page asks first (the same dialog as closing a property),
   // and closing or reloading the tab gets the browser's own warning.
