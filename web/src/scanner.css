@@ -65,6 +65,7 @@
 .scan-choice { display: flex; flex-direction: column; gap: 6px; }
 .scan-choice-row { display: flex; gap: 10px; align-items: flex-start; text-align: left; border: 1px solid var(--border); background: var(--page-background); border-radius: var(--radius); padding: 9px 12px; color: var(--text); }
 .scan-choice-row.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--page-background)); }
+.scan-choice-row:disabled { opacity: 0.6; cursor: not-allowed; }
 .scan-choice-dot { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--border); }
 .scan-choice-row.active .scan-choice-dot { border: 5px solid var(--primary); }
 .scan-choice-label { display: block; }

@@ -125,6 +125,13 @@ export function CardScanner() {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // emails are unique: a contact already using this one can only be updated
+  const emailMatch = matches.contacts.find((c) => c.why === 'email' && (c.email ?? '').toLowerCase() === form.email.trim().toLowerCase());
+  const emailTaken = !!form.email.trim() && !!emailMatch;
+  useEffect(() => {
+    if (emailMatch && contactChoice === 'new') setContactChoice(emailMatch.id);
+  }, [emailMatch?.id, contactChoice]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startReview = (fields: CardFields | null, m: Matches, d: string | null, cardUrl: string | null, fileId: string | null, scanId: string | null = null) => {
     const f: Form = { ...EMPTY_FORM };
     if (fields) for (const { key } of FIELDS) f[key] = String(fields[key] ?? '');
@@ -292,7 +299,7 @@ export function CardScanner() {
 
   return (
     <Shell mobile={mobile}>
-      {error && <div className="error" role="alert">{error}</div>}
+      {error && step.kind !== 'review' && <div className="error" role="alert">{error}</div>}
 
       {step.kind === 'capture' && (
         <>
@@ -387,7 +394,9 @@ export function CardScanner() {
                     label: <>Update <b>{c.name || c.email || 'this contact'}</b>{c.company ? ` · ${c.company}` : ''}</>,
                     hint: `${c.why === 'email' ? 'Same email' : 'Same name'}. Only empty fields are filled in; the card photo is added.`
                   })),
-                  { value: 'new', label: 'Add as a new contact' }
+                  emailTaken
+                    ? { value: 'new', label: 'Add as a new contact', hint: 'A contact with this email already exists, and emails are unique. Change the email to add a new contact.', disabled: true }
+                    : { value: 'new', label: 'Add as a new contact' }
                 ]}
               />
             )}
@@ -425,6 +434,7 @@ export function CardScanner() {
               </label>
             )}
 
+            {error && <div className="error" role="alert">{error}</div>}
             <div className="scan-actions sticky">
               <button className="btn" disabled={saving} onClick={() => { setError(null); setStep({ kind: 'capture' }); }}><X size={16} /> Discard</button>
               <button
@@ -508,12 +518,12 @@ function Segmented<T extends string>({ value, onChange, options, label }: { valu
   );
 }
 
-function Choice({ title, value, onChange, options }: { title: string; value: string; onChange: (v: string) => void; options: { value: string; label: ReactNode; hint?: string }[] }) {
+function Choice({ title, value, onChange, options }: { title: string; value: string; onChange: (v: string) => void; options: { value: string; label: ReactNode; hint?: string; disabled?: boolean }[] }) {
   return (
     <section className="scan-choice" role="radiogroup" aria-label={title}>
       <h3>{title}</h3>
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} className={`scan-choice-row${value === o.value ? ' active' : ''}`} onClick={() => onChange(o.value)}>
+        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} disabled={o.disabled} className={`scan-choice-row${value === o.value ? ' active' : ''}`} onClick={() => onChange(o.value)}>
           <span className="scan-choice-dot" aria-hidden />
           <span>
             <span className="scan-choice-label">{o.label}</span>
