@@ -11,11 +11,18 @@
 --     API sets the new default before clearing the old one).
 -- Refusals use 55006 (409).
 
+-- A dropdown with a default is never empty, so existing templates get "No"
+-- before the default (and its not-empty rule) is set. No history rows: this
+-- is a backfill, not a change anyone made.
 select meta.create_property(
   p_object => 'document_templates', p_api_name => 'is_builtin', p_label => 'Came with the CRM', p_type => 'dropdown',
-  p_options => '{"single_value": true, "default_value": "false"}',
+  p_options => '{"single_value": true}',
   p_dropdown_options => '[{"api_value": "true", "label": "Yes"}, {"api_value": "false", "label": "No"}]',
   p_description => 'Installed with the CRM. It can be edited and archived, but not deleted.', p_is_native => true);
+select set_config('crm.skip_history', 'on', true);
+update crm.pc_0057 set is_builtin = '{false}' where record_status <> 'deleted' and is_builtin is null;
+select set_config('crm.skip_history', '', true);
+select meta.update_property('document_templates', 'is_builtin', p_options => '{"single_value": true, "default_value": "false"}');
 update meta.pc_0002 set read_only = true where object_type_id = 'pc_0057' and api_name = 'is_builtin';
 select meta._log_change('update_property', 'pc_0057', null, '{"read_only": ["is_builtin"]}');
 
