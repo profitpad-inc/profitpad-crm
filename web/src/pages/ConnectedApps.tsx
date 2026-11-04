@@ -4,6 +4,7 @@ import { Plug } from 'lucide-react';
 import { api, API_BASE } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CopyField, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { confirmDialog } from '../components/confirm';
 
 // Apps connected through OAuth (api/src/oauth.ts), such as AI assistants
 // using the MCP server. Everyone sees and disconnects their own; admins also
@@ -87,8 +88,8 @@ export function ConnectedApps() {
     }
   }
 
-  const disconnect = (c: Connection, whose: string) =>
-    window.confirm(`Disconnect ${c.app_name}${whose}? It stops working immediately.`) &&
+  const disconnect = async (c: Connection, whose: string) =>
+    (await confirmDialog('It stops working immediately.', { title: `Disconnect ${c.app_name}${whose}?`, confirmLabel: 'Disconnect', danger: true })) &&
     run(() => api('DELETE', `/v1/oauth/connections/${c.id}`), `${c.app_name} disconnected`);
 
   const table = (head: string[], body: ReactNode) => (
@@ -161,7 +162,7 @@ export function ConnectedApps() {
                   {a.blocked_at ? (
                     <button className="btn small ghost" onClick={() => run(() => api('POST', `/v1/oauth/apps/${a.id}/unblock`, {}), `${a.name} unblocked`)}>Unblock</button>
                   ) : (
-                    <button className="btn small ghost danger-text" onClick={() => window.confirm(`Block ${a.name} for everyone?`) && run(() => api('POST', `/v1/oauth/apps/${a.id}/block`, {}), `${a.name} blocked`)}>Block</button>
+                    <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog(`${a.name} is blocked for everyone.`, { title: 'Block this app?', confirmLabel: 'Block', danger: true })) && run(() => api('POST', `/v1/oauth/apps/${a.id}/block`, {}), `${a.name} blocked`)}>Block</button>
                   )}
                 </td>
               </tr>

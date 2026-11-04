@@ -4,6 +4,7 @@ import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { StatusPill } from './settings';
 import { fileInfo, fileLink, formatBytes, openFile, type FileInfo } from '../lib/files';
+import { confirmDialog } from './confirm';
 
 const PREVIEW = /^(image\/(png|jpeg|gif|webp|avif)|video\/|audio\/)/;
 
@@ -32,7 +33,7 @@ export function FileCard({ record }: { record: CrmRecord }) {
   }, [record.id]);
 
   async function setPublic(on: boolean) {
-    if (!on && !confirm('Turn off the public link? Anyone who has it can no longer open the file.')) return;
+    if (!on && !(await confirmDialog('Anyone who has it can no longer open the file.', { title: 'Turn off the public link?', confirmLabel: 'Turn off', danger: true }))) return;
     setBusy(true);
     setError(null);
     try {

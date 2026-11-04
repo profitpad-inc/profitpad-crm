@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from './FilterBuilder';
 import { EmptyState, SettingsSection } from './settings';
 import { Select } from './Select';
+import { confirmDialog } from './confirm';
 
 // Settings → Roles: sharing rules widen which records a role's users see (or
 // edit) beyond their own or their team's: records of one object that match
@@ -121,7 +122,7 @@ export function SharingRules({ roleId, recordAccess }: { roleId: string; recordA
   }
 
   async function remove(rule: SharingRule) {
-    if (!window.confirm(`Delete the sharing rule "${rule.name}"? People with this role stop seeing the records it shared.`)) return;
+    if (!(await confirmDialog('People with this role stop seeing the records it shared.', { title: `Delete the sharing rule "${rule.name}"?`, confirmLabel: 'Delete', danger: true }))) return;
     setError(null);
     try {
       await api('DELETE', `/v1/roles/${roleId}/sharing-rules/${rule.id}`);

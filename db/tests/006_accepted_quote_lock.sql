@@ -1,5 +1,5 @@
--- Accepted quotes are locked (0073): amount, currency, expiration date,
--- responded at and the line items. Archiving, restoring and deleting the
+-- Accepted quotes are locked (0073, 0074): amount, currency, expiration date,
+-- responded at, customer signed at and the line items. Archiving, restoring and deleting the
 -- whole quote still work. Runs in a transaction that is rolled back.
 \set ON_ERROR_STOP 1
 begin;
@@ -52,6 +52,7 @@ begin
   perform meta._t006_expect_error(format($$update crm.pc_0022 set currency = array['EUR'] where pc_0022_id = %L$$, v_quote), 'currency cannot be changed');
   perform meta._t006_expect_error(format($$update crm.pc_0022 set expiration_date = null where pc_0022_id = %L$$, v_quote), 'expiration date cannot be changed');
   perform meta._t006_expect_error(format($$update crm.pc_0022 set responded_at = null where pc_0022_id = %L$$, v_quote), 'responded at cannot be changed');
+  perform meta._t006_expect_error(format($$update crm.pc_0022 set customer_signed_at = now() where pc_0022_id = %L$$, v_quote), 'customer signed at cannot be changed');
   perform meta._t006_expect_error(format($$update crm.pc_0022 set status = array['draft'], amount = 1 where pc_0022_id = %L$$, v_quote), 'amount cannot be changed');
   -- other properties still can
   update crm.pc_0022 set name = 'Q renamed', decline_reason = 'n/a' where pc_0022_id = v_quote;

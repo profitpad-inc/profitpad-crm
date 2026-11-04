@@ -8,6 +8,7 @@ import { parseQueryParams } from '../public/public-api';
 import { EmptyState, StatusPill } from './settings';
 import { Select } from './Select';
 import '../editors.css';
+import { confirmDialog } from './confirm';
 
 // Form builder on a form's record page. Edits the form's definition (see
 // api/src/forms.ts for the format and the rules the API enforces on save):
@@ -193,13 +194,13 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
     setOpen(field.name);
   }
 
-  function remove(f: Field) {
+  async function remove(f: Field) {
     if (isContactEmail(f) && def.fields.some((x) => x !== f && x.property?.object === 'contacts')) {
       setError('Remove the other contact fields first: contacts are matched by email.');
       return;
     }
     const dependents = def.fields.filter((x) => x.conditions?.some((c) => c.field === f.name));
-    if (dependents.length && !confirm(`Conditions on ${dependents.map((d) => `"${d.label}"`).join(', ')} use this field and will be removed too. Continue?`)) return;
+    if (dependents.length && !(await confirmDialog(`Conditions on ${dependents.map((d) => `"${d.label}"`).join(', ')} use this field and will be removed too.`, { title: 'Remove this field?', confirmLabel: 'Remove', danger: true }))) return;
     change({
       ...def,
       fields: def.fields.filter((x) => x !== f).map((x) => (x.conditions ? { ...x, conditions: x.conditions.filter((c) => c.field !== f.name) } : x))
@@ -241,12 +242,12 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
       setError((err as Error).message);
     }
   }
-  function generateHtml() {
+  async function generateHtml() {
     if (dirty) {
       setError('Save the form first, so the HTML matches the saved fields.');
       return;
     }
-    if (html && !confirm('Replace the custom HTML with markup generated from the fields? Your edits to it are lost.')) return;
+    if (html && !(await confirmDialog('Your edits to it are lost.', { title: 'Replace the custom HTML with markup generated from the fields?', confirmLabel: 'Replace', danger: true }))) return;
     void setHtml(formHtml({ ...def, fields: def.fields.map(resolved) }));
   }
 
@@ -287,7 +288,7 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
             <span className="ed-strip-text">This form uses <strong>custom HTML</strong> (the HTML property on the left). Fields added here must be added to the HTML too, or saving fails.</span>
             <span className="ed-strip-actions">
               <button className="btn small ghost" onClick={generateHtml}>Regenerate</button>
-              <button className="btn small ghost danger-text" onClick={() => confirm('Remove the custom HTML and generate the form from its fields?') && setHtml(null)}>Remove</button>
+              <button className="btn small ghost danger-text" onClick={async () => { if (await confirmDialog('The form is generated from its fields again.', { title: 'Remove the custom HTML?', confirmLabel: 'Remove', danger: true })) void setHtml(null); }}>Remove</button>
             </span>
           </>
         ) : (

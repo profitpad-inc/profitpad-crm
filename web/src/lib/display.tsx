@@ -105,8 +105,8 @@ export function actorLabel(p: Property, value: string): string {
   return value;
 }
 
-// Phone properties store +11234567890ext1 (the API checks them with Google's
-// libphonenumber). Shown as +1 123-456-7890 ext1; other countries keep the
+// Phone properties store +18882345678ext9 (the API checks them with Google's
+// libphonenumber). Shown as +1 888-234-5678 ext9; other countries keep the
 // stored digits, since grouping them needs the library's metadata.
 export function displayPhone(v: string): string {
   const m = /^\+(\d+?)(?:ext(\d+))?$/.exec(v);

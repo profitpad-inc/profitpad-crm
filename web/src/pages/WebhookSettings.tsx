@@ -9,6 +9,7 @@ import {
   ApprovalNote, CopyField, EditPanel, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview, type Approval, type Tone
 } from '../components/settings';
 import { Select } from '../components/Select';
+import { confirmDialog } from '../components/confirm';
 
 // Settings → Webhooks (admins, migration 0038): endpoints that receive record
 // events as signed JSON POSTs, their subscriptions (object, event, optional
@@ -191,14 +192,14 @@ export function WebhookSettings() {
   const endpointState = (e: Endpoint) => (e.awaiting_approval ? 'Waiting for approval' : !e.enabled ? 'Off' : e.consecutive_failures > 0 ? 'Failing' : 'On');
 
   // turning one on sends CRM data out (an admin's approval when it was added outside the CRM)
-  function turnOnEndpoint(e: Endpoint) {
-    if (!window.confirm(`Turn on "${e.name}"? Its subscriptions that are on will send CRM data to ${e.url}.`)) return;
+  async function turnOnEndpoint(e: Endpoint) {
+    if (!(await confirmDialog(`Its subscriptions that are on will send CRM data to ${e.url}.`, { title: `Turn on "${e.name}"?`, confirmLabel: 'Turn on' }))) return;
     run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: true }), e.awaiting_approval ? 'Endpoint approved and turned on' : 'Endpoint turned on');
   }
 
-  function turnOnSubscription(e: Endpoint, s: Subscription) {
+  async function turnOnSubscription(e: Endpoint, s: Subscription) {
     const sends = s.send_properties.length ? `record IDs, changes and ${s.send_properties.join(', ')}` : 'record IDs and changes';
-    if (!window.confirm(`Turn on "${s.summary}"? It sends ${sends} to ${e.url}.`)) return;
+    if (!(await confirmDialog(`It sends ${sends} to ${e.url}.`, { title: `Turn on "${s.summary}"?`, confirmLabel: 'Turn on' }))) return;
     run(() => api('PATCH', `/v1/webhooks/subscriptions/${s.id}`, { enabled: true }), s.awaiting_approval ? 'Subscription approved and turned on' : 'Subscription turned on');
   }
 
@@ -305,7 +306,7 @@ export function WebhookSettings() {
                         const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/secret`);
                         setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
                       }); }}>Reveal signing secret</button>
-                      <button onClick={() => { close(); if (window.confirm(`Make a new signing secret for "${e.name}"? The old one stops working at once.`)) run(async () => {
+                      <button onClick={async () => { close(); if (await confirmDialog('The old one stops working at once.', { title: `Make a new signing secret for "${e.name}"?`, confirmLabel: 'Make a new secret', danger: true })) run(async () => {
                         const r = await api<{ signing_secret: string }>('POST', `/v1/webhooks/endpoints/${e.id}/rotate-secret`);
                         setSecret({ endpoint: e.id, value: r.signing_secret, fresh: false });
                       }, 'New signing secret made'); }}>New signing secret</button>
@@ -313,7 +314,7 @@ export function WebhookSettings() {
                         <button onClick={() => { close(); run(() => api('PATCH', `/v1/webhooks/endpoints/${e.id}`, { enabled: false }), 'Endpoint turned off'); }}>Turn off</button>
                       )}
                       <div className="menu-sep" />
-                      <button className="danger" onClick={() => { close(); if (window.confirm(`Delete "${e.name}" with its ${e.subscriptions.length} subscription(s) and delivery log?`)) run(() => api('DELETE', `/v1/webhooks/endpoints/${e.id}`), 'Endpoint deleted'); }}>Delete endpoint</button>
+                      <button className="danger" onClick={async () => { close(); if (await confirmDialog(`Its ${e.subscriptions.length} subscription(s) and delivery log are deleted too.`, { title: `Delete "${e.name}"?`, confirmLabel: 'Delete', danger: true })) run(() => api('DELETE', `/v1/webhooks/endpoints/${e.id}`), 'Endpoint deleted'); }}>Delete endpoint</button>
                     </>
                   )}
                 </Menu>
@@ -353,7 +354,7 @@ export function WebhookSettings() {
                                   {s.awaiting_approval ? 'Approve and turn on' : 'Turn on'}
                                 </button>
                               )}
-                              <button className="btn small ghost danger-text" onClick={() => window.confirm('Delete this subscription?') && run(() => api('DELETE', `/v1/webhooks/subscriptions/${s.id}`), 'Subscription deleted')}>Delete</button>
+                              <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog('This subscription is deleted.', { title: 'Delete this subscription?', confirmLabel: 'Delete', danger: true })) && run(() => api('DELETE', `/v1/webhooks/subscriptions/${s.id}`), 'Subscription deleted')}>Delete</button>
                             </span>
                           </td>
                         </tr>

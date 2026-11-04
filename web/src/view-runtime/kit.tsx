@@ -593,7 +593,7 @@ const VIEW_PHONE: PhoneSource = {
 };
 
 // The CRM's phone box: a country picker and the number, checked and formatted
-// (+1 123-456-7890 ext1) when the viewer leaves it, with a message under it
+// (+1 888-234-5678 ext9) when the viewer leaves it, with a message under it
 // when it is not a valid number. onChange gets what to save: +<code> and the
 // number as typed, then the formatted number once checked. Use it for every
 // phone property (describe_object shows display: phone).

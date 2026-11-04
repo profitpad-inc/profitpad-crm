@@ -7,6 +7,7 @@ import { PhoneInput, type PhoneResult, type PhoneSource } from './PhoneInput';
 import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 import { Select } from './Select';
+import { onFrameFocus } from '../lib/frame-focus';
 import { AddressInput, addressValues, useAddressGroup } from './AddressInput';
 
 // locked: Escape and clicks outside do nothing; only the X (or the footer's
@@ -60,7 +61,9 @@ export function Menu({ trigger, children, align = 'left' }: { trigger: (open: ()
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', close);
     window.addEventListener('scroll', close, true);
+    const offFrame = onFrameFocus(close);
     return () => {
+      offFrame();
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', close);

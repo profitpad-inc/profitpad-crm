@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { ViewIcon } from '../lib/lucide-icons';
 import { useAddToMenu } from '../lib/use-add-to-menu';
 import { useViewIconPicker } from './IconPicker';
+import { confirmDialog } from './confirm';
 
 interface ViewCodeOut {
   id: string;
@@ -162,7 +163,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   }, [wrap]);
 
   async function publish() {
-    if (!confirm('Publish the draft? Everyone who can open this view will see it.')) return;
+    if (!(await confirmDialog('Everyone who can open this view will see it.', { title: 'Publish the draft?', confirmLabel: 'Publish' }))) return;
     setBusy(true);
     setError(null);
     try {

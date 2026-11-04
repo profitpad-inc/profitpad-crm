@@ -1,4 +1,5 @@
 import { requestReauth } from './reauth';
+import { alertDialog } from '../components/confirm';
 
 // Thin client for the CRM API. The UI authenticates via the HttpOnly session
 // cookie set after Google sign-in (sent with credentials: 'include').
@@ -37,7 +38,7 @@ async function send<T>(method: string, path: string, body: unknown, retried: boo
     // a "Sign in as" session that stopped holding (the user became a Super
     // Admin, say): say so, then load the app again as the Super Admin
     if (data?.error === 'sign_in_as_ended') {
-      window.alert(data.message);
+      await alertDialog(data.message, { title: 'Sign in as ended' });
       window.location.reload();
     }
     throw new ApiError(res.status, data?.message ?? res.statusText, data?.error, data?.details);

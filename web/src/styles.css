@@ -197,6 +197,7 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .modal { background: var(--page-background); border-radius: var(--radius-lg); width: min(520px, calc(100vw - 32px)); max-height: 80vh; display: flex; flex-direction: column; box-shadow: var(--shadow-modal); }
 .modal.wide { width: min(860px, calc(100vw - 32px)); }
 .modal.discard-confirm { margin-top: 48px; }
+.confirm-message { margin: 0; white-space: pre-line; line-height: 1.5; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
 .modal-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .modal-body { padding: 16px 20px; overflow: auto; }

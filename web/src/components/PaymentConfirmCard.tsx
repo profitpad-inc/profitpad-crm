@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Banknote } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { confirmDialog } from './confirm';
 
 // Record page card for a payment a customer reported as an Interac e-Transfer.
 // Staff mark it received once the money is in the bank (the invoice becomes
@@ -16,7 +17,7 @@ export function PaymentConfirmCard({ record, onChanged }: { record: CrmRecord; o
   if (first(p.method) !== 'etransfer' || first(p.status) !== 'pending') return null;
 
   async function act(action: 'confirm' | 'reject') {
-    if (action === 'reject' && !confirm('Mark this e-Transfer as not received? The customer can then pay again.')) return;
+    if (action === 'reject' && !(await confirmDialog('The customer can then pay again.', { title: 'Mark this e-Transfer as not received?', confirmLabel: 'Mark as not received', danger: true }))) return;
     setError(null);
     setBusy(true);
     try {

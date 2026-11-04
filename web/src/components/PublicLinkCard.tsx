@@ -5,6 +5,7 @@ import { API_BASE, api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { StatusPill } from './settings';
 import { localToday } from './DatePicker';
+import { confirmDialog } from './confirm';
 
 // Record page card for quotes, invoices, forms and booking pages: Publish
 // (quote to Sent, invoice to Open, form and booking page to Published, making
@@ -56,9 +57,10 @@ export function PublicLinkCard({ object, record, onChanged }: {
   }
 
   async function generate() {
-    if (publicKey && !confirm(isDoc || isBooking
-      ? 'Make a new link? The current link stops working for anyone who has it.'
-      : 'Make a new key? Websites that embed this form stop working until their snippet is updated.')) return;
+    if (publicKey && !(await confirmDialog(isDoc || isBooking
+      ? 'The current link stops working for anyone who has it.'
+      : 'Websites that embed this form stop working until their snippet is updated.',
+    { title: isDoc || isBooking ? 'Make a new link?' : 'Make a new key?', confirmLabel: isDoc || isBooking ? 'Make a new link' : 'Make a new key', danger: true }))) return;
     setError(null);
     try {
       const res = await api<{ public_key: string }>('POST', `/v1/objects/${object}/${record.id}/public-link`);

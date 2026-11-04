@@ -5,7 +5,7 @@ import { Select } from './Select';
 // What the API's phone check answers (POST /v1/phone/validate)
 export interface PhoneResult {
   valid: boolean;
-  // e.g. +1 123-456-7890 ext1
+  // e.g. +1 888-234-5678 ext9
   display: string | null;
   region?: string | null;
   reason: string | null;
@@ -20,10 +20,10 @@ export interface PhoneSource {
 
 // Phone properties: a country picker and the number. A number typed without
 // + gets the picked country's code in front (composePhone); the API checks
-// it with Google's libphonenumber and stores +11234567890ext1. Commits when
+// it with Google's libphonenumber and stores +18882345678ext9. Commits when
 // focus leaves both controls, not when moving between them. With check (forms
 // that save later, like Create), leaving them also checks the number: a valid
-// one is shown formatted (+1 123-456-7890 ext1) and its country picked, an
+// one is shown formatted (+1 888-234-5678 ext9) and its country picked, an
 // invalid one gets a message under the box.
 export function PhoneInput({ value, onChange, autoFocus, onCommit, source, check, classes }: {
   value: string;
@@ -97,7 +97,7 @@ export function PhoneInput({ value, onChange, autoFocus, onCommit, source, check
           className={classes?.input}
           value={text}
           autoFocus={autoFocus}
-          placeholder="123 456 7890 ext1"
+          placeholder="888-234-5678 ext9"
           aria-invalid={error ? true : undefined}
           onChange={(e) => {
             setText(e.target.value);

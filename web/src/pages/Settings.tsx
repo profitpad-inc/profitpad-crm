@@ -29,6 +29,7 @@ import { AddressSettings } from './AddressSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import '../settings.css';
+import { confirmDialog } from '../components/confirm';
 
 // who sees a page: everyone, signed-in users (not bare API keys), admins, or
 // those who may edit a menu (admins, and users allowed to change their own)
@@ -447,7 +448,7 @@ function EmbedDomains() {
                 <Globe size={14} className="lead" />
                 <span>{o}</span>
                 <button className="icon-btn push-right" title="Remove" aria-label={`Remove ${o}`}
-                  onClick={() => window.confirm(`Remove ${o}? Forms and booking pages embedded there stop working.`) && save(origins.filter((x) => x !== o))}>
+                  onClick={async () => { if (await confirmDialog('Forms and booking pages embedded there stop working.', { title: `Remove ${o}?`, confirmLabel: 'Remove', danger: true })) save(origins.filter((x) => x !== o)); }}>
                   <Trash2 size={14} />
                 </button>
               </li>
@@ -1285,8 +1286,8 @@ function NavGroups({ groups, users, myId, everyoneCan, menuSources, onChanged, o
                   <button
                     className="icon-btn"
                     aria-label={`Delete ${g.name}`}
-                    onClick={() => {
-                      if (window.confirm(`Delete the group "${g.name}"? Its members go back to the default menu (or their own, if they have one and are allowed).`)) {
+                    onClick={async () => {
+                      if (await confirmDialog('Its members go back to the default menu (or their own, if they have one and are allowed).', { title: `Delete the group "${g.name}"?`, confirmLabel: 'Delete', danger: true })) {
                         run(() => api('DELETE', `/v1/ui/nav/groups/${g.id}`));
                       }
                     }}

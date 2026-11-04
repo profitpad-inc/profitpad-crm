@@ -2,8 +2,8 @@ import lib from 'google-libphonenumber';
 
 // Phone numbers, checked with Google's libphonenumber. Numbers without a
 // country code are read as Canadian (+1, same plan as the US). Valid numbers
-// are stored as E.164 plus an optional extension, "+11234567890ext1", and
-// shown as "+1 123-456-7890 ext1". Used for text properties with display
+// are stored as E.164 plus an optional extension, "+18882345678ext9", and
+// shown as "+1 888-234-5678 ext9". Used for text properties with display
 // "phone" (every write, see values.ts), form fields with the phone format
 // (forms.ts), and POST /v1/phone/validate.
 
@@ -13,9 +13,9 @@ export const DEFAULT_REGION = 'CA';
 export interface PhoneCheck {
   input: string;
   valid: boolean;
-  // stored form, e.g. +11234567890ext1
+  // stored form, e.g. +18882345678ext9
   value: string | null;
-  // shown form, e.g. +1 123-456-7890 ext1
+  // shown form, e.g. +1 888-234-5678 ext9
   display: string | null;
   e164: string | null;
   extension: string | null;

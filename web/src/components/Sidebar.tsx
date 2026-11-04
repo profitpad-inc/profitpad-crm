@@ -6,6 +6,7 @@ import type { NavItem } from '../lib/api';
 import { MORE_GROUPS, initials, objectIcon } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
+import { onFrameFocus } from '../lib/frame-focus';
 import { SearchPalette } from './SearchPalette';
 import { BrandMark } from './Logo';
 
@@ -190,9 +191,11 @@ function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTo
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    const offFrame = onFrameFocus(onClose);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      offFrame();
     };
   }, [onClose]);
 

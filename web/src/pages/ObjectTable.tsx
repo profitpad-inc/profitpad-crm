@@ -17,6 +17,7 @@ import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../c
 import { EmptyState, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import '../table.css';
+import { confirmDialog } from '../components/confirm';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -474,7 +475,7 @@ function ObjectTableFor({ object }: { object: string }) {
   }
 
   async function deleteView(view: View) {
-    if (!confirm(`Delete the view "${view.name}"?`)) return;
+    if (!(await confirmDialog(`The view "${view.name}" is deleted.`, { title: 'Delete this view?', confirmLabel: 'Delete', danger: true }))) return;
     await api('DELETE', `/v1/ui/views/${view.id}`);
     const rest = views.filter((v) => v.id !== view.id);
     setViews(rest);

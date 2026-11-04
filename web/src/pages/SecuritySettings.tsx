@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { displayName } from '../lib/display';
 import { CopyField, EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
+import { confirmDialog, alertDialog } from '../components/confirm';
 
 // Admin pages for API keys and the security log (migration 0019).
 
@@ -183,12 +184,12 @@ export function ApiKeySettings() {
                         <span className="row-actions-inner">
                           <button className="btn small ghost" onClick={() => {
                             if (!k.user_id) {
-                              window.alert('This key has no user, and every key now needs one. Create a new key for the right user, switch your integration to it, then revoke this one.');
+                              void alertDialog('This key has no user, and every key now needs one. Create a new key for the right user, switch your integration to it, then revoke this one.', { title: 'This key cannot be rotated' });
                               return;
                             }
                             run(() => api<NewKey>('POST', `/v1/api-keys/${k.id}/rotate`, {}), 'Key rotated; the old key works for 24 more hours');
                           }}>Rotate</button>
-                          <button className="btn small ghost danger-text" onClick={() => window.confirm(`Revoke “${k.name}”? It stops working immediately.`) && run(() => api('DELETE', `/v1/api-keys/${k.id}`), 'Key revoked')}>Revoke</button>
+                          <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog('It stops working immediately.', { title: `Revoke “${k.name}”?`, confirmLabel: 'Revoke', danger: true })) && run(() => api('DELETE', `/v1/api-keys/${k.id}`), 'Key revoked')}>Revoke</button>
                         </span>
                       )}
                     </td>

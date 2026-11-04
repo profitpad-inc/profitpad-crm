@@ -87,11 +87,18 @@ export function Select({ value: raw, onChange, options, children, id, className,
     const onScroll = (e: Event) => {
       if (!popRef.current?.contains(e.target as Node)) close();
     };
+    // a click inside an iframe never reaches mousedown above; the window
+    // loses focus to the frame instead (same as lib/frame-focus.ts)
+    const onBlur = () => setTimeout(() => {
+      if (document.activeElement instanceof HTMLIFrameElement) close();
+    });
     document.addEventListener('mousedown', onDown);
+    window.addEventListener('blur', onBlur);
     window.addEventListener('resize', close);
     window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', close);
       window.removeEventListener('scroll', onScroll, true);
     };

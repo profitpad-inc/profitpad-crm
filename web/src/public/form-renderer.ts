@@ -327,7 +327,7 @@ export function renderForm(container: HTMLElement, opts: {
 
   // Formats are checked when the visitor leaves a field; while an error
   // shows, it clears as soon as the answer becomes valid. Phone answers are
-  // checked by the API and, when valid, rewritten as +1 123-456-7890 ext1.
+  // checked by the API and, when valid, rewritten as +1 888-234-5678 ext9.
   const fieldOf = (target: EventTarget | null) => {
     const name = (target as HTMLInputElement | null)?.name;
     return name ? asked.find((f) => f.name === name && f.format) : undefined;

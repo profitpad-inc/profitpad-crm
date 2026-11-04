@@ -10,6 +10,7 @@ import type { RecordBack } from './RecordPage';
 import { fileInfo, fileLink, formatBytes, openFile, uploadFile } from '../lib/files';
 import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewFile, ViewInit } from '../view-runtime/protocol';
 import { checkExternalUrl } from '../view-runtime/external-url';
+import { confirmDialog } from '../components/confirm';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
 // sandboxed iframe (public/view-frame, opaque origin, no network); this page
@@ -254,10 +255,10 @@ export function CustomView() {
   async function draftAction(action: 'publish' | 'revert') {
     const v = latest.current.view;
     if (!v) return;
-    const ask = action === 'publish'
-      ? 'Publish the draft? Everyone who can open this view will see it.'
-      : 'Throw away the draft\'s changes and go back to the published version? This cannot be undone.';
-    if (!confirm(ask)) return;
+    const ok = action === 'publish'
+      ? await confirmDialog('Everyone who can open this view will see it.', { title: 'Publish the draft?', confirmLabel: 'Publish' })
+      : await confirmDialog('The draft\'s changes are thrown away and the view goes back to the published version. This cannot be undone.', { title: 'Revert to published?', confirmLabel: 'Revert', danger: true });
+    if (!ok) return;
     setBusy(true);
     try {
       await api('POST', `/v1/views/${encodeURIComponent(v.slug)}/${action}`);

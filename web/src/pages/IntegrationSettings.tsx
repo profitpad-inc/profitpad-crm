@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ApprovalNote, EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton, useReview, type Approval } from '../components/settings';
 import { Select } from '../components/Select';
+import { confirmDialog } from '../components/confirm';
 
 // Settings → View integrations (admins, migration 0036): outside endpoints such as
 // n8n webhooks that custom views send data to with callIntegration(key, data).
@@ -112,9 +113,9 @@ export function IntegrationSettings() {
   }
 
   // turning one on lets views send CRM data to it (an admin's approval when it was added outside the CRM)
-  function turnOn(i: Integration) {
+  async function turnOn(i: Integration) {
     const who = i.audience === 'everyone' ? 'anyone who can open a view that calls it' : 'admins';
-    if (!window.confirm(`Turn on "${i.label}"? Views will be able to send CRM data to ${i.url}, for ${who}.`)) return;
+    if (!(await confirmDialog(`Views will be able to send CRM data to ${i.url}, for ${who}.`, { title: `Turn on "${i.label}"?`, confirmLabel: 'Turn on' }))) return;
     run(() => api('PATCH', `/v1/view-integrations/${encodeURIComponent(i.key)}`, { enabled: true }), i.awaiting_approval ? 'Integration approved and turned on' : 'Integration turned on');
   }
 
@@ -248,7 +249,7 @@ export function IntegrationSettings() {
                         data_example: exampleText(i.data_example), interactive: i.interactive
                       })}>Edit</button>
                       <button className="btn small ghost" onClick={() => sendTest(i)}>Send test</button>
-                      <button className="btn small ghost danger-text" onClick={() => window.confirm(`Delete "${i.label}"? Views that call ${i.key} stop working.`) && run(() => api('DELETE', `/v1/view-integrations/${encodeURIComponent(i.key)}`), 'Integration deleted')}>Delete</button>
+                      <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog(`Views that call ${i.key} stop working.`, { title: `Delete "${i.label}"?`, confirmLabel: 'Delete', danger: true })) && run(() => api('DELETE', `/v1/view-integrations/${encodeURIComponent(i.key)}`), 'Integration deleted')}>Delete</button>
                     </span>
                   </td>
                 </tr>

@@ -339,6 +339,7 @@
 /* Navigation menus: menu groups */
 .nav-groups { max-width: 1180px; }
 .nav-group-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.field + .nav-group-switch { margin-top: 10px; }
 .nav-members-search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 10px; margin: 8px 0; color: var(--muted-text); }
 .nav-members-search input { border: 0; outline: 0; background: transparent; flex: 1; height: 34px; color: var(--text); }
 .nav-members { max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }

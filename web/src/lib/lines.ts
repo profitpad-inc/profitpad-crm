@@ -1,4 +1,5 @@
 import { api, type CrmRecord } from './api';
+import { confirmDialog } from '../components/confirm';
 
 // A parent's amount next to the total of its active line items, so the UI can
 // offer to bring the amount in line after lines are added, changed, removed
@@ -67,7 +68,7 @@ export async function offerAmountUpdates(parents: { object: string; id: string }
   const question = totals.length === 1
     ? `Update the ${labelOf(totals[0].object).toLowerCase()} amount to match its line items?\n\n${list}`
     : `Update these amounts to match their line items?\n\n${list}`;
-  if (!confirm(question)) return 0;
+  if (!(await confirmDialog(question, { title: 'Update amounts?', confirmLabel: 'Update' }))) return 0;
   await Promise.all(totals.map((t) => setParentAmount(t.object, t.id, t.total)));
   return totals.length;
 }

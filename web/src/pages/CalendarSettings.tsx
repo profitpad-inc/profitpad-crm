@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import '../booking.css';
+import { confirmDialog } from '../components/confirm';
 
 // Settings -> Calendars: the user's Google and Microsoft calendars for the
 // meeting booker (api/src/calendar/connect.ts). Connecting leaves the CRM for
@@ -144,7 +145,7 @@ export function CalendarSettings() {
                 {!c.use_for_new_events && c.status === 'active' && (
                   <button className="btn small" onClick={() => patch(c, { use_for_new_events: true }, 'New meetings go to this calendar')}>Use for new meetings</button>
                 )}
-                <button className="btn small ghost danger-text" onClick={() => window.confirm(`Disconnect ${PROVIDER[c.provider]}${c.email ? ` (${c.email})` : ''}? Booking pages stop checking it.`)
+                <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog('Booking pages stop checking it.', { title: `Disconnect ${PROVIDER[c.provider]}${c.email ? ` (${c.email})` : ''}?`, confirmLabel: 'Disconnect', danger: true }))
                   && run(() => api('DELETE', `/v1/calendar/connections/${c.id}`), 'Calendar disconnected')}>Disconnect</button>
               </div>
             </div>

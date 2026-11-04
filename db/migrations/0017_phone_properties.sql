@@ -1,7 +1,7 @@
 -- Phone number properties: text properties with display "phone". The API
 -- checks every write to them with Google's libphonenumber (default region CA)
--- and stores valid numbers as E.164 plus extension: +11234567890ext1. The UI
--- shows them as +1 123-456-7890 ext1. See api/src/phone.ts.
+-- and stores valid numbers as E.164 plus extension: +18882345678ext9. The UI
+-- shows them as +1 888-234-5678 ext9. See api/src/phone.ts.
 --
 -- Same function as in 0003, with 'phone' added to the display values.
 create or replace function meta._validate_options(p_type text, p_options jsonb) returns void

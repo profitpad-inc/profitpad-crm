@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
+import { confirmDialog } from '../components/confirm';
 
 // Settings -> Payments (admins): the Stripe account customers pay into, and
 // the Interac e-Transfer details shown on quote and invoice pages
@@ -94,7 +95,7 @@ export function PaymentSettings() {
   }, []);
 
   async function remove() {
-    if (!confirm('Stop taking Stripe payments? Your Stripe account stays yours; you can still sign in to it at dashboard.stripe.com.')) return;
+    if (!(await confirmDialog('Your Stripe account stays yours; you can still sign in to it at dashboard.stripe.com.', { title: 'Stop taking Stripe payments?', confirmLabel: 'Stop taking payments', danger: true }))) return;
     setError(null);
     try {
       await api('DELETE', '/v1/payments/connection');

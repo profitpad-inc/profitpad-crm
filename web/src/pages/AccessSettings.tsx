@@ -8,6 +8,7 @@ import { SharingRules } from '../components/SharingRules';
 import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { Menu } from '../components/ui';
+import { confirmDialog } from '../components/confirm';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -128,7 +129,7 @@ export function UserSettings() {
   // "Sign in as": Super Admins, on another active user who is not a Super Admin
   // (the API checks all of this again; same rule as the user record's menu)
   async function signInAs(u: UserRow) {
-    if (!confirm(`Sign in as ${u.name}? Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.`)) return;
+    if (!(await confirmDialog('Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.', { title: `Sign in as ${u.name}?`, confirmLabel: 'Sign in as them' }))) return;
     try {
       await api('POST', `/v1/users/${u.id}/sign-in-as`);
       // a full load, so the menu, objects and views are theirs
@@ -139,7 +140,7 @@ export function UserSettings() {
   }
 
   async function setStatus(u: UserRow, status: 'active' | 'deactivated') {
-    if (status === 'deactivated' && !confirm(`Deactivate ${u.name}? They are signed out everywhere, can no longer sign in, and API keys linked to them stop working.`)) return;
+    if (status === 'deactivated' && !(await confirmDialog('They are signed out everywhere, can no longer sign in, and API keys linked to them stop working.', { title: `Deactivate ${u.name}?`, confirmLabel: 'Deactivate', danger: true }))) return;
     setError(null);
     try {
       await api('PATCH', `/v1/objects/users/${u.id}`, { properties: { status: [status] } });
@@ -265,8 +266,8 @@ export function RoleSettings() {
     : !!role && (draft.name !== role.name || draft.description !== (role.description ?? '') || draft.is_admin !== role.is_admin || draft.record_access !== role.record_access);
 
   // id is a role id or 'new'
-  function pick(id: string, list = roles) {
-    if (id !== selected && dirty && !window.confirm('Discard your unsaved changes to this role?')) return;
+  async function pick(id: string, list = roles) {
+    if (id !== selected && dirty && !(await confirmDialog('Your unsaved changes to this role are lost.', { title: 'Discard changes?', confirmLabel: 'Discard', danger: true }))) return;
     load(id, list);
   }
 
@@ -316,7 +317,7 @@ export function RoleSettings() {
   }
 
   async function remove() {
-    if (!role || !window.confirm(`Delete the role "${role.name}"? Its users lose the access it gave them.`)) return;
+    if (!role || !(await confirmDialog('Its users lose the access it gave them.', { title: `Delete the role "${role.name}"?`, confirmLabel: 'Delete', danger: true }))) return;
     const list = (await run(() => api('DELETE', `/v1/roles/${role.id}`).then(reloadRoles))) as Role[] | undefined;
     if (list) {
       setSelected(null);

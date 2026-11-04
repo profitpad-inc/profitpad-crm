@@ -21,6 +21,7 @@ import { CreateRecordModal } from '../components/CreateRecordModal';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
 import '../record.css';
+import { confirmDialog, alertDialog } from '../components/confirm';
 
 interface Link_ {
   association_id: string;
@@ -72,7 +73,7 @@ const HIDDEN_PROPS: Record<string, string[]> = {
 };
 // An accepted quote is locked (migration 0073; the database refuses changes):
 // these properties and its line items. A line on one is locked as a whole.
-const ACCEPTED_QUOTE_LOCKED = ['amount', 'currency', 'expiration_date', 'responded_at'];
+const ACCEPTED_QUOTE_LOCKED = ['amount', 'currency', 'expiration_date', 'responded_at', 'customer_signed_at'];
 type RecordLock = { props: string[] | 'all'; reason: string };
 const isAcceptedQuote = (r: CrmRecord) => {
   const s = r.properties.status;
@@ -193,7 +194,7 @@ export function RecordPage() {
   }
 
   async function archive() {
-    if (!confirm('Move this record to the recycle bin?')) return;
+    if (!(await confirmDialog('You can restore it from the recycle bin later.', { title: 'Move this record to the recycle bin?', confirmLabel: 'Move to recycle bin', danger: true }))) return;
     // a line's deal, quote, ... is offered its new total once the line is gone
     const parents = object === 'lines' ? await parentsOfLines([id]).catch(() => []) : [];
     await api('DELETE', `/v1/objects/${object}/${id}`);
@@ -208,7 +209,7 @@ export function RecordPage() {
 
   // admins only: wipes every value and the history, keeping only the id
   async function removeForGood() {
-    if (!confirm('Permanently delete this record? Every value, link and change history is erased for good. This cannot be undone.')) return;
+    if (!(await confirmDialog('Every value, link and change history is erased for good. This cannot be undone.', { title: 'Permanently delete this record?', confirmLabel: 'Delete permanently', danger: true }))) return;
     await api('POST', `/v1/objects/${object}/${id}/permanently-delete`, { confirm: id });
     toast('Permanently deleted');
     navigate(`/objects/${object}?status=archived`);
@@ -236,13 +237,13 @@ export function RecordPage() {
     && record.id !== me.user?.id && userSuperAdmin?.id === record.id && !userSuperAdmin.admin;
   const recordId = record.id;
   async function signInAs() {
-    if (!confirm(`Sign in as ${name}? Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.`)) return;
+    if (!(await confirmDialog('Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.', { title: `Sign in as ${name}?`, confirmLabel: 'Sign in as them' }))) return;
     try {
       await api('POST', `/v1/users/${recordId}/sign-in-as`);
       // a full load, so the menu, objects and views are theirs
       window.location.assign('/');
     } catch (err) {
-      alert((err as Error).message);
+      await alertDialog((err as Error).message, { title: 'Could not sign in as this user' });
     }
   }
   // views link to nothing, so they have no association cards: no right column
@@ -1270,9 +1271,9 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
                         <div className="change-body">
                           <strong className="change-what">{propLabel(r.property)}</strong>
                           <div className="change-values">
-                            <span className={`change-value old${r.old_value === null ? ' none' : ''}`}>{r.old_value === null ? 'Empty' : historyValue(prop, r.old_value)}</span>
+                            {r.old_value === null ? <span className="change-value old none">Empty</span> : <ChangeValue old>{historyValue(prop, r.old_value)}</ChangeValue>}
                             <ArrowRight size={13} className="change-arrow" aria-label="to" />
-                            <span className={`change-value${r.new_value === null ? ' none' : ''}`}>{r.new_value === null ? 'Empty' : historyValue(prop, r.new_value)}</span>
+                            {r.new_value === null ? <span className="change-value none">Empty</span> : <ChangeValue>{historyValue(prop, r.new_value)}</ChangeValue>}
                           </div>
                         </div>
                       </div>
@@ -1285,6 +1286,33 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
         </LedgerDay>
       ))}
     </div>
+  );
+}
+
+// A history value chip, cut to six lines with a show more/less toggle when
+// the value is longer (a signature's data URL, a long note).
+function ChangeValue({ old, children }: { old?: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const measure = () => setLong(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open, children]);
+  return (
+    <span className="change-value-wrap">
+      <span ref={ref} className={`change-value${old ? ' old' : ''}${open ? '' : ' clamped'}`}>{children}</span>
+      {(long || open) && (
+        <button type="button" className="change-value-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -1540,7 +1568,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
   }
 
   async function unlink(targetId: string) {
-    if (!confirm('Remove this association?')) return;
+    if (!(await confirmDialog('The records stay; only the link between them is removed.', { title: 'Remove this association?', confirmLabel: 'Remove', danger: true }))) return;
     await api('DELETE', `/v1/objects/${self}/${selfId}/associations/${other}/${targetId}`);
     // removing a line from a deal, quote, ... offers the new total as its amount
     if (other === 'lines' && AMOUNT_PARENTS.includes(self)) {
@@ -1740,7 +1768,7 @@ function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: stri
   }
 
   async function unlink() {
-    if (!parent || !confirm(`Remove this line item from its ${objectByName.get(parent.object)?.label_singular.toLowerCase()}?`)) return;
+    if (!parent || !(await confirmDialog('Only the link is removed.', { title: `Remove this line item from its ${objectByName.get(parent.object)?.label_singular.toLowerCase()}?`, confirmLabel: 'Remove', danger: true }))) return;
     await api('DELETE', `/v1/objects/lines/${selfId}/associations/${parent.object}/${parent.record.id}`);
     await onChanged();
   }
