@@ -279,7 +279,9 @@ begin
   update crm.pc_0000 set name = 'Keep Admin B renamed' where pc_0000_id = v_b;
   update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_plain;
 
-  update crm.pc_0000 set status = null where pc_0000_id = v_a;
+  -- a user's status is never empty (0072)
+  perform meta._test_expect_error(format($$update crm.pc_0000 set status = null where pc_0000_id = %L$$, v_a), 'check constraint');
+  update crm.pc_0000 set status = '{active}' where pc_0000_id = v_a;
   perform meta._test_expect_error(format($$update crm.pc_0000 set status = '{deactivated}' where pc_0000_id in (%L, %L)$$, v_a, v_b), 'last active user with an admin role');
   update crm.pc_0000 set record_status = 'archived' where pc_0000_id = v_b;
   perform meta._test_check(meta.has_active_admin(), 'archiving one of two admins is allowed');

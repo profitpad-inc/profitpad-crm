@@ -190,7 +190,7 @@ export async function loadQuoteDocument(): Promise<QuoteDocumentConfig> {
 
 // ---- formatting --------------------------------------------------------------
 
-// +16132220328ext4 -> +1 613-222-0328 ext4 (web/src/lib/display.tsx displayPhone)
+// +11234567890ext1 -> +1 123-456-7890 ext1 (web/src/lib/display.tsx displayPhone)
 function phone(v: string): string {
   const m = /^\+(\d+?)(?:ext(\d+))?$/.exec(v);
   if (!m) return v;

@@ -127,7 +127,7 @@ Types you can import for your own maps and props (types are stripped, not checke
 Sizes: Button, TextInput and Select are 34px tall, or 28px with small, so controls of the same size line up in a Row or in Page actions (which takes inputs as well as buttons: <Page actions={<><TextInput small .../><Button small>Send</Button></>}>). Mix sizes only on purpose. Text is 14px (12px small).
 
 - <TextInput value onChange={(v) => ...} placeholder type="text"|"search"|"number"|"date" debounce={300} small />: with debounce (ms), the box updates as you type but onChange waits until typing stops; use it when onChange sets params or runs a query.
-- <PhoneInput value onChange={(v) => ...} small />: the CRM's phone box, for every phone property (display: phone in describe_object, get_object_create_form and the schema topic). A country picker (flag) beside the number; when the viewer leaves it, the number is checked and shown formatted (+1 613-222-0328 ext4), or a message under it says why it is not valid. onChange gets the value to save. Never use a TextInput for a phone property.
+- <PhoneInput value onChange={(v) => ...} small />: the CRM's phone box, for every phone property (display: phone in describe_object, get_object_create_form and the schema topic). A country picker (flag) beside the number; when the viewer leaves it, the number is checked and shown formatted (+1 123-456-7890 ext1), or a message under it says why it is not valid. onChange gets the value to save. Never use a TextInput for a phone property.
 - <Select value onChange options={[{ value, label }]} placeholder? small />: the CRM's dropdown. It opens a menu-style list like every other dropdown in the CRM (a check beside the current choice, a search box from 11 choices, arrow keys, Enter and Escape), never the browser's own list. onChange gets the picked value as a string. Widen it with style={{ minWidth: 200 }}. Never write a raw <select> in a view: use Select for every single choice.
 - <Button variant="primary"|"danger" small disabled onClick>text</Button>
 
@@ -302,7 +302,7 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 - Option values: letters, digits, dots, underscores, at most 63; unique per property.
 
 ## Types and options
-- text: single_line, display (plain, url, markdown, json, html, phone: checked with Google's libphonenumber and stored as +16132220328ext4), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
+- text: single_line, display (plain, url, markdown, json, html, phone: checked with Google's libphonenumber and stored as +11234567890ext1), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
 - number: min, max, decimals (0 to 10), format (formatted, unformatted, currency, percentage), prefix, suffix, currency_code (fixed currency) or currency_property (a dropdown holding the currency).
 - dropdown: single_value, allow_user_add, auto_append_users (users as options), default_value (an option value; never empty), parent_property (another single-value dropdown on the same object that this one depends on, like stage on pipeline), color_display (how choice colours show: none (default), dot for a large dot left of the label (single_value only) or pill). A yes/no is a single-value dropdown with options true and false.
 

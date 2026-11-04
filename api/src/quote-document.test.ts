@@ -32,7 +32,7 @@ test('numbers, percentages, dates, datetimes and phones', () => {
   assert.equal(formatProperty(prop({ type: 'number', options: { format: 'percentage' } }), '0.125', {}, null), '12.5%');
   assert.equal(formatProperty(prop({ type: 'date' }), '2026-12-15', {}, null), 'December 15, 2026');
   assert.equal(formatProperty(prop({ type: 'datetime' }), new Date('2026-12-15T14:05:00Z'), {}, null), 'December 15, 2026 at 2:05 PM UTC');
-  assert.equal(formatProperty(prop({ type: 'text', options: { display: 'phone' } }), '+16132220328ext4', {}, null), '+1 613-222-0328 ext4');
+  assert.equal(formatProperty(prop({ type: 'text', options: { display: 'phone' } }), '+11234567890ext1', {}, null), '+1 123-456-7890 ext1');
   assert.equal(formatProperty(prop({ type: 'calculation', calc_output_type: 'number', options: { decimals: 0 } }), '42.4', {}, null), '42');
   assert.equal(formatProperty(prop({}), null, {}, null), '');
 });

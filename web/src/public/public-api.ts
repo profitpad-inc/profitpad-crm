@@ -100,7 +100,7 @@ export interface PublicForm {
 
 export interface PhoneResult {
   valid: boolean;
-  // e.g. +1 613-222-0328 ext4
+  // e.g. +1 123-456-7890 ext1
   display: string | null;
   // e.g. CA, for the country picker
   region?: string | null;

@@ -359,7 +359,7 @@ function cleanValue(f: FormField, v: unknown): unknown {
       if (f.type !== 'textarea' && /[\r\n]/.test(s)) throw new Error('must be a single line');
       if (f.format === 'email' && !EMAIL_RE.test(s)) throw new Error('must be an email address');
       if (f.format === 'phone') {
-        // stored as +16132220328ext4 (see phone.ts)
+        // stored as +11234567890ext1 (see phone.ts)
         const phone = checkPhone(s);
         if (!phone.valid) throw new Error(`must be a valid phone number (${phone.reason})`);
         return phone.value;

@@ -34,7 +34,7 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
 
   if (type === 'text') {
     if (typeof input !== 'string') throw fail('expected a string');
-    // phone properties: any format in, only valid numbers stored (+16132220328ext4)
+    // phone properties: any format in, only valid numbers stored (+11234567890ext1)
     if (prop.options.display === 'phone') {
       const phone = checkPhone(input);
       if (!phone.valid) throw badRequest(`${prop.label}: "${input}" is not a valid phone number (${phone.reason})`, { property: prop.api_name });

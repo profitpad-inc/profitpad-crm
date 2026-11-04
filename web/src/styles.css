@@ -457,8 +457,11 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .login-divider::before, .login-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 
 @media (max-width: 1100px) {
-  .record-page { grid-template-columns: 300px minmax(0, 1fr); }
-  .record-right { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); }
+  /* the top row (properties, activity) keeps the full screen height and scrolls inside its columns; the
+     associations row sits below it at its full height and the page scrolls down to it. Without the row
+     sizes both rows shared the screen height, cutting the top short and squashing the cards */
+  .record-page { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: 100% max-content; }
+  .record-right { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); overflow: visible; }
 }
 
 /* touch screens have no hover, so hover-only controls stay visible */
