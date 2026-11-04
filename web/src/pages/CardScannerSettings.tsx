@@ -65,7 +65,7 @@ export function CardScannerSettings() {
           htmlFor="card-reader"
           hint={draft.reader === 'tesseract'
             ? 'Tesseract reads the photo on this server, so it never leaves the CRM. Good on clear, flat photos; glare, blur and fancy fonts trip it up.'
-            : 'The photo goes to Anthropic with your API key, and Claude Haiku 5.5 reads it. Much better on poor photos and unusual layouts. Anthropic bills your account for each card (about a twentieth of a cent).'}
+            : 'The photo goes to Anthropic with your API key, and Claude Haiku 5.5 reads it. Much better on poor photos and unusual layouts. Anthropic bills your account for each card, about US$0.0005 per card.'}
         >
           <Select
             id="card-reader"
@@ -73,7 +73,7 @@ export function CardScannerSettings() {
             onChange={(v) => setDraft({ ...draft, reader: v as State['reader'] })}
             options={[
               { value: 'tesseract', label: 'On this server (Tesseract)' },
-              { value: 'claude', label: 'Claude (Anthropic)', disabled: !state.has_key }
+              { value: 'claude', label: 'Claude Haiku 5.5 (Anthropic)', disabled: !state.has_key }
             ]}
           />
         </SettingRow>
@@ -87,7 +87,7 @@ export function CardScannerSettings() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Claude" description="Optional. Uses your own Anthropic account: create a key at console.anthropic.com.">
+      <SettingsSection title="Claude Haiku 5.5" description="Optional. Cards are read with Anthropic's Claude Haiku 5.5 model, on your own Anthropic account: create a key at console.anthropic.com.">
         <SettingRow
           label="Anthropic API key"
           htmlFor="anthropic-key"

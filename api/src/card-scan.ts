@@ -695,15 +695,24 @@ export async function cardScanRoutes(app: FastifyInstance) {
       keyChange = { sealed: seal(key), hint: key.slice(-4) };
     }
     if (next.reader === 'claude' && !(keyChange ? keyChange.sealed : cur.key)) throw badRequest('Add an Anthropic API key before switching to Claude.');
-    await pool.query(
-      `insert into auth.card_scan_settings (id, reader, anthropic_key, key_hint, updated_by, updated_at)
-       values (true, $1, $2, $3, $4, now())
-       on conflict (id) do update set reader = excluded.reader,
-         anthropic_key = case when $5 then excluded.anthropic_key else card_scan_settings.anthropic_key end,
-         key_hint = case when $5 then excluded.key_hint else card_scan_settings.key_hint end,
-         updated_by = excluded.updated_by, updated_at = now()`,
-      [next.reader, keyChange?.sealed ?? null, keyChange?.hint ?? null, p.actor, keyChange !== undefined]
+    // An update, not an insert-or-update: Postgres checks the table's rule
+    // (Claude needs a key) on the insert's own values first, which carry no
+    // key when only the reader changes. Migration 0065 makes the row.
+    const params = [next.reader, keyChange?.sealed ?? null, keyChange?.hint ?? null, p.actor, keyChange !== undefined];
+    const { rowCount } = await pool.query(
+      `update auth.card_scan_settings set reader = $1,
+         anthropic_key = case when $5 then $2 else anthropic_key end,
+         key_hint = case when $5 then $3 else key_hint end,
+         updated_by = $4, updated_at = now()
+       where id`,
+      params
     );
+    if (!rowCount) {
+      await pool.query(
+        'insert into auth.card_scan_settings (id, reader, anthropic_key, key_hint, updated_by) values (true, $1, $2, $3, $4)',
+        params.slice(0, 4)
+      );
+    }
     await logEvent(req, 'settings.updated', {
       target: { type: 'setting', id: 'card_scanner' },
       details: { reader: next.reader, ...(keyChange ? { anthropic_key: keyChange.sealed ? 'replaced' : 'removed' } : {}) }
