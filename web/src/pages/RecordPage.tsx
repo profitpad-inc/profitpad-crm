@@ -399,7 +399,7 @@ export function RecordPage() {
             {object === 'files' && <FileCard record={record} />}
             {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
             {cards.map((o) => (
-              <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} onChanged={refresh} />
+              <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} linked={associated} onChanged={refresh} />
             ))}
           </aside>}
         </>
@@ -1666,8 +1666,11 @@ function UserHistory({ object, id, schema }: { object: string; id: string; schem
   );
 }
 
-function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, onChanged }: {
-  self: string; selfId: string; selfRecord: CrmRecord; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; lineCount: number; onChanged: () => Promise<void>;
+function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, linked, onChanged }: {
+  self: string; selfId: string; selfRecord: CrmRecord; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; lineCount: number;
+  // everything the page's record is linked to (a deal's companies and contacts, offered to a new quote)
+  linked: Associated[];
+  onChanged: () => Promise<void>;
 }) {
   const { objectByName } = useApp();
   const navigate = useNavigate();
@@ -1797,6 +1800,18 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
           object={createSchema}
           associations={[{ object: self, id: selfId }]}
           copyLines={fromDeal ? { object: self, id: selfId, count: lineCount, label: (objectByName.get(self)?.label_singular ?? self).toLowerCase() } : undefined}
+          copyLinks={fromDeal ? {
+            label: (objectByName.get(self)?.label_singular ?? self).toLowerCase(),
+            groups: ['companies', 'contacts']
+              .filter((o) => objectByName.get(other)?.links_to.includes(o))
+              .map((o) => ({
+                object: o,
+                singular: (objectByName.get(o)?.label_singular ?? o).toLowerCase(),
+                plural: (objectByName.get(o)?.label_plural ?? o).toLowerCase(),
+                records: (linked.find((g) => g.object === o)?.records ?? []).map((x) => ({ id: x.record.id, name: recordName(x.record) }))
+              }))
+              .filter((g) => g.records.length > 0)
+          } : undefined}
           startWith={fromDeal ? {
             amount: selfRecord.properties.amount,
             currency: Array.isArray(selfRecord.properties.currency) ? selfRecord.properties.currency[0] : selfRecord.properties.currency

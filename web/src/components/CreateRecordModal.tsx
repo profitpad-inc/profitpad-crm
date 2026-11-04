@@ -22,14 +22,17 @@ function daysFromToday(days: number): string {
 
 // associations: records the new one is linked to (a quote made from a deal).
 // copyLines: offers to copy that record's line items onto the new one.
+// copyLinks: offers to link the new record to that record's companies and
+// contacts too (one switch per object, on by default).
 // startWith: values the new record takes without asking (a deal's amount and
 // currency); dropdown values this object does not offer are left out.
-export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines, startWith }: {
+export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines, copyLinks, startWith }: {
   object: ObjectDef;
   onClose: () => void;
   onCreated: (r: CrmRecord) => void;
   associations?: { object: string; id: string }[];
   copyLines?: { object: string; id: string; count: number; label: string };
+  copyLinks?: { label: string; groups: { object: string; singular: string; plural: string; records: { id: string; name: string }[] }[] };
   startWith?: Record<string, unknown>;
 }) {
   const { me } = useApp();
@@ -49,6 +52,8 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   const [error, setError] = useState<{ message: string; property?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copy, setCopy] = useState(true);
+  // the copyLinks objects switched off
+  const [skipLinks, setSkipLinks] = useState<Set<string>>(() => new Set());
   const [created, setCreated] = useState<CrmRecord | null>(null);
   // properties a picked address filled (Settings → Address autocomplete),
   // saved even when the form doesn't show them
@@ -89,7 +94,11 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
     try {
       // a retry after a failed copy does not create the record twice
       if (!record) {
-        const links = template ? [...(associations ?? []), { object: 'document_templates', id: template }] : associations;
+        const links = [
+          ...(associations ?? []),
+          ...(copyLinks?.groups ?? []).filter((g) => !skipLinks.has(g.object)).flatMap((g) => g.records.map((r) => ({ object: g.object, id: r.id }))),
+          ...(template ? [{ object: 'document_templates', id: template }] : [])
+        ];
         record = await api<CrmRecord>('POST', `/v1/objects/${object.api_name}`, { properties, associations: links });
         setCreated(record);
       }
@@ -136,9 +145,18 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
             <Select value={template} onChange={setTemplate} options={templateOptions(templates)} />
           </label>
         )}
-        {copyLines && copyLines.count > 0 && (
+        {((copyLines && copyLines.count > 0) || (copyLinks && copyLinks.groups.length > 0)) && (
           <div className="checks">
-            <label><input type="checkbox" checked={copy} disabled={!!created} onChange={(e) => setCopy(e.target.checked)} /> Copy the {copyLines.label}'s {copyLines.count} line {copyLines.count === 1 ? 'item' : 'items'}</label>
+            {copyLines && copyLines.count > 0 && (
+              <label><input type="checkbox" checked={copy} disabled={!!created} onChange={(e) => setCopy(e.target.checked)} /> Copy the {copyLines.label}'s {copyLines.count} line {copyLines.count === 1 ? 'item' : 'items'}</label>
+            )}
+            {copyLinks?.groups.map((g) => (
+              <label key={g.object}>
+                <input type="checkbox" checked={!skipLinks.has(g.object)} disabled={!!created}
+                  onChange={(e) => setSkipLinks((s) => { const n = new Set(s); if (e.target.checked) n.delete(g.object); else n.add(g.object); return n; })} />
+                {' '}Link the {copyLinks.label}'s {g.records.length === 1 ? `${g.singular}: ${g.records[0].name}` : `${g.records.length} ${g.plural}: ${g.records.map((r) => r.name).join(', ')}`}
+              </label>
+            ))}
           </div>
         )}
         {error && !error.property && <div className="error">{error.message}</div>}
