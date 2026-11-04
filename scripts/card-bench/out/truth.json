@@ -1,0 +1,468 @@
+[
+  {
+    "id": "01",
+    "template": "classic",
+    "portrait": false,
+    "first_name": "Dana",
+    "last_name": "Whitfield",
+    "job_title": "Director of Business Development",
+    "company": "Northgate Avionics",
+    "email": "dana.whitfield@northgateavionics.com",
+    "phone": "6135550142",
+    "all_phones": [
+      "6135550142",
+      "6135550199"
+    ],
+    "website": "northgateavionics.com",
+    "address_city": "Ottawa",
+    "address_province": "ON",
+    "address_postalcode": "K2C 3P4",
+    "address_country": "CA"
+  },
+  {
+    "id": "02",
+    "template": "centered",
+    "portrait": false,
+    "first_name": "Marcus",
+    "last_name": "Okafor",
+    "job_title": "VP Engineering",
+    "company": "Tessellate Systems",
+    "email": "m.okafor@tessellatesys.io",
+    "phone": "5125550117",
+    "all_phones": [
+      "5125550117"
+    ],
+    "website": "www.tessellatesys.io",
+    "address_city": "Austin",
+    "address_province": "TX",
+    "address_postalcode": "78701",
+    "address_country": "US"
+  },
+  {
+    "id": "03",
+    "template": "dark",
+    "portrait": false,
+    "first_name": "Priya",
+    "last_name": "Raman",
+    "job_title": "Senior Program Manager",
+    "company": "Halcyon Defense Group",
+    "email": "praman@halcyondg.com",
+    "phone": "7035550163",
+    "all_phones": [
+      "7035550163",
+      "5715550108"
+    ],
+    "website": "halcyondg.com",
+    "address_city": "Arlington",
+    "address_province": "VA",
+    "address_postalcode": "22203",
+    "address_country": "US"
+  },
+  {
+    "id": "04",
+    "template": "military",
+    "portrait": false,
+    "first_name": "Andrew",
+    "last_name": "Mercer",
+    "job_title": "Program Executive Officer",
+    "company": "US Army PEO Sensors",
+    "email": "andrew.j.mercer.mil@army.mil",
+    "phone": "4105550124",
+    "all_phones": [
+      "4105550124",
+      "3125550124"
+    ],
+    "website": "",
+    "address_city": "Aberdeen Proving Ground",
+    "address_province": "MD",
+    "address_postalcode": "21005",
+    "address_country": "US"
+  },
+  {
+    "id": "05",
+    "template": "bilingual",
+    "portrait": false,
+    "first_name": "Sophie",
+    "last_name": "Tremblay",
+    "job_title": "Directrice des ventes / Sales Director",
+    "company": "Aérospatiale Boréal",
+    "email": "stremblay@boreal-aero.ca",
+    "phone": "5145550131",
+    "all_phones": [
+      "5145550131",
+      "4385550177"
+    ],
+    "website": "boreal-aero.ca",
+    "address_city": "Montréal",
+    "address_province": "QC",
+    "address_postalcode": "H4R 1P8",
+    "address_country": "CA"
+  },
+  {
+    "id": "06",
+    "template": "band",
+    "portrait": false,
+    "first_name": "Kenji",
+    "last_name": "Watanabe",
+    "job_title": "Chief Technology Officer",
+    "company": "Lumenfield Robotics",
+    "email": "kenji@lumenfield.ai",
+    "phone": "4155550186",
+    "all_phones": [
+      "4155550186"
+    ],
+    "website": "lumenfield.ai",
+    "address_city": "San Francisco",
+    "address_province": "CA",
+    "address_postalcode": "94105",
+    "address_country": "US"
+  },
+  {
+    "id": "07",
+    "template": "twocol",
+    "portrait": false,
+    "first_name": "Rebecca",
+    "last_name": "Lindqvist",
+    "job_title": "Account Executive, Federal",
+    "company": "Corvane Data",
+    "email": "rebecca.lindqvist@corvane.com",
+    "phone": "2025550154",
+    "all_phones": [
+      "2025550154",
+      "2025550193"
+    ],
+    "website": "corvane.com",
+    "address_city": "Washington",
+    "address_province": "DC",
+    "address_postalcode": "20005",
+    "address_country": "US"
+  },
+  {
+    "id": "08",
+    "template": "portrait",
+    "portrait": true,
+    "first_name": "Tomás",
+    "last_name": "Esparza",
+    "job_title": "Field Applications Engineer",
+    "company": "Brightline Sensors",
+    "email": "tesparza@brightlinesensors.com",
+    "phone": "5205550129",
+    "all_phones": [
+      "5205550129"
+    ],
+    "website": "brightlinesensors.com",
+    "address_city": "Tucson",
+    "address_province": "AZ",
+    "address_postalcode": "85756",
+    "address_country": "US"
+  },
+  {
+    "id": "09",
+    "template": "script",
+    "portrait": false,
+    "first_name": "Fiona",
+    "last_name": "MacLeod",
+    "job_title": "Managing Partner",
+    "company": "Strathmore Advisory",
+    "email": "fiona@strathmore-advisory.com",
+    "phone": "6045550112",
+    "all_phones": [
+      "6045550112"
+    ],
+    "website": "strathmore-advisory.com",
+    "address_city": "Vancouver",
+    "address_province": "BC",
+    "address_postalcode": "V6E 3P3",
+    "address_country": "CA"
+  },
+  {
+    "id": "10",
+    "template": "military",
+    "portrait": false,
+    "first_name": "Jamal",
+    "last_name": "Haddad",
+    "job_title": "Requirements Officer",
+    "company": "Royal Canadian Navy",
+    "email": "jamal.haddad@forces.gc.ca",
+    "phone": "9025550147",
+    "all_phones": [
+      "9025550147",
+      "9025550148"
+    ],
+    "website": "",
+    "address_city": "Halifax",
+    "address_province": "NS",
+    "address_postalcode": "B3K 5X5",
+    "address_country": "CA"
+  },
+  {
+    "id": "11",
+    "template": "dense",
+    "portrait": false,
+    "first_name": "Grace",
+    "last_name": "Abernathy",
+    "job_title": "Contracts Specialist",
+    "company": "Meridian Shipworks",
+    "email": "gabernathy@meridianshipworks.com",
+    "phone": "7575550175",
+    "all_phones": [
+      "7575550175",
+      "7575550176"
+    ],
+    "website": "meridianshipworks.com",
+    "address_city": "Norfolk",
+    "address_province": "VA",
+    "address_postalcode": "23510",
+    "address_country": "US"
+  },
+  {
+    "id": "12",
+    "template": "logo",
+    "portrait": false,
+    "first_name": "Oliver",
+    "last_name": "Pemberton-Hayes",
+    "job_title": "Head of Partnerships",
+    "company": "Quillon Analytics",
+    "email": "oliver.ph@quillon.co",
+    "phone": "6465550138",
+    "all_phones": [
+      "6465550138"
+    ],
+    "website": "quillon.co",
+    "address_city": "New York",
+    "address_province": "NY",
+    "address_postalcode": "",
+    "address_country": "US"
+  },
+  {
+    "id": "13",
+    "template": "classic",
+    "portrait": false,
+    "first_name": "Ana",
+    "last_name": "Kowalczyk",
+    "job_title": "Procurement Lead",
+    "company": "Westbrook Composites",
+    "email": "ana.kowalczyk@westbrookcomposites.com",
+    "phone": "3165550161",
+    "all_phones": [
+      "3165550100",
+      "3165550161"
+    ],
+    "website": "westbrookcomposites.com",
+    "address_city": "Wichita",
+    "address_province": "KS",
+    "address_postalcode": "67206",
+    "address_country": "US"
+  },
+  {
+    "id": "14",
+    "template": "dark",
+    "portrait": false,
+    "first_name": "Darnell",
+    "last_name": "Brooks",
+    "job_title": "Sales Manager, Counter-UAS",
+    "company": "Skyward Interdiction",
+    "email": "dbrooks@skywardinterdict.com",
+    "phone": "2565550158",
+    "all_phones": [
+      "2565550158"
+    ],
+    "website": "skywardinterdict.com",
+    "address_city": "Huntsville",
+    "address_province": "AL",
+    "address_postalcode": "35805",
+    "address_country": "US"
+  },
+  {
+    "id": "15",
+    "template": "centered",
+    "portrait": false,
+    "first_name": "Ingrid",
+    "last_name": "Solberg",
+    "job_title": "Technical Director",
+    "company": "Polaris Maritime Research",
+    "email": "i.solberg@polarismr.org",
+    "phone": "7095550119",
+    "all_phones": [
+      "7095550119"
+    ],
+    "website": "polarismr.org",
+    "address_city": "St. John's",
+    "address_province": "NL",
+    "address_postalcode": "A1C 6H3",
+    "address_country": "CA"
+  },
+  {
+    "id": "16",
+    "template": "band",
+    "portrait": false,
+    "first_name": "Victor",
+    "last_name": "Nakamura-Ruiz",
+    "job_title": "President & CEO",
+    "company": "Ironclad Logistics",
+    "email": "victor@ironcladlogistics.com",
+    "phone": "3055550181",
+    "all_phones": [
+      "3055550181"
+    ],
+    "website": "ironcladlogistics.com",
+    "address_city": "Miami",
+    "address_province": "FL",
+    "address_postalcode": "33122",
+    "address_country": "US"
+  },
+  {
+    "id": "17",
+    "template": "portrait",
+    "portrait": true,
+    "first_name": "Hannah",
+    "last_name": "Oyelaran",
+    "job_title": "Business Development Representative",
+    "company": "Cinderwell Labs",
+    "email": "hannah.oyelaran@cinderwell.com",
+    "phone": "6175550126",
+    "all_phones": [
+      "6175550126"
+    ],
+    "website": "cinderwell.com",
+    "address_city": "Cambridge",
+    "address_province": "MA",
+    "address_postalcode": "02139",
+    "address_country": "US"
+  },
+  {
+    "id": "18",
+    "template": "military",
+    "portrait": false,
+    "first_name": "Carlos",
+    "last_name": "Rivera",
+    "job_title": "Senior Enlisted Advisor",
+    "company": "USMC Systems Command",
+    "email": "carlos.rivera@usmc.mil",
+    "phone": "7035550133",
+    "all_phones": [
+      "7035550133"
+    ],
+    "website": "",
+    "address_city": "Quantico",
+    "address_province": "VA",
+    "address_postalcode": "22134",
+    "address_country": "US"
+  },
+  {
+    "id": "19",
+    "template": "twocol",
+    "portrait": false,
+    "first_name": "Elise",
+    "last_name": "Fontaine",
+    "job_title": "Marketing Coordinator",
+    "company": "Vireo Instruments",
+    "email": "efontaine@vireo-instruments.com",
+    "phone": "4035550172",
+    "all_phones": [
+      "4035550172"
+    ],
+    "website": "vireo-instruments.com",
+    "address_city": "Calgary",
+    "address_province": "AB",
+    "address_postalcode": "T2P 2W2",
+    "address_country": "CA"
+  },
+  {
+    "id": "20",
+    "template": "logo",
+    "portrait": false,
+    "first_name": "Benjamin",
+    "last_name": "Achebe",
+    "job_title": "Solutions Architect",
+    "company": "Graniteview Cloud",
+    "email": "ben.achebe@graniteview.cloud",
+    "phone": "3035550145",
+    "all_phones": [
+      "3035550145"
+    ],
+    "website": "graniteview.cloud",
+    "address_city": "Denver",
+    "address_province": "CO",
+    "address_postalcode": "",
+    "address_country": "US"
+  },
+  {
+    "id": "21",
+    "template": "dense",
+    "portrait": false,
+    "first_name": "Mei",
+    "last_name": "Lin",
+    "job_title": "Export Compliance Manager",
+    "company": "Atlas Precision Optics",
+    "email": "mei.lin@atlasprecision.com",
+    "phone": "5855550167",
+    "all_phones": [
+      "5855550167",
+      "5855550104"
+    ],
+    "website": "atlasprecision.com",
+    "address_city": "Rochester",
+    "address_province": "NY",
+    "address_postalcode": "14624",
+    "address_country": "US"
+  },
+  {
+    "id": "22",
+    "template": "script",
+    "portrait": false,
+    "first_name": "Patrick",
+    "last_name": "O'Sullivan",
+    "job_title": "Regional Sales Director",
+    "company": "Keystone Armor",
+    "email": "posullivan@keystonearmor.com",
+    "phone": "4125550151",
+    "all_phones": [
+      "4125550151"
+    ],
+    "website": "keystonearmor.com",
+    "address_city": "Pittsburgh",
+    "address_province": "PA",
+    "address_postalcode": "15219",
+    "address_country": "US"
+  },
+  {
+    "id": "23",
+    "template": "bilingual",
+    "portrait": false,
+    "first_name": "Nadia",
+    "last_name": "Petrova",
+    "job_title": "Operations Manager",
+    "company": "Frostline Energy",
+    "email": "nadia.petrova@frostline.energy",
+    "phone": "7805550123",
+    "all_phones": [
+      "7805550123"
+    ],
+    "website": "frostline.energy",
+    "address_city": "Edmonton",
+    "address_province": "AB",
+    "address_postalcode": "T5J 3S4",
+    "address_country": "CA"
+  },
+  {
+    "id": "24",
+    "template": "classic",
+    "portrait": false,
+    "first_name": "Samuel",
+    "last_name": "Ortega",
+    "job_title": "Owner",
+    "company": "Ortega Machine & Tool",
+    "email": "sam@ortegamachine.com",
+    "phone": "9155550114",
+    "all_phones": [
+      "9155550114",
+      "9155550187"
+    ],
+    "website": "ortegamachine.com",
+    "address_city": "El Paso",
+    "address_province": "TX",
+    "address_postalcode": "79903",
+    "address_country": "US"
+  }
+]

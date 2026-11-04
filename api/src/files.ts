@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readdir, rename, rm, stat, truncate } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, truncate } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -144,6 +144,15 @@ async function fileFor(db: Db, p: Principal, id: string, mode: Exclude<AccessMod
   const f = await loadFile(db, id);
   if (!f || (f.created_by !== p.actor && !(await canAccessFile(db, p, id, mode)))) throw notFound(`file ${id} not found`);
   return f;
+}
+
+// A ready file's bytes, for the caller who uploaded it or may open it (the
+// card scanner reads the photo it just uploaded). Small files only.
+export async function readFileBytes(db: Db, p: Principal, id: string, maxBytes: number): Promise<{ bytes: Buffer; mime_type: string | null; name: string | null }> {
+  const f = await fileFor(db, p, id);
+  if (!isReady(f) || !f.storage_key) throw new ApiError(409, 'this file has not finished uploading', 'conflict');
+  if (Number(f.size_bytes) > maxBytes) throw badRequest(`the file is too large here (at most ${Math.floor(maxBytes / 1024 ** 2)} MB)`);
+  return { bytes: await readFile(diskPath(f.storage_key)), mime_type: f.mime_type, name: f.name };
 }
 
 onFilePropertyWrite(async (db, p, ids, property) => {

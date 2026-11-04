@@ -68,7 +68,9 @@
 .settings .access-table .grid td { height: 48px; border-bottom-color: var(--hairline); vertical-align: middle; }
 .settings .access-table .grid tbody tr:last-child td { border-bottom: 0; }
 .settings .access-table .grid tbody tr:hover td { background: color-mix(in srgb, var(--surface) 55%, transparent); }
-.settings .access-table .grid td.wrap { white-space: normal; }
+/* the grid sizes to max-content, so wrapping cells need a set width or they grow to fit their text; long URLs break anywhere */
+.settings .access-table .grid td.wrap { white-space: normal; overflow-wrap: anywhere; width: 260px; max-width: 260px; }
+.settings .access-table .grid td.primary-cell.wrap { width: 420px; max-width: 420px; }
 .settings .access-table td.row-actions { width: 1px; white-space: nowrap; text-align: right; }
 .row-actions-inner { display: inline-flex; gap: 4px; align-items: center; justify-content: flex-end; }
 .settings .grid td .sub { display: block; font-size: 12px; color: var(--muted-text); white-space: normal; margin-top: 2px; }

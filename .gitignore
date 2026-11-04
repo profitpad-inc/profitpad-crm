@@ -14,3 +14,6 @@ api/data/
 
 # built by web/vite.frame.config.ts (npm run build / npm run dev)
 web/public/view-frame/
+
+# python virtual environments (card-bench has a 1.3 GB one)
+.venv/

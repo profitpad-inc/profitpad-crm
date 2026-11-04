@@ -26,6 +26,7 @@ import { viewRoutes } from './routes/views.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { startWebhookWorker } from './webhooks.js';
+import { cardScanRoutes } from './card-scan.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -201,6 +202,7 @@ export async function buildApp() {
   await app.register(viewRoutes);
   await app.register(integrationRoutes);
   await app.register(webhookRoutes);
+  await app.register(cardScanRoutes);
   return app;
 }
 
