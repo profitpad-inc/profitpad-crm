@@ -182,8 +182,38 @@ export function readSigningFields(raw: unknown): SigningField[] {
 
 onWrite('invoices', async (_client, properties) => cleanSlug(properties));
 
-onWrite('quotes', async (_client, input) => {
+// The earliest date it is anywhere on Earth right now (UTC-12). The UI blocks
+// days before the user's own today; the API refuses only days that are past
+// everywhere, so a user in any time zone can still pick their today.
+function earliestToday(): string {
+  return new Date(Date.now() - 12 * 3600_000).toISOString().slice(0, 10);
+}
+
+const dayOf = (v: unknown): string | null => {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null;
+};
+const statusOf = (v: unknown): string | null => (Array.isArray(v) ? (v[0] ?? null) : typeof v === 'string' && v !== '' ? v : null);
+
+// Quotes: a new expiration date can't be in the past, and a quote whose
+// expiration date has passed can't be published (moved to Sent).
+function checkQuoteDates(properties: Record<string, unknown>, existing: Record<string, unknown> | null): void {
+  const today = earliestToday();
+  const had = dayOf(existing?.expiration_date);
+  const given = 'expiration_date' in properties ? dayOf(properties.expiration_date) : had;
+  if ('expiration_date' in properties && given && given !== had && given < today) {
+    throw badRequest('The expiration date can\'t be in the past.', { property: 'expiration_date' });
+  }
+  const before = statusOf(existing?.status);
+  const after = 'status' in properties ? statusOf(properties.status) : before;
+  if (after === 'sent' && before !== 'sent' && given && given < today) {
+    throw badRequest('This quote\'s expiration date has passed. Set a new expiration date before publishing it.', { property: 'expiration_date' });
+  }
+}
+
+onWrite('quotes', async (_client, input, existing) => {
   const properties = cleanSlug(input);
+  checkQuoteDates(properties, existing);
   const raw = properties.signing_fields;
   if (raw === undefined || raw === null || raw === '') return properties;
   const fields = readSigningFields(raw);

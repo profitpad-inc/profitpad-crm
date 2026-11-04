@@ -4,6 +4,7 @@ import { Copy, ExternalLink, Globe } from 'lucide-react';
 import { API_BASE, api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { StatusPill } from './settings';
+import { localToday } from './DatePicker';
 
 // Record page card for quotes, invoices, forms and booking pages: Publish
 // (quote to Sent, invoice to Open, form and booking page to Published, making
@@ -36,6 +37,9 @@ export function PublicLinkCard({ object, record, onChanged }: {
   const pageUrl = key ? `${window.location.origin}/p/${PATH[object]}/#${key}` : null;
   const kind = isQuote ? 'quote' : isInvoice ? 'invoice' : isBooking ? 'booking page' : 'form';
   const isDraft = !status || status === 'draft';
+  // a quote whose expiration date has passed can't be published (the API refuses it too)
+  const expiration = isQuote && typeof record.properties.expiration_date === 'string' ? record.properties.expiration_date.slice(0, 10) : null;
+  const expired = !!expiration && expiration < localToday();
   const [busy, setBusy] = useState(false);
   const snippet = key && !isDoc
     ? `<div data-pcrm-${isBooking ? 'booking' : 'form'}="${key}"></div>\n<script src="${window.location.origin}/p/embed.js" async></script>`
@@ -66,6 +70,7 @@ export function PublicLinkCard({ object, record, onChanged }: {
 
   // makes the link first when there is none, then sets the published status
   async function publish() {
+    if (expired) return;
     setError(null);
     setBusy(true);
     try {
@@ -111,8 +116,10 @@ export function PublicLinkCard({ object, record, onChanged }: {
       </div>
       {isDraft && (
         <div className="public-link-publish">
-          <span className="small">{`Publish so customers can open the ${kind}.`}</span>
-          <button className="btn primary small" onClick={publish} disabled={busy}>{busy ? 'Publishing…' : 'Publish'}</button>
+          <span className="small">{expired
+            ? 'The expiration date has passed. Set a new expiration date to publish this quote.'
+            : `Publish so customers can open the ${kind}.`}</span>
+          <button className="btn primary small" onClick={publish} disabled={busy || expired}>{busy ? 'Publishing…' : 'Publish'}</button>
         </div>
       )}
       <label className="field">

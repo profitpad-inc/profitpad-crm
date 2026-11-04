@@ -93,7 +93,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
         {fields.map((p, i) => (
           <label key={p.api_name} className="field">
             <span>{p.label}</span>
-            <PropertyInput property={p} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))} />
+            <PropertyInput property={p} object={object.api_name} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))} />
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}

@@ -14,9 +14,15 @@ import type { Instance } from 'flatpickr/dist/types/instance';
 // inside. onCommit fires with the final value when the calendar closes.
 // flatpickr rewrites the DOM around its input, so React only owns the outer
 // span and the input is made here.
-export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ariaLabel }: {
+// noPastDays greys out the days before today (the user's local date), except
+// the value it opened with, so an old saved date still shows and isn't cleared.
+export function localToday(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ariaLabel, noPastDays }: {
   value: string; onChange: (v: string) => void; withTime?: boolean; autoFocus?: boolean;
-  onCommit?: (value: string) => void; ariaLabel?: string;
+  onCommit?: (value: string) => void; ariaLabel?: string; noPastDays?: boolean;
 }) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const fp = useRef<Instance | null>(null);
@@ -32,7 +38,9 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
     const follow = (e: Event) => {
       if (!instance.calendarContainer.contains(e.target as Node)) instance._positionCalendar();
     };
+    const opened = value.slice(0, 10);
     const instance = flatpickr(input, {
+      disable: noPastDays ? [(d: Date) => { const day = localToday(d); return day < localToday() && day !== opened; }] : [],
       dateFormat: withTime ? 'Y-m-d\\TH:i' : 'Y-m-d',
       altInput: true,
       altFormat: withTime ? 'Y-m-d H:i' : 'Y-m-d',
@@ -61,7 +69,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
       fp.current = null;
       host.replaceChildren(); // so remove it (the ref may already be cleared here)
     };
-  }, [withTime]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [withTime, noPastDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // follow value changes made outside the calendar
   useEffect(() => {

@@ -921,6 +921,7 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
     <div className="grid-editor" ref={boxRef} style={style}>
       <PropertyInput
         property={property}
+        object={object}
         value={draft}
         autoFocus
         onChange={(v) => {
@@ -1037,7 +1038,7 @@ function BulkEditModal({ object, schema, ids, onClose, onDone }: {
         {property && (
           <div className="field">
             <span>{multi ? 'Choices' : 'New value'}</span>
-            <PropertyInput key={property.api_name} property={property} value={draft} onChange={setDraft} />
+            <PropertyInput key={property.api_name} property={property} object={object} value={draft} onChange={setDraft} />
           </div>
         )}
         {property && value === null && (!multi || mode === 'replace') && (

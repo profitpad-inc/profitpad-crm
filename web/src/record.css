@@ -251,6 +251,9 @@
 .assoc-card > .card-row .card-row-main { flex: 1 1 auto; }
 .assoc-card > .card-row .card-row-main > a { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
 .assoc-card > .card-row .card-row-main > a:hover { color: var(--primary); }
+.assoc-card > .card-row .card-row-main > .link-btn { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.assoc-card > .card-row .card-row-main > .link-btn:hover, .assoc-card > .card-row .line-qty:hover { color: var(--primary); text-decoration: none; }
+.assoc-card > .card-row .line-qty { color: var(--muted-text); font-weight: 400; }
 .assoc-card > .card-row .line-figures { font-size: 13px; }
 .assoc-card > .card-row .line-figures > span:last-child { font-weight: 500; }
 .card-row:focus-within .faint-btn { opacity: 1; }
@@ -369,6 +372,9 @@
 .le-row:first-child { border-top: 0; }
 .le-head { background: var(--surface); font-size: 13px; font-weight: 600; color: var(--muted-text); padding-top: 9px; padding-bottom: 9px; }
 .le-row:not(.le-head):focus-within { box-shadow: inset 3px 0 0 var(--primary); }
+/* the line opened from the card, and its product or quantity */
+.le-row.le-hl { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
+.le-hl-cell .le-tile, .le-hl-cell .le-tag, .le-hl-cell .le-in, .le-text.le-hl-cell { outline: 2px solid var(--primary); outline-offset: 1px; border-radius: var(--radius-sm); }
 .le-num { color: var(--muted-text); text-align: center; font-variant-numeric: tabular-nums; }
 .le-desc { min-width: 0; overflow-wrap: anywhere; }
 .le-sub { display: block; font-size: 12px; color: var(--muted-text); }

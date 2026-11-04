@@ -12,6 +12,8 @@ import { Modal } from './ui';
 // a custom line is made in its own dialog, optionally as a variation of a
 // product (the line links to it), and is stored with line_type "custom" and
 // its customizations. Ins adds a line, Enter moves along a row.
+// Opened from a line on the card (target), that line's product or quantity
+// is highlighted (the quantity also takes focus) until the grid is used.
 
 interface Picked { id: string; name: string; sku: string; price: number | null; cost: number | null; uom: string }
 
@@ -66,8 +68,11 @@ const priceTooLow = (r: { cost: string; price: string }) => {
 };
 const snapshot = (r: Row) => JSON.stringify([lineProps(r), r.product?.id ?? null]);
 
-export function LineItemsEditor({ parent, onClose, onSaved }: {
+export type LineTarget = { lineId: string; field: 'product' | 'qty' };
+
+export function LineItemsEditor({ parent, target, onClose, onSaved }: {
   parent: { object: string; id: string };
+  target?: LineTarget;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -82,6 +87,8 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
   const [confirmClose, setConfirmClose] = useState(false);
   // rows whose unit price was raised to the minimum on leaving the box
   const [raised, setRaised] = useState<Record<number, string>>({});
+  // the line (row key) and field opened from the card
+  const [hl, setHl] = useState<{ key: number; field: LineTarget['field'] } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const parentLabel = (objectByName.get(parent.object)?.label_singular ?? parent.object).toLowerCase();
   const withAmount = AMOUNT_PARENTS.includes(parent.object);
@@ -117,7 +124,14 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
         }
       }
       setRows([...loaded, blankRow()]);
-      focusCell(loaded.length, 0);
+      const t = target ? loaded.findIndex((r) => r.id === target.lineId) : -1;
+      if (t >= 0) {
+        setHl({ key: loaded[t].key, field: target!.field });
+        // a product line's quantity takes focus; a product only shows as highlighted
+        // (focusing its tile would turn it into the search box)
+        if (target!.field === 'qty' && !loaded[t].custom) focusCell(t, 1);
+        else requestAnimationFrame(() => gridRef.current?.querySelector('.le-hl')?.scrollIntoView({ block: 'nearest' }));
+      } else focusCell(loaded.length, 0);
       if (withAmount) setTotals(await parentTotals(parent.object, parent.id));
     })().catch((err) => setError((err as Error).message));
   }, [parent.object, parent.id]);
@@ -305,7 +319,7 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
           {!rows && !error && <div className="muted">Loading…</div>}
           {rows && (
             <div className="le-scroll">
-              <div className="le-grid" role="table" aria-label="Line items" ref={gridRef}>
+              <div className="le-grid" role="table" aria-label="Line items" ref={gridRef} onMouseDown={() => setHl(null)} onKeyDown={(e) => e.key !== 'Tab' && setHl(null)}>
                 <div className="le-row le-head" role="row">
                   <div className="le-num">#</div>
                   <div>Product</div>
@@ -316,12 +330,15 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
                   <div className="le-r">Ext.</div>
                   <div />
                 </div>
-                {rows.map((row, r) => (
-                  <div key={row.key} className={`le-row${row.custom ? ' le-custom' : ''}`} role="row">
+                {rows.map((row, r) => {
+                  const hlField = hl?.key === row.key ? hl.field : null;
+                  const hlCell = (f: LineTarget['field']) => (hlField === f ? ' le-hl-cell' : '');
+                  return (
+                  <div key={row.key} className={`le-row${row.custom ? ' le-custom' : ''}${hlField ? ' le-hl' : ''}`} role="row">
                     <div className="le-num" role="cell">{r + 1}</div>
                     {row.custom ? (
                       <>
-                        <div role="cell">
+                        <div className={hlCell('product').trim() || undefined} role="cell">
                           <button className="le-tag" data-r={r} data-c={0} onClick={() => setCustom({ key: row.key })} title="Edit custom line">Custom</button>
                         </div>
                         <div className="le-desc" role="cell">
@@ -335,12 +352,12 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
                             </span>
                           )}
                         </div>
-                        <div className="le-r le-text" role="cell">{row.qty}</div>
+                        <div className={`le-r le-text${hlCell('qty')}`} role="cell">{row.qty}</div>
                         <div className="le-r le-text" role="cell">{num(row.price) === null ? '' : money(num(row.price), currency)}</div>
                       </>
                     ) : (
                       <>
-                        <div role="cell">
+                        <div className={hlCell('product').trim() || undefined} role="cell">
                           <ProductSearch
                             product={row.product}
                             cell={{ r, c: 0 }}
@@ -349,7 +366,7 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
                           />
                         </div>
                         <div className="le-desc" role="cell">{row.name}</div>
-                        <div role="cell">
+                        <div className={hlCell('qty').trim() || undefined} role="cell">
                           <span className="le-qty">
                             <input
                               className="le-in"
@@ -400,7 +417,8 @@ export function LineItemsEditor({ parent, onClose, onSaved }: {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

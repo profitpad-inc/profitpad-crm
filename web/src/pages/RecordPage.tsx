@@ -15,7 +15,7 @@ import { ViewCode } from '../components/ViewCode';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
-import { LineItemsEditor } from '../components/LineItemsEditor';
+import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
@@ -395,7 +395,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
       </div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
-          <PropertyInput property={p} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} />
+          <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} />
           {p.type === 'dropdown' && p.options.single_value !== true && (
             <button className="btn small" onClick={() => commit(p)}>Save</button>
           )}
@@ -1277,6 +1277,8 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
   const [adding, setAdding] = useState(false);
   // the add-line dialog, or the create dialog for a quote or invoice made from a deal
   const [dialog, setDialog] = useState<'line' | 'create' | null>(null);
+  // the line and field to highlight when the dialog is opened from a row
+  const [lineTarget, setLineTarget] = useState<LineTarget | undefined>(undefined);
   const [createSchema, setCreateSchema] = useState<ObjectDef | null>(null);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CrmRecord[]>([]);
@@ -1333,6 +1335,11 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
     }
   }
 
+  function openLines(target?: LineTarget) {
+    setLineTarget(target);
+    setDialog('line');
+  }
+
   if (!meta) return null;
   const Icon = objectIcon(other);
   // links the system makes (a form and its submissions) cannot be added or removed here
@@ -1370,7 +1377,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
               )}
             </Menu>
           ) : (
-            <button className="icon-btn push-right" onClick={() => (newLines ? setDialog('line') : setAdding((v) => !v))} aria-label={`Add ${label}`}>
+            <button className="icon-btn push-right" onClick={() => (newLines ? openLines() : setAdding((v) => !v))} aria-label={`Add ${label}`}>
               {adding ? <X size={16} /> : <Plus size={16} />}
             </button>
           )
@@ -1379,6 +1386,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
       {dialog === 'line' && (
         <LineItemsEditor
           parent={{ object: self, id: selfId }}
+          target={lineTarget}
           onClose={() => setDialog(null)}
           onSaved={() => { setDialog(null); onChanged(); }}
         />
@@ -1417,10 +1425,15 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
       {items.map(({ record, labels }) => (
         <div key={record.id} className="card-row">
           <div className="card-row-main">
-            <Link to={`/objects/${other}/${record.id}`}>{recordName(record)}</Link>
+            {/* a deal's (quote's, ...) lines open the line items dialog on that line, not the line's page */}
+            {newLines && editable
+              ? <button className="link-btn" onClick={() => openLines({ lineId: record.id, field: 'product' })}>{recordName(record)}</button>
+              : <Link to={`/objects/${other}/${record.id}`}>{recordName(record)}</Link>}
             {labels.some(Boolean) && <div className="small muted">{labels.filter(Boolean).join(', ')}</div>}
           </div>
-          {other === 'lines' && <LineFigures record={record} schema={otherSchema} />}
+          {other === 'lines' && (
+            <LineFigures record={record} schema={otherSchema} onQty={newLines && editable ? () => openLines({ lineId: record.id, field: 'qty' }) : undefined} />
+          )}
           {editable && (
             <button className="icon-btn push-right faint-btn" onClick={() => unlink(record.id)} aria-label="Remove association">
               <X size={14} />
@@ -1626,7 +1639,7 @@ function SubmissionAnswers({ record }: { record: CrmRecord }) {
 }
 
 // Quantity and extended amount on a line item card row: "x2   $24.68".
-function LineFigures({ record, schema }: { record: CrmRecord; schema: ObjectDef | null }) {
+function LineFigures({ record, schema, onQty }: { record: CrmRecord; schema: ObjectDef | null; onQty?: () => void }) {
   const qty = record.properties.quantity;
   const amount = record.properties.amount;
   const amountProp = schema?.properties.find((p) => p.api_name === 'amount');
@@ -1637,7 +1650,9 @@ function LineFigures({ record, schema }: { record: CrmRecord; schema: ObjectDef 
       : Number(amount).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
   return (
     <div className="line-figures">
-      {qty !== null && qty !== undefined && qty !== '' && <span className="muted">x{Number(qty).toLocaleString()}</span>}
+      {qty !== null && qty !== undefined && qty !== '' && (onQty
+        ? <button className="link-btn muted line-qty" onClick={onQty} title="Edit quantity">x{Number(qty).toLocaleString()}</button>
+        : <span className="muted">x{Number(qty).toLocaleString()}</span>)}
       {amountText && <span>{amountText}</span>}
     </div>
   );

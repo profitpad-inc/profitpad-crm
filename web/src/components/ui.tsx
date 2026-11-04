@@ -115,8 +115,16 @@ const APP_PHONE: PhoneSource = {
   check: (number) => api<PhoneResult>('POST', '/v1/phone/validate', { number })
 };
 
-export function PropertyInput({ property, value, onChange, autoFocus, onCommit }: {
+// Date properties that can't be set to a day in the past (the API refuses them too)
+const NO_PAST_DAYS: Record<string, string[]> = { quotes: ['expiration_date'] };
+export function noPastDays(object: string | undefined, property: Property): boolean {
+  return !!object && (NO_PAST_DAYS[object] ?? []).includes(property.api_name);
+}
+
+export function PropertyInput({ property, value, onChange, autoFocus, onCommit, object }: {
   property: Property; value: string; onChange: (v: string) => void; autoFocus?: boolean; onCommit?: (value?: string) => void;
+  // the object's api_name, for per-object rules such as no past quote expiration dates
+  object?: string;
 }) {
   const t = valueType(property);
   const selectAll = autoFocus ? (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => e.currentTarget.select() : undefined;
@@ -165,7 +173,7 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit }
   }
   if (t === 'number') return <input type="number" step="any" value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
   if (t === 'date' || t === 'datetime') {
-    return <DatePicker value={value} onChange={onChange} withTime={t === 'datetime'} autoFocus={autoFocus} onCommit={onCommit} />;
+    return <DatePicker value={value} onChange={onChange} withTime={t === 'datetime'} autoFocus={autoFocus} onCommit={onCommit} noPastDays={noPastDays(object, property)} />;
   }
   if (property.options.single_line === true || property.is_base) {
     return <input value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
