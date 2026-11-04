@@ -599,15 +599,17 @@ export async function cardScanRoutes(app: FastifyInstance) {
       );
       recent = rows.map((r) => ({ ...r, start_at: r.start_at ? new Date(r.start_at).toISOString() : null }));
     }
-    const can = (api: string, action: 'create' | 'edit') => async () => {
+    // the admin scope includes write (an admin's browser session has only admin)
+    const writes = p.scopes.has('admin') || p.scopes.has('write');
+    const can = async (api: string, action: 'create' | 'edit') => {
       const obj = await getObject(api);
-      return !p.permissions || !!p.permissions.objects.get(obj.object_type_id)?.[action];
+      return writes && (!p.permissions || !!p.permissions.objects.get(obj.object_type_id)?.[action]);
     };
     return {
       reader: await activeReader(await scanSettings()),
       events: recent,
-      can_create_contacts: p.scopes.has('write') && (await can('contacts', 'create')()),
-      can_create_events: p.scopes.has('write') && (await can('marketing_events', 'create')())
+      can_create_contacts: await can('contacts', 'create'),
+      can_create_events: await can('marketing_events', 'create')
     };
   });
 
