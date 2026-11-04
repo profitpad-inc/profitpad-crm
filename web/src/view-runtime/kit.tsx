@@ -300,10 +300,38 @@ export interface Column<Row> {
   render?: (row: Row) => ReactNode;
   // left out below 720px wide (phones), so wide tables fit without scrolling sideways
   hideOnMobile?: boolean;
+  // false: clicking the header does not sort by this column
+  sortable?: boolean;
+  // what to sort by when it is not row[key] (a column drawn with render)
+  sortValue?: (row: Row) => unknown;
 }
 
+export interface TableSort {
+  key: string;
+  direction: 'asc' | 'desc';
+}
+
+// Empty values last either way; numbers (and numeric text) by value, the rest
+// as text with digits compared as numbers (ISO dates sort right as text).
+function compareValues(a: unknown, b: unknown): number {
+  const blankA = a === null || a === undefined || a === '';
+  const blankB = b === null || b === undefined || b === '';
+  if (blankA || blankB) return blankA === blankB ? 0 : blankA ? 1 : -1;
+  const na = typeof a === 'number' ? a : typeof a === 'string' && /^-?\d+(\.\d+)?$/.test(a.trim()) ? Number(a) : NaN;
+  const nb = typeof b === 'number' ? b : typeof b === 'string' && /^-?\d+(\.\d+)?$/.test(b.trim()) ? Number(b) : NaN;
+  if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+  if (typeof a === 'boolean' || typeof b === 'boolean') return Number(a) - Number(b);
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+// The CRM's table. By default the header row stays in view while the page
+// scrolls past the table (stickyHeader), and clicking a column header sorts
+// by it: ascending, descending, then back to the rows' own order (sortable;
+// a column can opt out with sortable: false). sort and onSortChange make the
+// sort controlled, to keep it in address params.
 export function Table<Row extends Record<string, any>>({
-  columns, rows, loading, error, onRowClick, selected, empty = 'Nothing to show', maxHeight, style, className
+  columns, rows, loading, error, onRowClick, selected, empty = 'Nothing to show', maxHeight, sortable = true, sort, defaultSort, onSortChange,
+  stickyHeader = true, style, className
 }: Styled & {
   columns: Column<Row>[];
   rows: Row[];
@@ -313,21 +341,92 @@ export function Table<Row extends Record<string, any>>({
   selected?: (row: Row) => boolean;
   empty?: ReactNode;
   maxHeight?: number;
+  sortable?: boolean;
+  sort?: TableSort | null;
+  defaultSort?: TableSort | null;
+  onSortChange?: (sort: TableSort | null) => void;
+  stickyHeader?: boolean;
 }) {
+  const [ownSort, setOwnSort] = useState<TableSort | null>(defaultSort ?? null);
+  const current = sort !== undefined ? sort : ownSort;
+  function sortBy(c: Column<Row>) {
+    const next: TableSort | null = current?.key !== c.key ? { key: c.key, direction: 'asc' } : current.direction === 'asc' ? { key: c.key, direction: 'desc' } : null;
+    if (sort === undefined) setOwnSort(next);
+    onSortChange?.(next);
+  }
+  const sortColumn = current ? columns.find((c) => c.key === current.key) : undefined;
+  const shown = sortColumn && current
+    ? rows
+      .map((r, i) => ({ r, i, v: sortColumn.sortValue ? sortColumn.sortValue(r) : r[sortColumn.key] }))
+      .sort((x, y) => {
+        const blank = (v: unknown) => v === null || v === undefined || v === '';
+        // empty values stay last in both directions
+        if (blank(x.v) || blank(y.v)) return compareValues(x.v, y.v) || x.i - y.i;
+        return (current.direction === 'asc' ? 1 : -1) * compareValues(x.v, y.v) || x.i - y.i;
+      })
+      .map((x) => x.r)
+    : rows;
+
+  // the header row follows the page's scroll (as Sticky does); with maxHeight
+  // the table scrolls itself and CSS sticky does it
+  const tableRef = useRef<HTMLTableElement>(null);
+  const headRef = useRef<HTMLTableSectionElement>(null);
+  const { scrollTop } = useViewport();
+  const follow = stickyHeader && !maxHeight;
+  const [shift, setShift] = useState(0);
+  const [, setSize] = useState(0);
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    const head = headRef.current;
+    if (!follow || !table || !head) {
+      if (shift) setShift(0);
+      return;
+    }
+    const box = table.getBoundingClientRect();
+    const naturalTop = box.top + window.scrollY;
+    const room = box.height - head.getBoundingClientRect().height;
+    const next = Math.round(Math.max(0, Math.min(scrollTop - naturalTop, room)));
+    if (next !== shift) setShift(next);
+  });
+  useEffect(() => {
+    const table = tableRef.current;
+    if (!follow || !table) return;
+    const ro = new ResizeObserver(() => setSize((n) => n + 1));
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, [follow]);
+
   if (error) return <ErrorBox error={error} />;
   return (
     <div className={cx('v-table-wrap', className)} style={{ ...(maxHeight ? { maxHeight } : {}), ...style }}>
-      <table className="v-table">
-        <thead>
-          <tr>{columns.map((c) => <th key={c.key} style={{ textAlign: c.align ?? 'left', width: c.width }} className={c.hideOnMobile ? 'v-hide-mobile' : undefined}>{c.label}</th>)}</tr>
+      <table ref={tableRef} className={cx('v-table', follow && 'v-follow-head', !stickyHeader && 'v-no-sticky')}>
+        <thead ref={headRef}>
+          <tr>
+            {columns.map((c) => {
+              const canSort = sortable && c.sortable !== false;
+              const dir = current?.key === c.key ? current.direction : null;
+              return (
+                <th
+                  key={c.key}
+                  style={{ textAlign: c.align ?? 'left', width: c.width, ...(follow && shift ? { transform: `translateY(${shift}px)` } : {}) }}
+                  className={cx(c.hideOnMobile && 'v-hide-mobile', canSort && 'v-sortable', dir && 'v-sorted', follow && shift > 0 && 'stuck') || undefined}
+                  aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}
+                  onClick={canSort ? () => sortBy(c) : undefined}
+                >
+                  {c.label}
+                  {canSort && <span className="v-sort-mark" aria-hidden="true">{dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : ''}</span>}
+                </th>
+              );
+            })}
+          </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr><td colSpan={columns.length}><Loading /></td></tr>
-          ) : rows.length === 0 ? (
+          ) : shown.length === 0 ? (
             <tr><td colSpan={columns.length} className="muted v-empty-cell">{empty}</td></tr>
           ) : (
-            rows.map((r, i) => (
+            shown.map((r, i) => (
               <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined} className={`${onRowClick ? 'clickable' : ''}${selected?.(r) ? ' selected' : ''}`}>
                 {columns.map((c) => (
                   <td key={c.key} style={{ textAlign: c.align ?? 'left' }} className={cx(c.align === 'right' && 'figures', c.hideOnMobile && 'v-hide-mobile') || undefined}>

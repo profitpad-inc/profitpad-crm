@@ -48,15 +48,42 @@ export interface ApprovalRow {
   approved_at: Date | null;
 }
 
+// While it waits, approved_by and approved_at are null so nobody reads it as
+// approved; an earlier approval (before a change turned it off) shows as
+// previous_approval.
 export const approvalOut = (r: ApprovalRow, url: string) => ({
   awaiting_approval: r.awaiting_approval,
   requested_by: r.requested_by,
   requested_via: r.requested_via,
   requested_at: r.requested_at,
-  approved_by: r.approved_by,
-  approved_at: r.approved_at,
+  approved_by: r.awaiting_approval ? null : r.approved_by,
+  approved_at: r.awaiting_approval ? null : r.approved_at,
+  ...(r.awaiting_approval && r.approved_at ? { previous_approval: { by: r.approved_by, at: r.approved_at } } : {}),
   ...(r.awaiting_approval ? { approve_url: url } : {})
 });
+
+// Why the answer is off when the caller may not have expected it, for
+// approvalChange's callers to return as notice:
+//   enabled: what the caller asked for; changed: the guarded fields that
+//   changed (url, send_properties...); current: the row before an update
+export function approvalNotice(p: Principal, enabled: boolean | undefined, changed: string[], current?: ApprovalRow): string | undefined {
+  if (canApprove(p)) return undefined;
+  if (!current) {
+    return enabled === true
+      ? 'enabled: true was not applied: set up from outside the CRM, it starts off until an admin signed in to the CRM turns it on (approve_url).'
+      : 'It starts off until an admin signed in to the CRM turns it on (approve_url).';
+  }
+  if (changed.length && enabled !== false && current.enabled && !current.awaiting_approval) {
+    return `Turned off because ${changed.join(', ')} changed: an admin has to approve it again (approve_url).`;
+  }
+  return undefined;
+}
+
+// The MCP's next step for anything waiting for approval
+export function approvalNextStep(out: { awaiting_approval?: boolean; approve_url?: string; notice?: string }): { next_step?: string } {
+  if (!out.awaiting_approval || !out.approve_url) return {};
+  return { next_step: `${out.notice ? `${out.notice} ` : ''}Waiting for approval: give the admin this link to review and turn it on: ${out.approve_url}` };
+}
 
 // The enabled and approval columns for a create or an update.
 //   enabled: what the caller asked for (undefined: not given)

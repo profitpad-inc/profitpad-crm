@@ -10,7 +10,7 @@ import { compileFilterGroups, type FilterGroup } from './search.js';
 import { serialize } from './records.js';
 import { fromDb } from './values.js';
 import { checkUrl, guardedLookup } from './integrations.js';
-import { approvalChange, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
+import { approvalChange, approvalNotice, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 
 // Webhook subscriptions (migration 0038). Admins, or their AI over MCP with
@@ -246,7 +246,8 @@ export async function createEndpoint(p: Principal, input: EndpointInput, req?: F
     values
   );
   await audit(p, 'webhook.endpoint_created', 'webhook_endpoint', Number(rows[0].id), loggedFields(input), req);
-  return { ...endpointOut(rows[0]), signing_secret: secret, subscriptions: [] };
+  const notice = approvalNotice(p, input.enabled as boolean | undefined, []);
+  return { ...endpointOut(rows[0]), signing_secret: secret, subscriptions: [], ...(notice ? { notice } : {}) };
 }
 
 export async function updateEndpoint(p: Principal, id: unknown, input: EndpointInput, req?: FastifyRequest) {
@@ -259,6 +260,7 @@ export async function updateEndpoint(p: Principal, id: unknown, input: EndpointI
   if (!Object.keys(fields).length) return getEndpoint(p, id);
   // where deliveries go; the rest needs no new approval
   const guarded = 'url' in fields && fields.url !== current.url;
+  const notice = approvalNotice(p, fields.enabled as boolean | undefined, guarded ? ['url'] : [], current);
   const approval = approvalChange(p, `Webhook endpoint ${current.id}`, endpointApproveUrl(current.id), fields.enabled as boolean | undefined, guarded, current);
   delete fields.enabled;
   Object.assign(fields, approval);
@@ -271,7 +273,7 @@ export async function updateEndpoint(p: Principal, id: unknown, input: EndpointI
   );
   await audit(p, 'webhook.endpoint_updated', 'webhook_endpoint', Number(current.id), loggedFields(input), req);
   if ('approved_at' in approval) await audit(p, 'webhook.endpoint_approved', 'webhook_endpoint', Number(current.id), { url: fields.url ?? current.url }, req);
-  return getEndpoint(p, id);
+  return { ...(await getEndpoint(p, id)), ...(notice ? { notice } : {}) };
 }
 
 export async function deleteEndpoint(p: Principal, id: unknown, req?: FastifyRequest): Promise<void> {
@@ -495,7 +497,8 @@ export async function createSubscription(p: Principal, input: SubscriptionInput,
       approval.enabled, p.actor, ...extra.map((k) => approval[k])]
   );
   await audit(p, 'webhook.subscription_created', 'webhook_subscription', Number(rows[0].id), { endpoint_id: Number(endpoint.id), object: obj.api_name, event: s.event }, req);
-  return subscriptionOut(reg, rows[0]);
+  const notice = approvalNotice(p, input.enabled as boolean | undefined, []);
+  return { ...subscriptionOut(reg, rows[0]), ...(notice ? { notice } : {}) };
 }
 
 export async function updateSubscription(p: Principal, id: unknown, input: SubscriptionInput, req?: FastifyRequest) {
@@ -524,8 +527,16 @@ export async function updateSubscription(p: Principal, id: unknown, input: Subsc
   await checkSubscription(reg, next);
   // what is sent and when; only the description needs no new approval
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  const guarded = next.event !== current.event || !same(next.properties, current.properties) || !same(next.send_properties, current.send_properties)
-    || next.target_object_type_id !== current.target_object_type_id || next.label_id !== current.label_id || !same(next.filter_groups, current.filter_groups);
+  const changed = [
+    ...(next.event !== current.event ? ['event'] : []),
+    ...(!same(next.properties, current.properties) ? ['properties'] : []),
+    ...(!same(next.send_properties, current.send_properties) ? ['send_properties'] : []),
+    ...(next.target_object_type_id !== current.target_object_type_id ? ['target_object'] : []),
+    ...(next.label_id !== current.label_id ? ['label_id'] : []),
+    ...(!same(next.filter_groups, current.filter_groups) ? ['filter_groups'] : [])
+  ];
+  const guarded = changed.length > 0;
+  const notice = approvalNotice(p, input.enabled as boolean | undefined, changed, current);
   const approval = approvalChange(p, `Webhook subscription ${current.id}`, subscriptionApproveUrl(current.id), input.enabled as boolean | undefined, guarded, current);
   const extra = Object.keys(approval);
   const { rows } = await pool.query(
@@ -536,7 +547,7 @@ export async function updateSubscription(p: Principal, id: unknown, input: Subsc
   );
   await audit(p, 'webhook.subscription_updated', 'webhook_subscription', Number(current.id), { fields: Object.keys(input) }, req);
   if ('approved_at' in approval) await audit(p, 'webhook.subscription_approved', 'webhook_subscription', Number(current.id), { endpoint_id: Number(current.endpoint_id), event: next.event }, req);
-  return subscriptionOut(reg, rows[0]);
+  return { ...subscriptionOut(reg, rows[0]), ...(notice ? { notice } : {}) };
 }
 
 export async function deleteSubscription(p: Principal, id: unknown, req?: FastifyRequest): Promise<void> {

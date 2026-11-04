@@ -5,7 +5,7 @@ import { isIP } from 'node:net';
 import { pool } from './db.js';
 import { ApiError, badRequest, forbidden, notFound } from './errors.js';
 import { requireScope, type Principal } from './auth.js';
-import { approvalChange, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
+import { approvalChange, approvalNotice, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
 import { isBlockedAddress } from './oauth.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 import { canOpen, loadView, logViewErrors } from './views.js';
@@ -265,7 +265,8 @@ export async function createIntegration(p: Principal, input: IntegrationInput) {
       `insert into auth.view_integrations (${cols.join(', ')}) values (${cols.map((_, i) => `$${i + 1}`).join(', ')}) returning *`,
       values
     );
-    return adminOut(rows[0]);
+    const notice = approvalNotice(p, input.enabled as boolean | undefined, []);
+    return { ...adminOut(rows[0]), ...(notice ? { notice } : {}) };
   } catch (err) {
     if ((err as { code?: string }).code === '23505') throw new ApiError(409, `an integration "${input.key}" already exists`, 'conflict');
     throw err;
@@ -273,12 +274,17 @@ export async function createIntegration(p: Principal, input: IntegrationInput) {
 }
 
 // approved: an admin turned it on with this change (the route logs it)
-export async function updateIntegration(p: Principal, key: string, input: IntegrationInput): Promise<AdminIntegration & { approved?: true }> {
+export async function updateIntegration(p: Principal, key: string, input: IntegrationInput): Promise<AdminIntegration & { approved?: true; notice?: string }> {
   requireAdmin(p);
   const current = await loadIntegration(key);
   const fields = readInput(input, false);
   // where data goes and who sends it; the rest needs no new approval
-  const guarded = ('url' in fields && fields.url !== current.url) || ('audience' in fields && fields.audience !== current.audience);
+  const changed = [
+    ...('url' in fields && fields.url !== current.url ? ['url'] : []),
+    ...('audience' in fields && fields.audience !== current.audience ? ['audience'] : [])
+  ];
+  const guarded = changed.length > 0;
+  const notice = approvalNotice(p, fields.enabled as boolean | undefined, changed, current);
   const approval = approvalChange(p, `The integration "${key}"`, approveUrl('view-integrations', key), fields.enabled as boolean | undefined, guarded, current);
   delete fields.enabled;
   Object.assign(fields, approval);
@@ -291,7 +297,7 @@ export async function updateIntegration(p: Principal, key: string, input: Integr
     `update auth.view_integrations set ${sets.join(', ')}, updated_at = now() where key = $1 returning *`,
     [key, ...Object.values(fields)]
   );
-  return { ...adminOut(rows[0]), ...('approved_at' in approval ? { approved: true as const } : {}) };
+  return { ...adminOut(rows[0]), ...('approved_at' in approval ? { approved: true as const } : {}), ...(notice ? { notice } : {}) };
 }
 
 export async function deleteIntegration(p: Principal, key: string): Promise<void> {

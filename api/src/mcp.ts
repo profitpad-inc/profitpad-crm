@@ -28,6 +28,7 @@ import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
 } from './integrations.js';
 import { describeCreateForm, listConfig } from './native-ui.js';
+import { approvalNextStep } from './approval.js';
 import { loadFormsSettings, saveEmbedDomains } from './routes/ui.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
@@ -486,7 +487,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
       key: i.key, label: i.label, description: i.description, audience: i.audience, enabled: admin ? admin.enabled : true, interactive: i.interactive,
       ...(admin ? {
         ...maskUrl(admin.url), has_secret: admin.has_secret, last_called_at: admin.last_called_at, last_status: admin.last_status, last_error: admin.last_error,
-        awaiting_approval: admin.awaiting_approval, ...(admin.approve_url ? { approve_url: admin.approve_url } : {})
+        awaiting_approval: admin.awaiting_approval, requested_by: admin.requested_by, requested_via: admin.requested_via, requested_at: admin.requested_at,
+        approved_by: admin.approved_by, approved_at: admin.approved_at,
+        ...('previous_approval' in admin ? { previous_approval: admin.previous_approval } : {}),
+        ...(admin.approve_url ? { approve_url: admin.approve_url } : {})
       } : {}),
       data_example: i.data_example
     };
@@ -513,7 +517,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
   }, async (b) => run(async () => {
     const out = await createIntegration(p, b);
     await auditIntegration(p, 'integration.created', out.key, b);
-    return { ...out, url: undefined, ...maskUrl(out.url), next_step: `Give the admin this link to review and turn it on: ${out.approve_url}` };
+    return { ...out, url: undefined, ...maskUrl(out.url), ...approvalNextStep(out) };
   }));
 
   server.registerTool('update_view_integration', {
@@ -537,7 +541,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
     const input = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined));
     const { approved: _approved, ...out } = await updateIntegration(p, key, input);
     await auditIntegration(p, 'integration.updated', out.key, input);
-    return { ...out, url: undefined, ...maskUrl(out.url), ...(out.approve_url ? { next_step: `Waiting for approval: give the admin this link to review and turn it on: ${out.approve_url}` } : {}) };
+    return { ...out, url: undefined, ...maskUrl(out.url), ...approvalNextStep(out) };
   }));
 
   server.registerTool('test_integration', {
@@ -771,7 +775,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     scopeChallenge: schemaChallenge
-  }, async (b) => run(() => createEndpoint(p, b)));
+  }, async (b) => run(async () => {
+    const out = await createEndpoint(p, b);
+    return { ...out, ...approvalNextStep(out) };
+  }));
 
   server.registerTool('update_webhook_endpoint', {
     title: 'Update webhook endpoint',
@@ -788,7 +795,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     scopeChallenge: schemaChallenge
-  }, async ({ endpoint_id, ...b }) => run(() => updateEndpoint(p, endpoint_id, b)));
+  }, async ({ endpoint_id, ...b }) => run(async () => {
+    const out = await updateEndpoint(p, endpoint_id, b);
+    return { ...out, ...approvalNextStep(out) };
+  }));
 
   server.registerTool('delete_webhook_endpoint', {
     title: 'Delete webhook endpoint',
@@ -815,7 +825,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
     inputSchema: z.object({ endpoint_id: endpointIdArg, object: objectArg, ...subscriptionFields }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async (b) => run(() => createSubscription(p, b)));
+  }, async (b) => run(async () => {
+    const out = await createSubscription(p, b);
+    return { ...out, ...approvalNextStep(out) };
+  }));
 
   server.registerTool('update_webhook_subscription', {
     title: 'Update webhook subscription',
@@ -823,7 +836,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
     inputSchema: z.object({ subscription_id: subscriptionIdArg, ...subscriptionFields, event: subscriptionFields.event.optional() }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
-  }, async ({ subscription_id, ...b }) => run(() => updateSubscription(p, subscription_id, b)));
+  }, async ({ subscription_id, ...b }) => run(async () => {
+    const out = await updateSubscription(p, subscription_id, b);
+    return { ...out, ...approvalNextStep(out) };
+  }));
 
   server.registerTool('delete_webhook_subscription', {
     title: 'Delete webhook subscription',
