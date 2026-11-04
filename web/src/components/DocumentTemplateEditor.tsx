@@ -4,6 +4,7 @@ import { API_BASE, api, type CrmRecord, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Select } from './Select';
 import { confirmDialog } from './confirm';
+import { CodeTextarea } from './CodeTextarea';
 
 // The Template card on a document template's record page (api/src/templates.ts):
 // the draft's code and data sources, editable by admins, Publish / Default /
@@ -179,11 +180,11 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
           <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Data sources</button></div>
         </div>
         {tab === 'code' ? (
-          <textarea className="view-code template-code" spellCheck={false} value={shownSource} readOnly={readOnly}
+          <CodeTextarea className="template-code" value={shownSource} readOnly={readOnly}
             placeholder={readOnly ? 'No code yet.' : 'An HTML page with Liquid tags, like {{ quote.name }}.'}
             onChange={(e) => setSource(e.target.value)} aria-label="Template code" />
         ) : (
-          <textarea className="view-code template-code short" spellCheck={false} value={shownQueries} readOnly={readOnly}
+          <CodeTextarea className="template-code short" value={shownQueries} readOnly={readOnly}
             placeholder={'{"summary": {"sql": "select count(*) as lines from view_data.associations where object_type_id = \'pc_0022\' and record_id = :record_id and other_object_type_id = \'pc_0020\'"}}'}
             onChange={(e) => setQueries(e.target.value)} aria-label="Data sources" />
         )}

@@ -41,7 +41,7 @@ const sameGroups = (a: AddressGroup[], b: AddressGroup[]) => JSON.stringify(a) =
 // properties that can hold a part: text for all, single-value dropdowns for province and country
 function fits(p: Property, choice: boolean): boolean {
   if (p.record_status !== 'active' || p.is_base || p.read_only) return false;
-  if (p.type === 'text') return p.options.display !== 'phone' && p.options.display !== 'html';
+  if (p.type === 'text') return p.options.display !== 'phone' && p.options.display !== 'html' && p.options.display !== 'code';
   return choice && p.type === 'dropdown' && p.options.single_value === true;
 }
 

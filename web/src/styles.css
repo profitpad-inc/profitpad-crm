@@ -797,3 +797,38 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .address-menu .select-options button svg { margin-top: 3px; color: var(--muted-text); }
 .address-option { display: flex; flex-direction: column; min-width: 0; }
 .address-credit { padding: 4px 10px 2px; text-align: right; font-size: 11px; }
+
+/* Show more / less (components/ShowMore.tsx): long values cut to --clamp-lines */
+.show-more { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; min-width: 0; }
+.prop-value > .show-more { display: flex; }
+.show-more > .clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--clamp-lines); line-clamp: var(--clamp-lines); overflow: hidden; }
+.show-more-toggle {
+  padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 500;
+  color: var(--primary); cursor: pointer;
+}
+.show-more-toggle:hover { text-decoration: underline; }
+/* text shown as code on the left: a grey monospace box, long lines wrap
+   (a shade darker than the grey properties panel, so it still reads as a box) */
+.prop-code {
+  margin: 0; padding: 8px 10px; width: 100%; box-sizing: border-box; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 6%, var(--surface));
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+}
+.prop-edit textarea.code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
+
+/* CodeTextarea: an editable code box with line numbers that scroll with the text */
+.code-editor {
+  display: flex; align-items: stretch; width: 100%; box-sizing: border-box; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.code-editor:focus-within { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
+.code-editor-gutter {
+  flex: none; width: calc(var(--gutter) + 24px); box-sizing: border-box; padding: 10px 12px 40px 0; overflow: hidden;
+  text-align: right; color: var(--muted-text); user-select: none;
+}
+.code-editor textarea {
+  flex: 1; min-width: 0; display: block; margin: 0; padding: 10px 12px 10px 0; resize: vertical;
+  border: 0; border-radius: 0; outline: none; box-shadow: none; background: none; color: var(--text);
+  font: inherit; white-space: pre; overflow: auto; tab-size: 2;
+}

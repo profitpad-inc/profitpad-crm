@@ -330,7 +330,7 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 - Option values: letters, digits, dots, underscores, at most 63; unique per property.
 
 ## Types and options
-- text: single_line, display (plain, url, markdown, json, html, phone: checked with Google's libphonenumber and stored as +18882345678ext9), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
+- text: single_line, display (plain, url, markdown, json, html, code: a grey monospace box, phone: checked with Google's libphonenumber and stored as +18882345678ext9), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
 - number: min, max, decimals (0 to 10), format (formatted, unformatted, currency, percentage), prefix, suffix, currency_code (fixed currency) or currency_property (a dropdown holding the currency).
 - dropdown: single_value, allow_user_add, auto_append_users (users as options), default_value (an option value; never empty), parent_property (another single-value dropdown on the same object that this one depends on, like stage on pipeline), color_display (how choice colours show: none (default), dot for a large dot left of the label (single_value only) or pill). A yes/no is a single-value dropdown with options true and false.
 

@@ -19,7 +19,7 @@ Empty string and `null` both clear a value.
 | Option | Type | Effect |
 |---|---|---|
 | `single_line` | boolean | *enforced*: no newlines |
-| `display` | `plain` `url` `markdown` `json` `html` `phone` | display only, except `phone`: values are checked with Google's libphonenumber and stored as E.164 plus `ext` (`+18882345678ext9`) |
+| `display` | `plain` `url` `markdown` `json` `html` `code` `phone` | display only (`code`: a grey monospace box on record pages, migration 0079), except `phone`: values are checked with Google's libphonenumber and stored as E.164 plus `ext` (`+18882345678ext9`) |
 | `regex` | string | *enforced* when `regex_scope` is `all` (default) |
 | `regex_scope` | `all` `ui` | `ui`: only the UI checks it, API and imports are free |
 | `json_only` | boolean | *enforced*: must parse as JSON |

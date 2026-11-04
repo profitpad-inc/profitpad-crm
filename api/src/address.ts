@@ -127,7 +127,7 @@ export async function checkGroups(raw: unknown): Promise<AddressGroup[]> {
       const p = getProperty(obj, name);
       if (!p || p.record_status !== 'active') throw badRequest(`${at}: ${obj.label_plural} has no property "${name}"`);
       const dropdown = p.type === 'dropdown' && p.options.single_value === true;
-      const text = p.type === 'text' && !p.is_base && !p.read_only && p.options.display !== 'phone' && p.options.display !== 'html';
+      const text = p.type === 'text' && !p.is_base && !p.read_only && p.options.display !== 'phone' && p.options.display !== 'html' && p.options.display !== 'code';
       if (part === 'street_1' ? !text : !(text || ((part === 'province' || part === 'country') && dropdown))) {
         throw badRequest(`${at}: ${p.label} can't hold the ${part.replace('_', ' ')}${part === 'province' || part === 'country' ? ' (use a text property or a single-value dropdown)' : ' (use a text property)'}`);
       }

@@ -37,7 +37,8 @@ const TEXT_DISPLAYS = [
   { value: 'phone', label: 'Phone number' },
   { value: 'markdown', label: 'Markdown' },
   { value: 'json', label: 'JSON' },
-  { value: 'html', label: 'HTML' }
+  { value: 'html', label: 'HTML' },
+  { value: 'code', label: 'Code' }
 ];
 
 const NUMBER_FORMATS = [

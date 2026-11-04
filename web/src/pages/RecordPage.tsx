@@ -25,6 +25,7 @@ import { MentionText } from '../components/MentionText';
 import { encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
+import { ShowMore } from '../components/ShowMore';
 import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
 
@@ -251,8 +252,10 @@ export function RecordPage() {
       await alertDialog((err as Error).message, { title: 'Could not sign in as this user' });
     }
   }
-  // views link to nothing, so they have no association cards: no right column
-  const noRight = isUser || object === 'views';
+  // views link to nothing, so they have no association cards: no right column.
+  // Document templates use the room for their code and preview (the quotes
+  // using a template show it on their own pages).
+  const noRight = isUser || object === 'views' || object === 'document_templates';
 
   return (
     <SnippetRecordProvider object={object} id={id}>
@@ -362,6 +365,16 @@ export function RecordPage() {
 }
 
 const isHtml = (p: Property) => p.type === 'text' && p.options.display === 'html';
+const isCode = (p: Property) => p.type === 'text' && p.options.display === 'code';
+
+// A left-side value: code in a grey monospace box, anything else as text;
+// both cut to six lines with Show more when longer.
+function propValue(p: Property, value: unknown): ReactNode {
+  if (isCode(p) && typeof value === 'string' && value) return <ShowMore as="pre" className="prop-code">{value}</ShowMore>;
+  const shown = displayValue(p, value);
+  if (!shown) return <span className="muted empty-value">--</span>;
+  return <ShowMore as="div">{shown}</ShowMore>;
+}
 
 const HTML_HINTS: Record<string, string> = {
   'users.email_signature': 'Added to the end of emails this user sends. Images must be public links: upload one to CRM files (its public link is turned on), choose a CRM file, or use a public web address. Scripts and forms are removed on save.'
@@ -513,7 +526,7 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
           <HtmlValue html={record.properties[p.api_name] as string} title={p.label} onEdit={editable(p) ? () => start(p) : undefined} />
         </div>
       ) : (
-        <div className="prop-value">{displayValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>
+        <div className="prop-value">{propValue(p, record.properties[p.api_name])}</div>
       )}
       {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
     </div>
@@ -1319,9 +1332,9 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
                         <div className="change-body">
                           <strong className="change-what">{propLabel(r.property)}</strong>
                           <div className="change-values">
-                            {r.old_value === null ? <span className="change-value old none">Empty</span> : <ChangeValue old>{historyValue(prop, r.old_value)}</ChangeValue>}
+                            {r.old_value === null ? <span className="change-value old none">Empty</span> : <ShowMore className="change-value old">{historyValue(prop, r.old_value)}</ShowMore>}
                             <ArrowRight size={13} className="change-arrow" aria-label="to" />
-                            {r.new_value === null ? <span className="change-value none">Empty</span> : <ChangeValue>{historyValue(prop, r.new_value)}</ChangeValue>}
+                            {r.new_value === null ? <span className="change-value none">Empty</span> : <ShowMore className="change-value">{historyValue(prop, r.new_value)}</ShowMore>}
                           </div>
                         </div>
                       </div>
@@ -1334,33 +1347,6 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
         </LedgerDay>
       ))}
     </div>
-  );
-}
-
-// A history value chip, cut to six lines with a show more/less toggle when
-// the value is longer (a signature's data URL, a long note).
-function ChangeValue({ old, children }: { old?: boolean; children: ReactNode }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
-  const [long, setLong] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || open) return;
-    const measure = () => setLong(el.scrollHeight > el.clientHeight + 1);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [open, children]);
-  return (
-    <span className="change-value-wrap">
-      <span ref={ref} className={`change-value${old ? ' old' : ''}${open ? '' : ' clamped'}`}>{children}</span>
-      {(long || open) && (
-        <button type="button" className="change-value-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          {open ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </span>
   );
 }
 
