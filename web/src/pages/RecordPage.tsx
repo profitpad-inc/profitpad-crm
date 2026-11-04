@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, Link2, Lock, Pencil, Plus, X } from 'lucide-react';
+import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, KeyRound, Link2, Lock, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
@@ -967,13 +967,65 @@ function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
 }
 
 // ISO 8601 in the viewer's time zone, with its offset (2026-11-03T14:05:09-08:00),
-// so the time matches the day heading above it.
+// shown on hover so the exact moment is a glance away from the clock time.
 function isoLocal(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
   const offset = -d.getTimezoneOffset();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
     `${offset >= 0 ? '+' : '-'}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`;
+}
+
+// What an association history value holds (meta.record_history, property 'association').
+interface LinkValue {
+  label_id: string;
+  record_id: string;
+  association_id: string;
+  object_type_id: string;
+}
+
+const isLinkValue = (v: unknown): v is LinkValue =>
+  !!v && typeof v === 'object' && typeof (v as LinkValue).record_id === 'string' && typeof (v as LinkValue).object_type_id === 'string';
+
+// One entry on the Changes tab: a property change, or links (or unlinks) to
+// one object made together by one actor in the same second.
+type ChangeEntry =
+  | { kind: 'property'; row: HistoryRow }
+  | { kind: 'link'; row: HistoryRow; linked: boolean; objectType: string; links: LinkValue[] };
+
+function changeEntries(rows: HistoryRow[]): ChangeEntry[] {
+  const out: ChangeEntry[] = [];
+  for (const row of rows) {
+    const value = row.new_value ?? row.old_value;
+    if (row.property !== 'association' || !isLinkValue(value)) {
+      out.push({ kind: 'property', row });
+      continue;
+    }
+    const linked = row.old_value === null;
+    const prev = out.at(-1);
+    if (prev?.kind === 'link' && prev.linked === linked && prev.objectType === value.object_type_id && prev.row.changed_by === row.changed_by &&
+      prev.row.via === row.via && prev.row.changed_at.slice(0, 19) === row.changed_at.slice(0, 19)) prev.links.push(value);
+    else out.push({ kind: 'link', row, linked, objectType: value.object_type_id, links: [value] });
+  }
+  return out;
+}
+
+// A value as the property shows it elsewhere; JSON only for shapes no property type explains.
+function historyValue(p: Property | undefined, value: unknown): ReactNode {
+  if (p) {
+    const shown = displayValue(p, value);
+    if (shown !== '') return shown;
+  }
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return JSON.stringify(value);
+}
+
+// Who made a change: the user's or API key's name, the raw actor on hover.
+function actorName(h: HistoryRow): { name: string; key: boolean } {
+  if (h.changed_by_name) return { name: h.changed_by_name, key: false };
+  if (h.api_key_name) return { name: h.api_key_name, key: true };
+  return { name: h.changed_by ?? 'Unknown', key: false };
 }
 
 function ChangeHistory({ object, id, schema }: { object: string; id: string; schema: ObjectDef }) {
@@ -983,6 +1035,43 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
   const [changedBy, setChangedBy] = useState('');
   const [via, setVia] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const { objects } = useApp();
+  const byCode = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o])), [objects]);
+  // linked records' names (code:id) and association label names, filled in after the history loads
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [labels, setLabels] = useState<Map<string, string | null>>(new Map());
+
+  useEffect(() => {
+    api<{ results: { id: string; label: string | null }[] }>('GET', `/v1/association-labels?object=${object}`)
+      .then((r) => setLabels(new Map(r.results.map((l) => [l.id, l.label]))))
+      .catch(() => undefined);
+  }, [object]);
+
+  useEffect(() => {
+    if (!history) return;
+    const wanted = new Map<string, Set<string>>();
+    for (const h of history) {
+      for (const v of [h.old_value, h.new_value]) {
+        if (h.property === 'association' && isLinkValue(v) && !names.has(`${v.object_type_id}:${v.record_id}`)) {
+          wanted.set(v.object_type_id, (wanted.get(v.object_type_id) ?? new Set()).add(v.record_id));
+        }
+      }
+    }
+    if (!wanted.size) return;
+    let live = true;
+    Promise.all([...wanted].map(async ([code, ids]) => {
+      const name = byCode.get(code)?.api_name;
+      if (!name) return [];
+      const s = await getSchema(name);
+      const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: [...ids].slice(0, 100), properties: nameProperties(s.properties) });
+      return r.results.map((rec) => [`${code}:${rec.requested_id ?? rec.id}`, recordName(rec)] as const);
+    })).then((found) => {
+      if (live) setNames((m) => new Map([...m, ...found.flat()]));
+    }).catch(() => undefined);
+    return () => { live = false; };
+    // names is read only to skip records already known
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, byCode]);
 
   useEffect(() => {
     setProperty('');
@@ -1035,30 +1124,73 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
           {filtered ? 'Try another property, person or way.' : 'Edits to properties and associations show here, with who made them and how.'}
         </EmptyState>
       )}
-      {history && byDay(history, (h) => h.changed_at).map(({ day, rows }) => (
+      {history && byDay(changeEntries(history), (e) => e.row.changed_at).map(({ day, rows: entries }) => (
         <LedgerDay key={day} day={day}>
-          {rows.map((h, i) => (
-            <div key={i} className="ledger-entry">
-              <span className="change-dot" aria-hidden="true" />
-              <div className="change-body">
-                <div className="change-head">
-                  <strong>{propLabel(h.property)}</strong>
-                  <time className="ledger-time" dateTime={h.changed_at} title={h.changed_at}>{isoLocal(h.changed_at)}</time>
+          {entries.map((e, i) => {
+            const h = e.row;
+            const actor = actorName(h);
+            const meta = (
+              <div className="change-meta">
+                <span className="change-actor" title={h.api_key_id ? `${h.changed_by}, API key ${h.api_key_id}` : h.changed_by ?? undefined}>
+                  {actor.key && <KeyRound size={12} aria-label="API key" />}
+                  {actor.name}
+                </span>
+                <span className="change-tag">{VIA_LABELS[h.via]}</span>
+                {h.source !== h.via && h.source !== 'api' && <span className="change-tag">{h.source}</span>}
+              </div>
+            );
+            const time = <time className="ledger-time" dateTime={h.changed_at} title={isoLocal(h.changed_at)}>{timeOf(h.changed_at)}</time>;
+            if (e.kind === 'link') {
+              const other = byCode.get(e.objectType);
+              const n = e.links.length;
+              const noun = n === 1 ? other?.label_singular ?? 'Record' : `${n} ${(other?.label_plural ?? 'records').toLowerCase()}`;
+              const Icon = e.linked ? Link2 : Unlink;
+              return (
+                <div key={i} className={`ledger-entry link-change${e.linked ? '' : ' unlinked'}`}>
+                  <span className="change-dot link-dot" aria-hidden="true"><Icon size={13} /></span>
+                  <div className="change-body">
+                    <div className="change-head">
+                      <strong>{noun} {e.linked ? 'linked' : 'unlinked'}</strong>
+                      {time}
+                    </div>
+                    <ul className="change-links">
+                      {e.links.map((l) => {
+                        const name = names.get(`${l.object_type_id}:${l.record_id}`);
+                        const label = labels.get(l.label_id);
+                        return (
+                          <li key={l.association_id}>
+                            {other ? (
+                              <Link to={`/objects/${other.api_name}/${l.record_id}`} className={name ? undefined : 'muted'}>{name ?? `${other.label_singular} ${l.record_id}`}</Link>
+                            ) : <span className="muted">{l.record_id}</span>}
+                            {label && <span className="change-tag">{label}</span>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {meta}
+                  </div>
                 </div>
-                <div className="change-values">
-                  <span className={`change-value old${h.old_value === null ? ' none' : ''}`}>{h.old_value === null ? 'empty' : JSON.stringify(h.old_value)}</span>
-                  <ArrowRight size={13} className="change-arrow" aria-label="to" />
-                  <span className={`change-value${h.new_value === null ? ' none' : ''}`}>{h.new_value === null ? 'empty' : JSON.stringify(h.new_value)}</span>
-                </div>
-                <div className="change-meta">
-                  <span title={h.changed_by_name ?? undefined}>{h.changed_by}</span>
-                  <span className="change-tag">{VIA_LABELS[h.via]}</span>
-                  {h.api_key_name && <span className="change-tag">Key <span title={`API key ${h.api_key_id}`}>{h.api_key_name}</span></span>}
-                  {h.source !== h.via && h.source !== 'api' && <span className="change-tag">{h.source}</span>}
+              );
+            }
+            const prop = schema.properties.find((p) => p.api_name === h.property);
+            return (
+              <div key={i} className="ledger-entry">
+                <span className="change-dot" aria-hidden="true" />
+                <div className="change-body">
+                  <div className="change-head">
+                    <strong>{propLabel(h.property)}</strong>
+                    {time}
+                  </div>
+                  <div className="change-values">
+                    <span className={`change-value old${h.old_value === null ? ' none' : ''}`}>{h.old_value === null ? 'Empty' : historyValue(prop, h.old_value)}</span>
+                    <ArrowRight size={13} className="change-arrow" aria-label="to" />
+                    <span className={`change-value${h.new_value === null ? ' none' : ''}`}>{h.new_value === null ? 'Empty' : historyValue(prop, h.new_value)}</span>
+                  </div>
+                  {meta}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </LedgerDay>
       ))}
     </div>
