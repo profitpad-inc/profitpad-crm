@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowRight, AtSign, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -917,8 +917,11 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const openedKey = opened ? `${opened.object}-${opened.id}` : null;
   const openedListed = items.some((x) => !x.quoteResponse && `${x.object}-${x.record.id}` === openedKey);
   // a linked activity the stream cannot list (the role cannot read it, but an
-  // @mention opens it): shown on its own above the stream
-  const openedHidden = !!opened && linksLoaded && !allItems.some((x) => !x.quoteResponse && `${x.object}-${x.record.id}` === openedKey);
+  // @mention opens it): shown on its own above the stream, on the Activity tab
+  // and its own type's tab only (checked against every linked activity, not
+  // just this tab's, so a listed note is not pinned on the Tasks tab)
+  const openedHidden = !!opened && linksLoaded && (tab === 'activity' || tab === opened.object)
+    && !associated.some((a) => a.object === opened.object && a.records.some((r) => r.record.id === opened.id));
   useEffect(() => {
     if (!openedKey || !openedListed || scrolledTo.current === openedKey) return;
     scrolledTo.current = openedKey;
@@ -953,7 +956,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
           onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
       )}
       {openedHidden && opened && tab !== 'changes' && (
-        <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet />
+        <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet pinned />
       )}
       {tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
@@ -985,7 +988,15 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
               Try other words, another type or a longer time.
             </EmptyState>
           )}
-          {allItems.length === 0 && (
+          {/* under a pinned activity the big empty state would contradict it */}
+          {allItems.length === 0 && openedHidden && (
+            <p className="stream-none-else">
+              {tab === 'activity'
+                ? `No other activity on this ${schema.label_singular.toLowerCase()} that you can see.`
+                : `No other ${(objectByName.get(tab)?.label_plural ?? '').toLowerCase()} on this ${schema.label_singular.toLowerCase()} that you can see.`}
+            </p>
+          )}
+          {allItems.length === 0 && !openedHidden && (
             <EmptyState icon={<Inbox size={18} />} title={tab === 'activity' ? 'No activity yet' : `No ${(objectByName.get(tab)?.label_plural ?? '').toLowerCase()} yet`}>
               {tab === 'activity'
                 ? `Calls, emails, notes and tasks linked to this ${schema.label_singular.toLowerCase()} show here, newest first.`
@@ -1123,8 +1134,9 @@ function MentionedOnly({ object, id, items, back }: { object: string; id: string
   );
 }
 
-// quiet: shows nothing when it cannot be read (a stale link on a page the user can open)
-function MentionedActivity({ object, id, highlight, quiet = false }: { object: string; id: string; highlight: string | null; quiet?: boolean }) {
+// quiet: shows nothing when it cannot be read (a stale link on a page the user can open).
+// pinned: shown above a record's stream that cannot list it, with a line saying why.
+function MentionedActivity({ object, id, highlight, quiet = false, pinned = false }: { object: string; id: string; highlight: string | null; quiet?: boolean; pinned?: boolean }) {
   const { objectByName } = useApp();
   const [record, setRecord] = useState<CrmRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1142,7 +1154,8 @@ function MentionedActivity({ object, id, highlight, quiet = false }: { object: s
   const p = record.properties;
   const title = object === 'emails' ? (p.subject as string) || 'Email' : object === 'notes' ? 'Note' : displayName(p, record.id);
   const at = activityTime(object, record);
-  return (
+  const kindLabel = (objectByName.get(object)?.label_singular ?? object).toLowerCase();
+  const card = (
     <div className="activity-item open mentioned-activity">
       <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
       <div className="activity-body">
@@ -1154,6 +1167,16 @@ function MentionedActivity({ object, id, highlight, quiet = false }: { object: s
         <ActivityExpanded object={object} id={record.id} initial={record} page={{ object, id: record.id }} onPageLinkChanged={async () => undefined}
           highlightComment={highlight} restricted />
       </div>
+    </div>
+  );
+  if (!pinned) return card;
+  return (
+    <div className="pinned-activity">
+      <div className="pinned-activity-why">
+        <AtSign size={13} strokeWidth={2} aria-hidden />
+        {record.via_mention ? `You were tagged in this ${kindLabel}` : `Opened from a link`}
+      </div>
+      {card}
     </div>
   );
 }
