@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import {
   api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -510,7 +510,10 @@ function ObjectTableFor({ object }: { object: string }) {
           <h1>{schema.label_plural}</h1>
           {data && <span className="table-count">{data.total.toLocaleString()} {data.total === 1 ? 'record' : 'records'}</span>}
         </div>
-        <div className="table-head-actions">{createButton}</div>
+        <div className="table-head-actions">
+          {object === 'contacts' && <Link className="btn" to="/scan"><IdCard size={16} /> Scan card</Link>}
+          {createButton}
+        </div>
       </header>
 
       <nav className="view-tabs" aria-label="Views">

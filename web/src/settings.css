@@ -296,3 +296,7 @@
 .settings .reviewing { outline: 2px solid var(--warn); outline-offset: -2px; border-radius: var(--radius); }
 .settings tr.reviewing > td { background: color-mix(in srgb, var(--warn) 8%, transparent); }
 .origin-list li .origin-main { display: flex; flex-direction: column; min-width: 0; }
+
+/* Card scanner: the API key box and its buttons on one line */
+.key-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.key-row input { flex: 1 1 220px; min-width: 0; }

@@ -193,6 +193,18 @@ Keep `playwright-core` in `api/package.json` and the renderer image on the same 
 
 Apply `0047_object_aliases.sql` with the API deploy: the new API reads `meta.pc_0001.aliases`, so the old one keeps working before it, but the new one fails without it. It also sets starting aliases on native objects (an update of setup rows, not records).
 
+## 19. Card scanner (migrations 0063, 0065 and 0067)
+
+The business card scanner (`/scan`, `api/src/card-scan.ts`) reads cards with Tesseract inside the API container, or with Claude when an admin adds an Anthropic API key in Settings → Card scanner.
+
+1. Apply `0063_card_scanner.sql`, `0065_card_scan_settings.sql` and `0067_card_scans.sql` (all three already applied to the server DB on 2026-11-03). 0067 adds the `card_scans` object (`pc_0056`); the new API writes to it on every read, so deploy the API after it.
+2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/`. The API image now installs `tesseract-ocr` and its English data (`api/Dockerfile`).
+3. Check: `docker exec test-crm-api tesseract --version`, then Settings → Card scanner shows "Installed".
+4. Saving an Anthropic key needs `CALENDAR_TOKEN_KEY` (already set for calendars); the key is sealed with it. Changing that key means the admin saves the Anthropic key again.
+5. Deploy the UI too (the page, the Settings page and the "Card scanner" menu item type).
+
+Locally: `brew install tesseract`.
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

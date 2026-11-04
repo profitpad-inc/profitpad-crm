@@ -1,34 +1,111 @@
+import { execFile } from 'node:child_process';
 import Anthropic from '@anthropic-ai/sdk';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { pool, quoteIdent, withTx, type Db } from './db.js';
-import { ApiError, badRequest } from './errors.js';
-import { recordFilter, requireObjectPermission, requireScope, type Principal } from './auth.js';
+import { ApiError, badRequest, forbidden } from './errors.js';
+import { recordFilter, requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from './auth.js';
 import { getObject, getProperty, type ObjectDef } from './registry.js';
 import { assertAccessible, createRecord, drainCalcQueue, updateRecord } from './records.js';
 import { readFileBytes } from './files.js';
 import { checkPhone, isRegion } from './phone.js';
+import { open, seal, secretBoxReady } from './secret-box.js';
+import { logEvent } from './audit.js';
+import { isAdmin } from './routes/ui.js';
+import { parseCard, wordsFromTsv, wordsToLines } from './card-parse.js';
 
-// Business card scanner (web/src/pages/CardScanner.tsx, migration 0063).
-// The page uploads a photo of the card as a file, asks this API to read it
-// (Claude, with the photo and a JSON schema for the answer), shows what was
-// read next to any contacts and companies that already match, and then saves:
-// a new contact or blanks filled on an existing one, the card photo on the
-// contact, the company link, and with Trade Show Mode the contact's
+// Business card scanner (web/src/pages/CardScanner.tsx, migrations 0063 and
+// 0065). The page finds the card in the photo and straightens it, uploads
+// that as a file (kept on the contact), and asks this API to read it. Then it
+// shows what was read next to any contacts and companies that already match,
+// and saves: a new contact or blanks filled on an existing one, the card photo
+// on the contact, the company link, and with Trade Show Mode the contact's
 // participation in the event with a follow-up priority.
 //
-// Reading needs ANTHROPIC_API_KEY on the API server; without it the page
-// still works, the person types the details in by hand.
+// Two readers, picked in Settings → Card scanner (auth.card_scan_settings):
+// - tesseract (default): Tesseract runs on this server (the tesseract
+//   program must be installed, docs/deploy.md), and card-parse.ts sorts its
+//   text into fields with rules. Nothing leaves the server.
+// - claude: the photo goes to Anthropic with the tenant's own API key, and
+//   Claude returns the fields. Much better on poor photos (scripts/card-bench).
+// Without either the page still works: the person types the details in.
 
-const MODEL = 'claude-opus-5-5';
+const DEFAULT_MODEL = 'claude-haiku-5-5';
+export const CLAUDE_MODELS = ['claude-haiku-5-5', 'claude-opus-5-5'] as const;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 
-let client: Anthropic | null | undefined;
-function anthropic(): Anthropic | null {
-  if (client === undefined) client = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
-  return client;
+const clients = new Map<string, Anthropic>();
+function anthropic(apiKey: string): Anthropic {
+  let c = clients.get(apiKey);
+  if (!c) {
+    clients.clear();
+    c = new Anthropic({ apiKey });
+    clients.set(apiKey, c);
+  }
+  return c;
+}
+
+interface ScanSettings {
+  reader: 'tesseract' | 'claude';
+  claude_model: string;
+  key: string | null;
+  key_hint: string | null;
+}
+
+async function scanSettings(): Promise<ScanSettings> {
+  const { rows } = await pool.query('select reader, claude_model, anthropic_key, key_hint from auth.card_scan_settings');
+  const r = rows[0];
+  if (!r) return { reader: 'tesseract', claude_model: DEFAULT_MODEL, key: null, key_hint: null };
+  let key: string | null = null;
+  if (r.anthropic_key && secretBoxReady()) {
+    try {
+      key = open(r.anthropic_key);
+    } catch {
+      key = null; // sealed with another CALENDAR_TOKEN_KEY
+    }
+  }
+  return { reader: r.reader, claude_model: r.claude_model, key, key_hint: r.key_hint };
+}
+
+// ---- Tesseract ------------------------------------------------------------------
+
+let tesseractVersion: Promise<string | null> | null = null;
+function tesseractAvailable(): Promise<string | null> {
+  tesseractVersion ??= new Promise((resolve) => {
+    execFile('tesseract', ['--version'], { timeout: 5000 }, (err, stdout, stderr) => {
+      if (err) {
+        tesseractVersion = null; // look again next time (it may be installed later)
+        return resolve(null);
+      }
+      resolve(/tesseract\s+v?([\d.]+)/i.exec(`${stdout}${stderr}`)?.[1] ?? 'unknown');
+    });
+  });
+  return tesseractVersion;
+}
+
+// Reads the image with the tesseract program (sparse text mode: cards have
+// short lines scattered about) and returns its words as TSV.
+function runTesseract(image: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = execFile('tesseract', ['stdin', 'stdout', '-l', 'eng', '--psm', '11', 'tsv'], { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+      if (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          tesseractVersion = null;
+          return reject(new ApiError(503, 'Card reading is not set up on this server (Tesseract is not installed). Type the details in instead.', 'card_reading_off'));
+        }
+        return reject(new ApiError(502, 'Card reading failed. Try again, or type the details in.', 'card_reading_failed'));
+      }
+      resolve(stdout);
+    });
+    child.stdin?.end(image);
+  });
+}
+
+export async function readWithTesseract(image: Buffer): Promise<CardFields> {
+  const words = wordsFromTsv(await runTesseract(image));
+  return parseCard(wordsToLines(words));
 }
 
 // What is read off a card. Every field is always present; an empty string
@@ -100,13 +177,55 @@ const INSTRUCTIONS = `Read the business card in the photo and return the person'
 - other_text: anything else on the card worth keeping (certifications, clearances, a second language side, a handwritten note), one item per line.
 - If the photo is not a business card, or is too blurry to read, set is_business_card to false and leave the rest empty.`;
 
-async function readCard(image: Buffer, mediaType: ImageType): Promise<CardFields> {
-  const ai = anthropic();
-  if (!ai) throw new ApiError(503, 'Card reading is not set up on this server (ANTHROPIC_API_KEY). Type the details in instead.', 'card_reading_off');
+// Reads a card with Claude (also used by scripts/card-bench to compare models).
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+// A read that got an answer but no usable fields: the tokens were still spent.
+export class CardReadError extends ApiError {
+  constructor(status: number, message: string, code: string, public usage: TokenUsage, public model: string) {
+    super(status, message, code);
+  }
+}
+
+function usageOf(m: Anthropic.Beta.Messages.BetaMessage): TokenUsage {
+  return {
+    input_tokens: m.usage.input_tokens ?? 0,
+    output_tokens: m.usage.output_tokens ?? 0,
+    cache_read_tokens: m.usage.cache_read_input_tokens ?? 0,
+    cache_write_tokens: m.usage.cache_creation_input_tokens ?? 0
+  };
+}
+
+// US dollars per million tokens, Anthropic list prices (November 2026) for
+// the models the scanner offers. Haiku 5.5's are its rates for prompts up to
+// 100K tokens, which a card always is. Cache tokens are not priced: the
+// scanner sends nothing cacheable. A model not listed (a fallback model that
+// answered instead) gets no estimate.
+const PRICES: Record<string, { input: number; output: number }> = {
+  'claude-haiku-5-5': { input: 0.1, output: 0.5 },
+  'claude-opus-5-5': { input: 4, output: 20 }
+};
+
+export function estimateCost(model: string, u: TokenUsage): number | null {
+  const p = PRICES[model];
+  if (!p) return null;
+  return Math.round(((u.input_tokens * p.input + u.output_tokens * p.output) / 1e6) * 1e6) / 1e6;
+}
+
+// Reads a card with Claude (also used by scripts/card-bench to compare models).
+// model in the answer is the one that actually replied (a fallback may have).
+export async function readCard(image: Buffer, mediaType: ImageType, opts: { apiKey: string; model?: string }): Promise<{ fields: CardFields; usage: TokenUsage; model: string }> {
+  const ai = anthropic(opts.apiKey);
+  const model = opts.model ?? DEFAULT_MODEL;
   let message: Anthropic.Beta.Messages.BetaMessage;
   try {
     message = await ai.beta.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 16000,
       // reading a card is simple; low effort keeps a trade show line moving
       output_config: { effort: 'low', format: { type: 'json_schema', schema: CARD_SCHEMA } },
@@ -122,17 +241,22 @@ async function readCard(image: Buffer, mediaType: ImageType): Promise<CardFields
       }]
     });
   } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
+      throw new ApiError(502, 'Anthropic did not accept the API key in Settings → Card scanner. Ask an admin to check it, or type the details in.', 'card_reading_failed');
+    }
     if (err instanceof Anthropic.RateLimitError) throw new ApiError(429, 'Card reading is busy. Try again in a moment.', 'rate_limited');
     if (err instanceof Anthropic.APIError) throw new ApiError(502, `Card reading failed (${err.status ?? 'no response'}). Try again, or type the details in.`, 'card_reading_failed');
     throw err;
   }
-  if (message.stop_reason === 'refusal') throw new ApiError(422, 'This photo could not be read. Type the details in instead.', 'card_unreadable');
-  if (message.stop_reason === 'max_tokens') throw new ApiError(502, 'Card reading stopped early. Try again.', 'card_reading_failed');
+  const usage = usageOf(message);
+  const answered = message.model || model;
+  if (message.stop_reason === 'refusal') throw new CardReadError(422, 'This photo could not be read. Type the details in instead.', 'card_unreadable', usage, answered);
+  if (message.stop_reason === 'max_tokens') throw new CardReadError(502, 'Card reading stopped early. Try again.', 'card_reading_failed', usage, answered);
   const text = message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
   try {
-    return JSON.parse(text) as CardFields;
+    return { fields: JSON.parse(text) as CardFields, usage, model: answered };
   } catch {
-    throw new ApiError(502, 'Card reading returned something unexpected. Try again, or type the details in.', 'card_reading_failed');
+    throw new CardReadError(502, 'Card reading returned something unexpected. Try again, or type the details in.', 'card_reading_failed', usage, answered);
   }
 }
 
@@ -209,6 +333,8 @@ const CONTACT_FIELDS = [
 ] as const;
 
 interface SaveBody {
+  // from /read: the scan record, marked saved and linked to what it became
+  scan_id?: string | null;
   file_id?: string | null;
   contact_id?: string | null;
   contact?: Record<string, unknown>;
@@ -335,15 +461,18 @@ async function save(p: Principal, b: SaveBody) {
     }
 
     let participationId: string | null = null;
+    let eventId: string | null = null;
     if (event) {
-      let eventId = clean(event.id) || null;
+      eventId = clean(event.id) || null;
       if (!eventId) {
         eventId = await createRecord(c, events, p, {
           name: clean(event.name),
           ...(knownOption(events, 'event_type', 'trade_show') ? { event_type: 'trade_show' } : {})
         });
       }
-      const contactName = (await rowById(c, contacts, contactId)).name ?? '';
+      // a new contact's name is a calculation, filled in after this commits
+      const contactName = (await rowById(c, contacts, contactId)).name
+        || [props.first_name, props.last_name].filter(Boolean).join(' ') || String(props.email ?? '');
       const eventName = (await rowById(c, events, eventId)).name ?? '';
       participationId = await createRecord(c, participations, p, {
         name: [contactName, eventName].filter(Boolean).join(' at ') || 'Card scan',
@@ -356,10 +485,94 @@ async function save(p: Principal, b: SaveBody) {
     } else if (noteText) {
       await createRecord(c, notes, p, { body: noteText }, [{ object: 'contacts', id: contactId }]);
     }
-    return { contact_id: contactId, created, company_id: companyId, participation_id: participationId };
+    // the scan record (only the person's own): what it was saved as, and links to it all
+    const scanId = clean(b.scan_id);
+    if (/^[0-9a-f]{10}$/.test(scanId)) {
+      const { rows } = await c.query(
+        `update crm.pc_0056 set saved_as = array[$2] where pc_0056_id = $1 and created_by = $3 and record_status = 'active' returning pc_0056_id`,
+        [scanId, created ? 'new_contact' : 'updated_contact', p.actor]
+      );
+      if (rows.length) {
+        const scans = await getObject('card_scans');
+        await link(c, scans, scanId, contacts, contactId);
+        if (companyId) await link(c, scans, scanId, companies, companyId);
+        if (eventId) await link(c, scans, scanId, events, eventId);
+        if (participationId) await link(c, scans, scanId, participations, participationId);
+      }
+    }
+    return { contact_id: contactId, created, company_id: companyId, event_id: eventId, participation_id: participationId };
   });
   await drainCalcQueue();
   return result;
+}
+
+// ---- usage records (card_scans, pc_0056) -------------------------------------------
+
+interface ScanRecord {
+  name: string;
+  reader: 'tesseract' | 'claude';
+  model: string | null;
+  outcome: 'read' | 'not_a_card' | 'failed';
+  error: string | null;
+  usage: TokenUsage | null;
+  seconds: number;
+  fileId: string;
+}
+
+// Written straight to the table: every card_scans property is read-only (only
+// the scanner sets them), and a scan is logged whatever the person's roles
+// say about card_scans. created_by is the person scanning (crm.actor).
+async function recordScan(p: Principal, s: ScanRecord): Promise<string> {
+  const cost = s.usage && s.model ? estimateCost(s.model, s.usage) : null;
+  return withTx({ principal: p, source: 'card_scanner' }, async (c) => {
+    const { rows } = await c.query(
+      `insert into crm.pc_0056 (name, reader, model, outcome, error, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, estimated_cost, seconds, card_image)
+       values ($1, array[$2], $3, array[$4], $5, $6, $7, $8, $9, $10, $11, array[$12]) returning pc_0056_id as id`,
+      [s.name.slice(0, 200), s.reader, s.model, s.outcome, s.error?.slice(0, 1000) ?? null,
+        s.usage?.input_tokens ?? 0, s.usage?.output_tokens ?? 0, s.usage?.cache_read_tokens ?? 0, s.usage?.cache_write_tokens ?? 0,
+        cost, Math.round(s.seconds * 100) / 100, s.fileId]
+    );
+    return rows[0].id as string;
+  });
+}
+
+const scanName = (f: Pick<CardFields, 'first_name' | 'last_name' | 'email' | 'company'>) =>
+  [[f.first_name, f.last_name].filter(Boolean).join(' ') || f.email, f.company].filter(Boolean).join(', ') || 'Unreadable card';
+
+// ---- settings -----------------------------------------------------------------
+
+// The reader cards go to: Claude when picked and a key can be read, otherwise
+// Tesseract when it is installed, otherwise none (people type the details in).
+async function activeReader(s: ScanSettings): Promise<'claude' | 'tesseract' | 'none'> {
+  if (s.reader === 'claude' && s.key) return 'claude';
+  return (await tesseractAvailable()) ? 'tesseract' : 'none';
+}
+
+function settingsOut(s: ScanSettings, tesseract: string | null) {
+  return {
+    reader: s.reader,
+    claude_model: s.claude_model,
+    claude_models: CLAUDE_MODELS,
+    has_key: s.key_hint !== null,
+    // a key is stored but cannot be opened (CALENDAR_TOKEN_KEY changed or missing)
+    key_unreadable: s.key_hint !== null && s.key === null,
+    key_hint: s.key_hint,
+    tesseract_version: tesseract,
+    can_store_secrets: secretBoxReady()
+  };
+}
+
+// Asks Anthropic about the model with the key: cheap, and fails on a bad key.
+async function checkKey(apiKey: string, model: string): Promise<void> {
+  try {
+    await anthropic(apiKey).models.retrieve(model);
+  } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
+      throw badRequest('Anthropic did not accept this API key.');
+    }
+    if (err instanceof Anthropic.APIError) throw new ApiError(502, `Could not check the key with Anthropic (${err.status ?? 'no response'}). Try again.`, 'key_check_failed');
+    throw err;
+  }
 }
 
 // ---- routes -------------------------------------------------------------------
@@ -391,15 +604,17 @@ export async function cardScanRoutes(app: FastifyInstance) {
       return !p.permissions || !!p.permissions.objects.get(obj.object_type_id)?.[action];
     };
     return {
-      reading_enabled: anthropic() !== null,
+      reader: await activeReader(await scanSettings()),
       events: recent,
       can_create_contacts: p.scopes.has('write') && (await can('contacts', 'create')()),
       can_create_events: p.scopes.has('write') && (await can('marketing_events', 'create')())
     };
   });
 
-  // Reads an uploaded card photo and lists contacts and companies that already match.
-  app.post<{ Body: { file_id?: string } }>('/v1/card-scans/read', async (req) => {
+  // Reads an uploaded card photo and lists contacts and companies that
+  // already match. ocr_image: the page's black-and-white copy of the card for
+  // Tesseract (base64 PNG or JPEG, not stored); Claude reads the colour photo.
+  app.post<{ Body: { file_id?: string; ocr_image?: string } }>('/v1/card-scans/read', async (req) => {
     const p = req.principal!;
     requireScope(p, 'write');
     requireObjectPermission(p, await getObject('contacts'), 'create');
@@ -408,10 +623,96 @@ export async function cardScanRoutes(app: FastifyInstance) {
     const file = await readFileBytes(pool, p, fileId, MAX_IMAGE_BYTES);
     const type = (file.mime_type ?? '').toLowerCase();
     if (!(IMAGE_TYPES as readonly string[]).includes(type)) throw badRequest('The card photo must be a JPEG, PNG, WebP or GIF image.');
-    const fields = await readCard(file.bytes, type as ImageType);
+    const settings = await scanSettings();
+    const reader = await activeReader(settings);
+    if (reader === 'none') throw new ApiError(503, 'Card reading is not set up on this server. Type the details in instead.', 'card_reading_off');
+    let ocr: Buffer | null = null;
+    if (reader === 'tesseract') {
+      ocr = typeof req.body?.ocr_image === 'string' && req.body.ocr_image ? Buffer.from(req.body.ocr_image, 'base64') : file.bytes;
+      if (ocr.length > MAX_IMAGE_BYTES) throw badRequest('ocr_image is too large (at most 5 MB)');
+    }
+
+    // every read is recorded, failed ones too (a failed Claude read may still have used tokens)
+    const started = Date.now();
+    const seconds = () => (Date.now() - started) / 1000;
+    let fields: CardFields;
+    let usage: TokenUsage | null = null;
+    let model: string | null = null;
+    try {
+      if (reader === 'claude') {
+        const r = await readCard(file.bytes, type as ImageType, { apiKey: settings.key!, model: settings.claude_model });
+        ({ fields, usage, model } = r);
+      } else {
+        fields = await readWithTesseract(ocr!);
+      }
+    } catch (err) {
+      const e = err as Error;
+      await recordScan(p, {
+        name: 'Unreadable card', reader, model: err instanceof CardReadError ? err.model : reader === 'claude' ? settings.claude_model : null,
+        outcome: 'failed', error: e.message, usage: err instanceof CardReadError ? err.usage : null, seconds: seconds(), fileId
+      }).catch((logErr) => req.log.error(logErr, 'could not record a failed card scan'));
+      throw err;
+    }
+    const scanId = await recordScan(p, {
+      name: scanName(fields), reader, model, outcome: fields.is_business_card ? 'read' : 'not_a_card', error: null, usage, seconds: seconds(), fileId
+    });
     const domain = companyDomain(fields.email, fields.website);
     const [contacts, companies] = await Promise.all([matchContacts(p, fields), matchCompanies(p, fields.company, domain)]);
-    return { fields, company_domain: domain, matches: { contacts, companies } };
+    return { scan_id: scanId, reader, fields, company_domain: domain, matches: { contacts, companies } };
+  });
+
+  // ---- admin: Settings → Card scanner ----
+
+  app.get('/v1/card-scans/settings', async (req) => {
+    const p = req.principal!;
+    if (!isAdmin(p)) throw forbidden('only admins can see card scanner settings');
+    const s = await scanSettings();
+    return settingsOut(s, await tesseractAvailable());
+  });
+
+  // anthropic_key: a new key (checked with Anthropic before it is stored), or
+  // null to remove it (which also switches the reader back to Tesseract).
+  app.put<{ Body: { reader?: unknown; claude_model?: unknown; anthropic_key?: unknown } }>('/v1/card-scans/settings', async (req) => {
+    const p = req.principal!;
+    if (!isAdmin(p)) throw forbidden('only admins can change card scanner settings');
+    requireRecentSignIn(p);
+    const b = req.body ?? {};
+    const cur = await scanSettings();
+    const next = { reader: cur.reader, claude_model: cur.claude_model };
+    if (b.reader !== undefined) {
+      if (b.reader !== 'tesseract' && b.reader !== 'claude') throw badRequest('reader must be "tesseract" or "claude"');
+      next.reader = b.reader;
+    }
+    if (b.claude_model !== undefined) {
+      if (!(CLAUDE_MODELS as readonly unknown[]).includes(b.claude_model)) throw badRequest(`claude_model must be one of ${CLAUDE_MODELS.join(', ')}`);
+      next.claude_model = b.claude_model as string;
+    }
+    let keyChange: { sealed: Buffer | null; hint: string | null } | undefined;
+    if (b.anthropic_key === null || b.anthropic_key === '') {
+      keyChange = { sealed: null, hint: null };
+      next.reader = 'tesseract';
+    } else if (b.anthropic_key !== undefined) {
+      const key = typeof b.anthropic_key === 'string' ? b.anthropic_key.trim() : '';
+      if (!/^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(key)) throw badRequest('That does not look like an Anthropic API key (they start with sk-ant-).');
+      if (!secretBoxReady()) throw new ApiError(503, 'The server cannot store secrets: CALENDAR_TOKEN_KEY is not set.', 'not_configured');
+      await checkKey(key, next.claude_model);
+      keyChange = { sealed: seal(key), hint: key.slice(-4) };
+    }
+    if (next.reader === 'claude' && !(keyChange ? keyChange.sealed : cur.key)) throw badRequest('Add an Anthropic API key before switching to Claude.');
+    await pool.query(
+      `insert into auth.card_scan_settings (id, reader, claude_model, anthropic_key, key_hint, updated_by, updated_at)
+       values (true, $1, $2, $3, $4, $5, now())
+       on conflict (id) do update set reader = excluded.reader, claude_model = excluded.claude_model,
+         anthropic_key = case when $6 then excluded.anthropic_key else card_scan_settings.anthropic_key end,
+         key_hint = case when $6 then excluded.key_hint else card_scan_settings.key_hint end,
+         updated_by = excluded.updated_by, updated_at = now()`,
+      [next.reader, next.claude_model, keyChange?.sealed ?? null, keyChange?.hint ?? null, p.actor, keyChange !== undefined]
+    );
+    await logEvent(req, 'settings.updated', {
+      target: { type: 'setting', id: 'card_scanner' },
+      details: { reader: next.reader, claude_model: next.claude_model, ...(keyChange ? { anthropic_key: keyChange.sealed ? 'replaced' : 'removed' } : {}) }
+    });
+    return settingsOut(await scanSettings(), await tesseractAvailable());
   });
 
   // Looks up matches again after the person edits the details.

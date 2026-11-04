@@ -129,6 +129,8 @@ type NavItem =
   | { type: 'object'; object: string; label?: string }
   | { type: 'view'; object: string; view_id: number; label?: string }
   | { type: 'custom_view'; slug: string; label?: string }
+  // the business card scanner page (/scan)
+  | { type: 'card_scanner'; label?: string }
   | { type: 'section'; label: string; items: NavItem[] };
 
 async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
@@ -162,6 +164,9 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
         out.push({ type: 'custom_view', slug: rows[0].slug, ...(label ? { label } : {}) });
         break;
       }
+      case 'card_scanner':
+        out.push({ type: 'card_scanner', ...(label ? { label } : {}) });
+        break;
       case 'section':
         if (depth > 0) throw badRequest('sections cannot be nested');
         if (!label) throw badRequest('sections need a label');
@@ -183,7 +188,7 @@ function validateBottomLeft(left: unknown): 'menu' | 'home' {
 async function validateBottom(items: unknown): Promise<NavItem[]> {
   if (!Array.isArray(items) || items.length > 3) throw badRequest('bottom must be an array of at most 3 items');
   const out = await validateNav(items);
-  if (out.some((it) => it.type === 'divider' || it.type === 'section')) throw badRequest('the bottom bar takes object, view and custom_view items only');
+  if (out.some((it) => it.type === 'divider' || it.type === 'section')) throw badRequest('the bottom bar takes object, view, custom_view and card_scanner items only');
   // Home belongs on the left button (bottom_left: "home"), not among the links
   if (out.some((it) => it.type === 'home')) throw badRequest('the bottom bar takes object, view and custom_view items only; for Home set bottom_left to "home"');
   return out;

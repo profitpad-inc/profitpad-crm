@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
-  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, GripVertical, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
   ShieldCheck, SlidersHorizontal, Trash2, User, Users, Webhook
 } from 'lucide-react';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -20,6 +20,7 @@ import { PaymentSettings } from './PaymentSettings';
 import { PropertySettings } from './PropertySettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
+import { CardScannerSettings } from './CardScannerSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import '../settings.css';
@@ -47,7 +48,8 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'embed-domains', label: 'Embed domains', icon: <Globe size={16} />, gate: 'admin', element: <EmbedDomains /> },
     { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: 'admin', element: <IntegrationSettings /> },
     { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
-    { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> }
+    { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> },
+    { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: 'admin', element: <CardScannerSettings /> }
   ] },
   { label: 'Security', links: [
     { path: 'api-keys', label: 'API keys', icon: <KeyRound size={16} />, gate: 'admin', element: <ApiKeySettings /> },
@@ -403,6 +405,7 @@ function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: 
   switch (item.type) {
     case 'home': return 'Home';
     case 'custom_view': return item.label ?? customViewName(item.slug);
+    case 'card_scanner': return item.label ?? 'Card scanner';
     case 'divider': return 'Divider';
     case 'object': return item.label ?? objectLabel(item.object);
     case 'view': return item.label ?? `${objectLabel(item.object)}: ${viewName(item.object, item.view_id)}`;
@@ -627,6 +630,8 @@ function NavSettings() {
     } else if (adding.type === 'custom_view') {
       if (!adding.view) return;
       item = { type: 'custom_view', slug: adding.view, ...(adding.label ? { label: adding.label } : {}) };
+    } else if (adding.type === 'card_scanner') {
+      item = { type: 'card_scanner', ...(adding.label ? { label: adding.label } : {}) };
     } else if (adding.type === 'section') {
       if (!adding.label.trim()) return;
       item = { type: 'section', label: adding.label.trim(), items: [] };
@@ -834,6 +839,7 @@ function NavSettings() {
           <option value="object">Object</option>
           <option value="view">Saved view</option>
           <option value="custom_view">Custom view</option>
+          <option value="card_scanner">Card scanner</option>
           {where !== 'bottom' && <option value="divider">Divider</option>}
           {adding.section === null && <option value="section">Section</option>}
           {where !== 'bottom' && <option value="home">Home</option>}
@@ -865,7 +871,7 @@ function NavSettings() {
           </Select>
         </label>
       )}
-      {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view') && (
+      {(adding.type === 'section' || adding.type === 'view' || adding.type === 'custom_view' || adding.type === 'card_scanner') && (
         <label className="field">
           <span>{adding.type === 'section' ? 'Section name' : 'Label (optional)'}</span>
           <input value={adding.label} maxLength={63} onChange={(e) => setAdding((a) => ({ ...a, label: e.target.value }))} />

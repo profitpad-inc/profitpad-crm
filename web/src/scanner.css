@@ -1,0 +1,87 @@
+/* Card scanner page (pages/CardScanner.tsx) */
+.scan-page { max-width: 1100px; display: flex; flex-direction: column; gap: 16px; }
+.scan-head .page-title { margin-bottom: 0; }
+.scan-page .error { margin: 0; }
+.btn.big { padding: 10px 18px; font-size: 15px; }
+
+/* Trade Show Mode */
+.scan-trade { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+.scan-trade.on { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 4%, var(--page-background)); }
+.scan-trade-switch { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.scan-trade-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.scan-trade-fields > .field { flex: 1 1 240px; }
+.scan-trade-fields > .field:last-child { flex: 0 0 auto; }
+
+/* priority: Hot / Warm / Cold */
+.scan-seg { display: inline-flex; gap: 4px; }
+.scan-seg button { border: 1px solid var(--border); background: var(--page-background); border-radius: 999px; padding: 6px 14px; font-weight: 500; color: var(--muted-text); }
+.scan-seg button.active { color: #fff; border-color: transparent; }
+.scan-seg .seg-hot.active { background: #dc2626; }
+.scan-seg .seg-warm.active { background: #d97706; }
+.scan-seg .seg-cold.active { background: #2563eb; }
+
+/* capture */
+.scan-drop { border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.scan-drop-icon { color: var(--muted-text); }
+.scan-drop-title { font-size: 18px; font-weight: 600; margin: 0; }
+.scan-drop p { margin: 0; }
+.scan-note { font-size: 12px; }
+.scan-drop-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 8px 0 4px; }
+.scan-recent h2 { font-size: 14px; margin-bottom: 6px; }
+.scan-recent ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.scan-recent-tag { margin-left: 8px; font-size: 11px; color: var(--muted-text); background: var(--surface); border-radius: 999px; padding: 1px 7px; }
+
+/* corners */
+.scan-crop { display: flex; flex-direction: column; gap: 12px; }
+.scan-crop > p { margin: 0; }
+.scan-corners { background: #111; border-radius: var(--radius-lg); overflow: hidden; display: flex; justify-content: center; }
+.scan-corners svg { display: block; width: 100%; max-height: 65vh; touch-action: none; user-select: none; }
+.scan-corner { fill: #fff; stroke: var(--primary); stroke-width: 4; cursor: grab; vector-effect: non-scaling-stroke; }
+.scan-corner:active { cursor: grabbing; }
+
+.scan-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* reading */
+.scan-reading { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.scan-reading img { max-width: min(560px, 100%); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+.scan-reading p { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.spin { animation: scan-spin 1s linear infinite; }
+@keyframes scan-spin { to { transform: rotate(360deg); } }
+
+/* review */
+.scan-review { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 24px; align-items: start; }
+.scan-review-card { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.scan-review-card img { width: 100%; border-radius: var(--radius); box-shadow: var(--shadow-card); }
+.scan-no-photo { border: 1px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; color: var(--muted-text); }
+.scan-extras { margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.scan-extras > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; }
+.scan-extras dt { color: var(--muted-text); }
+.scan-extras dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.scan-review-form { display: flex; flex-direction: column; gap: 16px; }
+.scan-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; }
+.scan-fields .field.wide { grid-column: 1 / -1; }
+.scan-review-form h3 { font-size: 14px; margin-bottom: 6px; }
+
+.scan-choice { display: flex; flex-direction: column; gap: 6px; }
+.scan-choice-row { display: flex; gap: 10px; align-items: flex-start; text-align: left; border: 1px solid var(--border); background: var(--page-background); border-radius: var(--radius); padding: 9px 12px; color: var(--text); }
+.scan-choice-row.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--page-background)); }
+.scan-choice-dot { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--border); }
+.scan-choice-row.active .scan-choice-dot { border: 5px solid var(--primary); }
+.scan-choice-label { display: block; }
+.scan-choice-hint { display: block; font-size: 12px; color: var(--muted-text); margin-top: 2px; }
+
+.scan-followup { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+.scan-webcam video { width: 100%; border-radius: var(--radius); background: #000; }
+
+@media (max-width: 767px) {
+  .scan-drop { padding: 28px 16px; }
+  .scan-drop-actions { flex-direction: column; width: 100%; }
+  .scan-drop-actions .btn { justify-content: center; }
+  .scan-review { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .scan-review-card { position: static; }
+  .scan-review-card img { max-height: 40vh; object-fit: contain; }
+  .scan-fields { grid-template-columns: minmax(0, 1fr); }
+  .scan-actions.sticky { position: sticky; bottom: 0; background: var(--page-background); padding: 10px 0; border-top: 1px solid var(--border); margin: 0 -16px; padding-inline: 16px; }
+  .scan-actions .btn { flex: 1; justify-content: center; }
+}

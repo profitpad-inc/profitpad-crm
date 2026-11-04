@@ -18,13 +18,13 @@ OUT = os.path.join(HERE, "out")
 
 LEVELS = {
     "photo": dict(corner=0.05, rotate=6, blur=(0.4, 1.0), noise=4, light=0.25, glare=0.0, quality=(70, 85)),
-    "hard": dict(corner=0.11, rotate=14, blur=(1.0, 1.9), noise=9, light=0.45, glare=0.55, quality=(45, 60)),
+    "hard": dict(corner=0.11, rotate=14, blur=(1.0, 1.9), noise=9, light=0.45, glare=0.4, quality=(45, 60)),
 }
 
 
 def table(rng, w, h):
     # a plain, slightly textured surface in a random dull colour
-    base = rng.integers(40, 200, size=3)
+    base = rng.integers(60, 170) + rng.integers(-25, 25, size=3)
     img = np.ones((h, w, 3), np.float32) * base
     img += rng.normal(0, 6, (h, w, 1))
     img = cv2.GaussianBlur(img, (0, 0), 3)

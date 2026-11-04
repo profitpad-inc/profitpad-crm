@@ -17,3 +17,7 @@ web/public/view-frame/
 
 # python virtual environments (card-bench has a 1.3 GB one)
 .venv/
+
+# card reader comparison: Python env and generated cards/results
+scripts/card-bench/.venv/
+scripts/card-bench/out/

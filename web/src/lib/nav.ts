@@ -1,5 +1,5 @@
 import type { Location } from 'react-router-dom';
-import type { LucideIcon } from 'lucide-react';
+import { IdCard, type LucideIcon } from 'lucide-react';
 import type { CustomViewSummary, NavItem, ObjectSummary } from './api';
 import { HomeIcon, objectIcon } from './display';
 import { DEFAULT_VIEW_ICON } from './lucide-icons';
@@ -15,6 +15,8 @@ export interface NavLinkTarget {
 // Where a menu link goes, or null when this user cannot open it (and for dividers and sections).
 export function navLink(item: NavItem, objectByName: Map<string, ObjectSummary>, customViews: CustomViewSummary[]): NavLinkTarget | null {
   if (item.type === 'home') return { to: '/', label: 'Home', Icon: HomeIcon };
+  // shown to people who can see contacts; the page itself says when they cannot add any
+  if (item.type === 'card_scanner') return objectByName.has('contacts') ? { to: '/scan', label: item.label ?? 'Card scanner', Icon: IdCard } : null;
   if (item.type === 'custom_view') {
     const view = customViews.find((v) => v.slug === item.slug);
     if (!view) return null; // not published, or not for this user
@@ -35,6 +37,7 @@ export function navLink(item: NavItem, objectByName: Map<string, ObjectSummary>,
 export function isNavActive(item: NavItem, location: Location): boolean {
   const params = new URLSearchParams(location.search);
   if (item.type === 'home') return location.pathname === '/';
+  if (item.type === 'card_scanner') return location.pathname === '/scan';
   if (item.type === 'custom_view') return location.pathname.startsWith('/view') && location.hash.replace(/^#/, '').split('?')[0].toLowerCase() === item.slug;
   if (item.type === 'object') return location.pathname.startsWith(`/objects/${item.object}`) && !params.get('view');
   if (item.type === 'view') return location.pathname.startsWith(`/objects/${item.object}`) && params.get('view') === String(item.view_id);
