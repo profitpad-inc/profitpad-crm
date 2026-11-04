@@ -383,6 +383,7 @@ export function CardScanner() {
               })}
             </div>
 
+            <div className="scan-review-side">
             {matches.contacts.length > 0 && (
               <Choice
                 title="Already in the CRM?"
@@ -444,6 +445,7 @@ export function CardScanner() {
               >
                 {saving ? 'Saving…' : contactChoice === 'new' ? 'Save contact' : 'Update contact'}
               </button>
+            </div>
             </div>
           </div>
         </div>
