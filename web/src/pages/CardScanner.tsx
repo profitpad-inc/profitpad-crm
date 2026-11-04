@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, Check, Crop, IdCard, ImagePlus, Keyboard, Loader2, RotateCcw, X } from 'lucide-react';
 import { api, ApiError, getSchema, type Property } from '../lib/api';
@@ -397,8 +397,6 @@ export function CardScanner() {
               <Keyboard size={14} /> Type it in instead
             </button>
             {setup?.reader === 'none' && <p className="muted scan-note">Card reading is off on this server, so you'll type the details in after the photo.</p>}
-            <input ref={takeInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) openPhoto(f); }} />
-            <input ref={pickInput} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) openPhoto(f); }} />
           </div>
           {recent.length > 0 && (
             <section className="scan-recent">
@@ -450,10 +448,18 @@ export function CardScanner() {
             ) : (
               <div className="scan-card-photo">
                 {step.cardUrl ? <img src={step.cardUrl} alt="The card" /> : <div className="scan-no-photo">No photo</div>}
-                {step.photo && (
-                  <button className="btn small scan-adjust" onClick={() => setAdjusting(step.quad ?? wholePhoto(step.photo!))}>
-                    <Crop size={14} /> Adjust corners
-                  </button>
+                {step.cardUrl && (
+                  <div className="scan-photo-actions">
+                    {/* a new photo replaces this one; cancelling the camera keeps the review as it is */}
+                    <button className="btn small" onClick={() => { setError(null); takePhoto(); }}>
+                      <Camera size={14} /> Retake
+                    </button>
+                    {step.photo && (
+                      <button className="btn small" onClick={() => setAdjusting(step.quad ?? wholePhoto(step.photo!))}>
+                        <Crop size={14} /> Adjust corners
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -542,6 +548,9 @@ export function CardScanner() {
         </div>
       )}
 
+      {/* outside the capture screen so Retake on the review screen can open the camera too */}
+      <input ref={takeInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) openPhoto(f); }} />
+      <input ref={pickInput} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) openPhoto(f); }} />
       {webcam && <Webcam onClose={() => setWebcam(false)} onPhoto={(blob) => { setWebcam(false); openPhoto(blob); }} />}
     </Shell>
   );
@@ -648,10 +657,16 @@ function Extras({ read }: { read: CardFields }) {
   );
 }
 
-// The photo with the card's four corners as handles to drag.
+// The photo with the card's four corners as handles to drag. Dragged with a
+// finger, a loupe shows the corner magnified above the finger (below it near
+// the top), since the finger covers what it is moving; not with a mouse.
+const LOUPE_ZOOM = 3;
 function CornerEditor({ url, width, height, quad, onChange }: { url: string; width: number; height: number; quad: Quad; onChange: (q: Quad) => void }) {
   const svg = useRef<SVGSVGElement>(null);
   const dragging = useRef<number | null>(null);
+  const [touchDrag, setTouchDrag] = useState<number | null>(null);
+  // React's ids hold characters that break url(#...) references
+  const clipId = `loupe-${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;
   const toPhoto = (e: ReactPointerEvent): Point => {
     const r = svg.current!.getBoundingClientRect();
     return {
@@ -671,8 +686,8 @@ function CornerEditor({ url, width, height, quad, onChange }: { url: string; wid
           q[dragging.current] = toPhoto(e);
           onChange(q);
         }}
-        onPointerUp={() => { dragging.current = null; }}
-        onPointerCancel={() => { dragging.current = null; }}
+        onPointerUp={() => { dragging.current = null; setTouchDrag(null); }}
+        onPointerCancel={() => { dragging.current = null; setTouchDrag(null); }}
       >
         <image href={url} width={width} height={height} />
         <path d={`M0 0H${width}V${height}H0Z M${quad.map((p) => `${p.x} ${p.y}`).join(' L')} Z`} fill="rgba(0,0,0,.45)" fillRule="evenodd" />
@@ -687,9 +702,35 @@ function CornerEditor({ url, width, height, quad, onChange }: { url: string; wid
             onPointerDown={(e) => {
               (e.target as Element).setPointerCapture(e.pointerId);
               dragging.current = i;
+              if (e.pointerType !== 'mouse') setTouchDrag(i);
             }}
           />
         ))}
+        {touchDrag !== null && (() => {
+          const p = quad[touchDrag];
+          const r = Math.max(width, height) / 7;
+          const lx = Math.min(width - r, Math.max(r, p.x));
+          const above = p.y - 1.7 * r;
+          const ly = above - r >= 0 ? above : Math.min(height - r, p.y + 1.7 * r);
+          const z = LOUPE_ZOOM;
+          return (
+            <g pointerEvents="none">
+              <defs>
+                <clipPath id={clipId}><circle cx={lx} cy={ly} r={r} /></clipPath>
+              </defs>
+              <g clipPath={`url(#${clipId})`}>
+                <rect x={lx - r} y={ly - r} width={2 * r} height={2 * r} fill="#111" />
+                <g transform={`translate(${lx - p.x * z} ${ly - p.y * z}) scale(${z})`}>
+                  <image href={url} width={width} height={height} />
+                  <polygon points={quad.map((q) => `${q.x},${q.y}`).join(' ')} fill="none" stroke="#fff" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                </g>
+                <line x1={lx - r} y1={ly} x2={lx + r} y2={ly} className="scan-loupe-cross" />
+                <line x1={lx} y1={ly - r} x2={lx} y2={ly + r} className="scan-loupe-cross" />
+              </g>
+              <circle cx={lx} cy={ly} r={r} className="scan-loupe-ring" />
+            </g>
+          );
+        })()}
       </svg>
     </div>
   );

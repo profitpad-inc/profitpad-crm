@@ -40,6 +40,9 @@
 .scan-corners svg { display: block; width: 100%; max-height: 65vh; touch-action: none; user-select: none; }
 .scan-corner { fill: #fff; stroke: var(--primary); stroke-width: 4; cursor: grab; vector-effect: non-scaling-stroke; }
 .scan-corner:active { cursor: grabbing; }
+/* the loupe while a corner is dragged with a finger */
+.scan-loupe-ring { fill: none; stroke: #fff; stroke-width: 3; vector-effect: non-scaling-stroke; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5)); }
+.scan-loupe-cross { stroke: var(--primary); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 
 .scan-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
@@ -54,13 +57,15 @@
 .scan-review { display: grid; grid-template-columns: minmax(280px, 2fr) minmax(0, 3fr); gap: 24px; align-items: start; }
 .scan-review-card { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .scan-review-card img { width: 100%; border-radius: var(--radius); box-shadow: var(--shadow-card); }
-/* the card photo on the review screen: Adjust corners shows on hover (a button under it on touch screens) */
+/* the card photo on the review screen: Retake and Adjust corners show on hover (buttons under it on touch screens) */
 .scan-card-photo { position: relative; }
 .scan-card-photo img { display: block; }
-.scan-adjust { position: absolute; right: 10px; bottom: 10px; opacity: 0; transition: opacity 0.15s; box-shadow: var(--shadow-pop); }
-.scan-card-photo:hover .scan-adjust, .scan-adjust:focus-visible { opacity: 1; }
+.scan-photo-actions { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; opacity: 0; transition: opacity 0.15s; }
+.scan-photo-actions .btn { box-shadow: var(--shadow-pop); }
+.scan-card-photo:hover .scan-photo-actions, .scan-photo-actions:focus-within { opacity: 1; }
 @media (hover: none) {
-  .scan-adjust { position: static; opacity: 1; margin-top: 8px; box-shadow: none; }
+  .scan-photo-actions { position: static; opacity: 1; margin-top: 8px; }
+  .scan-photo-actions .btn { box-shadow: none; }
 }
 .scan-adjusting { display: flex; flex-direction: column; gap: 10px; }
 .scan-adjusting > p { margin: 0; }
