@@ -62,7 +62,7 @@ test('the PDF draws configured columns, details, terms and tables', async () => 
       terms: [{ label: 'Notes', value: 'FOB destination.\nPartial shipments allowed.', wide: true }],
       tables: [{ title: 'Kit', columns: [{ label: 'Part', width: 1, align: 'left' }], rows: [['Radio']] }]
     },
-    signing_fields: [], signed_fields: null, customer_signature: null, customer_signed_at: null, requires_countersign: false,
+    document_html: null, signing_fields: [], signed_fields: null, customer_signature: null, customer_signed_at: null, requires_countersign: false,
     countersigner_name: null, countersigner_signature: null, countersigned_at: null, payment: null
   };
   const pdf = await renderQuotePdf(q, {});

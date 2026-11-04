@@ -427,6 +427,17 @@ async function callOut(p: Principal, i: IntegrationRow, data: unknown, view: { s
   return { status: answer.status, data: value };
 }
 
+// A document template calls an integration while a document is drawn
+// (templates.ts). There is no viewer: only enabled integrations (an admin
+// turned them on) are called, rate limited like any caller. Only admins write
+// templates, so the audience setting does not apply.
+export async function callFromTemplate(p: Principal, key: string, data: unknown, template: { id: string; name: string | null; draft: boolean }) {
+  const i = await loadIntegration(key).catch(() => null);
+  if (!i || !i.enabled) throw notFound(`no enabled integration "${key}"`);
+  rateLimit(p, key, i.interactive ? INTERACTIVE_CALLS_PER_MINUTE : CALLS_PER_MINUTE);
+  return callOut(p, i, data, { slug: `document-template:${template.id}`, name: template.name, draft: template.draft });
+}
+
 // A view calls an integration (callIntegration in the kit). The viewer must
 // be able to open the view and use the integration; the page has already
 // asked them to allow it. Failures are logged with the view's errors.

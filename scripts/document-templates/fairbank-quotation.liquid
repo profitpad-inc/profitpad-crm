@@ -1,0 +1,854 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Quote {{ quote.name }}</title>
+<style>
+  /* HubSpot's quote theme, which the Fairbank layout sits on (template_shared.min.css):
+     the 24px line height is what gives the boxes their height */
+  .hs-quotes { font-size: 14px; font-weight: 400; line-height: 24px; padding: 0 14px; color: #33475b; }
+</style>
+<style>
+  /* =====================================================================
+     FAIRBANK EQUIPMENT, CUSTOM QUOTE TEMPLATE, CSS
+     Matches the Fairbank legacy quotation form layout.
+
+     STRUCTURE OF THIS FILE
+       ★ TUNABLES (:root), all knob values live here
+       1.  Base reset + backdrop + sheet   (.fq-wrap, .fq-page)
+       2.  Header strip                    (.fq-header*)
+       3.  "Quotation" title               (.fq-quotation-title)
+       3a. Barcode (Code 128 of quote#)    (.fq-barcode)
+       4.  Right meta table                (.fq-right-meta*)
+       5.  Address strip QUOTE TO/SHIP TO  (.fq-addresses, .fq-addr-*)
+       6.  Info tables (Customer/Writer)   (.fq-info*)
+       7.  Line items table                (.fq-lines*)
+       8.  Notes + Totals                  (.fq-bottom, .fq-notes, .fq-totals*)
+       9.  Footer                          (.fq-footer)
+       10. Hidden HubSpot modules          (.fq-signature-wrap, .fq-download-wrap)
+       11. Print media overrides           (@media print)
+     ===================================================================== */
+
+
+  /* =====================================================================
+     ★★★  TUNABLES, single source of truth for everything tweakable  ★★★
+
+     Edit a value here and it updates the matching part of the quote
+     wherever that variable is used. Each variable has a comment that
+     tells you EXACTLY what it controls and where on the page.
+
+     Sections below:
+       • FONT SIZES
+       • LINE HEIGHTS
+       • COLORS
+       • PAGE / WRAPPER
+       • HEADER (logo + branch on left, title + meta on right)
+       • RIGHT META TABLE
+       • ADDRESS STRIP (QUOTE TO / SHIP TO)
+       • INFO TABLES (Customer / Writer rows)
+       • LINE ITEMS TABLE
+       • NOTES + TOTALS (bottom strip)
+       • FOOTER
+     ===================================================================== */
+  :root {
+
+    /* ── FONT SIZES (all in pt to match Eclipse print sizing) ───────── */
+    --font-base:              9.5pt; /* PAGE DEFAULT, everything inherits this unless overridden below */
+    --font-quotation-title:   22pt;  /* The big "Quotation" word above the top-right meta table */
+    --font-branch-name:       9.5pt; /* TOP-LEFT: "FAIRBANK EQUIPMENT - XXX BRANCH" line under the logo */
+    --font-branch-info:       9pt;   /* TOP-LEFT: address + phone + fax lines under the branch name */
+    --font-meta:              8.5pt; /* TOP-RIGHT meta table, value cells (date, quote#, branch info, "1 of 1") */
+    --font-meta-header:       8pt;   /* TOP-RIGHT meta table, header cells (EXPIRATION DATE, QUOTE NUMBER, PAGE NO.) */
+    --font-addr:              9pt;   /* QUOTE TO / SHIP TO, name + street + city/state/zip */
+    --font-addr-label:        8pt;   /* QUOTE TO / SHIP TO, the labels themselves */
+    --font-info-header:       7.5pt; /* Info-table headers (CUSTOMER NUMBER, CUSTOMER PO NUMBER, JOB NAME, SALESPERSON, WRITER, SHIP VIA, TERMS, SHIP DATE, FREIGHT ALLOWED) */
+    --font-info-cell:         9pt;   /* Info-table data cells (the values shown under those headers) */
+    --font-lines-header:      8.5pt; /* LINE ITEMS table headers (ORDER QTY, DESCRIPTION, UNIT PRICE, EXT PRICE) */
+    --font-lines-cell:        9pt;   /* LINE ITEMS main row (quantity, product name, unit price, ext price) */
+    --font-lines-sub:         8.5pt; /* LINE ITEMS sub-rows: description text + "Pn: <product-id>" row */
+    --font-notes:             9pt;   /* BOTTOM-LEFT notes block ("This is a Quotation...") */
+    --font-totals:            9pt;   /* BOTTOM-RIGHT totals table (Subtotal, S&H Charges, Amount Due) */
+    --font-footer:            7.5pt; /* "Printed By..." line at the very bottom of the quote */
+
+    /* ── LINE HEIGHTS ──────────────────────────────────────────────── */
+    --lh-tight:               1;   /* Used by: meta table headers, branch info block, address content (compact rows) */
+    --lh-meta-branch:         1;   /* TOP-RIGHT merged FAIRBANK EQUIPMENT cell */
+    --lh-meta-cell:           1;   /* TOP-RIGHT meta table VALUE cells (date, quote#, "1 of 1") */
+    --lh-lines-header:        1;   /* LINE ITEMS table header row (ORDER QTY, DESCRIPTION, UNIT PRICE, EXT PRICE) */
+    --lh-lines-cell:          1;   /* LINE ITEMS body cells (main row, description text, "Pn:" row) */
+    --lh-notes:               1;   /* BOTTOM-LEFT notes paragraph */
+
+    /* ── COLORS ────────────────────────────────────────────────────── */
+    --color-text:             #000;     /* All body text */
+    --color-text-footer:      #444;     /* "Printed By..." footer, dimmer than body text */
+    --color-border:           #000;     /* All solid table borders (1px) */
+    --color-border-light:     #ccc;     /* Thin separator drawn between two consecutive line items */
+    --color-header-bg:        #ebebeb;  /* Grey wash on every <th> cell (meta, info tables, line items) */
+
+    /* ── PAGE / SHEET (grey backdrop + white US-letter sheet) ──────── */
+    --page-bg:                #b0b0b0;  /* BACKDROP behind the sheet, screen-only, stripped for PDF */
+    --page-color:             #ffffff;  /* SHEET background, the white area the quote prints on */
+    --page-width:             8.5in;    /* Sheet width, US Letter */
+    --page-min-height:        11in;     /* Sheet minimum height, US Letter (grows if content overflows) */
+    --page-padding:           0.2in 0.5in 0.4in; /* Sheet inner padding (top / sides / bottom). Doubles as the PDF print margin since HubSpot ignores @page rules. */
+    --page-shadow:            0 2px 16px rgba(0,0,0,0.45); /* Drop shadow under the sheet, screen-only, stripped for PDF */
+
+    /* ── HEADER (logo + branch on left, title + meta on right) ────── */
+    --header-left-width:      65%;   /* LEFT column (logo + branch info) */
+    --header-right-width:     35%;   /* RIGHT column ("Quotation" + meta table) */
+    --logo-max-height:        100px;
+    --logo-max-width:         420px;
+    --branch-info-margin-top: 45px;  /* Distance between the logo bottom and the branch-name line */
+
+    /* ── BARCODE (Code 128 of quote number, above "Quotation" title) ─ */
+    --barcode-width:          100%; /* Width, % of the right column or any CSS length (e.g. 70%, 180px). When < 100% the barcode centers horizontally (margin: 0 auto on the rule). */
+    --barcode-height:         26px;  /* Bar height, image stretches to fill */
+    --barcode-margin-bottom:  4px;   /* Gap between barcode bottom and "Quotation" title */
+
+    /* ── TOP-RIGHT META TABLE (date / quote# / branch / page) ─────── */
+    --meta-header-height:     3px;     /* Min-height hint so header rows stay collapsed to content size */
+    --meta-header-padding:    2px 4px;
+    --meta-cell-padding:      2px 4px;
+    --meta-branch-padding:    4px 6px; /* Padding inside the merged FAIRBANK EQUIPMENT cell */
+
+    /* ── ADDRESS STRIP (QUOTE TO / SHIP TO) ───────────────────────── */
+    --addr-cell-padding:      10px 12px 16px 12px;
+    --addr-label-margin-bot:  30px;  /* Vertical gap between "QUOTE TO:" label and the first address line */
+    --addr-line-indent:       30px;  /* How far the name + street + city/state/zip indent in from the left */
+
+    /* ── INFO TABLES (Customer# row + Writer row) ─────────────────── */
+    --info-header-padding:    3px 4px;
+    --info-cell-padding:      3px 5px;
+
+    /* ── LINE ITEMS TABLE ─────────────────────────────────────────── */
+    --lines-header-padding:   3px 5px;
+    --lines-cell-padding:     2px 5px;
+    --lines-spacer-height:    340px; /* Filler row that extends column dividers down, increase to push notes/totals lower on the page */
+
+    /* ── NOTES + TOTALS (bottom strip of the quote) ───────────────── */
+    --notes-width:            66%;   /* LEFT bottom column (notes) */
+    --totals-width:           34%;   /* RIGHT bottom column (totals box), 34% lines up with UNIT PRICE + EXT PRICE cols above */
+    --notes-padding:          6px 10px 6px 4px;
+    --totals-padding:         0 0 6px 0; /* Top/right/left MUST stay 0 so the totals box aligns with the items table edges */
+    --totals-cell-padding:    4px 6px;
+
+    /* ── FOOTER ───────────────────────────────────────────────────── */
+    --footer-margin-top:      12px;
+    --footer-padding-top:     3px;
+  }
+
+
+  /* =====================================================================
+     1. BASE RESET + BACKDROP + SHEET
+     ─────────────────────────────────────────────────────────────────────
+     Renders:
+       • <body class="fq-wrap"> , grey backdrop behind the sheet, plus
+                                    page-wide font / color defaults that
+                                    everything inherits.
+       • <div  class="fq-page"> , the white US-letter sheet sitting on
+                                    top of the backdrop: fixed 8.5in wide,
+                                    min-height 11in, centered, drop shadow,
+                                    inner padding.
+     Tunables used: --font-base, --color-text,
+                    --page-bg, --page-color, --page-width,
+                    --page-min-height, --page-padding, --page-shadow
+     ===================================================================== */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  .fq-wrap {
+    font-family:      Arial, Helvetica, sans-serif;
+    font-size:        var(--font-base);
+    color:            var(--color-text);
+    background-color: var(--page-bg);
+    margin:           0;
+    padding:          0;
+  }
+
+  .fq-page {
+    background-color: var(--page-color);
+    width:            var(--page-width);
+    min-height:       var(--page-min-height);
+    margin:           0 auto;            /* center the sheet horizontally */
+    padding:          var(--page-padding);
+    box-shadow:       var(--page-shadow);
+  }
+
+
+  /* =====================================================================
+     2. HEADER, TOP STRIP (logo + branch on left, title + meta on right)
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <div class="fq-header">…</div> at the very top of the quote.
+     Tunables used: --header-left-width, --header-right-width,
+                    --logo-max-height, --logo-max-width,
+                    --branch-info-margin-top, --font-branch-name,
+                    --font-branch-info, --lh-tight
+     ===================================================================== */
+  .fq-header {
+    display:        table;
+    width:          100%;
+    margin-bottom:  0;
+    padding-bottom: 4px;
+    /* NB: no border-bottom, Eclipse printout has no divider here. */
+  }
+
+  /* LEFT half of the header: logo + branch info block. */
+  .fq-header-left {
+    display:        table-cell;
+    width:          var(--header-left-width);
+    vertical-align: top;
+    padding:        4px 10px 4px 0;
+  }
+
+  /* RIGHT half of the header: "Quotation" title + meta table. */
+  .fq-header-right {
+    display:        table-cell;
+    width:          var(--header-right-width);
+    vertical-align: top;
+    padding:        0 0 4px 0;
+  }
+
+  /* The logo IMAGE itself (top-left corner of the quote). */
+  .fq-logo img {
+    max-height:    var(--logo-max-height);
+    max-width:     var(--logo-max-width);
+    display:       block;
+    margin-bottom: 6px;
+  }
+
+  /* Branch info BLOCK under the logo, name + address + phone + fax.
+     margin-top pushes the whole block down so it aligns roughly with the
+     FAIRBANK EQUIPMENT row inside the right-side meta table. */
+  .fq-branch-info {
+    font-size:   var(--font-branch-info);
+    line-height: var(--lh-tight);
+    margin-top:  var(--branch-info-margin-top);
+  }
+
+  /* The branch NAME line specifically ("FAIRBANK EQUIPMENT - XXX BRANCH").
+     Slightly larger than the address lines below it. Not bold per Eclipse. */
+  .fq-branch-info .branch-name {
+    font-weight: normal;
+    font-size:   var(--font-branch-name);
+  }
+
+
+  /* =====================================================================
+     3. "QUOTATION" TITLE (big word above the right meta table)
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <div class="fq-quotation-title">Quotation</div>
+     Tunables used: --font-quotation-title
+     ===================================================================== */
+  .fq-quotation-title {
+    text-align:     center;
+    font-size:      var(--font-quotation-title);
+    font-weight:    bold;
+    letter-spacing: 1px;
+    margin-bottom:  2px;
+    line-height:    1;
+  }
+
+
+  /* =====================================================================
+     3a. BARCODE, Code 128 of quote_number, above the "Quotation" title
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <img class="fq-barcode" src="https://barcodeapi.org/..."> ,
+              a server-generated Code 128 PNG. See the matching HubL
+              block in the body for the URL pattern + the rationale on
+              why we use an image API instead of a JS library.
+              object-fit:fill stretches the PNG to fill the column width
+              regardless of its natural aspect ratio, safe for barcodes
+              since scanners read RELATIVE bar widths, not absolute ones.
+     Tunables used: --barcode-width, --barcode-height, --barcode-margin-bottom
+     ===================================================================== */
+  .fq-barcode {
+    display:    block;
+    width:      var(--barcode-width);
+    height:     var(--barcode-height);
+    /* Shorthand: 0 top, auto sides (centers horizontally when width < 100%),
+       --barcode-margin-bottom bottom, 0 left. The auto sides have no visual
+       effect at width:100% but kick in automatically when the user shrinks
+       --barcode-width below the column width. */
+    margin:     0 auto var(--barcode-margin-bottom);
+    object-fit: fill;
+    /* Force nearest-neighbor sampling instead of bilinear smoothing.
+       Without this, the browser averages neighboring pixels when zooming
+       in/out, turning the crisp black bars into blurry grey gradients ,
+       especially bad here because we're already compressing a 120px-tall
+       source PNG down to ~26px before the zoom re-rasterization. Two
+       declarations: the legacy -webkit-optimize-contrast value catches
+       older Safari, crisp-edges is the modern spec value. */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+
+
+  /* =====================================================================
+     4. RIGHT META TABLE, EXPIRATION DATE / QUOTE NUMBER / branch / PAGE NO.
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <table class="fq-right-meta"> in the top-right corner.
+     Tunables used: --font-meta, --font-meta-header, --meta-header-height,
+                    --meta-header-padding, --meta-cell-padding,
+                    --color-header-bg, --color-border, --lh-tight
+     ===================================================================== */
+  .fq-right-meta {
+    width:           100%;
+    border-collapse: collapse;
+    border:          1px solid var(--color-border);
+    font-size:       var(--font-meta);
+  }
+
+  /* GREY HEADER CELLS: EXPIRATION DATE, QUOTE NUMBER, PAGE NO.
+     height + line-height collapse the rows so they stay short. Without
+     this, the PAGE NO. header would split the rowspan height with
+     "1 of 1" below and look way too tall. */
+  .fq-right-meta th {
+    font-weight:   bold;
+    font-size:     var(--font-meta-header);
+    text-align:    center;
+    padding:       var(--meta-header-padding);
+    border-bottom: 1px solid var(--color-border);
+    background:    var(--color-header-bg);
+    height:        var(--meta-header-height);
+    line-height:   var(--lh-tight);
+  }
+
+  /* DATA CELLS: date value, quote # value, branch info merged cell, "1 of 1". */
+  .fq-right-meta td {
+    padding:        var(--meta-cell-padding);
+    vertical-align: top;
+    line-height:    var(--lh-meta-cell);
+  }
+
+  /* Per-cell border helpers (used inline via class="sep-right" etc.) */
+  .fq-right-meta .sep-right  { border-right:  1px solid var(--color-border); }
+  .fq-right-meta .sep-bottom { border-bottom: 1px solid var(--color-border); }
+
+
+  /* =====================================================================
+     5. ADDRESS STRIP, QUOTE TO and SHIP TO
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <div class="fq-addresses"> directly below the header.
+     Layout: two equal table-cells, no vertical divider between them.
+     Tunables used: --font-addr, --font-addr-label, --addr-cell-padding,
+                    --addr-label-margin-bot, --addr-line-indent,
+                    --color-border, --lh-tight
+     ===================================================================== */
+  .fq-addresses {
+    display:       table;
+    width:         100%;
+    border-bottom: 1px solid var(--color-border);
+    margin-top:    0;
+  }
+
+  /* Each address COLUMN (QUOTE TO on left, SHIP TO on right). */
+  .fq-addr-cell {
+    display:        table-cell;
+    padding:        var(--addr-cell-padding);
+    vertical-align: top;
+    font-size:      var(--font-addr);
+    line-height:    var(--lh-tight);
+  }
+
+  /* Equal-width halves */
+  .fq-addr-cell:first-child { width: 50%; }
+  .fq-addr-cell:last-child  { width: 50%; }
+  /* NB: no vertical divider between QUOTE TO and SHIP TO. */
+
+  /* The "QUOTE TO:" / "SHIP TO:" LABEL line at the top of each column. */
+  .fq-addr-label {
+    font-weight:    normal;
+    font-size:      var(--font-addr-label);
+    margin-bottom:  var(--addr-label-margin-bot);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  /* Each individual address line, company name, street, city/state/zip.
+     padding-left indents them under the QUOTE TO / SHIP TO label above. */
+  .fq-addr-line {
+    min-height:   0;
+    padding-left: var(--addr-line-indent);
+  }
+
+
+  /* =====================================================================
+     6. INFO TABLES, two stacked rows of customer/quote metadata
+     ─────────────────────────────────────────────────────────────────────
+     Renders:
+       • <table class="fq-info">          , CUSTOMER #, PO #, JOB NAME, SALESPERSON
+       • <table class="fq-info fq-info-row2">, WRITER, SHIP VIA, TERMS, SHIP DATE, FREIGHT
+     Tunables used: --font-info-header, --font-info-cell,
+                    --info-header-padding, --info-cell-padding,
+                    --color-header-bg, --color-border
+     ===================================================================== */
+  .fq-info {
+    width:           100%;
+    border-collapse: collapse;
+    /* No outer border, cell borders handle all edges. */
+  }
+
+  /* The two info tables stack flush, overlap their touching borders so
+     the boundary looks like a single 1px line. */
+  .fq-info + .fq-info {
+    margin-top: -1px;
+    position:   relative;
+    z-index:    1;
+  }
+  .fq-info-row2 { margin-bottom: 0; }
+
+  /* Header cells (grey background): CUSTOMER NUMBER, WRITER, etc. */
+  .fq-info th {
+    font-weight:    normal;
+    font-size:      var(--font-info-header);
+    text-align:     center;
+    padding:        var(--info-header-padding);
+    border:         1px solid var(--color-border);
+    letter-spacing: 0.2px;
+    white-space:    nowrap;
+    background:     var(--color-header-bg);
+  }
+
+  /* Data cells, the values shown under each header.
+     Centered + regular weight to match the Eclipse printout. */
+  .fq-info td {
+    font-size:      var(--font-info-cell);
+    font-weight:    normal;
+    text-align:     center;
+    padding:        var(--info-cell-padding);
+    border:         1px solid var(--color-border);
+    vertical-align: top;
+  }
+
+
+  /* =====================================================================
+     7. LINE ITEMS TABLE, ORDER QTY / DESCRIPTION / UNIT PRICE / EXT PRICE
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <table class="fq-lines">, the main product list.
+     Each line item spans up to three <tr>s:
+       tr.li-main  → qty | NAME           | unit price | ext price (always)
+       tr.li-desc  → empty | description  | empty      | empty     (optional)
+       tr.li-pn    → empty | "Pn: <id>"   | empty      | empty     (optional)
+     And at the bottom:
+       tr.li-spacer → filler row that extends column dividers down the page
+     Tunables used: --font-lines-header, --font-lines-cell, --font-lines-sub,
+                    --lines-header-padding, --lines-cell-padding,
+                    --lines-spacer-height, --color-border,
+                    --color-border-light, --color-header-bg
+     ===================================================================== */
+  .fq-lines {
+    width:           100%;
+    border-collapse: collapse;
+    margin-bottom:   0;
+  }
+
+  /* The four column headers (grey row at the top of the table). */
+  .fq-lines thead th {
+    font-weight:  normal;
+    font-size:    var(--font-lines-header);
+    text-align:   center;
+    padding:      var(--lines-header-padding);
+    border:       1px solid var(--color-border);
+    background:   var(--color-header-bg);
+    white-space:  nowrap;
+    line-height:  var(--lh-lines-header);
+  }
+
+  /* Body cells: only vertical column dividers (no horizontal row borders)
+     so multi-line items flow cleanly without being chopped up. */
+  .fq-lines tbody td {
+    font-size:      var(--font-lines-cell);
+    padding:        var(--lines-cell-padding);
+    vertical-align: top;
+    border-right:   1px solid var(--color-border);
+    line-height:    var(--lh-lines-cell);
+  }
+
+  /* FIRST COLUMN = ORDER QTY: closes the table's left edge AND is the
+     right-aligned numeric column per the Eclipse printout. */
+  .fq-lines tbody td:first-child {
+    border-left:   1px solid var(--color-border);
+    text-align:    right;
+    padding-right: 5px;
+  }
+
+  /* The .num class is applied to UNIT PRICE and EXT PRICE header + body cells. */
+  .fq-lines tbody td.num {
+    text-align:  right;
+    white-space: nowrap;
+  }
+
+  /* Per-row vertical spacing for each row TYPE inside a line item. */
+  .fq-lines tbody tr.li-main td { padding-top: 5px; }
+  .fq-lines tbody tr.li-desc td {
+    padding-top:    1px;
+    padding-bottom: 1px;
+    font-size:      var(--font-lines-sub);
+  }
+  .fq-lines tbody tr.li-pn td {
+    padding-top:    1px;
+    padding-bottom: 5px;
+    font-size:      var(--font-lines-sub);
+  }
+
+  /* Each line item is wrapped in its own <tbody class="li-group"> so the
+     PDF renderer keeps the main/description/part-number rows together
+     across page breaks (no more orphaned qty/price row on one page with
+     the description bleeding onto the next). */
+  .fq-lines tbody.li-group {
+    break-inside:      avoid;
+    page-break-inside: avoid;
+  }
+
+  /* TABLE CLOSING ROW.
+     A zero-height <tfoot> row whose top + side borders close off the
+     items table. Chromium-based PDF renderers repeat <tfoot> on every
+     page-break (same mechanism as <thead>), so on a multi-page quote
+     this gives every page a horizontal closing line at the bottom of
+     whatever items it shows. On the final page the closing line merges
+     with the spacer row's border-bottom into a single 1px line. */
+  .fq-lines tfoot tr.li-close td {
+    height:       0;
+    padding:      0;
+    font-size:    0;
+    line-height:  0;
+    border-top:   1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+  }
+  .fq-lines tfoot tr.li-close td:first-child {
+    border-left:  1px solid var(--color-border);
+  }
+
+  /* FILLER ROW at the bottom of tbody. Without it, the column dividers
+     would stop right after the last line item. li-spacer extends them
+     down to fill the page, matching the legacy printed form.
+     border-bottom also closes the items table's bottom edge. */
+  .fq-lines tbody tr.li-spacer td {
+    height:        var(--lines-spacer-height);
+    padding:       0;
+    border-top:    none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .fq-lines tbody tr.li-spacer td:first-child {
+    border-left:  1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+  }
+
+
+  /* =====================================================================
+     8. NOTES + TOTALS, bottom strip of the quote
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <div class="fq-bottom"> containing two cells:
+       • <div class="fq-notes"> , left ("This is a Quotation..." block)
+       • <div class="fq-totals">, right (Subtotal / S&H / Amount Due)
+     Tunables used: --notes-width, --totals-width, --notes-padding,
+                    --totals-padding, --totals-cell-padding,
+                    --font-notes, --font-totals, --lh-notes,
+                    --color-border
+     ===================================================================== */
+  .fq-bottom {
+    display: table;
+    width:   100%;
+    /* NB: no border-top, the items table closes itself via the spacer row. */
+  }
+
+  /* LEFT side, "This is a Quotation..." text block. */
+  .fq-notes {
+    display:        table-cell;
+    width:          var(--notes-width);
+    padding:        var(--notes-padding);
+    vertical-align: top;
+    font-size:      var(--font-notes);
+    line-height:    var(--lh-notes);
+    /* NB: no right-side divider, clean area to left of the totals box. */
+  }
+
+  /* RIGHT side, the totals box (Subtotal / S&H Charges / Amount Due).
+     Zero padding on top/right/left so the box:
+       • sits flush against the items table's bottom edge
+       • aligns its left edge with the UNIT PRICE column above (66%)
+       • aligns its right edge with the items table's right edge (100%) */
+  .fq-totals {
+    display:        table-cell;
+    width:          var(--totals-width);
+    padding:        var(--totals-padding);
+    vertical-align: top;
+  }
+
+  /* The actual totals <table>. */
+  .fq-totals table {
+    width:           100%;
+    border-collapse: collapse;
+    border:          1px solid var(--color-border);
+  }
+
+  /* Every cell has a full border → closed box around each row.
+     width:50% forces an even split so the middle divider lines up with
+     the UNIT PRICE / EXT PRICE column boundary in the items table above. */
+  .fq-totals td {
+    font-size: var(--font-totals);
+    padding:   var(--totals-cell-padding);
+    border:    1px solid var(--color-border);
+    width:     50%;
+  }
+
+  /* The VALUE column (numbers): right-aligned, no wrapping. */
+  .fq-totals td:last-child {
+    text-align:  right;
+    white-space: nowrap;
+  }
+
+  /* NB: Amount Due intentionally NOT bold, matches the Eclipse printout. */
+
+
+  /* =====================================================================
+     9. FOOTER, "Printed By: XYZ on <date>" at the very bottom
+     ─────────────────────────────────────────────────────────────────────
+     Renders: <div class="fq-footer">.
+     Tunables used: --font-footer, --color-text-footer,
+                    --footer-margin-top, --footer-padding-top
+     ===================================================================== */
+  .fq-footer {
+    margin-top:  var(--footer-margin-top);
+    padding-top: var(--footer-padding-top);
+    font-size:   var(--font-footer);
+    color:       var(--color-text-footer);
+    /* NB: no border-top, Eclipse has no divider above "Printed By". */
+  }
+
+
+  /* =====================================================================
+     10. HIDDEN HUBSPOT MODULES, signature + download widgets
+     ─────────────────────────────────────────────────────────────────────
+     HubSpot requires these blocks to be present in the DOM, but
+     they're hidden from the visual layout. To reveal e-signature,
+     change .fq-signature-wrap display: none → block.
+     ===================================================================== */
+  .fq-signature-wrap,
+  .fq-download-wrap {
+    display: none;
+  }
+
+
+  /* =====================================================================
+     11. PRINT OVERRIDES, applied when HubSpot generates the PDF
+     ─────────────────────────────────────────────────────────────────────
+     Strips inner padding and lets the page use its full width.
+     ===================================================================== */
+  @media print {
+    /* Strip the on-screen "white sheet on a grey backdrop" treatment so
+       the PDF just renders the page content. We KEEP .fq-page's padding
+       because HubSpot's PDF engine ignores @page { margin: ... } rules,
+       so this padding is the only thing giving the PDF its margins. */
+    .fq-wrap { background-color: transparent; }
+    .fq-page {
+      background-color: transparent;
+      width:            100%;
+      min-height:       0;
+      margin:           0;
+      box-shadow:       none;
+    }
+    .fq-signature-wrap { display: none !important; }
+  }
+</style>
+</head>
+{%- comment -%}
+  Fairbank Equipment quotation, the Eclipse printout layout (from the HubSpot
+  template at quotes.fairbankequipment.com). Data:
+  - quote: name (the quote number), expiration_date, amount, and these quote
+    properties when they exist: customer_number, customer_po, job_name,
+    salesperson_code, ship_via, terms, ship_date, freight_allowed,
+    shipping_amount, branch_name, branch_address, ship_to_name,
+    ship_to_street, ship_to_city, quote_notes
+  - company: name and address (QUOTE TO)
+  - lines: quantity, uom, sku, name, description, unit_price, amount
+{%- endcomment -%}
+{%- assign branch_name = quote.branch_name | default: "FAIRBANK - EVANS BRANCH" -%}
+{%- assign branch_address = quote.branch_address | default: "3333 Central St
+Evans, CO 80620
+Phone 800-333-3800" -%}
+{%- assign subtotal = lines | sum: "amount" -%}
+{%- assign shipping = quote.shipping_amount | default: 0 -%}
+{%- if quote.amount -%}{%- assign due = quote.amount -%}{%- else -%}{%- assign due = subtotal | plus: shipping -%}{%- endif -%}
+<body class="hs-quotes fq-wrap">
+<div class="fq-page">
+
+  <div class="fq-header">
+    <div class="fq-header-left">
+      <div class="fq-logo">
+        <img src="https://43793456.fs1.hubspotusercontent-na1.net/hubfs/43793456/fairbank_group_logo.png" alt="Fairbank Equipment Logo">
+      </div>
+      <div class="fq-branch-info">
+        <span class="branch-name">{{ branch_name }}</span><br>
+        {{ branch_address | escape | newline_to_br | raw }}<br>
+      </div>
+    </div>
+
+    <div class="fq-header-right">
+      <img class="fq-barcode" src="{{ quote.name | barcode: 'code128', 12 }}" alt="Quote {{ quote.name }} barcode">
+      <div class="fq-quotation-title">Quotation</div>
+      <table class="fq-right-meta" cellpadding="0" cellspacing="0">
+        <colgroup>
+          <col style="width:45%;">
+          <col style="width:23%;">
+          <col style="width:32%;">
+        </colgroup>
+        <tbody><tr>
+          <th class="sep-right">EXPIRATION DATE</th>
+          <th colspan="2">QUOTE NUMBER</th>
+        </tr>
+        <tr>
+          <td class="sep-right sep-bottom" id="fq-exp-cell">{{ quote.expiration_date | date: "%m/%d/%Y" }}</td>
+          <td colspan="2" class="sep-bottom">{{ quote.name }}</td>
+        </tr>
+        <tr>
+          <td colspan="2" rowspan="2" class="sep-right" style="line-height: var(--lh-meta-branch);
+                     padding:     var(--meta-branch-padding);
+                     vertical-align: top;">
+            <div>{{ branch_name }}</div>
+            {{ branch_address | escape | newline_to_br | raw }}<br>
+          </td>
+          <th>PAGE NO.</th>
+        </tr>
+        <tr>
+          <td style="text-align: right;
+                     vertical-align: middle;
+                     font-size: var(--font-meta);">1 of 1</td>
+        </tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="fq-addresses">
+    <div class="fq-addr-cell">
+      <div class="fq-addr-label">QUOTE TO:</div>
+      <div class="fq-addr-line">{{ company.name }}</div>
+      <div class="fq-addr-line">{{ company.address_street_1 }}</div>
+      <div class="fq-addr-line">
+        {{ company.address_city }}{% if company.address_province %}, {{ company.address_province }}{% endif %} {{ company.address_postalcode }}
+      </div>
+    </div>
+    <div class="fq-addr-cell">
+      <div class="fq-addr-label">SHIP TO:</div>
+      <div class="fq-addr-line">{{ quote.ship_to_name | default: company.name }}</div>
+      <div class="fq-addr-line">{{ quote.ship_to_street | default: company.address_street_1 }}</div>
+      <div class="fq-addr-line">
+        {% if quote.ship_to_city %}{{ quote.ship_to_city }}{% else %}{{ company.address_city }}{% if company.address_province %}, {{ company.address_province }}{% endif %} {{ company.address_postalcode }}{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <table class="fq-info" cellpadding="0" cellspacing="0">
+    <thead>
+      <tr>
+        <th style="width:18%;">CUSTOMER NUMBER</th>
+        <th style="width:27%;">CUSTOMER PO NUMBER</th>
+        <th style="width:28%;">JOB NAME / RELEASE NUMBER</th>
+        <th style="width:27%;">SALESPERSON</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ quote.customer_number }}</td>
+        <td>{{ quote.customer_po }}</td>
+        <td>{% if quote.job_name %}{{ quote.job_name }}{% else %}&nbsp;{% endif %}</td>
+        <td>{{ quote.salesperson_code }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="fq-info fq-info-row2" cellpadding="0" cellspacing="0">
+    <thead>
+      <tr>
+        <th style="width:28%;">WRITER</th>
+        <th style="width:20%;">SHIP VIA</th>
+        <th style="width:22%;">TERMS</th>
+        <th style="width:15%;">SHIP DATE</th>
+        <th style="width:15%;">FREIGHT ALLOWED</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ quote._text.created_by }}</td>
+        <td>{{ quote._text.ship_via }}</td>
+        <td>{{ quote._text.terms }}</td>
+        <td>{{ quote.ship_date | date: "%m/%d/%Y" }}</td>
+        <td>{{ quote._text.freight_allowed | default: "No" }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="fq-lines" cellpadding="0" cellspacing="0">
+    <thead>
+      <tr>
+        <th style="width:18%;">ORDER QTY</th>
+        <th style="width:48%;">DESCRIPTION</th>
+        <th class="num" style="width:17%;">UNIT PRICE</th>
+        <th class="num" style="width:17%;">EXT PRICE</th>
+      </tr>
+    </thead>
+    {%- for line in lines %}
+    {%- assign uom = "ea" -%}
+    {%- if line.uom and line.uom != "each" -%}{%- assign uom = line.uom | slice: 0, 2 -%}{%- endif %}
+    <tbody class="li-group">
+      <tr class="li-main">
+        <td>{{ line.quantity }}{{ uom }}</td>
+        <td>{% if line.sku %}{{ line.sku }}
+{% endif %}{{ line.name }}</td>
+        <td class="num">
+          {{ line.unit_price | fixed: 3 }}/{{ uom }}
+        </td>
+        <td class="num">{{ line.amount | fixed: 2 }}</td>
+      </tr>
+      {%- if line.description %}
+      <tr class="li-desc"><td></td><td>{{ line.description }}</td><td></td><td></td></tr>
+      {%- endif %}
+    </tbody>
+    {%- endfor %}
+    <tbody>
+      <tr class="li-spacer">
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr class="li-close">
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="fq-bottom">
+    <div class="fq-notes">
+      {%- if quote.quote_notes %}
+      {{ quote.quote_notes | escape | newline_to_br | raw }}
+      {%- else %}
+      This is a Quotation.<br>
+      Price is firm for 10 days, subject to change without notice after 10 days.<br>
+      Applicable taxes extra.<br><br>
+      WARNING: Products may Contain Phthalates or Nickel -<br>
+      www.P65Warnings.ca.gov
+      {%- endif %}
+    </div>
+    <div class="fq-totals">
+      <table cellpadding="0" cellspacing="0">
+        <tbody><tr>
+          <td>Subtotal<br>S&amp;H Charges</td>
+          <td>{{ subtotal | fixed: 2 }}<br>{{ shipping | fixed: 2 }}</td>
+        </tr>
+        <tr class="total-final">
+          <td>Amount Due</td>
+          <td>{{ due | fixed: 2 }}</td>
+        </tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="fq-footer">
+    Printed By: {{ quote.salesperson_code }} on {{ now | date: "%m/%d/%Y %I:%M:%S %p", "America/Chicago" }} {{ now | zone_abbr: "America/Chicago" }}
+  </div>
+
+</div>
+</body></html>

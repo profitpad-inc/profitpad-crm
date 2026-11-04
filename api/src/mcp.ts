@@ -23,6 +23,10 @@ import {
 } from './views.js';
 import { FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { renderView } from './render.js';
+import {
+  createTemplate, listTemplates, loadTemplate, pdfPages, publishTemplate, renderPdf, renderScreenshot, renderTemplate, requireTemplateAdmin,
+  sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut
+} from './templates.js';
 import { findIcons } from './icons.js';
 import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
@@ -97,7 +101,7 @@ const filterGroupsArg = z.array(z.object({
   }))
 })).optional().describe('Filters within a group are ANDed; groups are ORed. between uses values [low, high]; in/not_in use values.');
 
-function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[]): McpServer {
+export function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[]): McpServer {
   const server = new McpServer(
     { name: 'profitpad-crm', title: 'ProfitPad CRM', version: VERSION, icons, websiteUrl: process.env.UI_URL || undefined },
     { instructions: INSTRUCTIONS + (p.scopes.has('schema') ? ADMIN_INSTRUCTIONS : '') }
@@ -629,6 +633,114 @@ function registerAdminTools(server: McpServer, p: Principal) {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     scopeChallenge: schemaChallenge
   }, async ({ view }) => run(async () => viewOut(await publishView(p, view), false)));
+
+  // ---- document templates (templates.ts) --------------------------------------
+  const templateArg = z.string().describe('The template\'s id (from list_document_templates)');
+  const sourcesArg = z.record(z.string(), z.unknown()).optional()
+    .describe('Data sources by name: {"name": {"sql": "select ... where q.pc_0022_id = :record_id"}} or {"name": {"integration": "key", "data": {...}}}. Replaces all of them.');
+
+  server.registerTool('list_document_templates', {
+    title: 'List document templates',
+    description: 'Document templates draw records as documents: the customer\'s quote page and its PDF. Lists them (no code) with object, kind (html or react), status and whether each is the default. Read view_guide topic document_templates before writing one.',
+    inputSchema: z.object({ object: z.string().optional().describe('Only templates for this object (quotes)') }),
+    annotations: { readOnlyHint: true }
+  }, async ({ object }) => run(async () => (await listTemplates(object)).map((t) => templateOut(t, false))));
+
+  server.registerTool('get_document_template', {
+    title: 'Get document template',
+    description: 'A template with its draft and published code and data sources.',
+    inputSchema: z.object({ template: templateArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ template }) => run(async () => templateOut(await loadTemplate(pool, template))));
+
+  server.registerTool('create_document_template', {
+    title: 'Create document template',
+    description: 'Creates a draft template for one object type. kind html: an HTML page with Liquid tags; kind react: TSX whose default export gets the data prop. The code and SQL sources are checked before saving. Admins only. Nothing reaches customers until it is published and linked or made the default.',
+    inputSchema: z.object({
+      name: z.string(),
+      object: z.enum(['quotes']).optional().describe('Default quotes'),
+      kind: z.enum(['html', 'react']),
+      description: z.string().optional(),
+      source: z.string().optional(),
+      queries: sourcesArg,
+      page_size: z.enum(['letter', 'legal', 'a4']).optional(),
+      orientation: z.enum(['portrait', 'landscape']).optional(),
+      page_margin: z.string().optional().describe('PDF margins like CSS: 0.5in, or 10mm 12mm. A CSS @page margin wins.')
+    }),
+    annotations: { readOnlyHint: false },
+    scopeChallenge: schemaChallenge
+  }, async (input) => run(async () => templateOut(await createTemplate(p, input), false)));
+
+  server.registerTool('save_document_template_draft', {
+    title: 'Save document template draft',
+    description: 'Changes the draft: source (all of it) or edits (find and replace, each old_str matching exactly one place), queries (all data sources), kind. Checked before saving.',
+    inputSchema: z.object({
+      template: templateArg,
+      source: z.string().optional(),
+      edits: z.array(z.object({ old_str: z.string(), new_str: z.string() })).optional(),
+      queries: sourcesArg,
+      kind: z.enum(['html', 'react']).optional()
+    }),
+    annotations: { readOnlyHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ template, ...input }) => run(async () => templateOut(await saveTemplateDraft(p, template, input), false)));
+
+  server.registerTool('get_document_template_data', {
+    title: 'Get document template data',
+    description: 'The data a template gets for a record (record, lines, company, contact, linked, queries, org, today): what the template can show. Without record_id, the newest record of the template\'s object.',
+    inputSchema: z.object({ template: templateArg, record_id: z.string().optional(), published: z.boolean().optional().describe('Use the published data sources') }),
+    annotations: { readOnlyHint: true }
+  }, async ({ template, record_id, published }) => run(async () => {
+    requireTemplateAdmin(p);
+    const t = await loadTemplate(pool, template);
+    const id = record_id || (await sampleRecord(t.object));
+    const { data, warnings } = await templateData(t, id, !published);
+    return { record_id: id, warnings, data };
+  }));
+
+  server.registerTool('render_document_template', {
+    title: 'Render document template',
+    description: 'Draws the template (the draft by default) for a record and returns a screenshot of the page at paper width (one screen, or full_page), the PDF\'s page count, the HTML size and warnings (failed queries, images that could not be loaded). Use it after every change; compare with the target design.',
+    inputSchema: z.object({
+      template: templateArg,
+      record_id: z.string().optional(),
+      published: z.boolean().optional(),
+      full_page: z.boolean().optional().describe('The whole page instead of one paper-height screen (up to 8000px)')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ template, record_id, published, full_page }) => {
+    try {
+      requireTemplateAdmin(p);
+      const t = await loadTemplate(pool, template);
+      const id = record_id || (await sampleRecord(t.object));
+      const out = await renderTemplate(t, id, !published);
+      const [shot, pdf] = await Promise.all([renderScreenshot(t, out.html, !!full_page), renderPdf(t, out.html)]);
+      return {
+        content: [
+          { type: 'image' as const, data: shot.image, mimeType: 'image/png' },
+          { type: 'text' as const, text: JSON.stringify({ record_id: id, version: published ? 'published' : 'draft', pdf_pages: pdfPages(pdf), page_height: shot.height, html_bytes: out.html.length, warnings: out.warnings }) }
+        ]
+      };
+    } catch (err) {
+      return run(() => Promise.reject(err));
+    }
+  });
+
+  server.registerTool('publish_document_template', {
+    title: 'Publish document template',
+    description: 'Makes the draft the version customers see (on records linked to it, or all records of its object when it is the default). Only when the user asked to publish.',
+    inputSchema: z.object({ template: templateArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ template }) => run(async () => templateOut(await publishTemplate(p, template), false)));
+
+  server.registerTool('set_default_document_template', {
+    title: 'Set default document template',
+    description: 'Makes a published template the default for its object (every record without its own template uses it), or stops it being the default. One default per object. Only when the user asked.',
+    inputSchema: z.object({ template: templateArg, default: z.boolean() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ template, default: on }) => run(async () => templateOut(await setDefaultTemplate(p, template, on), false)));
 
   server.registerTool('revert_view_draft', {
     title: 'Revert custom view draft',

@@ -508,3 +508,12 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
   .record-page .prop-row.editing, .file-preview-skeleton, .skeleton-block { animation: none; }
   .record-page .composer { transition: none; }
 }
+
+/* document template card (components/DocumentTemplateEditor.tsx) */
+textarea.template-code { display: block; width: 100%; min-height: 420px; resize: vertical; border: 1px solid var(--border); color: var(--text); }
+textarea.template-code.short { min-height: 200px; }
+textarea.template-code:focus { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); border-color: var(--primary); }
+.template-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.template-actions .select-face { min-width: 150px; }
+.template-record { min-width: 180px; max-width: 280px; }
+iframe.template-preview { display: block; width: 100%; min-height: 400px; border: 1px solid var(--hairline); border-radius: var(--radius); background: #fff; }

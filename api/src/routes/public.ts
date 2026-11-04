@@ -9,6 +9,7 @@ import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
 import { buildQuoteLayout, loadQuoteDocument, type QuoteLayout } from '../quote-document.js';
+import { renderPdf, renderTemplate, templateFor, type TemplateRow } from '../templates.js';
 import { invoicePayable, publicPayment, quotePayable, type PublicPayment } from '../payments/state.js';
 
 // Public pages: customers open quotes (/p/quote/#key) and fill in forms
@@ -126,6 +127,9 @@ export interface PublicQuote {
   lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null; extra?: Record<string, string> }[];
   // what the quote shows beyond its fixed parts (Settings -> Quote document)
   layout: QuoteLayout;
+  // the quote drawn by its document template (templates.ts) as a whole HTML
+  // page, shown in a sandboxed iframe; null: the built-in layout
+  document_html: string | null;
   signing_fields: SigningField[];
   signed_fields: Record<string, string> | null;
   customer_signature: string | null;
@@ -301,6 +305,7 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     contact,
     lines: outLines,
     layout,
+    document_html: (await quoteDocument(q.id))?.html ?? null,
     signing_fields: parseJson<SigningField[]>(q.signing_fields, []),
     signed_fields: parseJson<Record<string, string> | null>(q.signed_fields, null),
     customer_signature: q.customer_signature,
@@ -311,6 +316,21 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     countersigned_at: q.countersigned_at ? new Date(q.countersigned_at).toISOString() : null,
     payment: payable ? await publicPayment(payable) : null
   };
+}
+
+// The quote drawn by its document template (the one linked to it, else the
+// default), or null for the built-in layout. A template that fails to draw
+// (or no renderer for a React one) falls back to the built-in layout, so the
+// customer always sees their quote; the error goes to the log.
+async function quoteDocument(quoteId: string): Promise<{ template: TemplateRow; html: string } | null> {
+  const template = await templateFor(await getObject('quotes'), quoteId);
+  if (!template) return null;
+  try {
+    return { template, html: (await renderTemplate(template, quoteId, false)).html };
+  } catch (err) {
+    console.error(`document template ${template.id} failed for quote ${quoteId}: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 // Lines, the first company and the first contact linked to a quote or invoice.
@@ -423,7 +443,16 @@ export async function publicRoutes(app: FastifyInstance) {
   app.get<{ Params: { key: string } }>('/v1/public/quotes/:key/pdf', async (req, reply) => {
     rateLimit(req, 'quote-read', 60);
     const quote = await loadPublicQuote(req.params.key);
-    const pdf = await renderQuotePdf(quote, await theme());
+    // the template's page printed by Chromium; the built-in PDF otherwise (or if that fails)
+    let pdf: Buffer | null = null;
+    const drawn = quote.document_html ? await quoteDocument(quote.id) : null;
+    if (drawn) {
+      pdf = await renderPdf(drawn.template, drawn.html).catch((err: Error) => {
+        req.log.error({ err }, 'document template PDF failed');
+        return null;
+      });
+    }
+    pdf ??= await renderQuotePdf(quote, await theme());
     const file = (quote.name ?? 'quote').replace(/[^A-Za-z0-9 _.-]+/g, '').trim().replace(/\s+/g, '-') || 'quote';
     reply
       .header('cache-control', 'no-store')
