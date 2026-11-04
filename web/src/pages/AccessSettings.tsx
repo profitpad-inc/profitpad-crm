@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
+import { EllipsisVertical, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, initials } from '../lib/display';
 import { SharingRules } from '../components/SharingRules';
-import { EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
+import { Menu } from '../components/ui';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -88,27 +89,28 @@ function useAccessData() {
     return res.results;
   }, []);
 
+  const reloadUsers = useCallback(async () => {
+    const r = await api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email', 'status'], sorts: [{ property: 'name', direction: 'asc' }] });
+    setUsers(r.results.map((u) => ({
+      id: u.id,
+      name: displayName(u.properties, u.id),
+      email: (u.properties.email as string) ?? null,
+      deactivated: ([] as unknown[]).concat(u.properties.status ?? []).includes('deactivated')
+    })));
+  }, []);
+
   useEffect(() => {
-    Promise.all([
-      reloadRoles(),
-      api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email', 'status'], sorts: [{ property: 'name', direction: 'asc' }] })
-        .then((r) => setUsers(r.results.map((u) => ({
-          id: u.id,
-          name: displayName(u.properties, u.id),
-          email: (u.properties.email as string) ?? null,
-          deactivated: ([] as unknown[]).concat(u.properties.status ?? []).includes('deactivated')
-        }))))
-    ])
+    Promise.all([reloadRoles(), reloadUsers()])
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoaded(true));
-  }, [reloadRoles]);
+  }, [reloadRoles, reloadUsers]);
 
-  return { roles, users, loaded, error, setError, reloadRoles };
+  return { roles, users, loaded, error, setError, reloadRoles, reloadUsers };
 }
 
 export function UserSettings() {
   const { me } = useApp();
-  const { roles, users, loaded, error, setError, reloadRoles } = useAccessData();
+  const { roles, users, loaded, error, setError, reloadRoles, reloadUsers } = useAccessData();
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -122,6 +124,30 @@ export function UserSettings() {
 
   const rolesOf = (userId: string) =>
     roles.flatMap((r) => r.assignments.filter((a) => a.user_id === userId).map((a) => ({ role: r, assignmentId: a.id })));
+
+  // "Sign in as": Super Admins, on another active user who is not a Super Admin
+  // (the API checks all of this again; same rule as the user record's menu)
+  async function signInAs(u: UserRow) {
+    if (!confirm(`Sign in as ${u.name}? Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.`)) return;
+    try {
+      await api('POST', `/v1/users/${u.id}/sign-in-as`);
+      // a full load, so the menu, objects and views are theirs
+      window.location.assign('/');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function setStatus(u: UserRow, status: 'active' | 'deactivated') {
+    if (status === 'deactivated' && !confirm(`Deactivate ${u.name}? They are signed out everywhere, can no longer sign in, and API keys linked to them stop working.`)) return;
+    setError(null);
+    try {
+      await api('PATCH', `/v1/objects/users/${u.id}`, { properties: { status: [status] } });
+      await reloadUsers();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   return (
     <SettingsPage
@@ -143,19 +169,21 @@ export function UserSettings() {
         <div className="access-table">
           <table className="grid">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Roles</th></tr>
+              <tr><th>Name</th><th>Email</th><th>Roles</th><th aria-label="Actions" /></tr>
             </thead>
             <tbody>
               {users.map((u) => {
                 const assigned = rolesOf(u.id);
                 const available = roles.filter((r) => !assigned.some((a) => a.role.id === r.id));
+                const isMe = me.user?.id === u.id;
+                const canSignInAs = me.is_admin && !me.signed_in_as_by && !isMe && !u.deactivated && !assigned.some((a) => a.role.is_admin);
                 return (
                   <tr key={u.id}>
                     <td className="primary-cell">
                       <span className="person">
                         <span className="person-avatar">{initials(u.name)}</span>
                         <Link to={`/objects/users/${u.id}`}>{u.name}</Link>
-                        {me.user?.id === u.id && <span className="muted small">You</span>}
+                        {isMe && <span className="muted small">You</span>}
                         {u.deactivated && <StatusPill tone="off">Deactivated</StatusPill>}
                       </span>
                     </td>
@@ -188,6 +216,27 @@ export function UserSettings() {
                         )}
                       </div>
                     </td>
+                    <td className="row-actions">
+                      {(canSignInAs || !isMe) && (
+                        <Menu
+                          align="right"
+                          trigger={(toggle) => (
+                            <button className="icon-btn" onClick={toggle} aria-label={`Actions for ${u.name}`}>
+                              <EllipsisVertical size={16} />
+                            </button>
+                          )}
+                        >
+                          {(close) => (
+                            <>
+                              {canSignInAs && <button onClick={() => { close(); signInAs(u); }}>Sign in as {u.name}</button>}
+                              {!isMe && (u.deactivated
+                                ? <button onClick={() => { close(); setStatus(u, 'active'); }}>Reactivate</button>
+                                : <button className="danger" onClick={() => { close(); setStatus(u, 'deactivated'); }}>Deactivate</button>)}
+                            </>
+                          )}
+                        </Menu>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -210,8 +259,18 @@ export function RoleSettings() {
 
   const role = selected && selected !== 'new' ? roles.find((r) => r.id === selected) ?? null : null;
 
+  // unsaved changes to the role's details (permissions and sharing rules save as they change)
+  const dirty = selected === 'new'
+    ? draft.name.trim() !== '' || draft.description.trim() !== '' || draft.is_admin
+    : !!role && (draft.name !== role.name || draft.description !== (role.description ?? '') || draft.is_admin !== role.is_admin || draft.record_access !== role.record_access);
+
   // id is a role id or 'new'
   function pick(id: string, list = roles) {
+    if (id !== selected && dirty && !window.confirm('Discard your unsaved changes to this role?')) return;
+    load(id, list);
+  }
+
+  function load(id: string, list = roles) {
     setSelected(id);
     setMessage(null);
     setError(null);
@@ -239,14 +298,16 @@ export function RoleSettings() {
     }
   }
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
+  async function save(e?: FormEvent) {
+    e?.preventDefault();
+    if (!dirty) return;
     const body = { name: draft.name.trim(), description: draft.description.trim() || null, is_admin: draft.is_admin, record_access: draft.record_access };
     if (!body.name) return setError('A role needs a name.');
     if (selected === 'new') {
       const created = (await run(() => api<Role>('POST', '/v1/roles', body), 'Role created.')) as Role | undefined;
       if (created) {
         setSelected(created.id);
+        setDraft({ name: created.name, description: created.description ?? '', is_admin: created.is_admin, record_access: created.record_access });
         setMessage('Role created. Now choose which objects it can use.');
       }
     } else if (role) {
@@ -259,7 +320,7 @@ export function RoleSettings() {
     const list = (await run(() => api('DELETE', `/v1/roles/${role.id}`).then(reloadRoles))) as Role[] | undefined;
     if (list) {
       setSelected(null);
-      if (list.length) pick(list[0].id, list);
+      if (list.length) load(list[0].id, list);
     }
   }
 
@@ -317,6 +378,7 @@ export function RoleSettings() {
           </div>
 
           <div className="role-editor">
+            {error && <div className="error">{error}</div>}
             {!role && selected !== 'new' && (
               <EmptyState icon={<ShieldCheck size={18} />} title="No role chosen" action={<button className="btn primary" onClick={() => pick('new')}>New role</button>}>
                 Pick a role on the left, or create one.
@@ -346,13 +408,12 @@ export function RoleSettings() {
                       {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
                     </label>
                   )}
-                  <div className="actions">
-                    <button className="btn primary">{selected === 'new' ? 'Create role' : 'Save role'}</button>
-                    {role && <button type="button" className="btn ghost danger-text" onClick={remove}><Trash2 size={14} /> Delete role</button>}
-                    {message && <span className="muted small" role="status">{message}</span>}
-                  </div>
+                  {role && (
+                    <div className="actions">
+                      <button type="button" className="btn ghost danger-text" onClick={remove}><Trash2 size={14} /> Delete role</button>
+                    </div>
+                  )}
                 </form>
-                {error && <div className="error">{error}</div>}
               </SettingsSection>
             )}
 
@@ -423,6 +484,15 @@ export function RoleSettings() {
             )}
           </div>
         </div>
+      )}
+      {loaded && (role || selected === 'new') && (
+        <SaveBar dirty={dirty} message={message}>
+          <button className="btn" disabled={!dirty} onClick={() => {
+            if (selected === 'new') { setSelected(null); if (roles.length) load(roles[0].id); return; }
+            if (role) setDraft({ name: role.name, description: role.description ?? '', is_admin: role.is_admin, record_access: role.record_access });
+          }}>{selected === 'new' ? 'Cancel' : 'Discard'}</button>
+          <button className="btn primary" disabled={!dirty} onClick={() => void save()}>{selected === 'new' ? 'Create role' : 'Save role'}</button>
+        </SaveBar>
       )}
     </SettingsPage>
   );

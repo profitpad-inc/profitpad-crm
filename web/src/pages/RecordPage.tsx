@@ -5,6 +5,7 @@ import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type Sea
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
+import { useAddressGroups, withAddressesTogether } from '../components/AddressInput';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
@@ -341,8 +342,10 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   const [error, setError] = useState<{ property: string; message: string; failed: string } | null>(null);
   // collapsed sections; System starts closed
   const [closed, setClosed] = useState<Record<string, boolean>>({ system: true });
+  const addressGroups = useAddressGroups(schema.api_name);
   const shown = schema.properties.filter((p) => p.record_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
-  const main = shown.filter((p) => !p.is_base || p.api_name === 'name');
+  // each address group's properties together, in order (Settings → Address autocomplete)
+  const main = withAddressesTogether(shown.filter((p) => !p.is_base || p.api_name === 'name'), addressGroups);
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
   // without edit access (the role, or this record only through a read-only
   // sharing rule) every property is locked, like a calculation; a save's

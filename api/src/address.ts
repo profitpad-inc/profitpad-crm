@@ -259,13 +259,13 @@ function settingsOut(s: Settings, groups: AddressGroup[]) {
 
 export async function addressRoutes(app: FastifyInstance) {
   // For every signed-in page: whether street boxes suggest addresses, and
-  // which properties make up each group.
+  // which properties make up each group. The groups come back even when
+  // suggestions are off: record pages list each group's properties together.
   app.get('/v1/address/config', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
     const s = await loadSettings();
-    const on = s.enabled && !!s.key;
-    return { enabled: on, groups: on ? await liveGroups(s.groups ?? DEFAULT_GROUPS) : [] };
+    return { enabled: s.enabled && !!s.key, groups: await liveGroups(s.groups ?? DEFAULT_GROUPS) };
   });
 
   app.post<{ Body: { query?: unknown; session?: unknown } }>('/v1/address/autocomplete', async (req) => {

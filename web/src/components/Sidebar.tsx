@@ -22,7 +22,7 @@ function readExpanded(): boolean {
 // 'rail' is the desktop sidebar; 'drawer' is the same menu, always expanded,
 // inside the phone hamburger drawer (More opens inline there).
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, objectByName, objects, customViews, logo } = useApp();
+  const { me, nav, navCanEdit, objectByName, objects, customViews, logo } = useApp();
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
@@ -118,7 +118,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
           {drawer && moreOpen && <InlineMore objects={objects.map((o) => o.api_name)} />}
         </div>
         <div className="sidebar-bottom">
-          {me.is_admin && (
+          {(me.is_admin || navCanEdit) && (
             <Link to="/settings/navigation" className="nav-item" title={expanded ? undefined : 'Edit menu'}>
               <Pencil size={18} strokeWidth={1.75} />
               {expanded && <span>Edit menu</span>}

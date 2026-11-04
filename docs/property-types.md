@@ -46,7 +46,7 @@ Values are `api_value`s; labels live in `meta.pc_0003` and are looked up at read
 | `allow_form_add` | boolean | reserved for forms |
 | `auto_append_users` | boolean | every active user becomes an option (`api_value` = user id, label = user name). A user who is archived, deactivated, merged or deleted has their option archived, and it comes back if they return (migration 0050) |
 | `color_display` | `none` / `dot` / `pill` | how choice colours show: none (the default when unset), a large dot left of the label, or a tinted pill around each value. *enforced*: `dot` needs `single_value` (migration 0039) |
-| `default_value` | option `api_value` | *enforced*: the value is never empty (deleted records excepted) and new records start with it (column default). Must be one of the options. The UI offers no "None" choice (migration 0029; status on quotes, invoices, forms and booking pages defaults to `draft`) |
+| `default_value` | option `api_value` | *enforced*: the value is never empty (deleted records excepted) and new records start with it (column default). Must be one of the options. The UI offers no "None" choice (migration 0029; status on quotes, invoices, forms and booking pages defaults to `draft`; users' status defaults to `active`, migration 0072) |
 
 Always *enforced*: only known option values, no duplicates, no empty arrays. Archived options stay valid values: records keep them and API writes may still set them, but the UI no longer offers them (a picker keeps the value a record already has).
 
@@ -58,7 +58,7 @@ To model a boolean, use a single-value dropdown with options `true` / `false`.
 `datetime` accepts `timezone` (IANA name) as a display option. `date` has no time zone: it is a calendar day.
 
 ## calculation
-`calc_sql` + `calc_output_type` (`text`, `number`, `date`, `datetime`). Display options: `display`, `format`, `prefix`, `suffix`, `decimals`, `timezone`. Rules in `docs/RULES.md` section 5.
+`calc_sql` + `calc_output_type` (`text`, `number`, `date`, `datetime`). Display options: `display`, `format`, `prefix`, `suffix`, `decimals`, `timezone`, `currency_code` (migration 0070). A calculation may call `currency_to_base(amount, currency, on_date)` to convert money to the base currency; every calculation that does is re-queued when rates change, and its `currency_code` is set to the new base when the base changes. The built-in `amount_base` ("Amount in base currency") on deals, quotes, invoices, orders and carts is one. Rules in `docs/RULES.md` section 5.
 
 ## file
 `max_files` (positive integer, *enforced*). Values are ids of `files` records; upload with the file endpoints first, then add the id (see `docs/architecture.md` "File storage"). Only ready files the caller can already open may be added.

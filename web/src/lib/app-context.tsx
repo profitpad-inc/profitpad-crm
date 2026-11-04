@@ -9,7 +9,10 @@ interface AppState {
   objects: ObjectSummary[];
   objectByName: Map<string, ObjectSummary>;
   nav: NavItem[];
-  navSource: 'default' | 'user';
+  // which menu the sidebar shows: the user's own, their menu group's, or the default
+  navSource: 'default' | 'group' | 'user';
+  // whether this user may change their own menu (Super Admins always; others when their group, or the everyone setting, allows it)
+  navCanEdit: boolean;
   // mobile bottom bar: the left button, then the links (Search is always added after them)
   bottomLeft: 'menu' | 'home';
   bottomNav: NavItem[];
@@ -41,7 +44,8 @@ export function useApp(): AppState {
 export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: () => void; children: ReactNode }) {
   const [objects, setObjects] = useState<ObjectSummary[]>([]);
   const [nav, setNav] = useState<NavItem[]>([]);
-  const [navSource, setNavSource] = useState<'default' | 'user'>('default');
+  const [navSource, setNavSource] = useState<'default' | 'group' | 'user'>('default');
+  const [navCanEdit, setNavCanEdit] = useState(false);
   const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
   const [bottomNav, setBottomNav] = useState<NavItem[]>([]);
   const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
@@ -73,9 +77,10 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   }, [me]);
 
   const reloadNav = useCallback(async () => {
-    const res = await api<{ source: 'default' | 'user'; items: NavItem[]; bottom_left: 'menu' | 'home'; bottom: NavItem[] }>('GET', '/v1/ui/nav');
+    const res = await api<{ source: 'default' | 'group' | 'user'; items: NavItem[]; bottom_left: 'menu' | 'home'; bottom: NavItem[]; can_edit?: boolean }>('GET', '/v1/ui/nav');
     setNav(res.items);
     setNavSource(res.source);
+    setNavCanEdit(res.can_edit === true);
     setBottomLeft(res.bottom_left ?? 'menu');
     setBottomNav(res.bottom ?? []);
   }, []);
@@ -107,7 +112,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   return (
     <Ctx.Provider
       value={{
-        me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, bottomLeft, bottomNav, customViews, theme,
+        me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, navCanEdit, bottomLeft, bottomNav, customViews, theme,
         reloadNav, reloadObjects, reloadCustomViews, setTheme, dropdownColors, setDropdownColors, logo, setLogo, signOut, toast
       }}
     >

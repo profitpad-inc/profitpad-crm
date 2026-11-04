@@ -57,8 +57,7 @@ export function reloadAddressConfig(): void {
   void loadConfig();
 }
 
-// The address group whose street box this property is, when autocomplete is on.
-export function useAddressGroup(object: string | undefined, property: string): AddressGroup | null {
+function useAddressConfig(object: string | undefined): AddressConfig | null {
   const [config, setConfig] = useState<AddressConfig | null>(configValue);
   useEffect(() => {
     if (!object) return;
@@ -66,8 +65,38 @@ export function useAddressGroup(object: string | undefined, property: string): A
     void loadConfig().then(setConfig);
     return () => { listeners.delete(setConfig); };
   }, [object]);
-  if (!object || !config?.enabled) return null;
+  return object ? config : null;
+}
+
+// The address group whose street box this property is, when autocomplete is on.
+export function useAddressGroup(object: string | undefined, property: string): AddressGroup | null {
+  const config = useAddressConfig(object);
+  if (!config?.enabled) return null;
   return config.groups.find((g) => g.object === object && g.street_1 === property) ?? null;
+}
+
+// This object's address groups, whether or not autocomplete is on.
+export function useAddressGroups(object: string | undefined): AddressGroup[] {
+  const config = useAddressConfig(object);
+  return config?.groups.filter((g) => g.object === object) ?? [];
+}
+
+const GROUP_ORDER = ['street_1', 'street_2', 'city', 'province', 'postal_code', 'country'] as const;
+
+// Properties in their usual order, except that each address group's
+// properties sit together, street to country, where the first of them was.
+export function withAddressesTogether<P extends { api_name: string }>(props: P[], groups: AddressGroup[]): P[] {
+  let out = props;
+  for (const g of groups) {
+    const names = GROUP_ORDER.map((k) => g[k]).filter((n): n is string => !!n);
+    const members = names.map((n) => out.find((p) => p.api_name === n)).filter((p): p is P => !!p);
+    if (members.length < 2) continue;
+    const at = out.findIndex((p) => members.includes(p));
+    const rest = out.filter((p) => !members.includes(p));
+    const before = out.slice(0, at).filter((p) => !members.includes(p)).length;
+    out = [...rest.slice(0, before), ...members, ...rest.slice(before)];
+  }
+  return out;
 }
 
 // ---- picked address → input values ----

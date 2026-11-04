@@ -275,6 +275,7 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 
 ## Money in different currencies
 Money properties (amount on deals, quotes, invoices, payments, carts, orders) hold the amount in the record's own currency, kept in a currency dropdown (currency_property in describe_object, usually currency). Adding them raw mixes currencies. Convert first:
+- Deals, quotes, invoices, orders and carts also have amount_base ("Amount in base currency"): the amount already converted to the base currency at the rate of the record's own date (deals close_date, quotes customer_signed_at, invoices due_date, orders and carts created_at; a day not passed yet, or no date, uses today's rate). For totals on those objects, sum(amount_base) is simplest and matches what the record pages show. It is null when the currency has no rate. Use convert_currency when you need other dates or another target currency.
 - convert_currency(amount, from_currency, to_currency default the base, on_date default null): the amount in to_currency, or null when a rate is unknown. With no date it uses today's rates; with a date, the rate that was in effect that day (the latest stored rate on or before it).
 - currency_rate(from_currency, to_currency default the base, on_date default null): the rate itself (1 from = rate to).
 - The base currency: "select code from currencies where is_base". Format totals with formatMoney(total, base).
@@ -308,7 +309,7 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 ## Stage details on options
 Dropdown options can carry details, set with add_dropdown_option or update_dropdown_option: parent_values (values of the dropdown's parent_property this option belongs to, e.g. the pipelines a stage is in; empty = all), is_closed, is_won (also makes it closed) and probability (0 to 1, for open options; closed won is always 1 and closed lost always 0, set automatically, and a different value is refused). Settings shows these as Open, Closed won or Closed lost. describe_object shows them where set; views read them from view_data.property_options. Deal stages start with stage under pipeline, closed_won closed and won, closed_lost closed. Ask the admin before changing them: reports and views read them.
 - date (a calendar day), datetime (timezone display option), file (max_files).
-- calculation: calc_sql is one SQL expression over the current record r (a row of crm.<object>), output type text, number, date or datetime. It may read crm, reporting and integrations, must return one value per record, and must run in under 1 second. Try it with test_calculation first.`;
+- calculation: calc_sql is one SQL expression over the current record r (a row of crm.<object>), output type text, number, date or datetime. It may read crm, reporting and integrations, must return one value per record, and must run in under 1 second. Try it with test_calculation first. Options: display, format, prefix, suffix, decimals, timezone, currency_code. To convert money, call currency_to_base(amount, currency, on_date) (on_date null or not passed yet: today's rate); such calculations are recalculated when rates change, and their currency_code follows the base currency.`;
 
 const INTEGRATIONS = `# Integrations
 

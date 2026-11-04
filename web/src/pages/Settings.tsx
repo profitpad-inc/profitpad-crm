@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
-  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  Menu as MenuIcon, Search, Copy, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
   FileText, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
@@ -30,8 +30,9 @@ import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import '../settings.css';
 
-// who sees a page: everyone, signed-in users (not bare API keys), or admins
-type Gate = 'all' | 'user' | 'admin';
+// who sees a page: everyone, signed-in users (not bare API keys), admins, or
+// those who may edit a menu (admins, and users allowed to change their own)
+type Gate = 'all' | 'user' | 'admin' | 'nav';
 interface SettingsLink { path: string; label: string; icon: ReactNode; gate: Gate; element: ReactNode }
 
 const GROUPS: { label: string; links: SettingsLink[] }[] = [
@@ -42,7 +43,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
   ] },
   { label: 'Workspace', links: [
     { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
-    { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'admin', element: <NavSettings /> },
+    { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'nav', element: <NavSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> },
     { path: 'quote-document', label: 'Quote document', icon: <FileText size={16} />, gate: 'admin', element: <QuoteDocumentSettings /> },
@@ -67,8 +68,8 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
 ];
 
 export function Settings() {
-  const { me } = useApp();
-  const allowed = (g: Gate) => g === 'all' || (g === 'user' ? !!me.user : me.is_admin);
+  const { me, navCanEdit } = useApp();
+  const allowed = (g: Gate) => g === 'all' || (g === 'user' ? !!me.user : g === 'nav' ? me.is_admin || navCanEdit : me.is_admin);
   return (
     <div className="page settings">
       <div className="settings-layout">
@@ -463,6 +464,7 @@ function EmbedDomains() {
 interface Menu {
   scope: string;
   user_id: string | null;
+  group_id: string | null;
   items: NavItem[];
   bottom_left: 'menu' | 'home';
   bottom: NavItem[];
@@ -474,6 +476,15 @@ interface UserOption {
   id: string;
   name: string;
 }
+
+export interface NavGroup {
+  id: string;
+  name: string;
+  members_can_customize: boolean;
+  members: string[];
+}
+
+interface MenuSnapshot { items: NavItem[]; bottom_left: 'menu' | 'home'; bottom: NavItem[] }
 
 function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: (o: string, id: number) => string, customViewName: (slug: string) => string): string {
   switch (item.type) {
@@ -575,11 +586,20 @@ function moveNav(all: NavItem[], from: Spot, to: Spot): NavItem[] {
   return next.map((it, i) => (i === section && it.type === 'section' ? { ...it, items: [...it.items.slice(0, to.index), moved, ...it.items.slice(to.index)] } : it));
 }
 
+// Targets: 'me' (the signed-in user's own menu, where the editor opens), 'default' (everyone not in a
+// group), 'group:<id>' and 'user:<id>'. Users who are not admins only get 'me'.
 function NavSettings() {
-  const { objects, objectByName, reloadNav, navSource, customViews } = useApp();
+  const { me, objects, objectByName, reloadNav, customViews } = useApp();
   const navigate = useNavigate();
-  const [target, setTarget] = useState<string>('default');
+  const isAdmin = me.is_admin;
+  const myId = me.user?.id ?? null;
+  const [target, setTarget] = useState<string>(myId ? 'me' : 'default');
   const [menus, setMenus] = useState<Menu[]>([]);
+  const [groups, setGroups] = useState<NavGroup[]>([]);
+  const [everyoneCan, setEveryoneCan] = useState(false);
+  // for users who are not admins: which menu they see now (their own, their group's or the default)
+  const [mySource, setMySource] = useState<'default' | 'group' | 'user'>('default');
+  const [copyOpen, setCopyOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [items, setItems] = useState<NavItem[]>([]);
@@ -604,19 +624,45 @@ function NavSettings() {
   const [error, setError] = useState<string | null>(null);
 
   async function loadMenus() {
-    const res = await api<{ results: Menu[] }>('GET', '/v1/ui/nav/menus');
+    const res = await api<{ results: Menu[]; groups: NavGroup[]; everyone_can_customize: boolean }>('GET', '/v1/ui/nav/menus');
     setMenus(res.results);
-    return res.results;
+    setGroups(res.groups);
+    setEveryoneCan(res.everyone_can_customize);
+    return res;
+  }
+
+  // a user who is not an admin reads only the menu they see now
+  async function loadMine() {
+    const res = await api<MenuSnapshot & { source: 'default' | 'group' | 'user' }>('GET', '/v1/ui/nav');
+    setMySource(res.source);
+    showMenu(res);
+  }
+
+  // the menu a target sees: a user's own, else their group's, else the default
+  function menuFor(t: string, ms = menus, gs = groups): Menu | undefined {
+    const def = ms.find((m) => m.scope === 'default');
+    const groupMenu = (id: string) => ms.find((m) => m.scope === 'group' && String(m.group_id) === String(id));
+    if (t === 'default') return def;
+    if (t.startsWith('group:')) return groupMenu(t.slice(6));
+    const uid = t === 'me' ? myId : t.slice(5);
+    const own = ms.find((m) => m.scope === 'user' && m.user_id === uid);
+    if (own) return own;
+    const g = gs.find((x) => uid !== null && x.members.includes(uid));
+    return (g && groupMenu(g.id)) || def;
   }
 
   useEffect(() => {
-    loadMenus().then((m) => { showMenu(m.find((x) => x.scope === 'default')); setLoaded(true); });
+    if (!isAdmin) {
+      loadMine().then(() => setLoaded(true));
+      return;
+    }
+    loadMenus().then((r) => { showMenu(menuFor(target, r.results, r.groups)); setLoaded(true); });
     api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
       .then((r) => setUsers(r.results.map((u) => ({ id: u.id, name: displayName(u.properties, u.id) }))))
       .catch(() => undefined);
   }, []);
 
-  function showMenu(m: Menu | undefined) {
+  function showMenu(m: MenuSnapshot | undefined) {
     const next = { items: m?.items ?? [], bottomLeft: m?.bottom_left ?? 'menu', bottom: m?.bottom ?? [] };
     setItems(next.items);
     setBottomLeft(next.bottomLeft);
@@ -667,8 +713,20 @@ function NavSettings() {
   function showTarget(t: string) {
     setTarget(t);
     setMessage(null);
-    const own = menus.find((m) => m.scope === 'user' && m.user_id === t);
-    showMenu((t !== 'default' && own) || menus.find((m) => m.scope === 'default'));
+    setError(null);
+    showMenu(menuFor(t));
+  }
+
+  // fills the editor with a copy of another menu; nothing is saved until Save menu
+  function copyFrom(source: string) {
+    const m = menuFor(source);
+    if (!m) return;
+    setItems(m.items);
+    setBottomLeft(m.bottom_left);
+    setBottom(m.bottom);
+    setCopyOpen(false);
+    setError(null);
+    setMessage(null);
   }
 
   useEffect(() => {
@@ -778,10 +836,14 @@ function NavSettings() {
 
   async function save() {
     setError(null);
+    const body = { items, bottom_left: bottomLeft, bottom };
     try {
-      if (target === 'default') await api('PUT', '/v1/ui/nav/default', { items, bottom_left: bottomLeft, bottom });
-      else await api('PUT', `/v1/ui/nav/users/${target}`, { items, bottom_left: bottomLeft, bottom });
-      await loadMenus();
+      if (target === 'me') await api('PUT', '/v1/ui/nav/me', body);
+      else if (target === 'default') await api('PUT', '/v1/ui/nav/default', body);
+      else if (target.startsWith('group:')) await api('PUT', `/v1/ui/nav/groups/${target.slice(6)}/menu`, body);
+      else await api('PUT', `/v1/ui/nav/users/${target.slice(5)}`, body);
+      if (isAdmin) await loadMenus();
+      else setMySource('user');
       await reloadNav();
       setSavedJson(JSON.stringify({ items, bottomLeft, bottom }));
       setMessage('Menu saved.');
@@ -791,14 +853,61 @@ function NavSettings() {
   }
 
   async function resetUser() {
-    await api('DELETE', `/v1/ui/nav/users/${target}`);
-    const m = await loadMenus();
-    showMenu(m.find((x) => x.scope === 'default'));
-    await reloadNav();
-    setMessage('This user now uses the default menu.');
+    setError(null);
+    try {
+      await api('DELETE', target === 'me' ? '/v1/ui/nav/me' : `/v1/ui/nav/users/${target.slice(5)}`);
+      if (isAdmin) {
+        const r = await loadMenus();
+        showMenu(menuFor(target, r.results, r.groups));
+      } else await loadMine();
+      await reloadNav();
+      setMessage(`${target === 'me' ? 'You now see' : 'This user now sees'} the ${fallbackName} menu.`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
-  const hasOwn = target !== 'default' && menus.some((m) => m.scope === 'user' && m.user_id === target);
+  const userOf = (t: string) => (t === 'me' ? myId : t.startsWith('user:') ? t.slice(5) : null);
+  const targetUser = userOf(target);
+  const groupOfUser = (uid: string | null) => (uid ? groups.find((g) => g.members.includes(uid)) : undefined);
+  const hasOwn = target === 'me' && !isAdmin ? mySource === 'user' : targetUser !== null && menus.some((m) => m.scope === 'user' && m.user_id === targetUser);
+  // what a user without their own menu sees: their group's menu or the default
+  const fallbackGroup = groupOfUser(targetUser);
+  const fallbackName = !isAdmin ? 'shared' : fallbackGroup ? `"${fallbackGroup.name}" group` : 'default';
+  const userName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+  const targetLabel = (t: string) => {
+    if (t === 'me') return 'My menu (just me)';
+    if (t === 'default') return 'Default (everyone not in a group)';
+    if (t.startsWith('group:')) return `Group: ${groups.find((g) => String(g.id) === t.slice(6))?.name ?? t.slice(6)}`;
+    return userName(t.slice(5));
+  };
+  // when the editor opens on someone in a group that does not allow their own menu (Super Admins are exempt)
+  const lockedGroup = target.startsWith('user:') && fallbackGroup && !fallbackGroup.members_can_customize ? fallbackGroup : undefined;
+
+  // menus to copy from (Copy from, and a new group's starting menu)
+  const menuSources = [
+    ...(myId ? [{ value: 'me', label: 'My menu' }] : []),
+    { value: 'default', label: 'Default (everyone not in a group)' },
+    ...groups.map((g) => ({ value: `group:${g.id}`, label: `Group: ${g.name}` })),
+    ...users.filter((u) => u.id !== myId).map((u) => ({ value: `user:${u.id}`, label: u.name }))
+  ];
+
+  function sidebarDescription(): string {
+    if (target === 'me') {
+      if (hasOwn) return 'Your own menu. Only you see it.';
+      return isAdmin
+        ? `You see the ${fallbackName} menu now. Saving makes your own copy that only you see.`
+        : 'You see the shared menu now. Saving makes your own copy that only you see.';
+    }
+    if (target === 'default') return 'Shown to everyone who is not in a group and has no menu of their own.';
+    if (target.startsWith('group:')) {
+      const g = groups.find((x) => String(x.id) === target.slice(6));
+      const n = g?.members.length ?? 0;
+      return `Shown to the ${n} ${n === 1 ? 'member' : 'members'} of this group${g?.members_can_customize ? ' who have not made their own menu' : ''}.`;
+    }
+    if (lockedGroup) return `This user is in "${lockedGroup.name}", which does not let members have their own menu, so they see the group's menu unless they are a Super Admin.`;
+    return hasOwn ? 'This user has their own menu.' : `This user sees the ${fallbackName} menu. Saving creates their own copy.`;
+  }
 
   const row = (it: NavItem, i: number, list: NavItem[], listKey: ListKey, change: (fn: (l: NavItem[]) => NavItem[]) => void, child: boolean, children?: ReactNode) => {
     const label = itemLabel(it, objectLabel, viewName, customViewName);
@@ -961,23 +1070,28 @@ function NavSettings() {
 
   return (
     <SettingsPage
-      title="Navigation menus"
-      description={<>The default menu is shown to everyone without their own. Pick a user to give them their own menu.{navSource === 'user' && ' Your own menu overrides the default.'}</>}
-      actions={
-        <Select value={target} onChange={(v) => pickTarget(v)} aria-label="Menu to edit">
-          <option value="default">Default menu (everyone)</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}{menus.some((m) => m.scope === 'user' && m.user_id === u.id) ? ' (own menu)' : ''}
-            </option>
-          ))}
-        </Select>
-      }
+      title={isAdmin ? 'Navigation menus' : 'Your menu'}
+      description={isAdmin
+        ? 'You start on your own menu, which only you see. Pick Default, a group or a user to edit theirs. Groups below decide who sees which menu.'
+        : 'Your own sidebar and mobile hotbar. Only you see them.'}
+      actions={isAdmin && (
+        <>
+          <Select value={target} onChange={(v) => pickTarget(v)} aria-label="Menu to edit">
+            {myId && <option value="me">My menu (just me)</option>}
+            <option value="default">Default (everyone not in a group)</option>
+            {groups.map((g) => <option key={g.id} value={`group:${g.id}`}>Group: {g.name}</option>)}
+            {users.filter((u) => u.id !== myId).map((u) => {
+              const own = menus.some((m) => m.scope === 'user' && m.user_id === u.id);
+              const g = groupOfUser(u.id);
+              const notes = [own && 'own menu', g && `in ${g.name}`].filter(Boolean).join(', ');
+              return <option key={u.id} value={`user:${u.id}`}>{u.name}{notes ? ` (${notes})` : ''}</option>;
+            })}
+          </Select>
+          <button className="btn" onClick={() => setCopyOpen(true)} disabled={!loaded}><Copy size={14} /> Copy from</button>
+        </>
+      )}
     >
-      <SettingsSection
-        title="Sidebar"
-        description={target !== 'default' && !hasOwn ? 'This user uses the default menu. Saving creates their own copy.' : 'Links in the order they appear. Sections group the links under them.'}
-      >
+      <SettingsSection title="Sidebar" description={sidebarDescription()}>
         {!loaded ? <TableSkeleton rows={5} /> : items.length === 0
           ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections with + Add.</EmptyState>
           : <div className="nav-tree">{renderList(items, null)}</div>}
@@ -1006,10 +1120,31 @@ function NavSettings() {
         </div>
       </SettingsSection>
 
+      {isAdmin && loaded && (
+        <NavGroups
+          groups={groups}
+          users={users}
+          myId={myId}
+          everyoneCan={everyoneCan}
+          menuSources={menuSources}
+          onChanged={async () => { await loadMenus(); await reloadNav(); }}
+          onEditMenu={(t) => { pickTarget(t); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        />
+      )}
+
       <SaveBar dirty={dirty} message={message} error={error}>
-        {hasOwn && <button className="btn" onClick={resetUser}>Reset to default menu</button>}
+        {hasOwn && <button className="btn" onClick={resetUser}>Reset to {fallbackName} menu</button>}
         <button className="btn primary" onClick={save}>Save menu</button>
       </SaveBar>
+
+      {copyOpen && (
+        <CopyMenuModal
+          sources={menuSources.filter((x) => x.value !== target)}
+          into={targetLabel(target)}
+          onCopy={copyFrom}
+          onClose={() => setCopyOpen(false)}
+        />
+      )}
 
       {leaving && (
         <Modal
@@ -1027,6 +1162,317 @@ function NavSettings() {
         </Modal>
       )}
     </SettingsPage>
+  );
+}
+
+interface MenuSource { value: string; label: string }
+
+function CopyMenuModal({ sources, into, onCopy, onClose }: { sources: MenuSource[]; into: string; onCopy: (source: string) => void; onClose: () => void }) {
+  const [from, setFrom] = useState(sources[0]?.value ?? '');
+  return (
+    <Modal
+      title="Copy a menu"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={() => onCopy(from)} disabled={!from}><Copy size={14} /> Copy</button>
+        </>
+      }
+    >
+      <label className="field">
+        <span>Copy from</span>
+        <Select value={from} onChange={setFrom} aria-label="Menu to copy from">
+          {sources.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+        </Select>
+      </label>
+      <p className="muted small">
+        Replaces the sidebar and mobile hotbar of {into} with a copy. For a user without their own menu, this copies the menu they see now.
+        Nothing is saved until you click Save menu.
+      </p>
+    </Modal>
+  );
+}
+
+// Menu groups: who sees which menu. A user is in at most one group; each group decides whether its members
+// may change their own menu (Super Admins always may). Changes here save right away.
+function NavGroups({ groups, users, myId, everyoneCan, menuSources, onChanged, onEditMenu }: {
+  groups: NavGroup[];
+  users: UserOption[];
+  myId: string | null;
+  everyoneCan: boolean;
+  menuSources: MenuSource[];
+  onChanged: () => Promise<void>;
+  onEditMenu: (target: string) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState<NavGroup | null>(null);
+  const [editingMembers, setEditingMembers] = useState<NavGroup | null>(null);
+  const grouped = new Set(groups.flatMap((g) => g.members));
+  const ungrouped = users.filter((u) => !grouped.has(u.id)).length;
+  const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+
+  async function run(fn: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await fn();
+      await onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  function memberSummary(ids: string[]) {
+    if (ids.length === 0) return <span className="muted small">No members</span>;
+    const names = ids.map((id) => (id === myId ? 'You' : nameOf(id)));
+    return names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
+  }
+
+  return (
+    <SettingsSection
+      title="Menu groups"
+      description="Members of a group see the group's menu. Each person can be in one group. Super Admins may always change their own menu, even in a group that does not allow it."
+      actions={<button className="btn small" onClick={() => setCreating(true)}><Plus size={14} /> New group</button>}
+    >
+      {error && <div className="error">{error}</div>}
+      <div className="access-table nav-groups">
+        <table className="grid">
+          <thead>
+            <tr><th>Group</th><th>Members</th><th>Members can change their own menu</th><th aria-label="Actions" /></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="primary-cell">Everyone else <span className="muted small">(default menu)</span></td>
+              <td>{ungrouped} {ungrouped === 1 ? 'user' : 'users'} in no group</td>
+              <td>
+                <label className="nav-group-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={everyoneCan}
+                    aria-label="Users in no group can change their own menu"
+                    onChange={(e) => run(() => api('PUT', '/v1/ui/nav/access', { everyone_can_customize: e.target.checked }))}
+                  />
+                  {everyoneCan ? 'On' : 'Off'}
+                </label>
+              </td>
+              <td className="row-actions">
+                <span className="row-actions-inner"><button className="btn small" onClick={() => onEditMenu('default')}>Edit menu</button></span>
+              </td>
+            </tr>
+            {groups.map((g) => (
+              <tr key={g.id}>
+                <td className="primary-cell">{g.name}</td>
+                <td className="wrap">{memberSummary(g.members)}</td>
+                <td>
+                  <label className="nav-group-switch">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={g.members_can_customize}
+                      aria-label={`Members of ${g.name} can change their own menu`}
+                      onChange={(e) => run(() => api('PATCH', `/v1/ui/nav/groups/${g.id}`, { members_can_customize: e.target.checked }))}
+                    />
+                    {g.members_can_customize ? 'On' : 'Off'}
+                  </label>
+                </td>
+                <td className="row-actions">
+                  <span className="row-actions-inner">
+                  <button className="btn small" onClick={() => onEditMenu(`group:${g.id}`)}>Edit menu</button>
+                  <button className="btn small" onClick={() => setEditingMembers(g)}><Users size={14} /> Members</button>
+                  <button className="btn small" onClick={() => setRenaming(g)}>Rename</button>
+                  <button
+                    className="icon-btn"
+                    aria-label={`Delete ${g.name}`}
+                    onClick={() => {
+                      if (window.confirm(`Delete the group "${g.name}"? Its members go back to the default menu (or their own, if they have one and are allowed).`)) {
+                        run(() => api('DELETE', `/v1/ui/nav/groups/${g.id}`));
+                      }
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {creating && (
+        <GroupModal
+          title="New group"
+          menuSources={menuSources}
+          onClose={() => setCreating(false)}
+          onSave={async (b) => {
+            await api('POST', '/v1/ui/nav/groups', b);
+            setCreating(false);
+            await onChanged();
+          }}
+        />
+      )}
+      {renaming && (
+        <GroupModal
+          title={`Rename ${renaming.name}`}
+          initialName={renaming.name}
+          onClose={() => setRenaming(null)}
+          onSave={async (b) => {
+            await api('PATCH', `/v1/ui/nav/groups/${renaming.id}`, { name: b.name });
+            setRenaming(null);
+            await onChanged();
+          }}
+        />
+      )}
+      {editingMembers && (
+        <MembersModal
+          group={editingMembers}
+          groups={groups}
+          users={users}
+          myId={myId}
+          onClose={() => setEditingMembers(null)}
+          onSave={async (ids) => {
+            await api('PUT', `/v1/ui/nav/groups/${editingMembers.id}/members`, { user_ids: ids });
+            setEditingMembers(null);
+            await onChanged();
+          }}
+        />
+      )}
+    </SettingsSection>
+  );
+}
+
+// New group (name, starting menu, the switch) or rename (name only, when menuSources is left out)
+function GroupModal({ title, initialName = '', menuSources, onSave, onClose }: {
+  title: string;
+  initialName?: string;
+  menuSources?: MenuSource[];
+  onSave: (b: { name: string; copy_from?: string; members_can_customize?: boolean }) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [copy, setCopy] = useState('default');
+  const [can, setCan] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(menuSources ? { name: name.trim(), copy_from: copy, members_can_customize: can } : { name: name.trim() });
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={submit} disabled={busy || !name.trim()}>{menuSources ? 'Create group' : 'Save'}</button>
+        </>
+      }
+    >
+      <label className="field">
+        <span>Name</span>
+        <input value={name} maxLength={63} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+      </label>
+      {menuSources && (
+        <>
+          <label className="field">
+            <span>Start with a copy of</span>
+            <Select value={copy} onChange={setCopy} aria-label="Menu to start from">
+              {menuSources.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+            </Select>
+          </label>
+          <label className="nav-group-switch">
+            <input type="checkbox" role="switch" checked={can} onChange={(e) => setCan(e.target.checked)} />
+            Members can change their own menu
+          </label>
+        </>
+      )}
+      {error && <div className="error">{error}</div>}
+    </Modal>
+  );
+}
+
+function MembersModal({ group, groups, users, myId, onSave, onClose }: {
+  group: NavGroup;
+  groups: NavGroup[];
+  users: UserOption[];
+  myId: string | null;
+  onSave: (ids: string[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<Set<string>>(new Set(group.members));
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const otherGroup = (id: string) => groups.find((g) => g.id !== group.id && g.members.includes(id));
+  const q = query.trim().toLowerCase();
+  const shown = users.filter((u) => !q || u.name.toLowerCase().includes(q));
+  const moving = [...picked].filter((id) => otherGroup(id)).length;
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave([...picked]);
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Members of ${group.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="muted small push-right-note">{picked.size} {picked.size === 1 ? 'member' : 'members'}{moving ? `, ${moving} moving from another group` : ''}</span>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={submit} disabled={busy}>Save members</button>
+        </>
+      }
+    >
+      <p className="muted small">Each person can be in one group. Turning on someone who is in another group moves them here.</p>
+      <div className="nav-members-search">
+        <Search size={14} />
+        <input value={query} placeholder="Search users" aria-label="Search users" onChange={(e) => setQuery(e.target.value)} autoFocus />
+      </div>
+      <div className="nav-members">
+        {shown.length === 0 && <div className="muted small">No users match.</div>}
+        {shown.map((u) => {
+          const other = otherGroup(u.id);
+          return (
+            <label key={u.id} className="nav-member">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={picked.has(u.id)}
+                onChange={(e) => setPicked((s) => {
+                  const next = new Set(s);
+                  if (e.target.checked) next.add(u.id);
+                  else next.delete(u.id);
+                  return next;
+                })}
+              />
+              <span className="nav-member-name">{u.name}{u.id === myId ? ' (you)' : ''}</span>
+              {other && <span className="muted small">{picked.has(u.id) ? `Moves from ${other.name}` : `In ${other.name}`}</span>}
+            </label>
+          );
+        })}
+      </div>
+      {error && <div className="error">{error}</div>}
+    </Modal>
   );
 }
 

@@ -11,7 +11,11 @@ import { tableViews } from './routes/ui.js';
 // properties. Objects not listed get name plus their first 6 native properties.
 const CREATE_FIELDS: Record<string, string[]> = {
   contacts: ['first_name', 'last_name', 'email', 'phone', 'job_title', 'lifecycle_stage', 'owner'],
-  companies: ['name', 'domain', 'industry', 'phone', 'owner'],
+  companies: [
+    'name', 'domain', 'industry', 'phone',
+    'address_street_1', 'address_street_2', 'address_city', 'address_province', 'address_postalcode', 'address_country',
+    'owner'
+  ],
   deals: ['name', 'amount', 'currency', 'pipeline', 'stage', 'close_date', 'owner'],
   tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'owner'],
   users: ['first_name', 'last_name', 'email', 'status'],

@@ -212,6 +212,101 @@ async function validateBottom(items: unknown): Promise<NavItem[]> {
   return out;
 }
 
+// ---- menu groups and who may change their own menu ----------------------------
+
+type MenuBody = { items: unknown; bottom_left?: unknown; bottom?: unknown };
+
+async function validateMenuBody(body: MenuBody | undefined) {
+  const items = await validateNav(body?.items);
+  const left = body?.bottom_left === undefined ? null : validateBottomLeft(body.bottom_left);
+  const bottom = body?.bottom === undefined ? null : await validateBottom(body.bottom);
+  return { items, left, bottom };
+}
+
+async function everyoneCanCustomize(): Promise<boolean> {
+  const { rows } = await pool.query("select value from ui.settings where key = 'nav_access'");
+  return rows[0]?.value?.everyone_can_customize === true;
+}
+
+// Super Admins may always change their own menu, even in a group that does not
+// allow it; others when their group allows it, or with no group, when the
+// everyone setting does. Keys without a user have no own menu.
+export async function navAccess(p: Principal): Promise<{ canEdit: boolean; group: { id: string; name: string; members_can_customize: boolean } | null }> {
+  if (!p.userId) return { canEdit: false, group: null };
+  const { rows } = await pool.query(
+    `select g.id, g.name, g.members_can_customize from ui.nav_group_members m join ui.nav_groups g on g.id = m.group_id where m.user_id = $1`,
+    [p.userId]
+  );
+  const group = rows[0] ?? null;
+  const canEdit = isAdmin(p) || (group ? group.members_can_customize : await everyoneCanCustomize());
+  return { canEdit, group };
+}
+
+// what a user sees: their own menu (only when they may change it), else their group's, else the default
+async function effectiveMenu(userId: string | null, ownAllowed: boolean) {
+  const { rows } = await pool.query(
+    `select scope, items, bottom_left, bottom_items from ui.nav_menus
+     where (scope = 'user' and user_id = $1 and $2)
+        or (scope = 'group' and group_id = (select group_id from ui.nav_group_members where user_id = $1))
+        or scope = 'default'
+     order by case scope when 'user' then 0 when 'group' then 1 else 2 end limit 1`,
+    [userId, ownAllowed]
+  );
+  const m = rows[0];
+  return { source: (m?.scope ?? 'default') as 'default' | 'group' | 'user', items: m?.items ?? [], bottom_left: m?.bottom_left ?? 'menu', bottom: m?.bottom_items ?? [] };
+}
+
+// a new own menu without a bottom bar copies the one the user sees now (their group's or the default)
+async function saveUserMenu(userId: string, body: MenuBody | undefined, actor: string) {
+  const { items, left, bottom } = await validateMenuBody(body);
+  const fallback = `(select bottom_left, bottom_items from ui.nav_menus
+     where (scope = 'group' and group_id = (select group_id from ui.nav_group_members where user_id = $1)) or scope = 'default'
+     order by (scope = 'group') desc limit 1)`;
+  const { rows } = await pool.query(
+    `insert into ui.nav_menus (scope, user_id, items, bottom_left, bottom_items, updated_by)
+     select 'user', $1, $2, coalesce($3, f.bottom_left, 'menu'), coalesce($4, f.bottom_items, '[]'), $5
+     from (select 1) one left join ${fallback} f on true
+     on conflict (user_id) where scope = 'user' do update
+       set items = excluded.items, bottom_left = coalesce($3, ui.nav_menus.bottom_left), bottom_items = coalesce($4, ui.nav_menus.bottom_items),
+         updated_at = now(), updated_by = excluded.updated_by
+     returning bottom_left, bottom_items`,
+    [userId, JSON.stringify(items), left, bottom && JSON.stringify(bottom), actor]
+  );
+  return { source: 'user' as const, items, bottom_left: rows[0].bottom_left, bottom: rows[0].bottom_items };
+}
+
+function validateGroupName(name: unknown): string {
+  const n = typeof name === 'string' ? name.trim() : '';
+  if (n.length < 1 || n.length > 63) throw badRequest('group name must be 1 to 63 characters');
+  return n;
+}
+
+function groupId(id: string): string {
+  if (!/^[0-9]{1,18}$/.test(id)) throw notFound('group not found');
+  return id;
+}
+
+function groupNameTaken(err: { code?: string }): never {
+  if (err.code === '23505') throw badRequest('a group with that name already exists');
+  throw err;
+}
+
+// copy_from for a new group: 'default', 'group:<id>' or 'user:<id>' (a user's own menu, else what they see)
+async function menuSource(from: unknown): Promise<{ items: unknown; bottom_left: string; bottom: unknown }> {
+  const s = String(from);
+  let row;
+  if (s === 'default') {
+    ({ rows: [row] } = await pool.query("select items, bottom_left, bottom_items from ui.nav_menus where scope = 'default'"));
+  } else if (/^group:[0-9]{1,18}$/.test(s)) {
+    ({ rows: [row] } = await pool.query("select items, bottom_left, bottom_items from ui.nav_menus where scope = 'group' and group_id = $1", [s.slice(6)]));
+  } else if (/^user:[0-9a-f]{10}$/.test(s)) {
+    const m = await effectiveMenu(s.slice(5), true);
+    row = { items: m.items, bottom_left: m.bottom_left, bottom_items: m.bottom };
+  }
+  if (!row) throw badRequest('copy_from must be "default", "group:<id>" or "user:<id>" of an existing menu');
+  return { items: row.items, bottom_left: row.bottom_left, bottom: row.bottom_items };
+}
+
 // ---- views -------------------------------------------------------------------
 
 // width: optional column width in pixels, set by resizing the column in the UI
@@ -360,33 +455,69 @@ export async function uiRoutes(app: FastifyInstance) {
     return value;
   });
 
-  // the caller's sidebar: their own menu if an admin set one, else the default
+  // the caller's sidebar: see effectiveMenu (own menu, group menu or the default)
   app.get('/v1/ui/nav', async (req) => {
     const p = req.principal!;
-    const { rows } = await pool.query(
-      `select scope, items, bottom_left, bottom_items from ui.nav_menus where (scope = 'user' and user_id = $1) or scope = 'default'
-       order by (scope = 'user') desc limit 1`,
-      [p.userId]
-    );
-    return { source: rows[0]?.scope ?? 'default', items: rows[0]?.items ?? [], bottom_left: rows[0]?.bottom_left ?? 'menu', bottom: rows[0]?.bottom_items ?? [] };
+    const access = await navAccess(p);
+    const m = await effectiveMenu(p.userId, access.canEdit);
+    return {
+      source: m.source, items: m.items, bottom_left: m.bottom_left, bottom: m.bottom,
+      can_edit: access.canEdit, group: access.group && { id: access.group.id, name: access.group.name }
+    };
   });
 
+  // the caller's own menu (Super Admins, and users whose group or the everyone setting allows it)
+  app.put<{ Body: MenuBody }>('/v1/ui/nav/me', async (req) => {
+    const p = req.principal!;
+    const access = await navAccess(p);
+    if (!p.userId || !access.canEdit) throw forbidden('you cannot change your own menu');
+    return { ...(await saveUserMenu(p.userId, req.body, p.actor)), can_edit: true };
+  });
+
+  // back to the group's or the default menu
+  app.delete('/v1/ui/nav/me', async (req, reply) => {
+    const p = req.principal!;
+    if (!p.userId) throw forbidden('only users have their own menu');
+    await pool.query("delete from ui.nav_menus where scope = 'user' and user_id = $1", [p.userId]);
+    reply.code(204);
+  });
+
+  // every menu, the groups with their members, and the everyone setting
   app.get('/v1/ui/nav/menus', async (req) => {
     requireAdmin(req.principal!);
-    const { rows } = await pool.query(
-      `select m.scope, m.user_id, u.name as user_name, m.items, m.bottom_left, m.bottom_items as bottom, m.updated_at, m.updated_by
-       from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
+    const [menus, groups, everyone] = await Promise.all([
+      pool.query(
+        `select m.scope, m.user_id, u.name as user_name, m.group_id, m.items, m.bottom_left, m.bottom_items as bottom, m.updated_at, m.updated_by
+         from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
+      ),
+      pool.query(
+        `select g.id, g.name, g.members_can_customize,
+           coalesce(array_agg(m.user_id order by m.added_at) filter (where m.user_id is not null), '{}') as members
+         from ui.nav_groups g left join ui.nav_group_members m on m.group_id = g.id
+         group by g.id order by lower(g.name)`
+      ),
+      everyoneCanCustomize()
+    ]);
+    return { results: menus.rows, groups: groups.rows, everyone_can_customize: everyone };
+  });
+
+  app.put<{ Body: { everyone_can_customize?: unknown } }>('/v1/ui/nav/access', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    if (typeof req.body?.everyone_can_customize !== 'boolean') throw badRequest('everyone_can_customize must be true or false');
+    await pool.query(
+      `insert into ui.settings (key, value, updated_by) values ('nav_access', $1, $2)
+       on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
+      [JSON.stringify({ everyone_can_customize: req.body.everyone_can_customize }), p.actor]
     );
-    return { results: rows };
+    return { everyone_can_customize: req.body.everyone_can_customize };
   });
 
   // bottom_left and bottom are optional; left out, the bottom bar stays as it is
-  app.put<{ Body: { items: unknown; bottom_left?: unknown; bottom?: unknown } }>('/v1/ui/nav/default', async (req) => {
+  app.put<{ Body: MenuBody }>('/v1/ui/nav/default', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
-    const items = await validateNav(req.body?.items);
-    const left = req.body?.bottom_left === undefined ? null : validateBottomLeft(req.body.bottom_left);
-    const bottom = req.body?.bottom === undefined ? null : await validateBottom(req.body.bottom);
+    const { items, left, bottom } = await validateMenuBody(req.body);
     const { rows } = await pool.query(
       `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
          updated_at = now(), updated_by = $4
@@ -397,33 +528,121 @@ export async function uiRoutes(app: FastifyInstance) {
   });
 
   // bottom_left and bottom are optional; left out, a new menu copies the default's bottom bar and an existing one keeps its own
-  app.put<{ Params: { userId: string }; Body: { items: unknown; bottom_left?: unknown; bottom?: unknown } }>('/v1/ui/nav/users/:userId', async (req) => {
+  app.put<{ Params: { userId: string }; Body: MenuBody }>('/v1/ui/nav/users/:userId', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
     const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and record_status = 'active'", [req.params.userId]);
     if (users.length === 0) throw notFound('user not found');
-    const items = await validateNav(req.body?.items);
-    const left = req.body?.bottom_left === undefined ? null : validateBottomLeft(req.body.bottom_left);
-    const bottom = req.body?.bottom === undefined ? null : await validateBottom(req.body.bottom);
-    const { rows } = await pool.query(
-      `insert into ui.nav_menus (scope, user_id, items, bottom_left, bottom_items, updated_by)
-       values ('user', $1, $2,
-         coalesce($3, (select bottom_left from ui.nav_menus where scope = 'default'), 'menu'),
-         coalesce($4, (select bottom_items from ui.nav_menus where scope = 'default'), '[]'), $5)
-       on conflict (user_id) where scope = 'user' do update
-         set items = excluded.items, bottom_left = coalesce($3, ui.nav_menus.bottom_left), bottom_items = coalesce($4, ui.nav_menus.bottom_items),
-           updated_at = now(), updated_by = excluded.updated_by
-       returning bottom_left, bottom_items`,
-      [req.params.userId, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor]
-    );
-    return { source: 'user', items, bottom_left: rows[0].bottom_left, bottom: rows[0].bottom_items };
+    return saveUserMenu(req.params.userId, req.body, p.actor);
   });
 
-  // back to the default menu
+  // back to the group's or the default menu
   app.delete<{ Params: { userId: string } }>('/v1/ui/nav/users/:userId', async (req, reply) => {
     requireAdmin(req.principal!);
     await pool.query("delete from ui.nav_menus where scope = 'user' and user_id = $1", [req.params.userId]);
     reply.code(204);
+  });
+
+  // a new group starts with a copy of the default menu (or of copy_from: 'default', 'group:<id>' or 'user:<id>')
+  app.post<{ Body: { name?: unknown; members_can_customize?: unknown; copy_from?: unknown } }>('/v1/ui/nav/groups', async (req, reply) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const name = validateGroupName(req.body?.name);
+    const canCustomize = req.body?.members_can_customize === true;
+    const source = await menuSource(req.body?.copy_from ?? 'default');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const { rows } = await client.query(
+        `insert into ui.nav_groups (name, members_can_customize, created_by, updated_by) values ($1, $2, $3, $3) returning id, name, members_can_customize`,
+        [name, canCustomize, p.actor]
+      ).catch(groupNameTaken);
+      await client.query(
+        `insert into ui.nav_menus (scope, group_id, items, bottom_left, bottom_items, updated_by) values ('group', $1, $2, $3, $4, $5)`,
+        [rows[0].id, JSON.stringify(source.items), source.bottom_left, JSON.stringify(source.bottom), p.actor]
+      );
+      await client.query('commit');
+      reply.code(201);
+      return { ...rows[0], members: [] };
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.patch<{ Params: { id: string }; Body: { name?: unknown; members_can_customize?: unknown } }>('/v1/ui/nav/groups/:id', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const name = req.body?.name === undefined ? null : validateGroupName(req.body.name);
+    const can = req.body?.members_can_customize;
+    if (can !== undefined && typeof can !== 'boolean') throw badRequest('members_can_customize must be true or false');
+    const { rows } = await pool.query(
+      `update ui.nav_groups set name = coalesce($2, name), members_can_customize = coalesce($3, members_can_customize), updated_at = now(), updated_by = $4
+       where id = $1 returning id, name, members_can_customize`,
+      [groupId(req.params.id), name, can ?? null, p.actor]
+    ).catch(groupNameTaken);
+    if (rows.length === 0) throw notFound('group not found');
+    return rows[0];
+  });
+
+  // members go back to the default menu (or their own, if everyone may have one)
+  app.delete<{ Params: { id: string } }>('/v1/ui/nav/groups/:id', async (req, reply) => {
+    requireAdmin(req.principal!);
+    const { rowCount } = await pool.query('delete from ui.nav_groups where id = $1', [groupId(req.params.id)]);
+    if (!rowCount) throw notFound('group not found');
+    reply.code(204);
+  });
+
+  // replaces the members; a user in another group moves to this one
+  app.put<{ Params: { id: string }; Body: { user_ids?: unknown } }>('/v1/ui/nav/groups/:id/members', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const id = groupId(req.params.id);
+    const ids = req.body?.user_ids;
+    if (!Array.isArray(ids) || ids.length > 1000 || !ids.every((u) => typeof u === 'string' && /^[0-9a-f]{10}$/.test(u))) {
+      throw badRequest('user_ids must be an array of user ids');
+    }
+    const userIds = [...new Set(ids as string[])];
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const { rows: g } = await client.query('select 1 from ui.nav_groups where id = $1 for update', [id]);
+      if (g.length === 0) throw notFound('group not found');
+      const { rows: found } = await client.query('select pc_0000_id from crm.pc_0000 where pc_0000_id = any($1)', [userIds]);
+      const missing = userIds.filter((u) => !found.some((f) => f.pc_0000_id === u));
+      if (missing.length) throw badRequest(`unknown user ${missing[0]}`);
+      await client.query('delete from ui.nav_group_members where group_id = $1 and not (user_id = any($2))', [id, userIds]);
+      await client.query(
+        `insert into ui.nav_group_members (user_id, group_id, added_by) select u, $1, $3 from unnest($2::text[]) u
+         on conflict (user_id) do update set group_id = excluded.group_id, added_at = now(), added_by = excluded.added_by
+         where ui.nav_group_members.group_id <> excluded.group_id`,
+        [id, userIds, p.actor]
+      );
+      await client.query('commit');
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    } finally {
+      client.release();
+    }
+    return { members: userIds };
+  });
+
+  app.put<{ Params: { id: string }; Body: MenuBody }>('/v1/ui/nav/groups/:id/menu', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const id = groupId(req.params.id);
+    const { items, left, bottom } = await validateMenuBody(req.body);
+    const { rows } = await pool.query(
+      `update ui.nav_menus set items = $2, bottom_left = coalesce($3, bottom_left), bottom_items = coalesce($4, bottom_items),
+         updated_at = now(), updated_by = $5
+       where scope = 'group' and group_id = $1 returning bottom_left, bottom_items`,
+      [id, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor]
+    );
+    if (rows.length === 0) throw notFound('group not found');
+    return { source: 'group', items, bottom_left: rows[0].bottom_left, bottom: rows[0].bottom_items };
   });
 
   // views: shared ones plus the caller's own; a default shared view is created on first use
