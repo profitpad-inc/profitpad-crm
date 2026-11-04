@@ -70,6 +70,21 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   files: ['public_token', 'storage_key'],
   views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries']
 };
+// An accepted quote is locked (migration 0073; the database refuses changes):
+// these properties and its line items. A line on one is locked as a whole.
+const ACCEPTED_QUOTE_LOCKED = ['amount', 'currency', 'expiration_date', 'responded_at'];
+type RecordLock = { props: string[] | 'all'; reason: string };
+const isAcceptedQuote = (r: CrmRecord) => {
+  const s = r.properties.status;
+  return (Array.isArray(s) ? s[0] : s) === 'accepted';
+};
+function recordLock(object: string, record: CrmRecord, associated: Associated[]): RecordLock | null {
+  if (object === 'quotes' && isAcceptedQuote(record)) return { props: ACCEPTED_QUOTE_LOCKED, reason: 'Locked because the quote is accepted' };
+  if (object === 'lines' && associated.some((a) => a.object === 'quotes' && a.records.some((r) => isAcceptedQuote(r.record)))) {
+    return { props: 'all', reason: 'Locked because it is on an accepted quote' };
+  }
+  return null;
+}
 
 // Every active record linked to one record, grouped by object, with the
 // name properties (and, for activities, the stream's properties).
@@ -287,7 +302,7 @@ export function RecordPage() {
           </div>
         </div>
         {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
-        <PropertyList schema={schema} record={record} onSaved={saved} />
+        <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} />
       </aside>
 
       {isUser ? (
@@ -331,7 +346,7 @@ export function RecordPage() {
   );
 }
 
-function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
+function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; record: CrmRecord; lock: RecordLock | null; onSaved: (r: CrmRecord) => void }) {
   const { toast } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -351,7 +366,8 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
   // sharing rule) every property is locked, like a calculation; a save's
   // reply has no can_edit, which counts as editable
   const canEdit = schema.permissions.edit && record.can_edit !== false;
-  const editable = (p: Property) => canEdit && isEditable(p);
+  const locked = (p: Property) => !!lock && (lock.props === 'all' || lock.props.includes(p.api_name));
+  const editable = (p: Property) => canEdit && isEditable(p) && !locked(p);
 
   function start(p: Property) {
     if (!editable(p)) return;
@@ -432,6 +448,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
           <Chevron size={16} />
           <h3>{title}</h3>
           {key === 'main' && !canEdit && <span className="push-right"><StatusPill tone="off">View only</StatusPill></span>}
+          {key === 'main' && canEdit && lock?.props === 'all' && <span className="push-right" title={lock.reason}><StatusPill tone="off">Locked</StatusPill></span>}
           {!open && <span className="prop-section-count">{props.length}</span>}
         </button>
         {open && <div className="prop-section-body">{props.map((p) => row(p, key === 'main' && canEdit))}</div>}
@@ -446,7 +463,11 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
       <div className="prop-label">
         <span>{p.label}</span>
         {editable(p) && editing !== p.api_name && <Pencil className="prop-hint" size={12} aria-hidden />}
-        {showLock && !editable(p) && p.type !== 'file' && <Lock className="prop-lock" size={12} aria-label="Read only" />}
+        {showLock && !editable(p) && p.type !== 'file' && (
+          locked(p)
+            ? <span className="prop-lock" title={lock!.reason}><Lock size={12} aria-label={lock!.reason} /></span>
+            : <Lock className="prop-lock" size={12} aria-label="Read only" />
+        )}
       </div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
@@ -1546,7 +1567,9 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
   if (!meta) return null;
   const Icon = objectIcon(other);
   // links the system makes (a form and its submissions) cannot be added or removed here
-  const editable = !(objectByName.get(self)?.system_links ?? []).includes(other);
+  // an accepted quote's lines are locked (migration 0073)
+  const linesLocked = self === 'quotes' && other === 'lines' && isAcceptedQuote(selfRecord);
+  const editable = !(objectByName.get(self)?.system_links ?? []).includes(other) && !linesLocked;
   // new lines are made here (product or custom), not picked; a product's lines are made on their parent
   const newLines = other === 'lines' && self !== 'products';
   // a line has one product
@@ -1586,6 +1609,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, on
           )
         )}
       </div>
+      {linesLocked && <div className="card-empty"><Lock size={12} aria-hidden /> Locked because the quote is accepted.</div>}
       {dialog === 'line' && (
         <LineItemsEditor
           parent={{ object: self, id: selfId }}
