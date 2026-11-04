@@ -72,6 +72,8 @@ input[type='checkbox']:indeterminate::before { transform: translateX(6px); }
 input[type='checkbox']:focus { box-shadow: none; }
 input[type='checkbox']:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
+/* the switch keeps its size even where a wrapper sets `input { width: ... }` (:root lifts it above one-class rules; table.css still wins) */
+:root input[type='checkbox'] { width: 28px; height: 16px; min-width: 28px; }
 /* Dropdowns (components/Select.tsx): a field-like button with a drawn
    chevron. Same arrow as CARET in web/src/public/phone-regions.ts. */
 .select-face {
@@ -133,6 +135,8 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
   width: 36px; height: 36px; border-radius: var(--radius); margin: 0 4px 6px;
   display: grid; place-items: center; color: var(--sidebar-text); text-decoration: none !important;
 }
+/* a portal's own logo (Settings, Theme): keeps its shape inside the box */
+.brand-logo { display: block; object-fit: contain; }
 .nav-item {
   display: flex; align-items: center; gap: 12px; width: 100%;
   border: 0; background: none; color: var(--sidebar-text);
@@ -285,6 +289,9 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .record-left, .record-right { overflow-y: auto; padding: 16px 20px; background: var(--page-background); }
 .record-left { border-right: 1px solid var(--border); background: var(--surface); }
 .record-right { border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+/* cards keep their full height and the column scrolls; without this, cards with overflow: hidden
+   (the association cards) shrink below their content once the column runs out of room */
+.record-right > * { flex-shrink: 0; }
 .record-middle { overflow-y: auto; padding: 16px 24px; background: var(--surface); }
 .record-head {
   margin-bottom: 12px; background: var(--page-background); border: 1px solid var(--border);
@@ -760,3 +767,9 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .hex-picker-input input:focus { outline: none; }
 .hex-picker-input:focus-within { border-color: var(--primary); }
 .color-swatch.color-input { width: 36px; height: 28px; }
+
+/* app-wide tooltips (lib/tooltips.ts), shown 0.5s after hovering anything with a title */
+.app-tooltip { position: fixed; z-index: 10000; max-width: 280px; padding: 5px 8px; border-radius: var(--radius-sm, 4px);
+  background: #0f172a; color: #f1f5f9; font: 500 12px/1.35 var(--font-body, system-ui, sans-serif); white-space: pre-line;
+  overflow-wrap: anywhere; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2); pointer-events: none; }
+.app-tooltip[hidden] { display: none; }

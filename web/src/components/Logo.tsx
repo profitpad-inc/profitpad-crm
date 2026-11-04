@@ -12,3 +12,10 @@ export function LogoMark({ size = 24 }: { size?: number }) {
     </svg>
   );
 }
+
+// The portal's own logo when an admin set one in Settings, Theme (a data URL),
+// else the CRM mark. The image keeps its shape inside a size × size box.
+export function BrandMark({ src, size = 24 }: { src: string | null | undefined; size?: number }) {
+  if (!src) return <LogoMark size={size} />;
+  return <img className="brand-logo" src={src} alt="" width={size} height={size} />;
+}

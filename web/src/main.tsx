@@ -11,6 +11,7 @@ import './kit.css';
 import { api, type Me } from './lib/api';
 import { finishReauth, onReauthChange, reauthPending } from './lib/reauth';
 import { AppProvider } from './lib/app-context';
+import { installTooltips } from './lib/tooltips';
 import { Sidebar } from './components/Sidebar';
 import { BottomBar } from './components/MobileNav';
 import { useIsMobile } from './lib/use-mobile';
@@ -80,6 +81,8 @@ function App() {
     </AppProvider>
   );
 }
+
+installTooltips();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

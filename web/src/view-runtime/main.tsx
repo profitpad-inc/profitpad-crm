@@ -8,6 +8,9 @@ import '@fontsource/inter/latin-600.css';
 import * as kit from './kit';
 import { listen, post, report } from './bridge';
 import './frame.css';
+import { installTooltips } from '../lib/tooltips';
+
+installTooltips();
 
 // The view frame: a sandboxed iframe (no same-origin) that runs one view's
 // compiled module. Built into a single HTML file (vite.frame.config.ts) whose

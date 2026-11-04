@@ -114,6 +114,12 @@
 /* Theme */
 .theme-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; align-items: start; max-width: 1180px; }
 .theme-controls { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.logo-field { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.logo-field-tile { width: 56px; height: 56px; border-radius: var(--radius-lg); display: grid; place-items: center; border: 1px solid var(--border); }
+.logo-field-tile.dark { background: var(--sidebar-background); color: var(--sidebar-text); border-color: transparent; }
+.logo-field-tile.light { background: var(--page-background); color: var(--primary); }
+.logo-field-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.logo-field-actions .btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .color-rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .color-rows-head { font-size: 13px; font-weight: 600; padding: 10px 14px; background: var(--surface); border-radius: var(--radius-lg) var(--radius-lg) 0 0; border-bottom: 1px solid var(--border); }
 .color-field { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--hairline); }
@@ -138,6 +144,7 @@
 }
 .tp-side { background: var(--p-side); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; }
 .tp-side i { width: 20px; height: 6px; border-radius: 3px; background: var(--p-side-text); opacity: 0.55; }
+.tp-side .tp-logo { margin-bottom: 6px; }
 .tp-side i.logo { width: 22px; height: 22px; border-radius: 6px; background: var(--p-primary); opacity: 1; margin-bottom: 6px; }
 .tp-side i.active { width: 30px; height: 18px; border-radius: 5px; background: var(--p-side-active); opacity: 1; box-shadow: inset 0 0 0 7px var(--p-side-active), inset 0 0 0 9px var(--p-side-text); }
 .tp-main { display: flex; flex-direction: column; min-width: 0; }
@@ -300,3 +307,4 @@
 /* Card scanner: the API key box and its buttons on one line */
 .key-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .key-row input { flex: 1 1 220px; min-width: 0; }
+.settings .grid th.cell-check .column-check { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }

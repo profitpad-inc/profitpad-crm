@@ -37,6 +37,39 @@ interface UserRow {
   deactivated: boolean;
 }
 
+type PermissionKey = keyof Omit<ObjectPermission, 'object_type_id'>;
+
+const PERMISSION_COLUMNS: { key: PermissionKey; label: string }[] = [
+  { key: 'can_read', label: 'Read' },
+  { key: 'can_create', label: 'Create' },
+  { key: 'can_edit', label: 'Edit' },
+  { key: 'can_delete', label: 'Delete' }
+];
+
+// create/edit/delete imply read; no read means none of the others
+function applyPermission(cur: ObjectPermission, key: PermissionKey, value: boolean): ObjectPermission {
+  const next = { ...cur, [key]: value };
+  if (key === 'can_read' && !value) Object.assign(next, { can_create: false, can_edit: false, can_delete: false });
+  if (key !== 'can_read' && value) next.can_read = true;
+  return next;
+}
+
+// header checkbox that ticks or clears a whole column; shows a dash when only some rows are ticked
+function ColumnCheck({ label, checked, partial, onChange }: { label: string; checked: boolean; partial: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className="column-check">
+      {label}
+      <input
+        type="checkbox"
+        aria-label={`${label}: all objects`}
+        checked={checked}
+        ref={(el) => { if (el) el.indeterminate = partial; }}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+    </label>
+  );
+}
+
 const RECORD_ACCESS: { value: Role['record_access']; label: string }[] = [
   { value: 'own', label: 'Only records they own' },
   { value: 'team', label: "Their team's records" },
@@ -230,21 +263,35 @@ export function RoleSettings() {
     }
   }
 
-  // create/edit/delete imply read; no read means none of the others
-  function setPermission(objectTypeId: string, apiName: string, key: keyof Omit<ObjectPermission, 'object_type_id'>, value: boolean) {
-    if (!role) return;
-    const cur = role.object_permissions.find((p) => p.object_type_id === objectTypeId) ?? { object_type_id: objectTypeId, can_read: false, can_create: false, can_edit: false, can_delete: false };
-    const next = { ...cur, [key]: value };
-    if (key === 'can_read' && !value) Object.assign(next, { can_create: false, can_edit: false, can_delete: false });
-    if (key !== 'can_read' && value) next.can_read = true;
+  const permissionOf = (objectTypeId: string): ObjectPermission =>
+    role?.object_permissions.find((p) => p.object_type_id === objectTypeId)
+      ?? { object_type_id: objectTypeId, can_read: false, can_create: false, can_edit: false, can_delete: false };
+
+  function putPermission(roleId: string, apiName: string, next: ObjectPermission) {
     const { object_type_id: _, ...body } = next;
-    run(() => api('PUT', `/v1/roles/${role.id}/object-permissions/${apiName}`, body));
+    return api('PUT', `/v1/roles/${roleId}/object-permissions/${apiName}`, body);
+  }
+
+  function setPermission(objectTypeId: string, apiName: string, key: PermissionKey, value: boolean) {
+    if (!role) return;
+    run(() => putPermission(role.id, apiName, applyPermission(permissionOf(objectTypeId), key, value)));
+  }
+
+  // ticks or clears one column for every object, saving only the rows that change
+  function setColumn(key: PermissionKey, value: boolean) {
+    if (!role) return;
+    const changes = objects
+      .map((o) => ({ o, cur: permissionOf(o.object_type_id) }))
+      .map(({ o, cur }) => ({ o, cur, next: applyPermission(cur, key, value) }))
+      .filter(({ cur, next }) => PERMISSION_COLUMNS.some((c) => cur[c.key] !== next[c.key]));
+    if (!changes.length) return;
+    run(() => Promise.all(changes.map(({ o, next }) => putPermission(role.id, o.api_name, next))));
   }
 
   const members = role
     ? role.assignments.map((a) => ({ id: a.id, name: a.user_id ? users.find((u) => u.id === a.user_id)?.name ?? `User ${a.user_id}` : `Team ${a.team_id}` }))
     : [];
-  const accessLabel = (r: Role) => (r.is_admin ? 'Admin' : RECORD_ACCESS.find((o) => o.value === r.record_access)?.label);
+  const accessLabel = (r: Role) => (r.is_admin ? 'Super Admin' : RECORD_ACCESS.find((o) => o.value === r.record_access)?.label);
 
   return (
     <SettingsPage
@@ -288,7 +335,7 @@ export function RoleSettings() {
                   </label>
                   <label className="check">
                     <input type="checkbox" checked={draft.is_admin} onChange={(e) => setDraft({ ...draft, is_admin: e.target.checked })} />
-                    Admin: full access to every object, record and setting
+                    Super Admin: full access to every object, record and setting
                   </label>
                   {!draft.is_admin && (
                     <label className="field">
@@ -321,7 +368,7 @@ export function RoleSettings() {
                   )}
                 </SettingsSection>
 
-                <SettingsSection title="Object access" description={role.is_admin ? 'Admin roles can use every object.' : 'Create, edit and delete each include read.'}>
+                <SettingsSection title="Object access" description={role.is_admin ? 'Super Admin roles can use every object.' : 'Create, edit and delete each include read.'}>
                   {!role.is_admin && !role.object_permissions.some((p) => p.can_read) && (
                     <div className="callout warn">This role cannot read any object yet, so its users see nothing. Tick Read for the objects they should use.</div>
                   )}
@@ -329,20 +376,35 @@ export function RoleSettings() {
                     <div className="access-table">
                       <table className="grid">
                         <thead>
-                          <tr><th>Object</th><th className="cell-check">Read</th><th className="cell-check">Create</th><th className="cell-check">Edit</th><th className="cell-check">Delete</th></tr>
+                          <tr>
+                            <th>Object</th>
+                            {PERMISSION_COLUMNS.map((c) => {
+                              const ticked = objects.filter((o) => permissionOf(o.object_type_id)[c.key]).length;
+                              return (
+                                <th key={c.key} className="cell-check">
+                                  <ColumnCheck
+                                    label={c.label}
+                                    checked={objects.length > 0 && ticked === objects.length}
+                                    partial={ticked > 0 && ticked < objects.length}
+                                    onChange={(v) => setColumn(c.key, v)}
+                                  />
+                                </th>
+                              );
+                            })}
+                          </tr>
                         </thead>
                         <tbody>
                           {objects.map((o) => {
-                            const p = role.object_permissions.find((x) => x.object_type_id === o.object_type_id);
+                            const p = permissionOf(o.object_type_id);
                             return (
                               <tr key={o.object_type_id}>
                                 <td>{o.label_plural}</td>
-                                {(['can_read', 'can_create', 'can_edit', 'can_delete'] as const).map((k) => (
+                                {PERMISSION_COLUMNS.map(({ key: k }) => (
                                   <td key={k} className="cell-check">
                                     <input
                                       type="checkbox"
                                       aria-label={`${o.label_plural}: ${k.slice(4)}`}
-                                      checked={p?.[k] ?? false}
+                                      checked={p[k]}
                                       onChange={(e) => setPermission(o.object_type_id, o.api_name, k, e.target.checked)}
                                     />
                                   </td>

@@ -159,3 +159,9 @@ input[type='checkbox']:indeterminate::before { transform: translateX(6px); }
 input[type='checkbox']:focus { box-shadow: none; }
 input[type='checkbox']:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
+
+/* app-wide tooltips (lib/tooltips.ts), shown 0.5s after hovering anything with a title */
+.app-tooltip { position: fixed; z-index: 10000; max-width: 280px; padding: 5px 8px; border-radius: var(--radius-sm, 4px);
+  background: #0f172a; color: #f1f5f9; font: 500 12px/1.35 var(--font-body, system-ui, sans-serif); white-space: pre-line;
+  overflow-wrap: anywhere; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2); pointer-events: none; }
+.app-tooltip[hidden] { display: none; }

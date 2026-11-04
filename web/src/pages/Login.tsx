@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { API_BASE, api, type Me } from '../lib/api';
-import { LogoMark } from '../components/Logo';
+import { BrandMark } from '../components/Logo';
 import { openSignInPopup, watchSignIn } from '../lib/reauth';
 
 // Set by the API's callback as ?auth_error=...
@@ -58,7 +58,7 @@ function MicrosoftMark() {
 // again. If the browser blocks the popup, the whole page signs in instead.
 export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) => void; reauth?: boolean; onCancel?: () => void }) {
   const [error, setError] = useState<string | null>(takeAuthError);
-  const [config, setConfig] = useState<{ google: boolean; microsoft: boolean }>({ google: false, microsoft: false });
+  const [config, setConfig] = useState<{ google: boolean; microsoft: boolean; logo?: string | null }>({ google: false, microsoft: false });
   const [checking, setChecking] = useState(true);
   // reauth: the popup is open and we are waiting for it
   const [waiting, setWaiting] = useState(false);
@@ -77,8 +77,8 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) 
   }, [reauth, onSignedIn]);
 
   useEffect(() => {
-    api<{ google?: boolean; microsoft?: boolean }>('GET', '/v1/auth/config', undefined, null)
-      .then((c) => setConfig({ google: Boolean(c.google), microsoft: Boolean(c.microsoft) }))
+    api<{ google?: boolean; microsoft?: boolean; logo?: string | null }>('GET', '/v1/auth/config', undefined, null)
+      .then((c) => setConfig({ google: Boolean(c.google), microsoft: Boolean(c.microsoft), logo: c.logo ?? null }))
       .catch(() => setConfig({ google: false, microsoft: false }))
       .finally(() => setChecking(false));
   }, []);
@@ -105,7 +105,7 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) 
   return (
     <div className={`login${reauth ? ' reauth' : ''}`}>
       <div className="login-card">
-        <div className="wordmark"><LogoMark size={22} /><b>ProfitPad</b></div>
+        <div className="wordmark"><BrandMark src={config.logo} size={22} /><b>ProfitPad</b></div>
         <h1>{reauth ? 'Confirm it\u2019s you' : 'Log in to ProfitPad CRM'}</h1>
         {reauth && !waiting && (
           <p className="muted">

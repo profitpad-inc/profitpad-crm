@@ -50,7 +50,7 @@ function keyTone(k: ApiKey): Tone {
 }
 
 export function ApiKeySettings() {
-  const { toast } = useApp();
+  const { toast, me } = useApp();
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [status, setStatus] = useState<'active' | 'all'>('active');
@@ -87,7 +87,7 @@ export function ApiKeySettings() {
     }
   }
 
-  const newKey = () => setDraft({ name: '', user_id: '', scopes: ['read'], days: 90 });
+  const newKey = () => setDraft({ name: '', user_id: me.user?.id ?? '', scopes: ['read'], days: 90 });
 
   return (
     <SettingsPage

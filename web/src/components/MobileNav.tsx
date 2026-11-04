@@ -6,7 +6,7 @@ import { HomeIcon, initials } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { SearchPalette } from './SearchPalette';
-import { LogoMark } from './Logo';
+import { BrandMark } from './Logo';
 import { Sidebar } from './Sidebar';
 
 export function userDisplayName(me: ReturnType<typeof useApp>['me']): string {
@@ -58,7 +58,7 @@ export function BottomBar() {
 
 // Top bar for the phone home page: hamburger opens the full menu as a drawer.
 export function MobileHeader() {
-  const { me } = useApp();
+  const { me, logo } = useApp();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const userName = userDisplayName(me);
 
@@ -68,7 +68,7 @@ export function MobileHeader() {
         <button className="icon-btn" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
           <MenuIcon size={24} />
         </button>
-        <Link to="/" className="logo small" aria-label="ProfitPad CRM"><LogoMark size={24} /></Link>
+        <Link to="/" className="logo small" aria-label="ProfitPad CRM"><BrandMark src={logo} size={24} /></Link>
         <span className="mobile-header-title">ProfitPad</span>
         <Link to="/settings" className="push-right" aria-label="Settings">
           <span className="avatar">{initials(userName)}</span>

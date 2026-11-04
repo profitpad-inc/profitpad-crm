@@ -45,6 +45,23 @@ function validateDropdownColors(value: unknown): { colors: string[] } {
   return { colors: raw.map((c: string) => c.toLowerCase()) };
 }
 
+// ---- logo --------------------------------------------------------------------
+
+// The portal's logo (Settings, Theme), shown in the sidebar, the phone header
+// and the login page. Stored inline as a data URL: the page shrinks raster
+// images to 256px before sending, so they stay small. image null = the CRM mark.
+const LOGO_MAX = 300 * 1024;
+
+function validateLogo(value: unknown): { image: string | null } {
+  const raw = (value as { image?: unknown } | null)?.image;
+  if (raw === null || raw === undefined || raw === '') return { image: null };
+  if (typeof raw !== 'string' || !/^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/]+=*$/.test(raw)) {
+    throw badRequest('image must be a base64 data URL of a PNG, JPEG, WebP, GIF or SVG image');
+  }
+  if (raw.length > LOGO_MAX) throw badRequest('the logo is too large (300 KB at most)');
+  return { image: raw };
+}
+
 // ---- forms -------------------------------------------------------------------
 
 // Websites allowed to embed forms and booking pages (Settings, Embed
@@ -320,9 +337,9 @@ export async function uiRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdmin(p);
     if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
-    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, dropdown_colors: validateDropdownColors };
+    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo };
     const validate = validators[req.params.key];
-    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, forms)');
+    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, logo, forms)');
     const value = validate(req.body);
     await pool.query(
       `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)

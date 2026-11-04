@@ -7,7 +7,7 @@ import { MORE_GROUPS, initials, objectIcon } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { SearchPalette } from './SearchPalette';
-import { LogoMark } from './Logo';
+import { BrandMark } from './Logo';
 
 const EXPANDED_KEY = 'pcrm.sidebarExpanded';
 
@@ -22,7 +22,7 @@ function readExpanded(): boolean {
 // 'rail' is the desktop sidebar; 'drawer' is the same menu, always expanded,
 // inside the phone hamburger drawer (More opens inline there).
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, objectByName, objects, customViews } = useApp();
+  const { me, nav, objectByName, objects, customViews, logo } = useApp();
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
@@ -95,7 +95,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
     <>
       <nav className={`sidebar${expanded ? ' expanded' : ''}${drawer ? ' drawer-menu' : ''}`}>
         <div className="sidebar-top">
-          <Link to="/" className="logo" title="ProfitPad CRM" aria-label="ProfitPad CRM"><LogoMark size={28} /></Link>
+          <Link to="/" className="logo" title="ProfitPad CRM" aria-label="ProfitPad CRM"><BrandMark src={logo} size={28} /></Link>
           <button className="nav-item" onClick={() => setSearchOpen(true)} title={expanded ? undefined : 'Search (⌘K)'}>
             <Search size={20} strokeWidth={1.75} />
             {expanded && <span>Search</span>}

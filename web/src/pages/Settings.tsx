@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
-  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Cable, CalendarDays, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  ShieldCheck, SlidersHorizontal, Trash2, User, Users, Webhook
+  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
+import { BrandMark } from '../components/Logo';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
@@ -18,6 +19,7 @@ import { ConnectedApps } from './ConnectedApps';
 import { CalendarSettings } from './CalendarSettings';
 import { PaymentSettings } from './PaymentSettings';
 import { PropertySettings } from './PropertySettings';
+import { ObjectSettings } from './ObjectSettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
@@ -38,6 +40,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
   { label: 'Workspace', links: [
     { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
     { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'admin', element: <NavSettings /> },
+    { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> }
   ] },
   { label: 'People and access', links: [
@@ -124,20 +127,71 @@ const THEME_GROUPS: { label: string; keys: ThemeKey[] }[] = [
   { label: 'Content', keys: ['page_background', 'surface', 'text', 'muted_text', 'border'] }
 ];
 
+// A picked logo file as a data URL: SVGs as they are, other images shrunk to fit 256 × 256 and saved as PNG
+// (transparency kept), so the setting stays small.
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function logoFromFile(file: File): Promise<string> {
+  if (!LOGO_TYPES.includes(file.type)) throw new Error('Pick a PNG, JPEG, WebP, GIF or SVG image.');
+  const url = await readFileAsDataUrl(file);
+  if (file.type === 'image/svg+xml') {
+    if (url.length > 300 * 1024) throw new Error('That SVG is too large (300 KB at most).');
+    return url;
+  }
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Could not open that image.'));
+    img.src = url;
+  });
+  const scale = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+  canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
+
 function ThemeSettings() {
-  const { theme, setTheme, dropdownColors, setDropdownColors } = useApp();
+  const { theme, setTheme, dropdownColors, setDropdownColors, logo, setLogo } = useApp();
   const [draft, setDraft] = useState<Theme>(theme);
   const [colors, setColors] = useState<string[]>(dropdownColors);
+  const [logoDraft, setLogoDraft] = useState<string | null>(logo);
   // what is saved, to tell whether the draft has unsaved changes (the live preview changes `theme` itself)
-  const [saved, setSaved] = useState(() => JSON.stringify({ theme, colors: dropdownColors }));
+  const [saved, setSaved] = useState(() => JSON.stringify({ theme, colors: dropdownColors, logo }));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dirty = JSON.stringify({ theme: draft, colors }) !== saved;
+  const dirty = JSON.stringify({ theme: draft, colors, logo: logoDraft }) !== saved;
 
   function update(next: Theme) {
     setDraft(next);
     setTheme(next); // live preview
     setMessage(null);
+  }
+
+  function updateLogo(next: string | null) {
+    setLogoDraft(next);
+    setLogo(next); // live preview in the sidebar
+    setMessage(null);
+  }
+
+  async function pickLogo(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      updateLogo(await logoFromFile(file));
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   function updateColor(i: number, hex: string) {
@@ -150,8 +204,9 @@ function ThemeSettings() {
     try {
       await api('PUT', '/v1/ui/settings/theme', draft);
       await api('PUT', '/v1/ui/settings/dropdown_colors', { colors });
+      await api('PUT', '/v1/ui/settings/logo', { image: logoDraft });
       setDropdownColors(colors);
-      setSaved(JSON.stringify({ theme: draft, colors }));
+      setSaved(JSON.stringify({ theme: draft, colors, logo: logoDraft }));
       setMessage('Theme saved for everyone.');
     } catch (err) {
       setError((err as Error).message);
@@ -161,9 +216,22 @@ function ThemeSettings() {
   const label = (k: ThemeKey) => THEME_FIELDS.find((f) => f.key === k)!.label;
 
   return (
-    <SettingsPage className="wide" title="Theme" description="Colours apply to everyone in this portal. Changes show straight away; save to keep them.">
+    <SettingsPage className="wide" title="Theme" description="The logo and colours apply to everyone in this portal. Changes show straight away; save to keep them.">
       <div className="theme-layout">
         <div className="theme-controls">
+          <SettingsSection title="Logo" description="Shown in the sidebar, the phone header and the login page. A square image with a transparent background works best.">
+            <div className="logo-field">
+              <span className="logo-field-tile dark" title="On the sidebar"><BrandMark src={logoDraft} size={36} /></span>
+              <span className="logo-field-tile light" title="On a light page"><BrandMark src={logoDraft} size={36} /></span>
+              <div className="logo-field-actions">
+                <label className="btn">
+                  <Upload size={14} /> {logoDraft ? 'Change logo' : 'Upload logo'}
+                  <input type="file" accept={LOGO_TYPES.join(',')} hidden onChange={(e) => { pickLogo(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {logoDraft && <button className="btn" onClick={() => updateLogo(null)}>Use the CRM logo</button>}
+              </div>
+            </div>
+          </SettingsSection>
           <SettingsSection title="Portal colours">
             {THEME_GROUPS.map((g) => (
               <div key={g.label} className="color-rows">
@@ -193,10 +261,10 @@ function ThemeSettings() {
             </div>
           </SettingsSection>
         </div>
-        <ThemePreview theme={draft} colors={colors} />
+        <ThemePreview theme={draft} colors={colors} logo={logoDraft} />
       </div>
       <SaveBar dirty={dirty} message={message} error={error}>
-        <button className="btn" onClick={() => { update(DEFAULT_THEME); setColors(defaultDropdownColors()); }}>Reset to defaults</button>
+        <button className="btn" onClick={() => { update(DEFAULT_THEME); setColors(defaultDropdownColors()); updateLogo(null); }}>Reset to defaults</button>
         <button className="btn primary" onClick={save} disabled={!dirty}>Save theme</button>
       </SaveBar>
     </SettingsPage>
@@ -205,7 +273,7 @@ function ThemeSettings() {
 
 // A miniature CRM drawn from the draft, showing what this page itself does not: a record, a table with dropdown
 // pills and the full dropdown palette.
-function ThemePreview({ theme, colors }: { theme: Theme; colors: string[] }) {
+function ThemePreview({ theme, colors, logo }: { theme: Theme; colors: string[]; logo: string | null }) {
   const vars = {
     '--p-primary': theme.primary, '--p-side': theme.sidebar_background, '--p-side-text': theme.sidebar_text,
     '--p-side-active': theme.sidebar_active, '--p-page': theme.page_background, '--p-surface': theme.surface,
@@ -217,7 +285,7 @@ function ThemePreview({ theme, colors }: { theme: Theme; colors: string[] }) {
     <div className="theme-preview-wrap" style={vars}>
       <div className="theme-preview-label">Preview</div>
       <div className="theme-preview" aria-hidden>
-        <div className="tp-side"><i className="logo" /><i className="active" /><i /><i /><i /></div>
+        <div className="tp-side">{logo ? <img className="tp-logo brand-logo" src={logo} alt="" width={22} height={22} /> : <i className="logo" />}<i className="active" /><i /><i /><i /></div>
         <div className="tp-main">
           <div className="tp-head">
             <span className="tp-avatar">NT</span>

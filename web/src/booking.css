@@ -89,4 +89,3 @@
 /* Settings -> Calendars (most of its styling is in settings.css) */
 .cal-calendars { display: flex; flex-direction: column; gap: 4px; }
 .cal-calendars label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
-.cal-calendars input { width: auto; }

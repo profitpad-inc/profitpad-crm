@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowUp, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { api, clearSchemaCache, getSchema, type DropdownOption, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -83,7 +84,13 @@ function sameKeys(o: Options): string {
 
 export function PropertySettings() {
   const { objects, toast } = useApp();
-  const [object, setObject] = useState(objects.find((o) => o.api_name === 'contacts')?.api_name ?? objects[0]?.api_name ?? '');
+  // ?object=<api_name> opens on that object (the Objects page links here)
+  const [params] = useSearchParams();
+  const asked = params.get('object');
+  const [object, setObject] = useState(
+    (asked && objects.some((o) => o.api_name === asked) ? asked : null)
+      ?? objects.find((o) => o.api_name === 'contacts')?.api_name ?? objects[0]?.api_name ?? ''
+  );
   const [props, setProps] = useState<Property[] | null>(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'active' | 'archived'>('active');

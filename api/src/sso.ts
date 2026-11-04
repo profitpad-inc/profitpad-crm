@@ -131,10 +131,15 @@ async function startSession(req: FastifyRequest, provider: 'google' | 'microsoft
 
 export async function ssoRoutes(app: FastifyInstance) {
   // public: which sign-in buttons the UI shows
-  app.get('/v1/auth/config', async () => ({
-    google: Boolean(clientId && clientSecret),
-    microsoft: Boolean(msClientId && msClientSecret)
-  }));
+  // public: the login page also shows the portal's logo (Settings, Theme)
+  app.get('/v1/auth/config', async () => {
+    const { rows } = await pool.query("select value->>'image' as image from ui.settings where key = 'logo'");
+    return {
+      google: Boolean(clientId && clientSecret),
+      microsoft: Boolean(msClientId && msClientSecret),
+      logo: rows[0]?.image ?? null
+    };
+  });
 
   app.get<{ Querystring: { return_to?: string } }>('/v1/auth/google/start', async (req, reply) => {
     if (!clientId || !clientSecret) return toUi(req, reply, '/', 'google_not_configured');

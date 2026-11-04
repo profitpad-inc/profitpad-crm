@@ -23,6 +23,9 @@ interface AppState {
   // the 16 colours offered for dropdown choices (Settings, Theme)
   dropdownColors: string[];
   setDropdownColors: (colors: string[]) => void;
+  // the portal's logo as a data URL (Settings, Theme), null for the CRM mark
+  logo: string | null;
+  setLogo: (logo: string | null) => void;
   signOut: () => void;
   toast: (message?: string) => void;
 }
@@ -44,6 +47,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
   const [theme, setThemeState] = useState<Theme>(() => applyTheme(undefined));
   const [dropdownColors, setDropdownColors] = useState<string[]>(defaultDropdownColors);
+  const [logo, setLogo] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -64,7 +68,8 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
 
   const reloadObjects = useCallback(async () => {
     const res = await api<{ results: ObjectSummary[] }>('GET', '/v1/schema');
-    setObjects(res.results.filter((o) => me.readable_objects.includes(o.api_name)));
+    // admins read every object, including ones created after sign-in (readable_objects is from then)
+    setObjects(res.results.filter((o) => me.is_admin || me.readable_objects.includes(o.api_name)));
   }, [me]);
 
   const reloadNav = useCallback(async () => {
@@ -85,8 +90,9 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
       reloadObjects(),
       reloadNav(),
       reloadCustomViews().catch(() => undefined),
-      api<{ theme?: Partial<Theme>; dropdown_colors?: { colors?: string[] } }>('GET', '/v1/ui/settings').then((s) => {
+      api<{ theme?: Partial<Theme>; dropdown_colors?: { colors?: string[] }; logo?: { image?: string | null } }>('GET', '/v1/ui/settings').then((s) => {
         setThemeState(applyTheme(s.theme));
+        setLogo(s.logo?.image ?? null);
         if (s.dropdown_colors?.colors?.length === 16) setDropdownColors(s.dropdown_colors.colors);
       })
     ]).finally(() => setReady(true));
@@ -102,7 +108,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
     <Ctx.Provider
       value={{
         me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])), nav, navSource, bottomLeft, bottomNav, customViews, theme,
-        reloadNav, reloadObjects, reloadCustomViews, setTheme, dropdownColors, setDropdownColors, signOut, toast
+        reloadNav, reloadObjects, reloadCustomViews, setTheme, dropdownColors, setDropdownColors, logo, setLogo, signOut, toast
       }}
     >
       {children}
