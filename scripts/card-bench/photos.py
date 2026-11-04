@@ -67,18 +67,22 @@ def shoot(card, rng, lv):
     img = cv2.GaussianBlur(img, (0, 0), rng.uniform(*lv["blur"]))
     img = img + rng.normal(0, lv["noise"], img.shape)
     img = np.clip(img, 0, 255).astype(np.uint8)
-    return img, int(rng.integers(*lv["quality"]))
+    corners = [[round(float(x) / W, 5), round(float(y) / H, 5)] for x, y in pts]
+    return img, int(rng.integers(*lv["quality"])), corners
 
 
 def main():
     truth = json.load(open(os.path.join(OUT, "truth.json")))
     for level, lv in LEVELS.items():
         os.makedirs(os.path.join(OUT, level), exist_ok=True)
+        corners = {}
         for i, t in enumerate(truth):
             rng = np.random.default_rng(1000 * (1 + list(LEVELS).index(level)) + i)
             card = cv2.imread(os.path.join(OUT, "clean", f"{t['id']}.png"))
-            img, q = shoot(card, rng, lv)
+            img, q, corners[t["id"]] = shoot(card, rng, lv)
             cv2.imwrite(os.path.join(OUT, level, f"{t['id']}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, q])
+        # where the card's corners really are: top left, top right, bottom right, bottom left, as fractions of the photo
+        json.dump(corners, open(os.path.join(OUT, level, "corners.json"), "w"), indent=1)
     print(f"wrote {len(truth)} photos per level: {', '.join(LEVELS)}", file=sys.stderr)
 
 

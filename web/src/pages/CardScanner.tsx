@@ -54,6 +54,20 @@ type Step =
   // it, for adjusting the corners; fileId: the upload the card was read from
   | { kind: 'review'; cardUrl: string | null; fileId: string | null; scanId: string | null; photo: HTMLCanvasElement | null; photoUrl: string | null; quad: Quad | null };
 
+// Claude's corners sit on the card's edges, sometimes a hair inside; the
+// crop goes this much further out (a share of the card's size on each side)
+// so the card's real edges show. Corners the person drags are used as placed.
+const CLAUDE_CROP_MARGIN = 0.04;
+function withMargin(quad: Quad, p: HTMLCanvasElement, margin = CLAUDE_CROP_MARGIN): Quad {
+  const cx = quad.reduce((sum, q) => sum + q.x, 0) / 4;
+  const cy = quad.reduce((sum, q) => sum + q.y, 0) / 4;
+  const k = 1 + 2 * margin;
+  return quad.map((q) => ({
+    x: Math.min(p.width, Math.max(0, cx + (q.x - cx) * k)),
+    y: Math.min(p.height, Math.max(0, cy + (q.y - cy) * k))
+  })) as Quad;
+}
+
 const wholePhoto = (p: HTMLCanvasElement): Quad => [{ x: 0, y: 0 }, { x: p.width, y: 0 }, { x: p.width, y: p.height }, { x: 0, y: p.height }];
 const cardFileName = () => `business-card-${new Date().toISOString().slice(0, 10)}.jpg`;
 const uploadCanvas = async (c: HTMLCanvasElement) => uploadFile(new File([await toBlob(c)], cardFileName(), { type: 'image/jpeg' }), null);
@@ -225,7 +239,7 @@ export function CardScanner() {
       const r = await api<{ scan_id: string; fields: CardFields; corners: Point[] | null; company_domain: string | null; matches: Matches }>('POST', '/v1/card-scans/read', { file_id: fileId });
       if (!r.fields.is_business_card) setError("That doesn't look like a business card. Fill in what you can, or retake the photo.");
       if (r.corners?.length === 4) {
-        const quad = r.corners.map((c) => ({ x: c.x * photo.width, y: c.y * photo.height })) as Quad;
+        const quad = withMargin(r.corners.map((c) => ({ x: c.x * photo.width, y: c.y * photo.height })) as Quad, photo);
         const card = straighten(photo, quad);
         cardFile.current = uploadCanvas(card).catch(() => readFrom);
         startReview(r.fields, r.matches, r.company_domain, card.toDataURL('image/jpeg', 0.85), fileId, r.scan_id, { photo, photoUrl: url, quad });

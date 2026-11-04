@@ -65,7 +65,7 @@ export function CardScannerSettings() {
           htmlFor="card-reader"
           hint={draft.reader === 'tesseract'
             ? 'Tesseract reads the photo on this server, so it never leaves the CRM. Good on clear, flat photos; glare, blur and fancy fonts trip it up.'
-            : 'The photo goes to Anthropic with your API key, and Claude Haiku 5.5 reads it. Much better on poor photos and unusual layouts. Anthropic bills your account for each card, about US$0.0005 per card.'}
+            : 'The photo goes to Anthropic with your API key, and Claude Haiku 5.5 reads it. Much better on poor photos and unusual layouts. Anthropic bills your account for each card, about US$0.0007 per card.'}
         >
           <Select
             id="card-reader"

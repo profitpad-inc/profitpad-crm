@@ -44,3 +44,29 @@ Claude's phone misses are mostly by design: the prompt prefers a direct line
 or mobile, the answer key the first number printed. EasyOCR read 94% of the
 answers on fair photos; most of its low field score is `parse.py` tripping on
 how it splits text. `parse.py` was deliberately not tuned to these cards.
+
+## Card corners (2026-11-03)
+
+`photos.py` also writes each photo's true corners (`out/<level>/corners.json`).
+`corners.mts` asks Claude for the corners through the scanner's own reader,
+and `corners-score.py` compares them with the truth, the browser corner finder
+that was removed from the scanner, and not cropping (`out/corners/results.md`,
+`out/corners/examples.jpg`):
+
+```bash
+(cd api && npx tsx --env-file=.env ../scripts/card-bench/corners.mts)
+scripts/card-bench/.venv/bin/python -I scripts/card-bench/corners-score.py
+```
+
+Haiku 5.5 on the 48 phone photos: median corner error 0.6% (fair) and 0.1%
+(bad) of the photo's diagonal; worst corner per photo 1.0% / 0.2% (median),
+3.6% / 7.2% (worst); every corner within 2% on 83% / 79% of photos; card kept
+99.5% / 99.6% (median), 94.0% / 92.6% (worst); every answer the right way
+round, none refused by the scanner's check. Misses are mostly the drop shadow
+taken as part of the card (bottom edge) and crops about 1% inside an edge
+(a strip of blank margin). The removed finder scored better here (median
+0.2%, card kept 98.7% / 98.5%, but missed one bad photo badly): these
+photos put the card on a plain, even surface, which suits it; on real photos
+(a hand, wood grain, clutter) it did badly, which is why it was removed.
+With corners a Haiku read used 4,318 input and 510 to 603 output tokens on
+average, about US$0.0007 per card.
