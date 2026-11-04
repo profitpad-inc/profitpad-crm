@@ -225,8 +225,10 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .page { padding: 24px 32px; }
 .page-title { font-size: 26px; margin-bottom: 20px; }
 .count { color: var(--muted-text); font-size: 13px; }
-.tabs { display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 12px; overflow-x: auto; }
-.tab { display: flex; align-items: center; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+/* the hairline is an inset shadow so the active underline can cover it without spilling past the strip,
+   which would make the horizontally scrolling strip scroll vertically too */
+.tabs { display: flex; align-items: flex-end; gap: 2px; box-shadow: inset 0 -1px 0 var(--border); margin-bottom: 12px; overflow-x: auto; overflow-y: hidden; }
+.tab { display: flex; align-items: center; border-bottom: 2px solid transparent; }
 .tab > button:first-child { border: 0; background: none; padding: 9px 12px; color: var(--muted-text); font-weight: 500; font-stretch: var(--label-stretch); white-space: nowrap; }
 .tab.active { border-bottom-color: var(--primary); }
 .tab.active > button:first-child { color: var(--text); }
