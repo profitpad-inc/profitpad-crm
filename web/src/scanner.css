@@ -54,6 +54,16 @@
 .scan-review { display: grid; grid-template-columns: minmax(280px, 2fr) minmax(0, 3fr); gap: 24px; align-items: start; }
 .scan-review-card { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .scan-review-card img { width: 100%; border-radius: var(--radius); box-shadow: var(--shadow-card); }
+/* the card photo on the review screen: Adjust corners shows on hover (a button under it on touch screens) */
+.scan-card-photo { position: relative; }
+.scan-card-photo img { display: block; }
+.scan-adjust { position: absolute; right: 10px; bottom: 10px; opacity: 0; transition: opacity 0.15s; box-shadow: var(--shadow-pop); }
+.scan-card-photo:hover .scan-adjust, .scan-adjust:focus-visible { opacity: 1; }
+@media (hover: none) {
+  .scan-adjust { position: static; opacity: 1; margin-top: 8px; box-shadow: none; }
+}
+.scan-adjusting { display: flex; flex-direction: column; gap: 10px; }
+.scan-adjusting > p { margin: 0; }
 .scan-no-photo { border: 1px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; color: var(--muted-text); }
 .scan-extras { margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .scan-extras > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; }

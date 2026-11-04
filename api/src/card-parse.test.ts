@@ -101,3 +101,17 @@ test('phones read off a card come back formatted, "×" extensions included', asy
   assert.equal(f.phone, '+1 888-706-7227 ext703');
   assert.equal(f.other_phones[0]?.number, '+1 613-555-0148');
 });
+
+test('card corners from Claude: kept when they make a card, dropped otherwise', async () => {
+  const { cardCorners } = await import('./card-scan.js');
+  const pt = (x: number, y: number) => ({ x, y });
+  const tilted = { top_left: pt(0.2, 0.25), top_right: pt(0.82, 0.2), bottom_right: pt(0.85, 0.7), bottom_left: pt(0.18, 0.75) };
+  assert.deepEqual(cardCorners(tilted), [pt(0.2, 0.25), pt(0.82, 0.2), pt(0.85, 0.7), pt(0.18, 0.75)]);
+  // a point a little outside the photo is pulled to its edge
+  assert.deepEqual(cardCorners({ ...tilted, top_left: pt(-0.05, 0.25) })?.[0], pt(0, 0.25));
+  // the whole photo, a sliver, a mirrored order (would flip the image) and nothing: no crop
+  assert.equal(cardCorners({ top_left: pt(0, 0), top_right: pt(1, 0), bottom_right: pt(1, 1), bottom_left: pt(0, 1) }), null);
+  assert.equal(cardCorners({ top_left: pt(0.5, 0.5), top_right: pt(0.52, 0.5), bottom_right: pt(0.52, 0.52), bottom_left: pt(0.5, 0.52) }), null);
+  assert.equal(cardCorners({ ...tilted, top_right: tilted.bottom_left, bottom_left: tilted.top_right }), null);
+  assert.equal(cardCorners(null), null);
+});

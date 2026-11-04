@@ -1,8 +1,9 @@
 // Image work for the card scanner (pages/CardScanner.tsx), all in the browser:
-// open the photo, find the card in it, straighten it, and make a clean black
-// and white copy for Tesseract. Straightening matters: in scripts/card-bench
-// Tesseract filed 90% of fields right on straightened phone photos and 64%
-// on the photos as taken.
+// open the photo, straighten the card from four corners (Claude's, or the
+// ones the person drags), and make a clean black and white copy for
+// Tesseract. Straightening matters: in scripts/card-bench Tesseract filed
+// 90% of fields right on straightened phone photos and 64% on the photos as
+// taken. (A corner finder of our own was removed: it often missed the card.)
 
 export type Point = { x: number; y: number };
 // corners in photo pixels: top left, top right, bottom right, bottom left
@@ -33,108 +34,11 @@ export async function loadPhoto(file: Blob): Promise<HTMLCanvasElement> {
   }
 }
 
-// Corners a little inside the photo's edges, for when no card is found.
+// Corners a little inside the photo's edges: where dragging starts when there are none.
 export function insetQuad(w: number, h: number, inset = 0.06): Quad {
   const dx = w * inset;
   const dy = h * inset;
   return [{ x: dx, y: dy }, { x: w - dx, y: dy }, { x: w - dx, y: h - dy }, { x: dx, y: h - dy }];
-}
-
-// Finds the card: on a small copy, everything that differs from the colour
-// around the photo's edges (the table) is foreground; the largest connected
-// patch is the card, and its corners are the points furthest along the two
-// diagonals. Null when nothing card-sized stands out.
-export function findCard(photo: HTMLCanvasElement): Quad | null {
-  const scale = 400 / Math.max(photo.width, photo.height);
-  const w = Math.max(1, Math.round(photo.width * scale));
-  const h = Math.max(1, Math.round(photo.height * scale));
-  const small = document.createElement('canvas');
-  small.width = w;
-  small.height = h;
-  const ctx = small.getContext('2d', { willReadFrequently: true })!;
-  ctx.drawImage(photo, 0, 0, w, h);
-  const px = ctx.getImageData(0, 0, w, h).data;
-
-  // the background: median colour of a band around the edges
-  const band = Math.max(2, Math.round(0.04 * Math.min(w, h)));
-  const rs: number[] = [], gs: number[] = [], bs: number[] = [];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (x >= band && x < w - band && y >= band && y < h - band) continue;
-      const i = (y * w + x) * 4;
-      rs.push(px[i]); gs.push(px[i + 1]); bs.push(px[i + 2]);
-    }
-  }
-  const median = (a: number[]) => a.sort((p, q) => p - q)[a.length >> 1];
-  const bg = [median(rs), median(gs), median(bs)];
-
-  const diff = new Float32Array(w * h);
-  let maxDiff = 0;
-  for (let i = 0; i < w * h; i++) {
-    const d = Math.hypot(px[i * 4] - bg[0], px[i * 4 + 1] - bg[1], px[i * 4 + 2] - bg[2]);
-    diff[i] = d;
-    if (d > maxDiff) maxDiff = d;
-  }
-  if (maxDiff < 1) return null;
-
-  // Otsu's threshold over 64 bins
-  const bins = 64;
-  const hist = new Float64Array(bins);
-  for (const d of diff) hist[Math.min(bins - 1, Math.floor((d / maxDiff) * bins))]++;
-  let best = -1;
-  let threshold = maxDiff / 2;
-  let total = 0;
-  for (let k = 0; k < bins; k++) total += hist[k] * (k + 0.5);
-  let w0 = 0, sum0 = 0;
-  for (let k = 0; k < bins - 1; k++) {
-    w0 += hist[k];
-    sum0 += hist[k] * (k + 0.5);
-    const w1 = w * h - w0;
-    if (w0 === 0 || w1 === 0) continue;
-    const between = w0 * w1 * (sum0 / w0 - (total - sum0) / w1) ** 2;
-    if (between > best) {
-      best = between;
-      threshold = ((k + 1) / bins) * maxDiff;
-    }
-  }
-
-  // largest connected patch above the threshold
-  const label = new Int32Array(w * h).fill(-1);
-  let bestLabel = -1, bestSize = 0, next = 0;
-  const stack: number[] = [];
-  for (let start = 0; start < w * h; start++) {
-    if (diff[start] <= threshold || label[start] !== -1) continue;
-    let size = 0;
-    label[start] = next;
-    stack.push(start);
-    while (stack.length) {
-      const i = stack.pop()!;
-      size++;
-      const x = i % w, y = (i / w) | 0;
-      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
-        if (j >= 0 && label[j] === -1 && diff[j] > threshold) {
-          label[j] = next;
-          stack.push(j);
-        }
-      }
-    }
-    if (size > bestSize) { bestSize = size; bestLabel = next; }
-    next++;
-  }
-  if (bestLabel < 0 || bestSize < 0.1 * w * h) return null;
-
-  let tl = 0, br = 0, tr = 0, bl = 0;
-  let minSum = Infinity, maxSum = -Infinity, maxDif = -Infinity, minDif = Infinity;
-  for (let i = 0; i < w * h; i++) {
-    if (label[i] !== bestLabel) continue;
-    const x = i % w, y = (i / w) | 0;
-    if (x + y < minSum) { minSum = x + y; tl = i; }
-    if (x + y > maxSum) { maxSum = x + y; br = i; }
-    if (x - y > maxDif) { maxDif = x - y; tr = i; }
-    if (x - y < minDif) { minDif = x - y; bl = i; }
-  }
-  const pt = (i: number): Point => ({ x: ((i % w) + 0.5) / scale, y: (((i / w) | 0) + 0.5) / scale });
-  return [pt(tl), pt(tr), pt(br), pt(bl)];
 }
 
 // Solves the 3x3 homography taking `from` corners to `to` corners.

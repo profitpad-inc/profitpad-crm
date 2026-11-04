@@ -129,16 +129,28 @@ export interface CardFields {
   address_postalcode: string;
   address_country: string;
   other_text: string;
+  // Claude only: where the card sits in the photo, as fractions of the
+  // photo's width (x) and height (y) from its top left; taken out of the
+  // fields and checked by cardCorners before the page gets it
+  card_corners?: CardCorners | null;
+}
+
+export interface CardCorners {
+  top_left: { x: number; y: number };
+  top_right: { x: number; y: number };
+  bottom_right: { x: number; y: number };
+  bottom_left: { x: number; y: number };
 }
 
 const str = { type: 'string' } as const;
+const point = { type: 'object', additionalProperties: false, required: ['x', 'y'], properties: { x: { type: 'number' }, y: { type: 'number' } } } as const;
 const CARD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
     'is_business_card', 'first_name', 'last_name', 'job_title', 'department', 'company', 'email', 'phone', 'other_phones',
     'website', 'linkedin_url', 'address_street_1', 'address_street_2', 'address_city', 'address_province',
-    'address_postalcode', 'address_country', 'other_text'
+    'address_postalcode', 'address_country', 'other_text', 'card_corners'
   ],
   properties: {
     is_business_card: { type: 'boolean' },
@@ -161,7 +173,13 @@ const CARD_SCHEMA = {
     address_province: str,
     address_postalcode: str,
     address_country: str,
-    other_text: str
+    other_text: str,
+    card_corners: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['top_left', 'top_right', 'bottom_right', 'bottom_left'],
+      properties: { top_left: point, top_right: point, bottom_right: point, bottom_left: point }
+    }
   }
 };
 
@@ -175,7 +193,8 @@ const INSTRUCTIONS = `Read the business card in the photo and return the person'
 - website: the organization's site, without the protocol. linkedin_url: only if printed.
 - address: address_province is the two-letter code for a US state or Canadian province, otherwise the region's name; address_country is the ISO 3166-1 alpha-2 code (US, CA, GB, ...), inferred from the address or phone country code when the card itself does not print a country.
 - other_text: anything else on the card worth keeping (certifications, clearances, a second language side, a handwritten note), one item per line.
-- If the photo is not a business card, or is too blurry to read, set is_business_card to false and leave the rest empty.`;
+- card_corners: the four corners of the card itself in the photo, as fractions of the photo's width (x) and height (y) measured from the photo's top-left corner (0 to 1). Name them as the card reads upright: top_left is the card's own top-left corner even if the photo is rotated. Place them on the card's edges, not on the text. If the card fills the whole photo, use 0 and 1.
+- If the photo is not a business card, or is too blurry to read, set is_business_card to false, leave the rest empty, and give card_corners as the whole photo (0 and 1).`;
 
 export interface TokenUsage {
   input_tokens: number;
@@ -257,6 +276,33 @@ export async function readCard(image: Buffer, mediaType: ImageType, opts: { apiK
   } catch {
     throw new CardReadError(502, 'Card reading returned something unexpected. Try again, or type the details in.', 'card_reading_failed', usage, answered);
   }
+}
+
+// Claude's corners, kept only when they make a card-sized four-sided shape
+// inside the photo (each point clamped to 0..1); otherwise the page keeps
+// the whole photo. Corners are [top left, top right, bottom right, bottom
+// left] as {x, y} fractions.
+export function cardCorners(c: CardCorners | null | undefined): { x: number; y: number }[] | null {
+  if (!c) return null;
+  const pts = [c.top_left, c.top_right, c.bottom_right, c.bottom_left];
+  if (pts.some((q) => !q || !Number.isFinite(q.x) || !Number.isFinite(q.y))) return null;
+  const clamped = pts.map((q) => ({ x: Math.min(1, Math.max(0, q.x)), y: Math.min(1, Math.max(0, q.y)) }));
+  // shoelace area: the card covers at least 4% of the photo, its corners go
+  // clockwise (a mirrored order would flip the image) and the shape is convex
+  let area = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = clamped[i];
+    const b = clamped[(i + 1) % 4];
+    area += a.x * b.y - b.x * a.y;
+  }
+  if (area / 2 < 0.04) return null;
+  for (let i = 0; i < 4; i++) {
+    const [a, b, d] = [clamped[i], clamped[(i + 1) % 4], clamped[(i + 2) % 4]];
+    if ((b.x - a.x) * (d.y - b.y) - (b.y - a.y) * (d.x - b.x) <= 0) return null;
+  }
+  // the whole photo: nothing to crop
+  const whole = clamped.every((q, i) => Math.abs(q.x - [0, 1, 1, 0][i]) < 0.01 && Math.abs(q.y - [0, 0, 1, 1][i]) < 0.01);
+  return whole ? null : clamped;
 }
 
 // Phones as the CRM shows them (+1 888-706-7227 ext703), so the review form
@@ -675,9 +721,12 @@ export async function cardScanRoutes(app: FastifyInstance) {
       name: scanName(fields), reader, model, outcome: fields.is_business_card ? 'read' : 'not_a_card', error: null, usage, seconds: seconds(), fileId
     });
     formatPhones(fields);
+    // where to crop: the page straightens the photo with these (Claude only)
+    const corners = cardCorners(fields.card_corners);
+    delete fields.card_corners;
     const domain = companyDomain(fields.email, fields.website);
     const [contacts, companies] = await Promise.all([matchContacts(p, fields), matchCompanies(p, fields.company, domain)]);
-    return { scan_id: scanId, reader, fields, company_domain: domain, matches: { contacts, companies } };
+    return { scan_id: scanId, reader, fields, corners, company_domain: domain, matches: { contacts, companies } };
   });
 
   // ---- admin: Settings → Card scanner ----

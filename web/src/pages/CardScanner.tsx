@@ -1,21 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, Check, IdCard, ImagePlus, Keyboard, Loader2, RotateCcw, X } from 'lucide-react';
+import { Camera, Check, Crop, IdCard, ImagePlus, Keyboard, Loader2, RotateCcw, X } from 'lucide-react';
 import { api, ApiError, getSchema, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { uploadFile } from '../lib/files';
 import { useIsMobile } from '../lib/use-mobile';
-import { findCard, forOcr, insetQuad, loadPhoto, straighten, toBase64, toBlob, type Point, type Quad } from '../lib/card-image';
+import { forOcr, insetQuad, loadPhoto, straighten, toBase64, toBlob, type Point, type Quad } from '../lib/card-image';
 import { PropertyInput } from '../components/ui';
 import { Select } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
 import { MobileHeader } from '../components/MobileNav';
 import '../scanner.css';
 
-// Business card scanner (/scan). Take or pick a photo, check the corners the
-// page found, and the card is straightened, uploaded (kept on the contact)
-// and read by the API (api/src/card-scan.ts: Tesseract on the server, or
-// Claude when an admin added a key in Settings → Card scanner). The person
+// Business card scanner (/scan). Take or pick a photo and the API reads it
+// (api/src/card-scan.ts). With Claude (an admin added a key in Settings →
+// Card scanner) the photo goes as taken, Claude also says where the card's
+// corners are, and the page straightens the card from them for the contact's
+// card photo. With Tesseract the person drags the corners first, since
+// Tesseract needs the card straightened to read it. Either way the corners
+// can be adjusted on the review screen (hover the photo, or the button on
+// phones), which only re-crops the saved photo. The person
 // checks what was read, picks an existing contact or company when one
 // matches, and saves. Trade Show Mode also records the contact at an event
 // with a follow-up priority, and stays on between scans (kept in this
@@ -44,9 +48,15 @@ interface TradeShow { on: boolean; eventId: string; newEvent: string; priority: 
 
 type Step =
   | { kind: 'capture' }
-  | { kind: 'crop'; photo: HTMLCanvasElement; url: string; quad: Quad; found: boolean }
+  | { kind: 'crop'; photo: HTMLCanvasElement; url: string; quad: Quad }
   | { kind: 'reading'; cardUrl: string }
-  | { kind: 'review'; cardUrl: string | null; fileId: string | null; scanId: string | null };
+  // photo, photoUrl and quad: the photo as taken and where the card is in
+  // it, for adjusting the corners; fileId: the upload the card was read from
+  | { kind: 'review'; cardUrl: string | null; fileId: string | null; scanId: string | null; photo: HTMLCanvasElement | null; photoUrl: string | null; quad: Quad | null };
+
+const wholePhoto = (p: HTMLCanvasElement): Quad => [{ x: 0, y: 0 }, { x: p.width, y: 0 }, { x: p.width, y: p.height }, { x: 0, y: p.height }];
+const cardFileName = () => `business-card-${new Date().toISOString().slice(0, 10)}.jpg`;
+const uploadCanvas = async (c: HTMLCanvasElement) => uploadFile(new File([await toBlob(c)], cardFileName(), { type: 'image/jpeg' }), null);
 
 // the contact fields on the review form, in order
 const FIELDS: { key: keyof CardFields; label: string; wide?: boolean }[] = [
@@ -124,6 +134,11 @@ export function CardScanner() {
   const [followUp, setFollowUp] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  // the corners being dragged on the review screen (null: not adjusting)
+  const [adjusting, setAdjusting] = useState<Quad | null>(null);
+  // the file saved on the contact: the straightened card, uploaded while the
+  // person reviews (falls back to the photo the card was read from)
+  const cardFile = useRef<Promise<string | null> | null>(null);
 
   // emails are unique: a contact already using this one can only be updated
   const emailMatch = matches.contacts.find((c) => c.why === 'email' && (c.email ?? '').toLowerCase() === form.email.trim().toLowerCase());
@@ -132,7 +147,8 @@ export function CardScanner() {
     if (emailMatch && contactChoice === 'new') setContactChoice(emailMatch.id);
   }, [emailMatch?.id, contactChoice]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startReview = (fields: CardFields | null, m: Matches, d: string | null, cardUrl: string | null, fileId: string | null, scanId: string | null = null) => {
+  type Pic = { photo: HTMLCanvasElement; photoUrl: string; quad: Quad };
+  const startReview = (fields: CardFields | null, m: Matches, d: string | null, cardUrl: string | null, fileId: string | null, scanId: string | null = null, pic: Pic | null = null) => {
     const f: Form = { ...EMPTY_FORM };
     if (fields) for (const { key } of FIELDS) f[key] = String(fields[key] ?? '');
     setForm(f);
@@ -145,19 +161,20 @@ export function CardScanner() {
     setPriority(trade.priority);
     setFollowUp('');
     setNote('');
-    setStep({ kind: 'review', cardUrl, fileId, scanId });
+    setAdjusting(null);
+    if (!fileId) cardFile.current = null;
+    setStep({ kind: 'review', cardUrl, fileId, scanId, photo: pic?.photo ?? null, photoUrl: pic?.photoUrl ?? null, quad: pic?.quad ?? null });
   };
 
   // ---- capture ----
   const takeInput = useRef<HTMLInputElement>(null);
   const pickInput = useRef<HTMLInputElement>(null);
 
-  // Claude reads photos as taken (scripts/card-bench), so it skips the
-  // corners step and gets the whole photo; Tesseract needs the card cut out
-  // and straightened, so the person checks the corners first.
+  // Claude reads photos as taken and says where the card is, so it skips the
+  // corners step; Tesseract needs the card cut out and straightened first.
   const readerRef = useRef(setup?.reader);
   readerRef.current = setup?.reader;
-  const readRef = useRef<(s: Extract<Step, { kind: 'crop' }>) => Promise<void>>(async () => undefined);
+  const claudeRef = useRef<(photo: HTMLCanvasElement, url: string) => Promise<void>>(async () => undefined);
 
   const openPhoto = useCallback(async (file: Blob) => {
     setError(null);
@@ -165,12 +182,10 @@ export function CardScanner() {
       const photo = await loadPhoto(file);
       const url = photo.toDataURL('image/jpeg', 0.85);
       if (readerRef.current === 'claude') {
-        const { width: w, height: h } = photo;
-        await readRef.current({ kind: 'crop', photo, url, quad: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }], found: true });
+        await claudeRef.current(photo, url);
         return;
       }
-      const found = findCard(photo);
-      setStep({ kind: 'crop', photo, url, quad: found ?? insetQuad(photo.width, photo.height), found: found !== null });
+      setStep({ kind: 'crop', photo, url, quad: insetQuad(photo.width, photo.height) });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -198,6 +213,39 @@ export function CardScanner() {
   }
 
   // ---- read ----
+  // Claude: the photo as taken goes up and is read; Claude's corners (as
+  // fractions of the photo) straighten the card for the contact's photo.
+  async function readWithClaude(photo: HTMLCanvasElement, url: string) {
+    setError(null);
+    setStep({ kind: 'reading', cardUrl: url });
+    let fileId: string | null = null;
+    try {
+      fileId = await uploadCanvas(photo);
+      const readFrom = fileId;
+      const r = await api<{ scan_id: string; fields: CardFields; corners: Point[] | null; company_domain: string | null; matches: Matches }>('POST', '/v1/card-scans/read', { file_id: fileId });
+      if (!r.fields.is_business_card) setError("That doesn't look like a business card. Fill in what you can, or retake the photo.");
+      if (r.corners?.length === 4) {
+        const quad = r.corners.map((c) => ({ x: c.x * photo.width, y: c.y * photo.height })) as Quad;
+        const card = straighten(photo, quad);
+        cardFile.current = uploadCanvas(card).catch(() => readFrom);
+        startReview(r.fields, r.matches, r.company_domain, card.toDataURL('image/jpeg', 0.85), fileId, r.scan_id, { photo, photoUrl: url, quad });
+      } else {
+        cardFile.current = Promise.resolve(fileId);
+        startReview(r.fields, r.matches, r.company_domain, url, fileId, r.scan_id, { photo, photoUrl: url, quad: wholePhoto(photo) });
+      }
+    } catch (err) {
+      setError(`${(err as Error).message}${fileId ? ' Type the details in below.' : ''}`);
+      if (fileId) {
+        cardFile.current = Promise.resolve(fileId);
+        startReview(null, { contacts: [], companies: [] }, null, url, fileId, null, { photo, photoUrl: url, quad: wholePhoto(photo) });
+      } else {
+        setStep({ kind: 'capture' });
+      }
+    }
+  }
+  claudeRef.current = readWithClaude;
+
+  // Tesseract (and no reader): the card straightened from the dragged corners goes up and is read.
   async function readCard(s: Extract<Step, { kind: 'crop' }>) {
     setError(null);
     const card = straighten(s.photo, s.quad);
@@ -206,9 +254,11 @@ export function CardScanner() {
     let fileId: string | null = null;
     try {
       const blob = await toBlob(card);
-      fileId = await uploadFile(new File([blob], `business-card-${new Date().toISOString().slice(0, 10)}.jpg`, { type: 'image/jpeg' }), null);
+      fileId = await uploadFile(new File([blob], cardFileName(), { type: 'image/jpeg' }), null);
+      cardFile.current = Promise.resolve(fileId);
+      const pic = { photo: s.photo, photoUrl: s.url, quad: s.quad };
       if (setup?.reader === 'none') {
-        startReview(null, { contacts: [], companies: [] }, null, cardUrl, fileId);
+        startReview(null, { contacts: [], companies: [] }, null, cardUrl, fileId, null, pic);
         return;
       }
       const r = await api<{ scan_id: string; fields: CardFields; company_domain: string | null; matches: Matches }>('POST', '/v1/card-scans/read', {
@@ -216,14 +266,23 @@ export function CardScanner() {
         ...(setup?.reader === 'tesseract' ? { ocr_image: await toBase64(forOcr(card)) } : {})
       });
       if (!r.fields.is_business_card) setError("That doesn't look like a business card. Fill in what you can, or retake the photo.");
-      startReview(r.fields, r.matches, r.company_domain, cardUrl, fileId, r.scan_id);
+      startReview(r.fields, r.matches, r.company_domain, cardUrl, fileId, r.scan_id, pic);
     } catch (err) {
       setError(`${(err as Error).message}${fileId ? ' Type the details in below.' : ''}`);
-      if (fileId) startReview(null, { contacts: [], companies: [] }, null, cardUrl, fileId);
-      else setStep(readerRef.current === 'claude' ? { kind: 'capture' } : s);
+      if (fileId) startReview(null, { contacts: [], companies: [] }, null, cardUrl, fileId, null, { photo: s.photo, photoUrl: s.url, quad: s.quad });
+      else setStep(s);
     }
   }
-  readRef.current = readCard;
+
+  // new corners on the review screen: the saved photo is cut again (the card is not read again)
+  function applyCorners(s: Extract<Step, { kind: 'review' }>, quad: Quad) {
+    if (!s.photo) return;
+    const card = straighten(s.photo, quad);
+    const fallback = s.fileId;
+    cardFile.current = uploadCanvas(card).catch(() => fallback);
+    setStep({ ...s, cardUrl: card.toDataURL('image/jpeg', 0.85), quad });
+    setAdjusting(null);
+  }
 
   // matches again after the details change
   const firstMatch = useRef(true);
@@ -257,7 +316,7 @@ export function CardScanner() {
     try {
       const r = await api<{ contact_id: string; created: boolean; event_id: string | null }>('POST', '/v1/card-scans/save', {
         scan_id: s.scanId,
-        file_id: s.fileId,
+        file_id: (await cardFile.current) ?? s.fileId,
         contact_id: contactChoice === 'new' ? null : contactChoice,
         contact: form,
         company: companyChoice === 'none' ? null : companyChoice === 'new' ? { name: form.company, domain } : { id: companyChoice },
@@ -346,7 +405,7 @@ export function CardScanner() {
 
       {step.kind === 'crop' && (
         <div className="scan-crop">
-          <p className="muted">{step.found ? 'Check the corners sit on the card, then read it.' : "Couldn't find the card's edges. Drag the corners onto the card."}</p>
+          <p className="muted">Drag the corners onto the card's corners, then read it.</p>
           <CornerEditor url={step.url} width={step.photo.width} height={step.photo.height} quad={step.quad} onChange={(quad) => setStep({ ...step, quad })} />
           <div className="scan-actions">
             <button className="btn" onClick={() => setStep({ kind: 'capture' })}><RotateCcw size={16} /> Retake</button>
@@ -365,7 +424,25 @@ export function CardScanner() {
       {step.kind === 'review' && (
         <div className="scan-review">
           <div className="scan-review-card">
-            {step.cardUrl ? <img src={step.cardUrl} alt="The card" /> : <div className="scan-no-photo">No photo</div>}
+            {adjusting && step.photo && step.photoUrl ? (
+              <div className="scan-adjusting">
+                <p className="muted">Drag the corners onto the card's corners. This only changes the saved photo.</p>
+                <CornerEditor url={step.photoUrl} width={step.photo.width} height={step.photo.height} quad={adjusting} onChange={setAdjusting} />
+                <div className="scan-actions">
+                  <button className="btn" onClick={() => setAdjusting(null)}>Cancel</button>
+                  <button className="btn primary" onClick={() => applyCorners(step, adjusting)}><Check size={16} /> Done</button>
+                </div>
+              </div>
+            ) : (
+              <div className="scan-card-photo">
+                {step.cardUrl ? <img src={step.cardUrl} alt="The card" /> : <div className="scan-no-photo">No photo</div>}
+                {step.photo && (
+                  <button className="btn small scan-adjust" onClick={() => setAdjusting(step.quad ?? wholePhoto(step.photo!))}>
+                    <Crop size={14} /> Adjust corners
+                  </button>
+                )}
+              </div>
+            )}
             {read && <Extras read={read} />}
           </div>
           <div className="scan-review-form">
