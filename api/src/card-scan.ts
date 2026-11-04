@@ -27,11 +27,12 @@ import { parseCard, wordsFromTsv, wordsToLines } from './card-parse.js';
 //   program must be installed, docs/deploy.md), and card-parse.ts sorts its
 //   text into fields with rules. Nothing leaves the server.
 // - claude: the photo goes to Anthropic with the tenant's own API key, and
-//   Claude returns the fields. Much better on poor photos (scripts/card-bench).
+//   Claude Haiku 5.5 returns the fields. Much better on poor photos
+//   (scripts/card-bench, where Opus 5.5 read no better at about 40 times the
+//   cost, so there is no model to pick).
 // Without either the page still works: the person types the details in.
 
-const DEFAULT_MODEL = 'claude-haiku-5-5';
-export const CLAUDE_MODELS = ['claude-haiku-5-5', 'claude-opus-5-5'] as const;
+const MODEL = 'claude-haiku-5-5';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
@@ -49,15 +50,14 @@ function anthropic(apiKey: string): Anthropic {
 
 interface ScanSettings {
   reader: 'tesseract' | 'claude';
-  claude_model: string;
   key: string | null;
   key_hint: string | null;
 }
 
 async function scanSettings(): Promise<ScanSettings> {
-  const { rows } = await pool.query('select reader, claude_model, anthropic_key, key_hint from auth.card_scan_settings');
+  const { rows } = await pool.query('select reader, anthropic_key, key_hint from auth.card_scan_settings');
   const r = rows[0];
-  if (!r) return { reader: 'tesseract', claude_model: DEFAULT_MODEL, key: null, key_hint: null };
+  if (!r) return { reader: 'tesseract', key: null, key_hint: null };
   let key: string | null = null;
   if (r.anthropic_key && secretBoxReady()) {
     try {
@@ -66,7 +66,7 @@ async function scanSettings(): Promise<ScanSettings> {
       key = null; // sealed with another CALENDAR_TOKEN_KEY
     }
   }
-  return { reader: r.reader, claude_model: r.claude_model, key, key_hint: r.key_hint };
+  return { reader: r.reader, key, key_hint: r.key_hint };
 }
 
 // ---- Tesseract ------------------------------------------------------------------
@@ -177,7 +177,6 @@ const INSTRUCTIONS = `Read the business card in the photo and return the person'
 - other_text: anything else on the card worth keeping (certifications, clearances, a second language side, a handwritten note), one item per line.
 - If the photo is not a business card, or is too blurry to read, set is_business_card to false and leave the rest empty.`;
 
-// Reads a card with Claude (also used by scripts/card-bench to compare models).
 export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
@@ -217,11 +216,11 @@ export function estimateCost(model: string, u: TokenUsage): number | null {
   return Math.round(((u.input_tokens * p.input + u.output_tokens * p.output) / 1e6) * 1e6) / 1e6;
 }
 
-// Reads a card with Claude (also used by scripts/card-bench to compare models).
+// Reads a card with Claude Haiku 5.5 (model: only scripts/card-bench, to compare models).
 // model in the answer is the one that actually replied (a fallback may have).
 export async function readCard(image: Buffer, mediaType: ImageType, opts: { apiKey: string; model?: string }): Promise<{ fields: CardFields; usage: TokenUsage; model: string }> {
   const ai = anthropic(opts.apiKey);
-  const model = opts.model ?? DEFAULT_MODEL;
+  const model = opts.model ?? MODEL;
   let message: Anthropic.Beta.Messages.BetaMessage;
   try {
     message = await ai.beta.messages.create({
@@ -551,8 +550,7 @@ async function activeReader(s: ScanSettings): Promise<'claude' | 'tesseract' | '
 function settingsOut(s: ScanSettings, tesseract: string | null) {
   return {
     reader: s.reader,
-    claude_model: s.claude_model,
-    claude_models: CLAUDE_MODELS,
+    model: MODEL,
     has_key: s.key_hint !== null,
     // a key is stored but cannot be opened (CALENDAR_TOKEN_KEY changed or missing)
     key_unreadable: s.key_hint !== null && s.key === null,
@@ -563,9 +561,9 @@ function settingsOut(s: ScanSettings, tesseract: string | null) {
 }
 
 // Asks Anthropic about the model with the key: cheap, and fails on a bad key.
-async function checkKey(apiKey: string, model: string): Promise<void> {
+async function checkKey(apiKey: string): Promise<void> {
   try {
-    await anthropic(apiKey).models.retrieve(model);
+    await anthropic(apiKey).models.retrieve(MODEL);
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
       throw badRequest('Anthropic did not accept this API key.');
@@ -642,7 +640,7 @@ export async function cardScanRoutes(app: FastifyInstance) {
     let model: string | null = null;
     try {
       if (reader === 'claude') {
-        const r = await readCard(file.bytes, type as ImageType, { apiKey: settings.key!, model: settings.claude_model });
+        const r = await readCard(file.bytes, type as ImageType, { apiKey: settings.key! });
         ({ fields, usage, model } = r);
       } else {
         fields = await readWithTesseract(ocr!);
@@ -650,7 +648,7 @@ export async function cardScanRoutes(app: FastifyInstance) {
     } catch (err) {
       const e = err as Error;
       await recordScan(p, {
-        name: 'Unreadable card', reader, model: err instanceof CardReadError ? err.model : reader === 'claude' ? settings.claude_model : null,
+        name: 'Unreadable card', reader, model: err instanceof CardReadError ? err.model : reader === 'claude' ? MODEL : null,
         outcome: 'failed', error: e.message, usage: err instanceof CardReadError ? err.usage : null, seconds: seconds(), fileId
       }).catch((logErr) => req.log.error(logErr, 'could not record a failed card scan'));
       throw err;
@@ -674,20 +672,16 @@ export async function cardScanRoutes(app: FastifyInstance) {
 
   // anthropic_key: a new key (checked with Anthropic before it is stored), or
   // null to remove it (which also switches the reader back to Tesseract).
-  app.put<{ Body: { reader?: unknown; claude_model?: unknown; anthropic_key?: unknown } }>('/v1/card-scans/settings', async (req) => {
+  app.put<{ Body: { reader?: unknown; anthropic_key?: unknown } }>('/v1/card-scans/settings', async (req) => {
     const p = req.principal!;
     if (!isAdmin(p)) throw forbidden('only admins can change card scanner settings');
     requireRecentSignIn(p);
     const b = req.body ?? {};
     const cur = await scanSettings();
-    const next = { reader: cur.reader, claude_model: cur.claude_model };
+    const next = { reader: cur.reader };
     if (b.reader !== undefined) {
       if (b.reader !== 'tesseract' && b.reader !== 'claude') throw badRequest('reader must be "tesseract" or "claude"');
       next.reader = b.reader;
-    }
-    if (b.claude_model !== undefined) {
-      if (!(CLAUDE_MODELS as readonly unknown[]).includes(b.claude_model)) throw badRequest(`claude_model must be one of ${CLAUDE_MODELS.join(', ')}`);
-      next.claude_model = b.claude_model as string;
     }
     let keyChange: { sealed: Buffer | null; hint: string | null } | undefined;
     if (b.anthropic_key === null || b.anthropic_key === '') {
@@ -697,22 +691,22 @@ export async function cardScanRoutes(app: FastifyInstance) {
       const key = typeof b.anthropic_key === 'string' ? b.anthropic_key.trim() : '';
       if (!/^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(key)) throw badRequest('That does not look like an Anthropic API key (they start with sk-ant-).');
       if (!secretBoxReady()) throw new ApiError(503, 'The server cannot store secrets: CALENDAR_TOKEN_KEY is not set.', 'not_configured');
-      await checkKey(key, next.claude_model);
+      await checkKey(key);
       keyChange = { sealed: seal(key), hint: key.slice(-4) };
     }
     if (next.reader === 'claude' && !(keyChange ? keyChange.sealed : cur.key)) throw badRequest('Add an Anthropic API key before switching to Claude.');
     await pool.query(
-      `insert into auth.card_scan_settings (id, reader, claude_model, anthropic_key, key_hint, updated_by, updated_at)
-       values (true, $1, $2, $3, $4, $5, now())
-       on conflict (id) do update set reader = excluded.reader, claude_model = excluded.claude_model,
-         anthropic_key = case when $6 then excluded.anthropic_key else card_scan_settings.anthropic_key end,
-         key_hint = case when $6 then excluded.key_hint else card_scan_settings.key_hint end,
+      `insert into auth.card_scan_settings (id, reader, anthropic_key, key_hint, updated_by, updated_at)
+       values (true, $1, $2, $3, $4, now())
+       on conflict (id) do update set reader = excluded.reader,
+         anthropic_key = case when $5 then excluded.anthropic_key else card_scan_settings.anthropic_key end,
+         key_hint = case when $5 then excluded.key_hint else card_scan_settings.key_hint end,
          updated_by = excluded.updated_by, updated_at = now()`,
-      [next.reader, next.claude_model, keyChange?.sealed ?? null, keyChange?.hint ?? null, p.actor, keyChange !== undefined]
+      [next.reader, keyChange?.sealed ?? null, keyChange?.hint ?? null, p.actor, keyChange !== undefined]
     );
     await logEvent(req, 'settings.updated', {
       target: { type: 'setting', id: 'card_scanner' },
-      details: { reader: next.reader, claude_model: next.claude_model, ...(keyChange ? { anthropic_key: keyChange.sealed ? 'replaced' : 'removed' } : {}) }
+      details: { reader: next.reader, ...(keyChange ? { anthropic_key: keyChange.sealed ? 'replaced' : 'removed' } : {}) }
     });
     return settingsOut(await scanSettings(), await tesseractAvailable());
   });

@@ -7,13 +7,11 @@ import { Select } from '../components/Select';
 
 // Settings -> Card scanner (admins): how the business card scanner reads
 // cards (api/src/card-scan.ts). Tesseract on this server by default; Claude
-// with the tenant's own Anthropic API key when an admin adds one. The key is
+// Haiku 5.5 with the tenant's own Anthropic API key when an admin adds one. The key is
 // stored sealed and never shown again, only its last four characters.
 
 interface State {
   reader: 'tesseract' | 'claude';
-  claude_model: string;
-  claude_models: string[];
   has_key: boolean;
   key_unreadable: boolean;
   key_hint: string | null;
@@ -21,22 +19,17 @@ interface State {
   can_store_secrets: boolean;
 }
 
-const MODEL_LABELS: Record<string, string> = {
-  'claude-haiku-5-5': 'Claude Haiku 5.5 (faster, lower cost)',
-  'claude-opus-5-5': 'Claude Opus 5.5'
-};
-
 export function CardScannerSettings() {
   const { toast } = useApp();
   const [state, setState] = useState<State | null>(null);
-  const [draft, setDraft] = useState<{ reader: State['reader']; claude_model: string } | null>(null);
+  const [draft, setDraft] = useState<{ reader: State['reader'] } | null>(null);
   const [key, setKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     api<State>('GET', '/v1/card-scans/settings')
-      .then((s) => { setState(s); setDraft({ reader: s.reader, claude_model: s.claude_model }); })
+      .then((s) => { setState(s); setDraft({ reader: s.reader }); })
       .catch((err) => setError((err as Error).message));
   }, []);
 
@@ -46,7 +39,7 @@ export function CardScannerSettings() {
     try {
       const s = await api<State>('PUT', '/v1/card-scans/settings', body);
       setState(s);
-      setDraft({ reader: s.reader, claude_model: s.claude_model });
+      setDraft({ reader: s.reader });
       setKey('');
       toast(done);
     } catch (err) {
@@ -62,7 +55,7 @@ export function CardScannerSettings() {
   if (!state || !draft) {
     return <SettingsPage title="Card scanner" description={description}>{error ? <div className="error">{error}</div> : <TableSkeleton rows={3} />}</SettingsPage>;
   }
-  const dirty = draft.reader !== state.reader || draft.claude_model !== state.claude_model;
+  const dirty = draft.reader !== state.reader;
 
   return (
     <SettingsPage title="Card scanner" description={description}>
@@ -72,7 +65,7 @@ export function CardScannerSettings() {
           htmlFor="card-reader"
           hint={draft.reader === 'tesseract'
             ? 'Tesseract reads the photo on this server, so it never leaves the CRM. Good on clear, flat photos; glare, blur and fancy fonts trip it up.'
-            : 'The photo goes to Anthropic with your API key, and Claude reads it. Much better on poor photos and unusual layouts. Anthropic bills your account for each card.'}
+            : 'The photo goes to Anthropic with your API key, and Claude Haiku 5.5 reads it. Much better on poor photos and unusual layouts. Anthropic bills your account for each card (about a twentieth of a cent).'}
         >
           <Select
             id="card-reader"
@@ -122,18 +115,10 @@ export function CardScannerSettings() {
             </div>
           )}
         </SettingRow>
-        <SettingRow label="Model" htmlFor="claude-model" hint="In our tests on 72 card photos both read about as well; Haiku was faster.">
-          <Select
-            id="claude-model"
-            value={draft.claude_model}
-            onChange={(v) => setDraft({ ...draft, claude_model: v })}
-            options={state.claude_models.map((m) => ({ value: m, label: MODEL_LABELS[m] ?? m }))}
-          />
-        </SettingRow>
       </SettingsSection>
 
       <SaveBar dirty={dirty} error={error}>
-        <button className="btn" disabled={!dirty || busy} onClick={() => setDraft({ reader: state.reader, claude_model: state.claude_model })}>Discard</button>
+        <button className="btn" disabled={!dirty || busy} onClick={() => setDraft({ reader: state.reader })}>Discard</button>
         <button className="btn primary" disabled={!dirty || busy} onClick={() => put(draft, 'Card scanner settings saved.')}>Save</button>
       </SaveBar>
     </SettingsPage>
