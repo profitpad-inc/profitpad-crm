@@ -7,8 +7,6 @@ import { getObject } from '../registry.js';
 import { cleanSlug, onWrite, SLUG_RE, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
-import { renderQuotePdf } from '../pdf/quote.js';
-import { buildQuoteLayout, loadQuoteDocument, type QuoteLayout } from '../quote-document.js';
 import { renderPdf, renderTemplate, templateFor, type TemplateRow } from '../templates.js';
 import { invoicePayable, publicPayment, quotePayable, type PublicPayment } from '../payments/state.js';
 
@@ -123,12 +121,10 @@ export interface PublicQuote {
   decline_reason: string | null;
   company: string | null;
   contact: { name: string | null; email: string | null } | null;
-  // extra: the configured extra columns' strings, by property (quote-document.ts)
-  lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null; extra?: Record<string, string> }[];
-  // what the quote shows beyond its fixed parts (Settings -> Quote document)
-  layout: QuoteLayout;
+  lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null }[];
   // the quote drawn by its document template (templates.ts) as a whole HTML
-  // page, shown in a sandboxed iframe; null: the built-in layout
+  // page, shown in a sandboxed iframe; null: no template could draw it (the
+  // page says so; there is no built-in layout any more)
   document_html: string | null;
   signing_fields: SigningField[];
   signed_fields: Record<string, string> | null;
@@ -283,8 +279,7 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
   const status = q.status === 'sent' && q.past_expiry ? 'expired' : q.status;
 
   const { lines: withIds, company, contact } = await linkedParts('pc_0022', q.id);
-  const { layout, lineExtra } = await buildQuoteLayout(await loadQuoteDocument(), q.id, withIds.map((l) => l.id), q.currency);
-  const outLines = withIds.map(({ id, ...l }) => (lineExtra.has(id) ? { ...l, extra: lineExtra.get(id) } : l));
+  const outLines = withIds.map(({ id: _id, ...l }) => l);
   const lineTotal = outLines.reduce((s, l) => s + (l.amount ?? 0), 0);
   const amount = q.amount !== null ? Number(q.amount) : outLines.length ? lineTotal : null;
   const payable = quotePayable({
@@ -304,7 +299,6 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     company,
     contact,
     lines: outLines,
-    layout,
     document_html: (await quoteDocument(q.id))?.html ?? null,
     signing_fields: parseJson<SigningField[]>(q.signing_fields, []),
     signed_fields: parseJson<Record<string, string> | null>(q.signed_fields, null),
@@ -319,9 +313,8 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
 }
 
 // The quote drawn by its document template (the one linked to it, else the
-// default), or null for the built-in layout. A template that fails to draw
-// (or no renderer for a React one) falls back to the built-in layout, so the
-// customer always sees their quote; the error goes to the log.
+// default; migration 0080 keeps an active default for quotes), or null when
+// none can draw it. The error goes to the log.
 async function quoteDocument(quoteId: string): Promise<{ template: TemplateRow; html: string } | null> {
   const template = await templateFor(await getObject('quotes'), quoteId);
   if (!template) return null;
@@ -443,16 +436,15 @@ export async function publicRoutes(app: FastifyInstance) {
   app.get<{ Params: { key: string } }>('/v1/public/quotes/:key/pdf', async (req, reply) => {
     rateLimit(req, 'quote-read', 60);
     const quote = await loadPublicQuote(req.params.key);
-    // the template's page printed by Chromium; the built-in PDF otherwise (or if that fails)
-    let pdf: Buffer | null = null;
+    // the template's page printed by Chromium
     const drawn = quote.document_html ? await quoteDocument(quote.id) : null;
-    if (drawn) {
-      pdf = await renderPdf(drawn.template, drawn.html).catch((err: Error) => {
-        req.log.error({ err }, 'document template PDF failed');
-        return null;
-      });
-    }
-    pdf ??= await renderQuotePdf(quote, await theme());
+    const pdf = drawn
+      ? await renderPdf(drawn.template, drawn.html).catch((err: Error) => {
+          req.log.error({ err }, 'document template PDF failed');
+          return null;
+        })
+      : null;
+    if (!pdf) throw new ApiError(503, 'The PDF of this quote could not be made right now. Please try again later or contact us.', 'unavailable');
     const file = (quote.name ?? 'quote').replace(/[^A-Za-z0-9 _.-]+/g, '').trim().replace(/\s+/g, '-') || 'quote';
     reply
       .header('cache-control', 'no-store')

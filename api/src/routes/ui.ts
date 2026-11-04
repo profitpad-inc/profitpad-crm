@@ -6,7 +6,6 @@ import { logEvent } from '../audit.js';
 import { approveFields, approveUrl, canApprove, requestFields } from '../approval.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
-import { validateQuoteDocument } from '../quote-document.js';
 
 // Admins: keys with the admin scope, or user keys whose roles include an admin role.
 export function isAdmin(p: Principal): boolean {
@@ -441,10 +440,10 @@ export async function uiRoutes(app: FastifyInstance) {
     requireAdmin(p);
     if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
     const validators: Record<string, (v: unknown) => unknown> = {
-      theme: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo, quote_document: validateQuoteDocument
+      theme: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo
     };
     const validate = validators[req.params.key];
-    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, logo, forms, quote_document)');
+    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, logo, forms)');
     const value = await validate(req.body);
     await pool.query(
       `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)

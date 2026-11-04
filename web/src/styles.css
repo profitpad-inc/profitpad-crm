@@ -60,6 +60,8 @@ input, .select-face, textarea {
   width: 100%;
 }
 textarea { resize: vertical; max-width: 100%; }
+/* TextArea grow: its height follows the text (up to half the window), never scrolls sideways */
+textarea.grow { resize: none; overflow-x: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 input[type='color'] { width: auto; }
 /* Every checkbox is drawn as an on/off switch, except the table's row picking (table.css) */
 input[type='checkbox'] { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 28px; height: 16px; margin: 0; padding: 0; border: 0; border-radius: 999px;

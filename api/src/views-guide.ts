@@ -17,7 +17,7 @@ A document template draws a record as a document: the customer's quote page and 
 The result is one static HTML page. The customer sees it in a sandboxed iframe (no scripts run), and the PDF is that page printed by Chromium with scripts off, so they look the same. Write a whole page (<!doctype html>, <style> in the head) sized for paper: for US Letter, 8.5in wide. Use @media print for PDF-only changes (no drop shadows, no grey backdrop) and @page { size: letter; margin: 0 } when the page draws its own margins. page_size, orientation and page_margin on the template are the PDF defaults; a CSS @page rule wins. <script> never runs: compute values with Liquid instead.
 
 ## Which template a record uses
-The template linked to the record (association; a quote links to at most one), else the published template marked default for that object, else the CRM's built-in layout. Only published templates are used for customers; set_default_document_template picks the default.
+The template linked to the record (association; a quote links to at most one), else the published template marked default for that object. There is no built-in layout: quotes always have exactly one active, published default (the CRM refuses to archive, delete or un-default it until another template is the default), and the "Standard quote" template that came with the CRM can be archived but never deleted. Only published templates are used for customers; set_default_document_template picks the default.
 
 ## data (see it with get_document_template_data)
 - record, and the same object under the singular name (quote): every property by api_name (a single-value dropdown as its value, numbers as numbers, dates YYYY-MM-DD, times ISO), id, and _text: each property as the CRM shows it (dropdown labels, money, long dates). public_key and customer_ip are never included.
@@ -29,7 +29,7 @@ The template linked to the record (association; a quote links to at most one), e
 Outside images (https) and web fonts in url(...) are downloaded by the server and written into the page, so they show in the PDF too (3 MB each). Barcodes need no outside service: in Liquid {{ quote.name | barcode }} (Code 128; | barcode: "code39", 12 for type and height in mm) or {{ quote.name | qrcode }}; or anywhere (an <img> or CSS url) the address https://barcode.invalid/<type>?text=<text>&height=<mm> (code128, code39, ean13, upca, qrcode, datamatrix, pdf417 and the other bwip-js types). Linear barcodes stretch to the size CSS gives them.
 
 ## Liquid filters beyond the standard ones
-money: currency ("$1,240.00"), number: decimals ("1,240.5"), fixed: decimals ("15895.500", no separators, like printed forms), barcode, qrcode, zone_abbr: "America/Chicago" (CST/CDT at that moment), and date with a time zone: {{ now | date: "%m/%d/%Y %I:%M %p", "America/Chicago" }}. sum, map, where, default and the rest of liquidjs work as usual.
+money: currency ("$1,240.00"), number: decimals ("1,240.5"), fixed: decimals ("15895.500", no separators, like printed forms), barcode, qrcode, zone_abbr: "America/Chicago" (CST/CDT at that moment), parse_json (a JSON text property as data: {% assign answers = quote.signed_fields | parse_json %}), and date with a time zone: {{ now | date: "%m/%d/%Y %I:%M %p", "America/Chicago" }}. sum, map, where, default and the rest of liquidjs work as usual.
 
 ## How to build one (or copy an existing document exactly)
 1. get_document_template_data for a real record: learn what is there. Missing fields need properties (create_property) or a SQL source.

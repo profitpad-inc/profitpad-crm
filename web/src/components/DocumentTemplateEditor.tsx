@@ -158,9 +158,10 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
           {canEdit && t.status === 'published' && t.unpublished_changes && (
             <button className="btn small ghost" disabled={busy} onClick={async () => { if (await confirmDialog('Throw away the draft\'s changes? The draft becomes the published version again.', { title: 'Revert the draft?', confirmLabel: 'Revert', danger: true })) void act(() => api('POST', `/v1/document-templates/${record.id}/revert`), 'Draft reverted'); }}>Revert draft</button>
           )}
-          {canEdit && t.status === 'published' && (
-            <button className="btn small" disabled={busy} onClick={() => void act(() => api('POST', `/v1/document-templates/${record.id}/default`, { default: !t.is_default }), t.is_default ? 'No longer the default' : 'Now the default')}>
-              {t.is_default ? 'Stop being the default' : 'Make default'}
+          {/* there is always a default: it changes by making another template the default */}
+          {canEdit && t.status === 'published' && !t.is_default && (
+            <button className="btn small" disabled={busy} onClick={() => void act(() => api('POST', `/v1/document-templates/${record.id}/default`, { default: true }), 'Now the default')}>
+              Make default
             </button>
           )}
           {canEdit && t.unpublished_changes && t.draft_source && (

@@ -1,4 +1,4 @@
-import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useRef, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { api } from './api';
 import { attachComplete, mentionTrigger, snippetTrigger, type MentionUser, type Snippet, type Trigger } from './text-complete';
 
@@ -50,10 +50,12 @@ type Props = TextareaHTMLAttributes<HTMLTextAreaElement> & {
   snippets?: boolean;
   // set: typing @ offers users; called with each one picked
   onMention?: (u: MentionUser) => void;
+  // grows with its text up to half the window's height, then scrolls (always wraps)
+  grow?: boolean;
 };
 
 // A <textarea> that offers snippets on # (and users on @ with onMention).
-export const TextArea = forwardRef<HTMLTextAreaElement, Props>(function TextArea({ snippets: withSnippets = true, onMention, ...rest }, outer) {
+export const TextArea = forwardRef<HTMLTextAreaElement, Props>(function TextArea({ snippets: withSnippets = true, onMention, grow = false, className, ...rest }, outer) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(outer, () => ref.current!, []);
   const record = useContext(RecordContext);
@@ -69,5 +71,20 @@ export const TextArea = forwardRef<HTMLTextAreaElement, Props>(function TextArea
     if (mentions) triggers.push(mentionTrigger(loadMentionUsers, (u) => latest.current.onMention?.(u)));
     return triggers.length ? attachComplete(el, triggers) : undefined;
   }, [withSnippets, mentions]);
-  return <textarea ref={ref} {...rest} />;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!grow || !el) return;
+    const fit = () => {
+      const max = Math.round(window.innerHeight / 2);
+      const borders = el.offsetHeight - el.clientHeight;
+      el.style.height = 'auto';
+      const wanted = el.scrollHeight + borders;
+      el.style.height = `${Math.min(wanted, max)}px`;
+      el.style.overflowY = wanted > max ? 'auto' : 'hidden';
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [grow, rest.value]);
+  return <textarea ref={ref} className={[className, grow ? 'grow' : ''].filter(Boolean).join(' ') || undefined} {...rest} />;
 });

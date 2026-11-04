@@ -11,7 +11,7 @@ import { getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
 import { createRecord } from './records.js';
 import { applyEdits, parseQueries, runQuery, analyzeQuery, type Queries, type SourceEdit } from './views.js';
 import { callFromTemplate, guardedLookup } from './integrations.js';
-import { formatProperty } from './quote-document.js';
+import { formatProperty } from './format.js';
 import { getBrowser, slot } from './render.js';
 
 // Document templates (migration 0075, pc_0057): how a record is drawn as a
@@ -75,7 +75,8 @@ export async function listTemplates(object?: string): Promise<TemplateRow[]> {
 }
 
 // The template a record uses: the one linked to it, else the default for its
-// object type; published ones only. null: the built-in layout.
+// object type; published ones only. null: none (migration 0080 keeps an
+// active, published default for quotes, so only a broken setup gets here).
 export async function templateFor(obj: ObjectDef, recordId: string): Promise<TemplateRow | null> {
   const { rows } = await pool.query(
     `select ${COLUMNS} from crm.pc_0057 t
@@ -193,6 +194,15 @@ liquid.registerFilter('money', (v: unknown, currency?: string) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(n);
   } catch {
     return n.toFixed(2);
+  }
+});
+// a JSON string as data: {% assign answers = quote.signed_fields | parse_json %}
+liquid.registerFilter('parse_json', (v: unknown) => {
+  if (typeof v !== 'string' || !v) return v ?? null;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return null;
   }
 });
 liquid.registerFilter('number', (v: unknown, decimals?: number) => {
@@ -315,16 +325,20 @@ export async function revertTemplate(p: Principal, id: string): Promise<Template
   return loadTemplate(pool, t.id);
 }
 
-// At most one default per object type: making one the default clears the others.
+// Exactly one default per object type: making one the default clears the
+// others. The default can't be turned off on its own (migration 0080 refuses
+// it): make another template the default instead.
 export async function setDefaultTemplate(p: Principal, id: string, on: boolean): Promise<TemplateRow> {
   requireTemplateAdmin(p);
   const t = await loadTemplate(pool, id);
   if (on && t.status !== 'published') throw badRequest('publish the template before making it the default');
+  if (!on && t.is_default) throw badRequest('there must always be a default template: make another template the default instead');
   await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, async (c) => {
+    // the new default first, so there is never a moment without one
+    await c.query('update crm.pc_0057 set is_default = $2 where pc_0057_id = $1', [t.id, [on ? 'true' : 'false']]);
     if (on) {
       await c.query(`update crm.pc_0057 set is_default = '{false}' where object[1] = $1 and is_default[1] = 'true' and pc_0057_id <> $2`, [t.object, t.id]);
     }
-    await c.query('update crm.pc_0057 set is_default = $2 where pc_0057_id = $1', [t.id, [on ? 'true' : 'false']]);
   });
   return loadTemplate(pool, t.id);
 }

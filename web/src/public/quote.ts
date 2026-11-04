@@ -6,7 +6,7 @@ import './public.css';
 import { applyTheme } from '../lib/theme';
 import { el, keyFromHash, publicApi, queryParamsFromLocation, type PublicQuote } from './public-api';
 import { attachSignaturePad } from './signature-pad';
-import { attention, day, details, extraTables, linesTable, parties, terms, totalRow } from './document';
+import { day } from './document';
 import { afterCheckout, paymentBox } from './payment-box';
 
 // Customer view of a quote: /p/quote/#<public key>. View, accept (fill in the
@@ -34,15 +34,6 @@ function message(text: string): void {
 
 function render(q: PublicQuote): void {
   document.title = q.name ?? 'Quote';
-  const meta = parties([
-    ['Prepared for', q.company],
-    ['Attention', ...attention(q.contact)],
-    ['Valid until', q.expiration_date ? day(q.expiration_date) : null]
-  ]);
-
-  const layout = q.layout;
-  const lines = linesTable(q.lines, q.currency, layout);
-
   const actions = el('div', { class: 'pp-actions' });
   const respondBox = el('div', {});
   if (q.status === 'sent') {
@@ -75,34 +66,17 @@ function render(q: PublicQuote): void {
     contact: q.contact
   });
 
-  // A document template draws the whole quote; status, signatures, paying and
-  // the buttons sit under it in a card of their own.
-  if (q.document_html) {
-    root.replaceChildren(el('main', { class: 'pp-page pp-templated' },
-      documentFrame(q.document_html, q.name ?? 'Quote'),
-      el('div', { class: 'pp-card pp-under' },
-        el('div', { class: 'pp-head' },
-          el('h2', {}, q.name ?? 'Quote'),
-          el('span', { class: `pp-pill ${q.status}` }, STATUS[q.status])),
-        note,
-        signatures(q),
-        payment,
-        actions,
-        respondBox)));
-    return;
-  }
-
-  root.replaceChildren(el('main', { class: layout?.orientation === 'landscape' ? 'pp-page wide' : 'pp-page' },
-    el('div', { class: 'pp-card' },
+  // The quote's document template draws the whole quote (there is no
+  // built-in layout); status, signatures, paying and the buttons sit under it
+  // in a card of their own.
+  root.replaceChildren(el('main', { class: 'pp-page pp-templated' },
+    q.document_html
+      ? documentFrame(q.document_html, q.name ?? 'Quote')
+      : el('div', { class: 'pp-card pp-center' }, el('p', {}, 'This quote can\'t be shown right now. Please try again later or contact us.')),
+    el('div', { class: 'pp-card pp-under' },
       el('div', { class: 'pp-head' },
-        el('h1', {}, q.name ?? 'Quote'),
+        el('h2', {}, q.name ?? 'Quote'),
         el('span', { class: `pp-pill ${q.status}` }, STATUS[q.status])),
-      meta,
-      layout ? details(layout.details) : null,
-      lines,
-      totalRow(q.amount, q.currency),
-      layout ? terms(layout.terms_title, layout.terms) : null,
-      ...(layout ? extraTables(layout.tables) : []),
       note,
       signatures(q),
       payment,

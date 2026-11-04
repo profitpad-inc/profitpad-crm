@@ -7,6 +7,7 @@ import { displayName, displayValue, formatValue, initials, nameProperties, objec
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { useAddressGroups, withAddressesTogether } from '../components/AddressInput';
 import { PublicLinkCard } from '../components/PublicLinkCard';
+import { QuoteTemplateCard } from '../components/QuoteTemplateCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
 import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
 import { FormBuilder } from '../components/FormBuilder';
@@ -20,9 +21,10 @@ import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { ActivityComposer, COMPOSE_OBJECTS, COMPOSE_VERB, type ComposeObject } from '../components/ActivityComposer';
 import { SnippetRecordProvider, TextArea } from '../lib/snippets';
 import { MentionText } from '../components/MentionText';
-import { encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
+import { MENTION_TOKEN, encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
 import { ShowMore } from '../components/ShowMore';
@@ -48,6 +50,8 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
   booking_pages: ['calls'],
+  // quote pages list submissions as activities, so the link starts here
+  form_submissions: [...DEFAULT_CARDS, 'quotes'],
   deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],
   // the parent has its own card (LineParentCard)
   lines: ['products'],
@@ -143,6 +147,12 @@ export function RecordPage() {
   const [error, setError] = useState<string | null>(null);
   // bumped when a save changes a line's amount, so its parent can be offered the new total
   const [lineSaves, setLineSaves] = useState(0);
+  // the activity being written in the stream (the name card's buttons and each tab's own);
+  // key changes on every ask so the box takes focus again
+  const [compose, setCompose] = useState<{ object: ComposeObject; key: number } | null>(null);
+  // whether the open composer has unsaved text
+  const composeDirty = useRef(false);
+  const onComposeDirty = useCallback((d: boolean) => { composeDirty.current = d; }, []);
 
   const labelOf = useCallback((o: string) => objectByName.get(o)?.label_singular ?? o, [objectByName]);
   const codeToName = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o.api_name])), [objects]);
@@ -234,9 +244,13 @@ export function RecordPage() {
   const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...lineCard, ...associated.map((a) => a.object)])]
     // a form lists its submissions and a booking page its meetings as a card; elsewhere they are activities
     .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls'))
-    .filter((o) => object !== 'lines' || o === 'products');
+    .filter((o) => object !== 'lines' || o === 'products')
+    // a quote's template is picked in its Template card
+    .filter((o) => o !== 'document_templates');
   const lineCount = associated.find((a) => a.object === 'lines')?.records.length ?? 0;
   const isUser = object === 'users';
+  // the Standard quote template came with the CRM: it can be archived, never deleted (migration 0080)
+  const builtIn = object === 'document_templates' && String(Array.isArray(record.properties.is_builtin) ? record.properties.is_builtin[0] : record.properties.is_builtin) === 'true';
   // "Sign in as": Super Admins, on another active user who is not a Super Admin
   // (the API checks all of this again)
   const canSignInAs = isUser && me?.is_admin && !me.signed_in_as_by && record.record_status === 'active'
@@ -256,6 +270,24 @@ export function RecordPage() {
   // Document templates use the room for their code and preview (the quotes
   // using a template show it on their own pages).
   const noRight = isUser || object === 'views' || object === 'document_templates';
+  // the pages with an activity stream get the name card's Call, Email, Note and Task buttons
+  const hasStream = !isUser && !['forms', 'booking_pages', 'form_submissions'].includes(object);
+  const composable = hasStream && record.record_status !== 'archived'
+    ? COMPOSE_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)) : [];
+  // opens the box on that activity's tab; a draft of another kind is only thrown away once confirmed
+  async function startCompose(o: ComposeObject) {
+    if (compose && compose.object !== o && composeDirty.current) {
+      const was = (objectByName.get(compose.object)?.label_singular ?? compose.object).toLowerCase();
+      if (!(await confirmDialog(`Your ${was} is not saved. Starting a ${(objectByName.get(o)?.label_singular ?? o).toLowerCase()} throws it away.`,
+        { title: `Discard this ${was}?`, confirmLabel: 'Discard', danger: true }))) return;
+    }
+    if (compose?.object !== o) composeDirty.current = false;
+    setCompose({ object: o, key: Date.now() });
+    const next = new URLSearchParams(location.search);
+    next.set('tab', o);
+    navigate({ search: `?${next.toString()}` }, { replace: true });
+  }
+  const streamProps = { object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, onCompose: (o: ComposeObject | null) => { if (o) void startCompose(o); else { composeDirty.current = false; setCompose(null); } } };
 
   return (
     <SnippetRecordProvider object={object} id={id}>
@@ -279,7 +311,7 @@ export function RecordPage() {
                   ? (
                     <>
                       <button onClick={() => { close(); restore(); }}>Restore</button>
-                      {me?.is_admin && <button className="danger" onClick={() => { close(); removeForGood(); }}>Delete permanently</button>}
+                      {me?.is_admin && !builtIn && <button className="danger" onClick={() => { close(); removeForGood(); }}>Delete permanently</button>}
                     </>
                   )
                   : (
@@ -298,7 +330,7 @@ export function RecordPage() {
               {schema.permissions.delete && (
                 <div className="record-archived-actions">
                   <button className="btn small" onClick={restore}>Restore</button>
-                  {me?.is_admin && <button className="btn small danger-text" onClick={removeForGood}>Delete permanently</button>}
+                  {me?.is_admin && !builtIn && <button className="btn small danger-text" onClick={removeForGood}>Delete permanently</button>}
                 </div>
               )}
             </div>
@@ -310,6 +342,20 @@ export function RecordPage() {
               {subtitle && subtitle !== name && <div className="record-subtitle">{subtitle}</div>}
             </div>
           </div>
+          {composable.length > 0 && (
+            <div className="record-quick-actions">
+              {composable.map((o) => {
+                const Icon = objectIcon(o);
+                const label = objectByName.get(o)?.label_singular ?? o;
+                return (
+                  <button key={o} onClick={() => void startCompose(o)} aria-label={`${COMPOSE_VERB[o]} ${label.toLowerCase()}`} title={`${COMPOSE_VERB[o]} ${label.toLowerCase()}`}>
+                    <span className="quick-icon"><Icon size={16} strokeWidth={1.75} /></span>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
         <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} />
@@ -333,23 +379,24 @@ export function RecordPage() {
                 {record.record_status === 'archived'
                   ? <div className="card muted">Archived templates are not used. Restore this template to see its code.</div>
                   : <DocumentTemplateEditor record={record} onChanged={setRecord} />}
-                <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
+                <ActivityStream {...streamProps} />
               </>
             ) : object === 'views' ? (
               <>
                 {record.record_status === 'archived'
                   ? <div className="card muted">Archived views do not open. Restore this view to see its code.</div>
                   : <ViewCode record={record} onChanged={setRecord} />}
-                <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
+                <ActivityStream {...streamProps} />
               </>
             ) : (
-              <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
+              <ActivityStream {...streamProps} />
             )}
           </section>
 
           {!noRight && <aside className="record-right">
             {(object === 'quotes' || object === 'invoices' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
             {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
+            {object === 'quotes' && <QuoteTemplateCard quoteId={record.id} canEdit={schema.permissions.edit && record.can_edit !== false} />}
             {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
             {object === 'files' && <FileCard record={record} />}
             {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
@@ -612,7 +659,10 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
   return q ? `?${q}` : '';
 }
 
-function ActivityStream({ object, id, record, associated, onChanged, schema }: { object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef }) {
+function ActivityStream({ object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty }: {
+  object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
+  compose: { object: ComposeObject; key: number } | null; onCompose: (o: ComposeObject | null) => void; onComposeDirty: (dirty: boolean) => void;
+}) {
   const { objectByName, toast } = useApp();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -625,14 +675,9 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
   const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
   const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes);
   const go = (search: string) => navigate({ search }, { replace: true });
-  const [note, setNote] = useState('');
-  // users picked from the @ menu while writing the note
-  const [mentioned, setMentioned] = useState<MentionUser[]>([]);
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState('');
   const [days, setDays] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // A customer accepting, signing or declining a quote (on the quote's page
   // and on the pages of records linked to it), taken from the quote's
@@ -669,21 +714,14 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
   const kinds = [...new Set(allItems.map((x) => (x.quoteResponse ? 'quotes' : x.object)))];
   const clearFilters = () => { setSearch(''); setKind(''); setDays(''); };
 
-  async function addNote() {
-    if (!note.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await api('POST', '/v1/objects/notes', { properties: { body: encodeMentions(note.trim(), mentioned) }, associations: [{ object, id }] });
-      setNote('');
-      setMentioned([]);
-      await onChanged();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
+  // each call, email, note and task tab has its own button; the box shows on that tab only
+  const composeTab = (COMPOSE_OBJECTS as readonly string[]).includes(tab) && record.record_status !== 'archived' ? tab as ComposeObject : null;
+  const composing = !!composeTab && compose?.object === composeTab;
+  const createButton = composeTab && !composing && (
+    <button className="btn small activity-create" onClick={() => onCompose(composeTab)}>
+      <Plus size={14} /> {COMPOSE_VERB[composeTab]} {(objectByName.get(composeTab)?.label_singular ?? composeTab).toLowerCase()}
+    </button>
+  );
 
   const countOf = (o: string) => associated.find((a) => a.object === o)?.records.length ?? 0;
 
@@ -719,21 +757,16 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
           </div>
         ))}
       </div>
-      {error && <div className="error">{error}</div>}
-      {(tab === 'activity' || tab === 'notes') && objectByName.has('notes') && linksTo.includes('notes') && (
-        <div className="composer">
-          <TextArea rows={3} placeholder="Write a note… (@ to tag someone, # for a snippet)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note"
-            onMention={(u) => setMentioned((m) => [...m, u])} />
-          <div className="composer-foot">
-            <span className="small muted">Saved to this {schema.label_singular.toLowerCase()}'s activity</span>
-            <button className="btn primary small" onClick={addNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
-          </div>
-        </div>
+      {/* kept (hidden) on the other tabs, so a draft survives a look around */}
+      {compose && record.record_status !== 'archived' && (
+        <ActivityComposer key={compose.object} hidden={!composing} object={compose.object} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
+          onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
       )}
       {tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
       ) : (
         <div className="timeline">
+          {allItems.length === 0 && createButton && <div className="field-row history-filters">{createButton}</div>}
           {allItems.length > 0 && (
             <div className="field-row history-filters">
               <input type="search" className="activity-search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search activity" />
@@ -751,6 +784,7 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
                 <option value="365">Last 12 months</option>
               </Select>
               {filtered && <button className="btn small" onClick={clearFilters}>Clear</button>}
+              {createButton}
             </div>
           )}
           {items.length === 0 && filtered && allItems.length > 0 && (
@@ -872,6 +906,7 @@ function HtmlBody({ html }: { html: string }) {
 function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { object: string; id: string; initial: CrmRecord; page: { object: string; id: string }; onPageLinkChanged: () => Promise<void> }) {
   const [record, setRecord] = useState<CrmRecord>(initial);
   const [props, setProps] = useState<Property[]>([]);
+  const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -880,6 +915,7 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { ob
       .then(([s, r]) => {
         if (cancelled) return;
         setProps(s.properties);
+        setCanEdit(s.permissions.edit && r.can_edit !== false && r.record_status !== 'archived');
         setRecord(r);
       })
       .catch((err) => !cancelled && setError((err as Error).message));
@@ -895,14 +931,40 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { ob
     .map((name) => props.find((x) => x.api_name === name))
     .filter((x): x is Property => !!x);
   const empty = (v: unknown) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+  // a plain-text body (notes, call notes, task notes) is edited in place; HTML
+  // bodies (emails from outside) are not
+  const bodyProp = props.find((x) => x.api_name === 'body');
+  const isHtmlBody = /<[a-z][\s\S]*>/i.test(body);
+  const bodyEditable = canEdit && !!bodyProp && isEditable(bodyProp) && !isHtmlBody && object !== 'form_submissions';
+  const [editing, setEditing] = useState(false);
+
+  async function saveBody(text: string) {
+    const r = await api<CrmRecord>('PATCH', `/v1/objects/${object}/${id}`, { properties: { body: text || null } });
+    setRecord((old) => ({ ...old, ...r, properties: { ...old.properties, ...r.properties } }));
+    setEditing(false);
+    // the stream's collapsed excerpt reads the page's copy
+    await onPageLinkChanged();
+  }
 
   return (
     <div className="activity-expanded">
       {error && <div className="error">{error}</div>}
       {object === 'form_submissions' ? (
         <Answers record={record} />
+      ) : editing ? (
+        <BodyEditor initial={body} mentions={object === 'notes'} placeholder={object === 'calls' ? 'Call notes…' : object === 'notes' ? 'Write a note…' : 'Notes…'}
+          onSave={saveBody} onCancel={() => setEditing(false)} />
       ) : body ? (
-        /<[a-z][\s\S]*>/i.test(body) ? <HtmlBody html={mentionsAsText(body)} /> : <div className="activity-plain"><MentionText text={body} /></div>
+        isHtmlBody ? <HtmlBody html={mentionsAsText(body)} />
+          : bodyEditable ? (
+            <div className="activity-plain editable" role="button" tabIndex={0} title="Click to edit"
+              onClick={() => { if (!window.getSelection()?.toString()) setEditing(true); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); setEditing(true); } }}>
+              <MentionText text={body} />
+            </div>
+          ) : <div className="activity-plain"><MentionText text={body} /></div>
+      ) : bodyEditable ? (
+        <button className="btn small" onClick={() => setEditing(true)}><Pencil size={13} /> {object === 'calls' ? 'Add call notes' : 'Add notes'}</button>
       ) : (
         <div className="muted small">{object === 'calls' ? 'No call notes' : 'No body'}</div>
       )}
@@ -918,6 +980,58 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { ob
       )}
       <div className="activity-foot">
         <ActivityLinks object={object} id={id} page={page} onPageLinkChanged={onPageLinkChanged} />
+      </div>
+    </div>
+  );
+}
+
+// An activity's body edited in place: grows with the text, @mentions on notes
+// (the ones already in the body are kept), Cmd/Ctrl+Enter saves, Escape cancels.
+function BodyEditor({ initial, mentions, placeholder, onSave, onCancel }: {
+  initial: string; mentions: boolean; placeholder: string; onSave: (text: string) => Promise<void>; onCancel: () => void;
+}) {
+  const [text, setText] = useState(() => mentionsAsText(initial));
+  const [mentioned, setMentioned] = useState<MentionUser[]>(() => [...initial.matchAll(MENTION_TOKEN)].map((m) => ({ name: m[1]!, id: m[2]! })));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  const changed = text.trim() !== mentionsAsText(initial).trim();
+
+  async function save() {
+    if (saving) return;
+    if (!changed) { onCancel(); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(mentions ? encodeMentions(text.trim(), mentioned) : text.trim());
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(false);
+    }
+  }
+  async function cancel() {
+    if (changed && !(await confirmDialog('Your changes are not saved.', { title: 'Discard your changes?', confirmLabel: 'Discard', danger: true }))) return;
+    onCancel();
+  }
+
+  return (
+    <div className="activity-body-edit" onClick={(e) => e.stopPropagation()}>
+      <TextArea ref={box} grow rows={3} value={text} placeholder={placeholder} aria-label="Body" onChange={(e) => setText(e.target.value)}
+        onMention={mentions ? (u) => setMentioned((m) => [...m, u]) : undefined}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+          else if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); cancel(); }
+        }} />
+      {error && <div className="error">{error}</div>}
+      <div className="activity-body-edit-foot">
+        <button className="btn small" onClick={cancel} disabled={saving}>Cancel</button>
+        <button className="btn primary small" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
   );

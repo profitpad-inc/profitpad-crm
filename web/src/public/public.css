@@ -57,27 +57,6 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 32px; }
 .pp-lines .pp-item { font-weight: 500; }
 .pp-lines .pp-line-amount { font-weight: 600; }
 .pp-sku { font-size: 13px; font-weight: 400; color: var(--muted-text); margin-top: 2px; }
-.pp-lines .pp-text { overflow-wrap: anywhere; }
-/* many columns: smaller type, and the table scrolls sideways rather than squeeze */
-.pp-lines.dense { font-size: 14px; }
-.pp-lines.dense th { font-size: 12px; }
-.pp-lines.dense th, .pp-lines.dense td { padding-left: 7px; padding-right: 7px; }
-.pp-scroll { overflow-x: auto; margin-top: 32px; }
-.pp-scroll > table.pp-lines { margin-top: 0; min-width: 640px; }
-
-/* configured quote fields (api/src/quote-document.ts): details under the parties, terms after the total */
-.pp-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px 32px; margin: 18px 0 0; }
-.pp-head + .pp-details { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
-.pp-details > div { min-width: 0; }
-.pp-details > .wide { grid-column: 1 / -1; }
-.pp-details dt { font-size: 13px; color: var(--muted-text); margin-bottom: 2px; }
-.pp-details dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; white-space: pre-line; }
-.pp-section { margin-top: 36px; }
-.pp-section > table.pp-lines, .pp-section > .pp-scroll { margin-top: 12px; }
-.pp-terms .pp-meta { margin-top: 0; }
-.pp-terms dd { white-space: pre-line; }
-.pp-page.wide { max-width: 1120px; }
-
 /* a quote drawn by its document template: the template's page full width, the controls under it */
 .pp-page.pp-templated { max-width: none; padding: 0 0 48px; }
 .pp-document { display: block; width: 100%; border: 0; min-height: 400px; background: transparent; }
@@ -182,10 +161,7 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 32px; }
   .pp-lines tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; border-bottom: 1px solid var(--border); padding: 12px 0; }
   .pp-lines td { display: block; border: 0; padding: 0; text-align: left; font-size: 14px; }
   .pp-lines td:first-child { flex: 1 0 100%; font-size: 15px; }
-  .pp-lines td.num, .pp-lines td.pp-text { text-align: left; color: var(--muted-text); }
-  .pp-scroll { overflow: visible; }
-  .pp-scroll > table.pp-lines { min-width: 0; }
-  .pp-lines colgroup { display: none; }
+  .pp-lines td.num { text-align: left; color: var(--muted-text); }
   .pp-lines td:empty { display: none; }
   .pp-lines td.pp-line-amount { margin-left: auto; color: var(--text); font-size: 15px; }
   .pp-lines td[data-label]:not(.pp-line-amount)::before { content: attr(data-label) ' '; }

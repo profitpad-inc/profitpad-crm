@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type R
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
   Menu as MenuIcon, Search, Copy, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  FileText, Hash, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
+  Hash, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
 import { api, type CrmRecord, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -23,7 +23,6 @@ import { ObjectSettings } from './ObjectSettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
-import { QuoteDocumentSettings } from './QuoteDocumentSettings';
 import { CurrencySettings } from './CurrencySettings';
 import { AddressSettings } from './AddressSettings';
 import { SnippetSettings } from './SnippetSettings';
@@ -50,7 +49,6 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'nav', element: <NavSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> },
-    { path: 'quote-document', label: 'Quote document', icon: <FileText size={16} />, gate: 'admin', element: <QuoteDocumentSettings /> },
     { path: 'currencies', label: 'Currencies', icon: <Coins size={16} />, gate: 'admin', element: <CurrencySettings /> }
   ] },
   { label: 'People and access', links: [

@@ -736,7 +736,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('set_default_document_template', {
     title: 'Set default document template',
-    description: 'Makes a published template the default for its object (every record without its own template uses it), or stops it being the default. One default per object. Only when the user asked.',
+    description: 'Makes a published template the default for its object (every record without its own template uses it), which stops the old default being one. There is always exactly one default: the current default cannot be turned off on its own (make another template the default instead). Only when the user asked.',
     inputSchema: z.object({ template: templateArg, default: z.boolean() }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     scopeChallenge: schemaChallenge

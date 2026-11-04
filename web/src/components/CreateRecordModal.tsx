@@ -1,7 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError, type CrmRecord, type ObjectDef } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable } from './ui';
+import { Select } from './Select';
+import { loadTemplateChoices, templateOptions, TEMPLATE_OBJECTS, type TemplateChoice } from '../lib/templates';
+
+// New quotes expire this many days from today unless the user picks a date.
+const QUOTE_EXPIRY_DAYS = 30;
+
+function daysFromToday(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 
 // Create form: the fields, their order and starting values come from the API
 // (create_form in the object's schema, api/src/native-ui.ts), which also
@@ -29,6 +42,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       if (!form.starts_as_me.includes(p.api_name) || !me.user) continue;
       if (p.dropdown_options?.some((o) => o.api_value === me.user!.id && o.record_status === 'active')) defaults[p.api_name] = me.user.id;
     }
+    if (object.api_name === 'quotes' && fields.some((p) => p.api_name === 'expiration_date')) defaults.expiration_date = daysFromToday(QUOTE_EXPIRY_DAYS);
     return defaults;
   });
   // property: shown under that field when the API says which one failed
@@ -39,6 +53,19 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   // properties a picked address filled (Settings → Address autocomplete),
   // saved even when the form doesn't show them
   const [filled, setFilled] = useState<Set<string>>(() => new Set());
+  // published document templates for this object; '' = the default, so later
+  // default changes still apply
+  const [templates, setTemplates] = useState<TemplateChoice[]>([]);
+  const [template, setTemplate] = useState('');
+
+  useEffect(() => {
+    if (!TEMPLATE_OBJECTS.includes(object.api_name)) return;
+    let cancelled = false;
+    loadTemplateChoices(object.api_name).then((list) => {
+      if (!cancelled) setTemplates(list);
+    }).catch(() => { /* no access to templates: the picker stays hidden */ });
+    return () => { cancelled = true; };
+  }, [object.api_name]);
 
   async function save() {
     setBusy(true);
@@ -62,7 +89,8 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
     try {
       // a retry after a failed copy does not create the record twice
       if (!record) {
-        record = await api<CrmRecord>('POST', `/v1/objects/${object.api_name}`, { properties, associations });
+        const links = template ? [...(associations ?? []), { object: 'document_templates', id: template }] : associations;
+        record = await api<CrmRecord>('POST', `/v1/objects/${object.api_name}`, { properties, associations: links });
         setCreated(record);
       }
       if (copyLines && copy && copyLines.count > 0) {
@@ -102,6 +130,12 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}
+        {templates.length > 0 && (
+          <label className="field">
+            <span>Template</span>
+            <Select value={template} onChange={setTemplate} options={templateOptions(templates)} />
+          </label>
+        )}
         {copyLines && copyLines.count > 0 && (
           <div className="checks">
             <label><input type="checkbox" checked={copy} disabled={!!created} onChange={(e) => setCopy(e.target.checked)} /> Copy the {copyLines.label}'s {copyLines.count} line {copyLines.count === 1 ? 'item' : 'items'}</label>
