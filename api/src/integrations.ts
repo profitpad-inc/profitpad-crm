@@ -246,7 +246,7 @@ function readInput(input: IntegrationInput, creating: boolean): Record<string, u
   if (input.secret_value !== undefined && out.secret_value !== null) {
     if (typeof input.secret_value !== 'string' || !input.secret_value || input.secret_value.length > 2000) throw badRequest('secret_value must be text up to 2000 characters');
     if (/[\r\n]/.test(input.secret_value)) throw badRequest('secret_value cannot hold line breaks');
-    if (!secretBoxReady()) throw new ApiError(503, 'the server cannot store secrets: CALENDAR_TOKEN_KEY is not set', 'not_configured');
+    if (!secretBoxReady()) throw new ApiError(503, 'the server cannot store secrets: MASTER_ENCRYPTION_TOKEN is not set', 'not_configured');
     out.secret_value = seal(input.secret_value);
   }
   return out;

@@ -391,6 +391,35 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
     }
   }
 
+  // A picked address (Settings → Address autocomplete): the street and the
+  // rest of its group are saved together.
+  async function fill(p: Property, values: Record<string, string>) {
+    if (editing !== p.api_name) return;
+    setEditing(null);
+    const properties: Record<string, unknown> = {};
+    for (const [name, text] of Object.entries(values)) {
+      const prop = schema.properties.find((x) => x.api_name === name);
+      if (!prop || !editable(prop)) continue;
+      const v = fromInput(prop, text);
+      if (JSON.stringify(v) !== JSON.stringify(record.properties[name] ?? null)) properties[name] = v;
+    }
+    if (Object.keys(properties).length === 0) {
+      setError(null);
+      return;
+    }
+    try {
+      onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties }));
+      setError(null);
+      toast('Address saved');
+    } catch (err) {
+      const text = values[p.api_name] ?? '';
+      setError({ property: p.api_name, message: (err as Error).message, failed: text });
+      setDraft(text);
+      setEditing(p.api_name);
+      setFocusEditor(false);
+    }
+  }
+
   const section = (key: string, title: string, props: Property[]) => {
     const open = !closed[key];
     const Chevron = open ? ChevronDown : ChevronRight;
@@ -418,7 +447,7 @@ function PropertyList({ schema, record, onSaved }: { schema: ObjectDef; record: 
       </div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
-          <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} />
+          <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} onFill={(values) => fill(p, values)} />
           {p.type === 'dropdown' && p.options.single_value !== true && (
             <button className="btn small" onClick={() => commit(p)}>Save</button>
           )}

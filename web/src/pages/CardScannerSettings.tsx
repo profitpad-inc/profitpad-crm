@@ -95,7 +95,7 @@ export function CardScannerSettings() {
         >
           {state.key_unreadable && <div className="error">The saved key can't be opened on this server (its encryption key changed). Save the API key again.</div>}
           {!state.can_store_secrets ? (
-            <div className="callout warn">This server can't store secrets yet (CALENDAR_TOKEN_KEY is not set).</div>
+            <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_TOKEN is not set).</div>
           ) : (
             <div className="key-row">
               <input

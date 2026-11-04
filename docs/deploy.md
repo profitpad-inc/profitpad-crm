@@ -121,7 +121,7 @@ Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019).
 
 Apply `0022_meeting_booker.sql` (`./db/migrate.sh`) before deploying the API that includes it. Then:
 
-- `deploy/.env`: `CALENDAR_TOKEN_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). Keep it: losing or changing it means everyone connects their calendars again. Optional `CALENDAR_GOOGLE_DOMAINS` (default `profitpad.com`).
+- `deploy/.env`: `MASTER_ENCRYPTION_TOKEN=` 32 random bytes in base64 (`openssl rand -base64 32`). Keep it: losing or changing it means everyone connects their calendars again. Optional `CALENDAR_GOOGLE_DOMAINS` (default `profitpad.com`).
 - Google Cloud (same OAuth client as sign-in): Calendar API enabled (done 2026-11-01); consent screen stays **Internal**, with the scopes `.../auth/calendar.freebusy`, `.../auth/calendar.events`, `.../auth/calendar.calendarlist.readonly` added; authorized redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/google/callback` and `http://localhost:5173/v1/calendar/google/callback`.
 - Microsoft Entra (same app registration): delegated Graph permissions `Calendars.ReadWrite` and `offline_access` (done 2026-11-01; grant admin consent if the tenant asks for it); Web redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/microsoft/callback` and `http://localhost:5173/v1/calendar/microsoft/callback`.
 - Deploy the UI too (new page `/p/book/`).
@@ -157,13 +157,13 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 ## 12. View integrations (migration 0036)
 
 - Apply 0036, then deploy the API and the UI.
-- Needs `CALENDAR_TOKEN_KEY` (already set for calendars) to store secret headers.
+- Needs `MASTER_ENCRYPTION_TOKEN` (already set for calendars) to store secret headers.
 - Optional: to call an n8n on the same Docker network over http (for example `http://<n8n container name>:5678/webhook/...`), set `INTEGRATION_PRIVATE_HOSTS=<that host name>` in `deploy/.env` (comma separated). Without it, integration URLs must be https on a public address, such as n8n's public webhook URL.
 
 ## 13. Webhooks (migration 0038)
 
 - Apply 0038, then deploy the API and the UI. The worker runs inside the API container; nothing else to start.
-- Needs `CALENDAR_TOKEN_KEY` (already set) for the signing secrets and secret headers.
+- Needs `MASTER_ENCRYPTION_TOKEN` (already set) for the signing secrets and secret headers.
 - Endpoints follow the same address rules as view integrations: https on a public address, or a host listed in `INTEGRATION_PRIVATE_HOSTS` (for an n8n on the same Docker network).
 
 ## 14. Webhook values to send and the sent log (migration 0040)
@@ -200,10 +200,17 @@ The business card scanner (`/scan`, `api/src/card-scan.ts`) reads cards with Tes
 1. Apply `0063_card_scanner.sql`, `0065_card_scan_settings.sql` and `0067_card_scans.sql` (all three already applied to the server DB on 2026-11-03). 0067 adds the `card_scans` object (`pc_0056`); the new API writes to it on every read, so deploy the API after it.
 2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/`. The API image now installs `tesseract-ocr` and its English data (`api/Dockerfile`).
 3. Check: `docker exec test-crm-api tesseract --version`, then Settings → Card scanner shows "Installed".
-4. Saving an Anthropic key needs `CALENDAR_TOKEN_KEY` (already set for calendars); the key is sealed with it. Changing that key means the admin saves the Anthropic key again.
+4. Saving an Anthropic key needs `MASTER_ENCRYPTION_TOKEN` (already set for calendars); the key is sealed with it. Changing that key means the admin saves the Anthropic key again.
 5. Deploy the UI too (the page, the Settings page and the "Card scanner" menu item type).
 
 Locally: `brew install tesseract`.
+
+## 20. Address autocomplete (migration 0069) and the encryption key rename
+
+1. Migration `0069_address_autocomplete.sql` is already applied to the server DB.
+2. In `deploy/.env` on the server, rename `CALENDAR_TOKEN_KEY=` to `MASTER_ENCRYPTION_TOKEN=` and keep the same value (a new value would make every stored secret unreadable: calendar connections, the Anthropic and Google Maps keys, integration secret headers and webhook signing secrets). The API still reads the old name when the new one is missing, so the order of this step and the deploy does not matter.
+3. Rebuild and restart the API (`docker compose up -d --build`), then deploy the UI.
+4. An admin adds the Google Maps key in Settings → Address autocomplete (Places API (New) turned on for it, restricted by API rather than by website, since the calls come from the API server).
 
 ## Notes
 

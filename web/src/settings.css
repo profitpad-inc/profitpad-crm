@@ -323,3 +323,11 @@
 .currency-settings .stack-sm { display: grid; gap: 6px; justify-items: start; }
 .currency-settings label.small { display: inline-flex; align-items: center; gap: 6px; }
 .currency-settings tr.muted td { color: var(--muted-text); }
+
+/* Settings → Address autocomplete */
+.address-groups { display: flex; flex-direction: column; gap: 12px; }
+.address-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--page-background); }
+.address-group-head { display: flex; align-items: flex-end; gap: 8px; }
+.address-group-head .field { flex: 0 1 320px; margin: 0; }
+.address-group-parts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; margin-top: 12px; }
+.address-group-parts .field { margin: 0; }

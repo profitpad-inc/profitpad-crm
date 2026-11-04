@@ -36,6 +36,9 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   const [busy, setBusy] = useState(false);
   const [copy, setCopy] = useState(true);
   const [created, setCreated] = useState<CrmRecord | null>(null);
+  // properties a picked address filled (Settings → Address autocomplete),
+  // saved even when the form doesn't show them
+  const [filled, setFilled] = useState<Set<string>>(() => new Set());
 
   async function save() {
     setBusy(true);
@@ -47,7 +50,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       if (p.type === 'dropdown' && !p.dropdown_options?.some((o) => o.record_status === 'active' && o.api_value === v)) continue;
       properties[k] = v;
     }
-    for (const p of fields) {
+    for (const p of editable.filter((x) => fields.includes(x) || filled.has(x.api_name))) {
       const v = values[p.api_name];
       if (v !== undefined && v !== '') properties[p.api_name] = fromInput(p, v);
     }
@@ -93,7 +96,9 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
         {fields.map((p, i) => (
           <label key={p.api_name} className="field">
             <span>{p.label}</span>
-            <PropertyInput property={p} object={object.api_name} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))} />
+            <PropertyInput property={p} object={object.api_name} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))}
+              onFill={(v) => { setValues((s) => ({ ...s, ...v })); setFilled((f) => new Set([...f, ...Object.keys(v)])); }}
+            />
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}

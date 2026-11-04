@@ -904,6 +904,37 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
     }
   }, [object, record, property, onClose, onSaved]);
 
+  // A picked address (Settings → Address autocomplete): the street and the
+  // rest of its group are saved together. Properties this table can't edit
+  // are left out (the API would refuse them anyway).
+  const fill = useCallback(async (values: Record<string, string>) => {
+    if (done.current) return;
+    done.current = true;
+    const schema = await getSchema(object);
+    const properties: Record<string, unknown> = {};
+    for (const [name, text] of Object.entries(values)) {
+      const p = schema.properties.find((x) => x.api_name === name);
+      if (!p || !isEditable(p)) continue;
+      const v = fromInput(p, text);
+      if (JSON.stringify(v) !== JSON.stringify(record.properties[name] ?? null)) properties[name] = v;
+    }
+    if (Object.keys(properties).length === 0) {
+      onClose();
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${object}/${record.id}`, { properties }));
+      onClose();
+      toast('Address saved');
+    } catch (err) {
+      done.current = false;
+      setSaving(false);
+      setError((err as Error).message);
+    }
+  }, [object, record, onClose, onSaved]);
+
   useEffect(() => {
     // the date calendar and dropdown lists are rendered on <body>, so clicks in them count as inside
     const outside = (e: Event) => !boxRef.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.flatpickr-calendar, .select-menu');
@@ -950,6 +981,7 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
           if (singleChoice) commit();
         }}
         onCommit={needsSave ? undefined : commit}
+        onFill={fill}
       />
       {(needsSave || error || saving) && (
         <div className="grid-editor-foot">

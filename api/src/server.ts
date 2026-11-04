@@ -27,6 +27,7 @@ import { integrationRoutes } from './routes/integrations.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { startWebhookWorker } from './webhooks.js';
 import { cardScanRoutes } from './card-scan.js';
+import { addressRoutes } from './address.js';
 import { currencyRoutes, startCurrencyScheduler } from './currency.js';
 
 const port = Number(process.env.PORT ?? 3000);
@@ -204,6 +205,7 @@ export async function buildApp() {
   await app.register(integrationRoutes);
   await app.register(webhookRoutes);
   await app.register(cardScanRoutes);
+  await app.register(addressRoutes);
   await app.register(currencyRoutes);
   return app;
 }

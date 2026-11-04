@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { api, API_BASE, type Property } from '../lib/api';
+import { api, API_BASE, getSchema, type Property } from '../lib/api';
 import { loadPhoneRegions } from '../public/phone-regions';
 import { PhoneInput, type PhoneResult, type PhoneSource } from './PhoneInput';
 import { displayPhone, valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 import { Select } from './Select';
+import { AddressInput, addressValues, useAddressGroup } from './AddressInput';
 
 // locked: Escape and clicks outside do nothing; only the X (or the footer's
 // own buttons) close it.
@@ -121,11 +122,16 @@ export function noPastDays(object: string | undefined, property: Property): bool
   return !!object && (NO_PAST_DAYS[object] ?? []).includes(property.api_name);
 }
 
-export function PropertyInput({ property, value, onChange, autoFocus, onCommit, object }: {
+export function PropertyInput({ property, value, onChange, autoFocus, onCommit, object, onFill }: {
   property: Property; value: string; onChange: (v: string) => void; autoFocus?: boolean; onCommit?: (value?: string) => void;
   // the object's api_name, for per-object rules such as no past quote expiration dates
   object?: string;
+  // Street boxes of an address group (Settings → Address autocomplete) suggest
+  // addresses; picking one calls this with every property of the group as
+  // input strings, this one included. Without it the box is a plain input.
+  onFill?: (values: Record<string, string>) => void;
 }) {
+  const addressGroup = useAddressGroup(onFill ? object : undefined, property.api_name);
   const t = valueType(property);
   const selectAll = autoFocus ? (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => e.currentTarget.select() : undefined;
   const keyDown = (e: React.KeyboardEvent) => {
@@ -174,6 +180,22 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit, 
   if (t === 'number') return <input type="number" step="any" value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
   if (t === 'date' || t === 'datetime') {
     return <DatePicker value={value} onChange={onChange} withTime={t === 'datetime'} autoFocus={autoFocus} onCommit={onCommit} noPastDays={noPastDays(object, property)} />;
+  }
+  if (addressGroup && onFill && object && property.type === 'text') {
+    return (
+      <AddressInput
+        value={value}
+        onChange={onChange}
+        autoFocus={autoFocus}
+        onFocus={selectAll}
+        onCommit={onCommit ? () => onCommit() : undefined}
+        onBlur={blur}
+        onPick={async (address, s) => {
+          const schema = await getSchema(object);
+          onFill(addressValues(addressGroup, address, schema.properties, s.main));
+        }}
+      />
+    );
   }
   if (property.options.single_line === true || property.is_base) {
     return <input value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;

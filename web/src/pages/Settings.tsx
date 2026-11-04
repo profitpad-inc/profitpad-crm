@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type R
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
   Menu as MenuIcon, Search, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  FileText, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
+  FileText, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -25,6 +25,7 @@ import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
 import { QuoteDocumentSettings } from './QuoteDocumentSettings';
 import { CurrencySettings } from './CurrencySettings';
+import { AddressSettings } from './AddressSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import '../settings.css';
@@ -56,7 +57,8 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: 'admin', element: <IntegrationSettings /> },
     { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
     { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> },
-    { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: 'admin', element: <CardScannerSettings /> }
+    { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: 'admin', element: <CardScannerSettings /> },
+    { path: 'address-autocomplete', label: 'Address autocomplete', icon: <MapPin size={16} />, gate: 'admin', element: <AddressSettings /> }
   ] },
   { label: 'Security', links: [
     { path: 'api-keys', label: 'API keys', icon: <KeyRound size={16} />, gate: 'admin', element: <ApiKeySettings /> },

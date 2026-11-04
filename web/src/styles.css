@@ -788,3 +788,9 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
   background: #0f172a; color: #f1f5f9; font: 500 12px/1.35 var(--font-body, system-ui, sans-serif); white-space: pre-line;
   overflow-wrap: anywhere; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2); pointer-events: none; }
 .app-tooltip[hidden] { display: none; }
+
+/* address suggestions under a street box (components/AddressInput.tsx) */
+.address-menu .select-options button { justify-content: flex-start; align-items: flex-start; }
+.address-menu .select-options button svg { margin-top: 3px; color: var(--muted-text); }
+.address-option { display: flex; flex-direction: column; min-width: 0; }
+.address-credit { padding: 4px 10px 2px; text-align: right; font-size: 11px; }

@@ -129,7 +129,7 @@ const endpointApproveUrl = (id: string | number) => approveUrl('webhooks', `endp
 const subscriptionApproveUrl = (id: string | number) => approveUrl('webhooks', `subscription-${id}`);
 
 function requireSecretBox(): void {
-  if (!secretBoxReady()) throw new ApiError(503, 'the server cannot store secrets: CALENDAR_TOKEN_KEY is not set', 'not_configured');
+  if (!secretBoxReady()) throw new ApiError(503, 'the server cannot store secrets: MASTER_ENCRYPTION_TOKEN is not set', 'not_configured');
 }
 
 const newSigningSecret = () => 'whsec_' + randomBytes(32).toString('base64url');
