@@ -4,6 +4,8 @@ Which free source the CRM looks up exchange rates from (Settings → Currencies,
 
 **Chosen: [Frankfurter](https://frankfurter.dev) v2 (`https://api.frankfurter.dev/v2/rates`), with the [European Central Bank](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html) as the second built-in provider.**
 
+Decision (the user, 2026-11-03): go with api.frankfurter.dev. It is the default provider for every tenant (`meta.currency_settings.provider` defaults to `frankfurter`); the ECB stays in the code as a fallback an admin can pick in Settings → Currencies.
+
 ## Comparison
 
 | Provider | Key | Limits | SAR, AED, ILS, KRW, JPY | Terms | Notes |
