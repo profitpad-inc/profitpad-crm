@@ -58,9 +58,12 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 32px; }
 .pp-lines .pp-line-amount { font-weight: 600; }
 .pp-sku { font-size: 13px; font-weight: 400; color: var(--muted-text); margin-top: 2px; }
 /* a quote drawn by its document template: the template's page full width, the controls under it */
-.pp-page.pp-templated { max-width: none; padding: 0 0 48px; }
-.pp-document { display: block; width: 100%; border: 0; min-height: 400px; background: transparent; }
-.pp-templated .pp-under { max-width: 840px; margin: 24px auto 0; }
+.pp-page.pp-templated { max-width: 960px; padding: 32px 16px 56px; }
+/* the template's page as a sheet of paper, as wide as the card under it */
+/* content-box: the border sits outside the height fitted to the page, so no scrollbar */
+.pp-document { display: block; box-sizing: content-box; width: calc(100% - 2px); border: 1px solid var(--border); border-radius: 6px; min-height: 400px; background: #fff;
+  box-shadow: 0 1px 0 var(--border), 0 12px 32px -24px color-mix(in srgb, var(--text) 35%, transparent); }
+.pp-templated .pp-under { margin: 16px 0 0; }
 .pp-under .pp-head h2 { margin: 0; }
 
 /* the total: right-aligned under the amounts, closed by a double rule */
@@ -151,6 +154,9 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 32px; }
 @media (max-width: 640px) {
   .pp-page { padding: 16px 12px 32px; }
   .pp-card { padding: 24px 20px; }
+  .pp-page.pp-templated { padding: 0 0 32px; }
+  .pp-document { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+  .pp-templated .pp-under { margin: 12px 12px 0; }
   h1 { font-size: 24px; }
   .pp-parties { gap: 14px 28px; margin-top: 20px; }
   .pp-total-amount { font-size: 26px; padding-left: 0; }
@@ -177,4 +183,5 @@ table.pp-lines { width: 100%; border-collapse: collapse; margin-top: 32px; }
   .pp-page { padding: 0; }
   .pp-actions, .pp-respond, .pp-pay { display: none; }
   .pp-card { border: 0; padding: 0; box-shadow: none; }
+  .pp-document { width: 100%; border: 0; box-shadow: none; }
 }
