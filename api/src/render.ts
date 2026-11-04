@@ -69,7 +69,7 @@ export async function slot<T>(fn: () => Promise<T>): Promise<T> {
 // VIEW_FRAME_FILE, or fetched from VIEW_FRAME_URL or UI_URL; kept 5 minutes.
 let frameHtml: { html: string; at: number } | null = null;
 
-export async function loadFrameHtml(): Promise<string> {
+async function loadFrameHtml(): Promise<string> {
   if (frameHtml && Date.now() - frameHtml.at < 5 * 60_000) return frameHtml.html;
   let html: string;
   if (process.env.VIEW_FRAME_FILE) {

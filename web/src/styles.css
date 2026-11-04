@@ -613,8 +613,7 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .activity-icon.bad { color: var(--danger); }
 
 /* HTML properties (a form's custom HTML): shown and edited as code */
-.prop-row.code .prop-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; background: var(--surface); border-radius: 6px; padding: 6px 8px; }
-.prop-row.code .prop-edit textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; min-height: 320px; }
+.prop-row.html .prop-value { white-space: normal; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 /* Phone properties: country picker + number */

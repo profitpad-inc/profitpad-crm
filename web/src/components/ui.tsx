@@ -9,6 +9,7 @@ import { DatePicker } from './DatePicker';
 import { Select } from './Select';
 import { onFrameFocus } from '../lib/frame-focus';
 import { AddressInput, addressValues, useAddressGroup } from './AddressInput';
+import { TextArea } from '../lib/snippets';
 
 // locked: Escape and clicks outside do nothing; only the X (or the footer's
 // own buttons) close it.
@@ -203,7 +204,8 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit, 
   if (property.options.single_line === true || property.is_base) {
     return <input value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
   }
-  return <textarea rows={3} value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur} />;
+  // multi-line text (call notes, email bodies, any long text): # offers snippets
+  return <TextArea rows={3} value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onBlur={blur} />;
 }
 
 export function isEditable(p: Property): boolean {

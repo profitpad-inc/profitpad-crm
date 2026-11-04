@@ -284,6 +284,8 @@ export interface ViewRow {
   description: string | null;
   status: 'draft' | 'published';
   audience: 'admins' | 'everyone';
+  // whether the view's text boxes offer snippets (null: yes)
+  allow_snippets: 'true' | 'false' | null;
   draft_source: string | null;
   draft_queries: string | null;
   source: string | null;
@@ -293,7 +295,7 @@ export interface ViewRow {
 }
 
 const VIEW_COLUMNS = `pc_0055_id as id, name, slug, icon, description, status[1] as status, audience[1] as audience,
-  draft_source, draft_queries, source, queries, published_at, updated_at`;
+  allow_snippets[1] as allow_snippets, draft_source, draft_queries, source, queries, published_at, updated_at`;
 
 export async function loadView(db: Db, slugOrId: string): Promise<ViewRow> {
   const { rows } = await db.query(
@@ -338,6 +340,7 @@ export function openView(p: Principal, v: ViewRow, draft: boolean) {
     description: v.description,
     status: v.status,
     audience: v.audience,
+    allow_snippets: v.allow_snippets !== 'false',
     draft: draft || v.status !== 'published',
     module: compileSource(source),
     queries: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { params: q.params }])),
@@ -507,6 +510,7 @@ export function viewOut(v: ViewRow, withCode = true) {
     description: v.description,
     status: v.status,
     audience: v.audience,
+    allow_snippets: v.allow_snippets !== 'false',
     unpublished_changes: hasUnpublishedChanges(v),
     published_at: v.published_at,
     updated_at: v.updated_at,

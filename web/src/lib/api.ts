@@ -53,7 +53,7 @@ export interface Me {
   key_name: string;
   scopes: string[];
   is_admin: boolean;
-  user: { id: string; name: string | null; first_name: string | null; last_name: string | null; email: string | null } | null;
+  user: { id: string; name: string | null; first_name: string | null; last_name: string | null; email: string | null; email_signature?: string | null } | null;
   // set while a Super Admin is signed in as this user ("Sign in as"): the Super Admin
   signed_in_as_by: { id: string; name: string | null; email: string | null } | null;
   readable_objects: string[];

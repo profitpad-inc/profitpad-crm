@@ -11,6 +11,7 @@ import { Select } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
 import { MobileHeader } from '../components/MobileNav';
 import '../scanner.css';
+import { TextArea } from '../lib/snippets';
 
 // Business card scanner (/scan). Take or pick a photo and the API reads it
 // (api/src/card-scan.ts). With Claude (an admin added a key in Settings →
@@ -522,13 +523,13 @@ export function CardScanner() {
                 </label>
                 <label className="field">
                   <span>Notes</span>
-                  <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you talked about, what to send them" />
+                  <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you talked about, what to send them" />
                 </label>
               </section>
             ) : (
               <label className="field">
                 <span>Note</span>
-                <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Where you met, what to follow up on" />
+                <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Where you met, what to follow up on" />
               </label>
             )}
 

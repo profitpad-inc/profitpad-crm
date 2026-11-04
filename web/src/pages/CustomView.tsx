@@ -11,6 +11,7 @@ import { fileInfo, fileLink, formatBytes, openFile, uploadFile } from '../lib/fi
 import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewFile, ViewInit } from '../view-runtime/protocol';
 import { checkExternalUrl } from '../view-runtime/external-url';
 import { confirmDialog } from '../components/confirm';
+import { loadSnippets, renderSnippet } from '../lib/snippets';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
 // sandboxed iframe (public/view-frame, opaque origin, no network); this page
@@ -31,6 +32,8 @@ interface ViewPayload {
   unpublished_changes?: boolean;
   // someone allowed the view's record changes, so nobody is asked (0062)
   writes_allowed?: boolean;
+  // the view's "Allow snippets" setting
+  allow_snippets?: boolean;
 }
 
 const FRAME_URL = `${import.meta.env.BASE_URL}view-frame/index.html`;
@@ -351,6 +354,18 @@ export function CustomView() {
       case 'checkPhone':
         if (typeof args[0] !== 'string') throw new Error('checkPhone takes the number as a string');
         return api('POST', '/v1/phone/validate', { number: args[0] });
+      case 'snippets': {
+        if (latest.current.view?.allow_snippets === false) return [];
+        // what the # menu needs; no ownership details
+        return (await loadSnippets()).map((x) => ({ id: x.id, shortcut: x.shortcut, name: x.name, body: x.body, shared: x.shared }));
+      }
+      case 'renderSnippet': {
+        if (latest.current.view?.allow_snippets === false) throw new Error('this view does not allow snippets');
+        const snippet = (await loadSnippets()).find((x) => x.id === args[0]);
+        if (!snippet) throw new Error('no such snippet');
+        // a view has no record of its own: {{r.…}} merge fields use their fallbacks
+        return renderSnippet(snippet, null);
+      }
       case 'navigate': {
         const path = args[0];
         // only places inside the CRM
@@ -439,7 +454,8 @@ export function CustomView() {
           theme,
           me: { id: me.user?.id ?? null, name: me.user?.name ?? null, is_admin: me.is_admin },
           params: latest.current.params,
-          view: { id: v.id, name: v.name, slug: v.slug, draft: v.draft }
+          view: { id: v.id, name: v.name, slug: v.slug, draft: v.draft },
+          snippets: v.allow_snippets !== false
         });
       } else if (msg.type === 'pcrm:mode') {
         setFill(msg.fill === true);

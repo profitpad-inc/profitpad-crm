@@ -5,6 +5,18 @@ import { requireObjectPermission, requireRecentSignIn, requireScope, sessionEnds
 import { logEvent } from '../audit.js';
 import { getObject } from '../registry.js';
 import { isAdmin } from './ui.js';
+import { cleanSignature } from '../signature.js';
+import { onWrite } from '../records.js';
+
+// Every write to a user (record page, API, MCP, imports): the signature is
+// stored cleaned.
+onWrite('users', async (_client, properties) => {
+  if (!('email_signature' in properties)) return properties;
+  const v = properties.email_signature;
+  if (v === null || v === undefined || v === '') return { ...properties, email_signature: null };
+  if (typeof v !== 'string') throw badRequest('email_signature must be a string of HTML', { property: 'email_signature' });
+  return { ...properties, email_signature: cleanSignature(v) };
+});
 
 // A user's own sessions, or anyone's for an admin (with a recent sign-in)
 function requireSessionAccess(p: Principal, userId: string): void {

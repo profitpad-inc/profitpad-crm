@@ -9,26 +9,25 @@ import { requireScope, type Principal } from './auth.js';
 import { isAdmin } from './routes/ui.js';
 import { getRegistry, type ObjectDef, type PropertyDef } from './registry.js';
 import { createRecord } from './records.js';
-import { applyEdits, compileSource, parseQueries, runQuery, analyzeQuery, type Queries, type SourceEdit } from './views.js';
+import { applyEdits, parseQueries, runQuery, analyzeQuery, type Queries, type SourceEdit } from './views.js';
 import { callFromTemplate, guardedLookup } from './integrations.js';
 import { formatProperty } from './quote-document.js';
-import { getBrowser, loadFrameHtml, slot } from './render.js';
+import { getBrowser, slot } from './render.js';
 
 // Document templates (migration 0075, pc_0057): how a record is drawn as a
-// document. Each template is for one object type (quotes for now) and is
-// either HTML with Liquid tags, filled in here, or React (TSX), compiled like
-// a view and run in the view frame inside the renderer's Chromium (never in
-// this process). Both get the same data (templateData): the record, its
-// linked records, the template's SQL queries (run read-only over view_data,
-// with :record_id bound to the record) and integration calls. The result is
-// one static HTML page: shown to the customer in a sandboxed iframe, and
-// printed to PDF by Chromium with scripts off, so the page and the PDF match.
+// document. Each template is for one object type (quotes for now) and is an
+// HTML page with Liquid tags, filled in here (React templates were dropped in
+// migration 0078: documents are not interactive, and Liquid needs no browser
+// to show the page). The template gets templateData: the record, its linked
+// records, the template's SQL queries (run read-only over view_data, with
+// :record_id bound to the record) and integration calls. The result is one
+// static HTML page: shown to the customer in a sandboxed iframe, and printed
+// to PDF by Chromium with scripts off, so the page and the PDF match.
 //
 // Only admins write templates: their queries see every record (no viewer, no
 // row-level security) and what they show goes to customers.
 
 export const TEMPLATE_OBJECTS = ['quotes'] as const;
-export type TemplateKind = 'html' | 'react';
 const MAX_SOURCE = 300_000;
 const MAX_HTML = 12 * 1024 * 1024;
 const RENDER_TIMEOUT = 15_000;
@@ -43,7 +42,6 @@ export interface TemplateRow {
   name: string | null;
   description: string | null;
   object: string;
-  kind: TemplateKind;
   status: 'draft' | 'published';
   is_default: boolean;
   page_size: 'letter' | 'legal' | 'a4';
@@ -57,7 +55,7 @@ export interface TemplateRow {
   updated_at: Date;
 }
 
-const COLUMNS = `pc_0057_id as id, name, description, object[1] as object, kind[1] as kind, status[1] as status,
+const COLUMNS = `pc_0057_id as id, name, description, object[1] as object, status[1] as status,
   is_default[1] = 'true' as is_default, page_size[1] as page_size, orientation[1] as orientation, page_margin,
   draft_source, draft_queries, source, queries, published_at, updated_at`;
 
@@ -169,7 +167,7 @@ const liquid = new Liquid({
 
 // Barcodes and QR codes are drawn here (bwip-js), so a template needs no
 // outside service: {{ quote.name | barcode }} in Liquid, or the address
-// https://barcode.invalid/<type>?text=...&height=10 in either kind of template.
+// https://barcode.invalid/<type>?text=...&height=10 anywhere in the page.
 export function barcodeDataUrl(type: string, text: string, height?: number): string {
   if (!/^[a-z0-9]{2,20}$/.test(type)) throw badRequest(`unknown barcode type "${type}"`);
   let svg: string;
@@ -236,11 +234,10 @@ function parseLiquid(source: string) {
 }
 
 // Checks code and queries before saving or publishing.
-export async function checkTemplate(kind: TemplateKind, source: string | null, sources: TemplateSources): Promise<void> {
+export async function checkTemplate(source: string | null, sources: TemplateSources): Promise<void> {
   if (source !== null) {
     if (source.length > MAX_SOURCE) throw badRequest(`the template is longer than ${MAX_SOURCE} characters`);
-    if (kind === 'html') parseLiquid(source);
-    else compileSource(source);
+    parseLiquid(source);
   }
   for (const [name, spec] of Object.entries(sources.queries)) await analyzeQuery(name, spec);
 }
@@ -251,7 +248,6 @@ export interface TemplateInput {
   name?: string;
   description?: string | null;
   object?: string;
-  kind?: TemplateKind;
   source?: string | null;
   edits?: SourceEdit[];
   queries?: unknown;
@@ -260,27 +256,21 @@ export interface TemplateInput {
   page_margin?: string | null;
 }
 
-const kindOf = (v: unknown): TemplateKind => {
-  if (v !== 'html' && v !== 'react') throw badRequest('kind must be html or react');
-  return v;
-};
-
 export async function createTemplate(p: Principal, input: TemplateInput): Promise<TemplateRow> {
   requireTemplateAdmin(p);
   if (typeof input.name !== 'string' || !input.name.trim()) throw badRequest('a template needs a name');
   const object = input.object ?? 'quotes';
   if (!(TEMPLATE_OBJECTS as readonly string[]).includes(object)) throw badRequest(`templates can be made for ${TEMPLATE_OBJECTS.join(', ')}`);
-  const kind = kindOf(input.kind ?? 'html');
   const sources = parseSources(input.queries ?? {});
   const source = input.source ?? null;
-  await checkTemplate(kind, source, sources);
+  await checkTemplate(source, sources);
   const obj = (await getRegistry()).byKey.get('document_templates')!;
   const id = await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, async (c) => {
     const props: Record<string, unknown> = { name: input.name!.trim(), description: input.description ?? null };
     for (const k of ['page_size', 'orientation', 'page_margin'] as const) if (input[k] !== undefined) props[k] = input[k];
     const newId = await createRecord(c, obj, p, props);
-    await c.query('update crm.pc_0057 set object = $2, kind = $3, draft_source = $4, draft_queries = $5 where pc_0057_id = $1',
-      [newId, [object], [kind], source, sourcesText(sources)]);
+    await c.query('update crm.pc_0057 set object = $2, draft_source = $3, draft_queries = $4 where pc_0057_id = $1',
+      [newId, [object], source, sourcesText(sources)]);
     return newId;
   });
   return loadTemplate(pool, id);
@@ -290,7 +280,6 @@ export async function saveTemplateDraft(p: Principal, id: string, input: Templat
   requireTemplateAdmin(p);
   const t = await loadTemplate(pool, id);
   if (input.source !== undefined && input.edits !== undefined) throw badRequest('send either source or edits, not both');
-  const kind = input.kind !== undefined ? kindOf(input.kind) : t.kind;
   let source = t.draft_source;
   if (input.source !== undefined) source = input.source;
   else if (input.edits !== undefined) {
@@ -298,9 +287,9 @@ export async function saveTemplateDraft(p: Principal, id: string, input: Templat
     source = applyEdits(t.draft_source, input.edits);
   }
   const sources = parseSources(input.queries !== undefined ? input.queries : t.draft_queries);
-  await checkTemplate(kind, source, sources);
+  await checkTemplate(source, sources);
   await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, (c) =>
-    c.query('update crm.pc_0057 set kind = $2, draft_source = $3, draft_queries = $4 where pc_0057_id = $1', [t.id, [kind], source, sourcesText(sources)])
+    c.query('update crm.pc_0057 set draft_source = $2, draft_queries = $3 where pc_0057_id = $1', [t.id, source, sourcesText(sources)])
   );
   return loadTemplate(pool, t.id);
 }
@@ -309,7 +298,7 @@ export async function publishTemplate(p: Principal, id: string): Promise<Templat
   requireTemplateAdmin(p);
   const t = await loadTemplate(pool, id);
   if (!t.draft_source) throw badRequest('the draft has no code to publish');
-  await checkTemplate(t.kind, t.draft_source, parseSources(t.draft_queries));
+  await checkTemplate(t.draft_source, parseSources(t.draft_queries));
   await withTx({ principal: p, source: p.oauth ? 'mcp' : 'api' }, (c) =>
     c.query(`update crm.pc_0057 set source = draft_source, queries = draft_queries, status = '{published}', published_at = now() where pc_0057_id = $1`, [t.id])
   );
@@ -558,118 +547,30 @@ export interface Rendered {
 const withDocument = (html: string) =>
   /<html[\s>]/i.test(html) ? html : `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
 
-// one rendered page per (template code, data): Chromium is the slow part
+// one rendered page per (template code, data): fetching images is the slow part
 const renderedCache = new Map<string, { at: number; out: Rendered }>();
 
 export async function renderTemplate(t: TemplateRow, recordId: string, draft: boolean): Promise<Rendered & { data: TemplateData }> {
   const source = draft ? t.draft_source : t.source;
   if (!source) throw badRequest(draft ? 'the draft has no code yet' : 'the template has not been published');
   const { data, warnings } = await templateData(t, recordId, draft);
-  const key = createHash('sha256').update(`${t.kind}\n${source}\n${JSON.stringify(data)}`).digest('hex');
+  const key = createHash('sha256').update(`${source}\n${JSON.stringify(data)}`).digest('hex');
   const hit = renderedCache.get(key);
   if (hit && Date.now() - hit.at < 10 * 60_000) return { ...hit.out, warnings: [...warnings, ...hit.out.warnings], data };
   const own: string[] = [];
   let html: string;
-  if (t.kind === 'html') {
-    try {
-      html = await liquid.render(parseLiquid(source), data);
-    } catch (err) {
-      throw badRequest(`the template failed: ${(err as Error).message}`);
-    }
-    html = withDocument(html);
-  } else {
-    html = await renderReact(t, source, data, draft, own);
+  try {
+    html = await liquid.render(parseLiquid(source), data);
+  } catch (err) {
+    throw badRequest(`the template failed: ${(err as Error).message}`);
   }
+  html = withDocument(html);
   html = await inlineImages(html, own);
   if (html.length > MAX_HTML) throw badRequest('the document is too large (over 12 MB)');
   const out = { html, warnings: own };
   if (renderedCache.size > 50) renderedCache.clear();
   renderedCache.set(key, { at: Date.now(), out });
   return { html, warnings: [...warnings, ...own], data };
-}
-
-const ORIGIN = 'https://render.pcrm.invalid';
-const HOST_URL = `${ORIGIN}/document`;
-const FRAME_URL = `${ORIGIN}/view-frame/index.html`;
-
-// A React template: its module wrapped so the view frame renders it with the
-// data as its only prop, then the frame's page taken as static HTML (scripts
-// removed). Bridge calls are refused: everything arrives as data.
-async function renderReact(t: TemplateRow, source: string, data: TemplateData, draft: boolean, warnings: string[]): Promise<string> {
-  const compiled = compileSource(source);
-  const module = `var __m = { exports: {} };
-(function (require, exports, module) {
-${compiled}
-})(require, __m.exports, __m);
-var __React = require('react');
-var __data = ${JSON.stringify(data)};
-exports.default = function DocumentTemplate() { return __React.createElement(__m.exports.default, { data: __data }); };`;
-  const init = {
-    type: 'pcrm:init', module, queries: {}, theme: {}, params: {},
-    me: { id: null, name: null, is_admin: false },
-    view: { id: t.id, name: t.name, slug: `document-template-${t.id}`, draft }
-  };
-  const frame = await loadFrameHtml();
-  return slot(async () => {
-    const b = await getBrowser();
-    const context = await b.newContext({ viewport: { width: 816, height: 1056 }, serviceWorkers: 'block', acceptDownloads: false });
-    try {
-      await context.route('**/*', async (route) => {
-        const url = route.request().url();
-        if (url === HOST_URL) return route.fulfill({ status: 200, contentType: 'text/html', body: hostHtml(init) });
-        if (url === FRAME_URL) return route.fulfill({ status: 200, contentType: 'text/html', body: frame });
-        if (route.request().resourceType() === 'image') {
-          const d = await imageData(url);
-          if (d) {
-            const [, type, b64] = /^data:([^;]+);base64,(.*)$/.exec(d)!;
-            return route.fulfill({ status: 200, contentType: type, body: Buffer.from(b64, 'base64') });
-          }
-        }
-        return route.abort('blockedbyclient');
-      });
-      const page = await context.newPage();
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      await page.exposeFunction('pcrmEvent', (m: { message?: string; errors?: { message: string }[] }) => {
-        if (m.message) errors.push(m.message);
-        for (const e of m.errors ?? []) errors.push(e.message);
-      });
-      await page.goto(HOST_URL, { waitUntil: 'load', timeout: RENDER_TIMEOUT });
-      await page.waitForFunction('window.__pcrm && window.__pcrm.settled()', undefined, { timeout: RENDER_TIMEOUT, polling: 100 })
-        .catch(() => warnings.push('the template was still drawing after 15 seconds'));
-      if (errors.length) throw badRequest(`the template failed: ${errors[0]}`, { errors: errors.slice(0, 10) });
-      const f = page.frames().find((x) => x.url() === FRAME_URL);
-      if (!f) throw new ApiError(500, 'the template frame did not load', 'render_failed');
-      const html = await f.content();
-      // the frame hides overflow (views scroll inside it); a document must run onto more pages
-      return html.replace(/<script\b[\s\S]*?<\/script>/gi, '')
-        .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i, '')
-        .replace(/<\/head>/i, '<style>html,body{overflow:visible!important;height:auto!important}</style></head>');
-    } finally {
-      await context.close().catch(() => undefined);
-    }
-  });
-}
-
-function hostHtml(init: unknown): string {
-  const json = JSON.stringify(init).replace(/</g, '\\u003c');
-  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}iframe{display:block;width:100%;height:1056px;border:0}</style></head>
-<body><iframe id="f" sandbox="allow-scripts" src="${FRAME_URL}"></iframe><script>
-const INIT = ${json};
-const f = document.getElementById('f');
-const st = { ready: false, last: Date.now() };
-const send = (m) => f.contentWindow.postMessage(m, '*');
-window.__pcrm = { settled: () => st.ready && Date.now() - st.last > 400 };
-window.addEventListener('message', (e) => {
-  if (e.source !== f.contentWindow || !e.data || typeof e.data !== 'object') return;
-  const m = e.data;
-  st.last = Date.now();
-  if (m.type === 'pcrm:ready') { send(INIT); st.ready = true; }
-  else if (m.type === 'pcrm:height') f.style.height = Math.max(200, Math.min(Number(m.height) || 0, 100000)) + 'px';
-  else if (m.type === 'pcrm:error' || m.type === 'pcrm:report') window.pcrmEvent(m);
-  else if (m.type === 'pcrm:call') send({ type: 'pcrm:reply', id: m.id, ok: false, error: { message: 'document templates get their data as the data prop; ' + m.method + ' is not available' } });
-});
-</script></body></html>`;
 }
 
 // ---- PDF -------------------------------------------------------------------------------
@@ -735,7 +636,6 @@ export function templateOut(t: TemplateRow, withCode = true) {
     name: t.name,
     description: t.description,
     object: t.object,
-    kind: t.kind,
     status: t.status,
     is_default: t.is_default,
     page_size: t.page_size,

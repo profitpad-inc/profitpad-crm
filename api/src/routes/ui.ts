@@ -407,7 +407,7 @@ export async function uiRoutes(app: FastifyInstance) {
     let user = null;
     if (p.userId) {
       const { rows } = await pool.query(
-        'select pc_0000_id as id, name, first_name, last_name, email from crm.pc_0000 where pc_0000_id = $1',
+        'select pc_0000_id as id, name, first_name, last_name, email, email_signature from crm.pc_0000 where pc_0000_id = $1',
         [p.userId]
       );
       user = rows[0] ?? null;

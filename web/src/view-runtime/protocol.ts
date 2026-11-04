@@ -13,13 +13,17 @@ export interface ViewInit {
   me: { id: string | null; name: string | null; is_admin: boolean };
   params: Params;
   view: { id: string; name: string | null; slug: string; draft: boolean };
+  // the view's "Allow snippets" setting: typing # in its text boxes offers snippets
+  snippets?: boolean;
 }
 
 // phoneRegions and checkPhone serve the kit's PhoneInput (read only, never asked).
 // Files: uploadFile gets a File or Blob (structured clone carries it across),
 // fileBlob answers with a Blob, which the view shows through a blob: URL.
 type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone'
-  | 'uploadFile' | 'getFiles' | 'fileBlob' | 'openFile';
+  | 'uploadFile' | 'getFiles' | 'fileBlob' | 'openFile'
+  // snippets for the # menu in text boxes (read only, never asked)
+  | 'snippets' | 'renderSnippet';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

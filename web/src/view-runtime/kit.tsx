@@ -566,6 +566,16 @@ export function TextInput({ value, onChange, placeholder, type = 'text', debounc
   return <input className={cx('v-input', small && 'small', className)} style={style} type={type} value={debounce ? text : value} placeholder={placeholder} onChange={(e) => change(e.target.value)} />;
 }
 
+// Several lines of text. When the view allows snippets (its "Allow snippets"
+// setting, on unless turned off), typing # offers them, as in any <textarea>;
+// snippets={false} turns that off for this box.
+export function TextArea({ value, onChange, placeholder, rows = 4, snippets = true, style, className }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; snippets?: boolean;
+} & Styled) {
+  return <textarea className={cx('v-input', 'v-textarea', className)} style={style} rows={rows} value={value} placeholder={placeholder}
+    data-snippets={snippets ? undefined : 'off'} onChange={(e) => onChange(e.target.value)} />;
+}
+
 export function Select({ value, onChange, options, placeholder, small, style, className }: {
   value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder?: string; small?: boolean;
 } & Styled) {

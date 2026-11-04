@@ -16,9 +16,13 @@ import { ViewCode } from '../components/ViewCode';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
+import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { SnippetRecordProvider, TextArea } from '../lib/snippets';
+import { MentionText } from '../components/MentionText';
+import { encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
 import '../record.css';
@@ -251,6 +255,7 @@ export function RecordPage() {
   const noRight = isUser || object === 'views';
 
   return (
+    <SnippetRecordProvider object={object} id={id}>
     <div className={`record-page${noRight ? ' two-col' : ''}`}>
       <aside className="record-left">
         <div className="record-head">
@@ -352,8 +357,15 @@ export function RecordPage() {
         </>
       )}
     </div>
+    </SnippetRecordProvider>
   );
 }
+
+const isHtml = (p: Property) => p.type === 'text' && p.options.display === 'html';
+
+const HTML_HINTS: Record<string, string> = {
+  'users.email_signature': 'Added to the end of emails this user sends. Images must be public links: upload one to CRM files (its public link is turned on), choose a CRM file, or use a public web address. Scripts and forms are removed on save.'
+};
 
 function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; record: CrmRecord; lock: RecordLock | null; onSaved: (r: CrmRecord) => void }) {
   const { toast } = useApp();
@@ -366,6 +378,9 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
   const [error, setError] = useState<{ property: string; message: string; failed: string } | null>(null);
   // collapsed sections; System starts closed
   const [closed, setClosed] = useState<Record<string, boolean>>({ system: true });
+  // an HTML property (display "html": email signatures, template bodies) open
+  // in the editor with its preview
+  const [htmlEditing, setHtmlEditing] = useState<Property | null>(null);
   const addressGroups = useAddressGroups(schema.api_name);
   const shown = schema.properties.filter((p) => p.record_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   // each address group's properties together, in order (Settings → Address autocomplete)
@@ -380,6 +395,10 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
 
   function start(p: Property) {
     if (!editable(p)) return;
+    if (isHtml(p)) {
+      setHtmlEditing(p);
+      return;
+    }
     setEditing(p.api_name);
     setFocusEditor(true);
     // after a refused save, carry on from the refused text
@@ -468,7 +487,7 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
   // showLock: mark properties nobody can edit here (calculations, read-only),
   // in the main section only; System is all set by the CRM
   const row = (p: Property, showLock: boolean) => (
-    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${p.options.display === 'html' ? ' code' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
+    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
       <div className="prop-label">
         <span>{p.label}</span>
         {editable(p) && editing !== p.api_name && <Pencil className="prop-hint" size={12} aria-hidden />}
@@ -489,6 +508,10 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
         <div className="prop-value">
           <FileField object={schema.api_name} record={record} property={p} canEdit={canEdit && p.record_status === 'active' && !p.read_only} onSaved={onSaved} />
         </div>
+      ) : isHtml(p) && typeof record.properties[p.api_name] === 'string' && record.properties[p.api_name] ? (
+        <div className="prop-value">
+          <HtmlValue html={record.properties[p.api_name] as string} title={p.label} onEdit={editable(p) ? () => start(p) : undefined} />
+        </div>
       ) : (
         <div className="prop-value">{displayValue(p, record.properties[p.api_name]) || <span className="muted empty-value">--</span>}</div>
       )}
@@ -500,6 +523,19 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
     <div className="props">
       {section('main', `About this ${schema.label_singular.toLowerCase()}`, main)}
       {section('system', 'System', system)}
+      {htmlEditing && (
+        <HtmlEditorModal
+          title={`Edit ${htmlEditing.label.toLowerCase()}`}
+          value={typeof record.properties[htmlEditing.api_name] === 'string' ? record.properties[htmlEditing.api_name] as string : ''}
+          hint={HTML_HINTS[`${schema.api_name}.${htmlEditing.api_name}`]}
+          onClose={() => setHtmlEditing(null)}
+          onSave={async (html) => {
+            onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties: { [htmlEditing.api_name]: html.trim() ? html : null } }));
+            setHtmlEditing(null);
+            toast('Saved');
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -541,7 +577,7 @@ function activityTime(object: string, r: CrmRecord): string {
 function searchText(object: string, r: CrmRecord): string {
   const p = r.properties;
   const answers = object === 'form_submissions' ? answersOf(r).map((a) => `${a.label} ${a.value}`).join(' ') : '';
-  return [p.name, p.subject, plain(p.body), p.from_address, p.to_addresses, p.responder_name, p.responder_email, answers]
+  return [p.name, p.subject, mentionsAsText(plain(p.body)), p.from_address, p.to_addresses, p.responder_name, p.responder_email, answers]
     .filter((v) => v !== null && v !== undefined).map(String).join(' ');
 }
 
@@ -577,6 +613,8 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
   const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes);
   const go = (search: string) => navigate({ search }, { replace: true });
   const [note, setNote] = useState('');
+  // users picked from the @ menu while writing the note
+  const [mentioned, setMentioned] = useState<MentionUser[]>([]);
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState('');
   const [days, setDays] = useState('');
@@ -623,8 +661,9 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
     setSaving(true);
     setError(null);
     try {
-      await api('POST', '/v1/objects/notes', { properties: { body: note.trim() }, associations: [{ object, id }] });
+      await api('POST', '/v1/objects/notes', { properties: { body: encodeMentions(note.trim(), mentioned) }, associations: [{ object, id }] });
       setNote('');
+      setMentioned([]);
       await onChanged();
     } catch (err) {
       setError((err as Error).message);
@@ -670,7 +709,8 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
       {error && <div className="error">{error}</div>}
       {(tab === 'activity' || tab === 'notes') && objectByName.has('notes') && linksTo.includes('notes') && (
         <div className="composer">
-          <textarea rows={3} placeholder="Write a note…" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
+          <TextArea rows={3} placeholder="Write a note… (@ to tag someone, # for a snippet)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note"
+            onMention={(u) => setMentioned((m) => [...m, u])} />
           <div className="composer-foot">
             <span className="small muted">Saved to this {schema.label_singular.toLowerCase()}'s activity</span>
             <button className="btn primary small" onClick={addNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
@@ -776,7 +816,7 @@ function ActivityStream({ object, id, record, associated, onChanged, schema }: {
                   ) : (
                     <>
                       {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
-                      {body && <div className="activity-text">{body.length > 400 ? `${body.slice(0, 400)}…` : body}</div>}
+                      {body && <div className="activity-text"><MentionText text={body.length > 400 ? `${body.slice(0, 400)}…` : body} /></div>}
                       {o === 'form_submissions' && <Answers record={r} limit={6} />}
                     </>
                   )}
@@ -849,7 +889,7 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { ob
       {object === 'form_submissions' ? (
         <Answers record={record} />
       ) : body ? (
-        /<[a-z][\s\S]*>/i.test(body) ? <HtmlBody html={body} /> : <div className="activity-plain">{body}</div>
+        /<[a-z][\s\S]*>/i.test(body) ? <HtmlBody html={mentionsAsText(body)} /> : <div className="activity-plain"><MentionText text={body} /></div>
       ) : (
         <div className="muted small">{object === 'calls' ? 'No call notes' : 'No body'}</div>
       )}

@@ -6,10 +6,11 @@ import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter/latin-600.css';
 import * as kit from './kit';
-import { listen, post, report } from './bridge';
+import { call, listen, post, report } from './bridge';
 import { hasScheme } from './external-url';
 import './frame.css';
 import { installTooltips } from '../lib/tooltips';
+import { attachComplete, snippetTrigger, type Snippet } from '../lib/text-complete';
 
 installTooltips();
 
@@ -68,7 +69,24 @@ const onLinkClick = (e: MouseEvent) => {
 document.addEventListener('click', onLinkClick);
 document.addEventListener('auxclick', onLinkClick);
 
+// Snippets: when the view allows them, every <textarea> it draws offers them
+// on # (the CRM page reads and fills them in with the viewer's access).
+function installSnippets(): void {
+  const trigger = snippetTrigger(
+    () => call<Snippet[]>('snippets', []),
+    (s) => call<string>('renderSnippet', [s.id])
+  );
+  const attached = new WeakSet<HTMLTextAreaElement>();
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (!(el instanceof HTMLTextAreaElement) || attached.has(el) || el.readOnly || el.dataset.snippets === 'off') return;
+    attached.add(el);
+    attachComplete(el, [trigger]);
+  });
+}
+
 listen((msg) => {
+  if (msg.snippets) installSnippets();
   for (const [k, v] of Object.entries(msg.theme ?? {})) document.documentElement.style.setProperty(k, v);
   const el = document.getElementById('root')!;
   try {

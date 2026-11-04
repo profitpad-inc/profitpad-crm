@@ -465,18 +465,20 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('update_view_settings', {
     title: 'Update custom view settings',
-    description: 'Changes a view\'s name, slug (page address), icon, description or audience. Takes effect at once, without publishing. For the code or queries use save_view_draft instead.',
+    description: 'Changes a view\'s name, slug (page address), icon, description, audience or whether its text boxes offer snippets (typing # pulls in saved text). Takes effect at once, without publishing. For the code or queries use save_view_draft instead.',
     inputSchema: z.object({
       view: viewArg,
       name: z.string().optional(),
       slug: z.string().optional(),
       icon: z.string().optional().describe('Lucide icon name, like chart-column ("" for the default); find one with find_icons'),
       description: z.string().optional(),
-      audience: z.enum(['admins', 'everyone']).optional()
+      audience: z.enum(['admins', 'everyone']).optional(),
+      allow_snippets: z.boolean().optional().describe('Whether typing # in the view\'s text boxes (textarea) offers snippets. On unless turned off.')
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge
-  }, async ({ view, ...props }) => run(async () => {
+  }, async ({ view, allow_snippets, ...rest }) => run(async () => {
+    const props = { ...rest, allow_snippets: allow_snippets === undefined ? undefined : String(allow_snippets) };
     requireScope(p, 'schema');
     const v = await loadView(pool, view);
     const obj = await objectForWrite('views');
@@ -641,7 +643,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('list_document_templates', {
     title: 'List document templates',
-    description: 'Document templates draw records as documents: the customer\'s quote page and its PDF. Lists them (no code) with object, kind (html or react), status and whether each is the default. Read view_guide topic document_templates before writing one.',
+    description: 'Document templates draw records as documents: the customer\'s quote page and its PDF. Lists them (no code) with object, status and whether each is the default. Read view_guide topic document_templates before writing one.',
     inputSchema: z.object({ object: z.string().optional().describe('Only templates for this object (quotes)') }),
     annotations: { readOnlyHint: true }
   }, async ({ object }) => run(async () => (await listTemplates(object)).map((t) => templateOut(t, false))));
@@ -655,11 +657,10 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('create_document_template', {
     title: 'Create document template',
-    description: 'Creates a draft template for one object type. kind html: an HTML page with Liquid tags; kind react: TSX whose default export gets the data prop. The code and SQL sources are checked before saving. Admins only. Nothing reaches customers until it is published and linked or made the default.',
+    description: 'Creates a draft template for one object type: an HTML page with Liquid tags. The code and SQL sources are checked before saving. Admins only. Nothing reaches customers until it is published and linked or made the default.',
     inputSchema: z.object({
       name: z.string(),
       object: z.enum(['quotes']).optional().describe('Default quotes'),
-      kind: z.enum(['html', 'react']),
       description: z.string().optional(),
       source: z.string().optional(),
       queries: sourcesArg,
@@ -673,13 +674,12 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('save_document_template_draft', {
     title: 'Save document template draft',
-    description: 'Changes the draft: source (all of it) or edits (find and replace, each old_str matching exactly one place), queries (all data sources), kind. Checked before saving.',
+    description: 'Changes the draft: source (all of it) or edits (find and replace, each old_str matching exactly one place), queries (all data sources). Checked before saving.',
     inputSchema: z.object({
       template: templateArg,
       source: z.string().optional(),
       edits: z.array(z.object({ old_str: z.string(), new_str: z.string() })).optional(),
-      queries: sourcesArg,
-      kind: z.enum(['html', 'react']).optional()
+      queries: sourcesArg
     }),
     annotations: { readOnlyHint: false, idempotentHint: true },
     scopeChallenge: schemaChallenge

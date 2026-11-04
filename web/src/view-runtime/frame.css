@@ -112,6 +112,7 @@ a:hover, .v-link:hover { text-decoration: underline; }
   background-size: 12px;
 }
 .v-input.small { height: 28px; padding: 0 8px; font-size: 12px; }
+.v-textarea { height: auto; padding: 8px 10px; line-height: 1.45; resize: vertical; width: 100%; }
 .v-select.small { padding-right: 26px; background-position: right 8px center; }
 /* PhoneInput: the country picker (flag only) beside the number */
 .v-phone { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

@@ -2,10 +2,10 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type R
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
   Menu as MenuIcon, Search, Copy, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  FileText, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
+  FileText, Hash, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
-import { api, type NavItem, type SearchResult, type View } from '../lib/api';
+import { api, type CrmRecord, type NavItem, type SearchResult, type View } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
@@ -26,8 +26,10 @@ import { CardScannerSettings } from './CardScannerSettings';
 import { QuoteDocumentSettings } from './QuoteDocumentSettings';
 import { CurrencySettings } from './CurrencySettings';
 import { AddressSettings } from './AddressSettings';
+import { SnippetSettings } from './SnippetSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
+import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import '../settings.css';
 import { confirmDialog } from '../components/confirm';
 
@@ -40,7 +42,8 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
   { label: 'Your account', links: [
     { path: '', label: 'Account', icon: <User size={16} />, gate: 'all', element: <Account /> },
     { path: 'connected-apps', label: 'Connected apps', icon: <Plug size={16} />, gate: 'all', element: <ConnectedApps /> },
-    { path: 'calendars', label: 'Calendars', icon: <CalendarDays size={16} />, gate: 'user', element: <CalendarSettings /> }
+    { path: 'calendars', label: 'Calendars', icon: <CalendarDays size={16} />, gate: 'user', element: <CalendarSettings /> },
+    { path: 'snippets', label: 'Snippets', icon: <Hash size={16} />, gate: 'all', element: <SnippetSettings /> }
   ] },
   { label: 'Workspace', links: [
     { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
@@ -125,7 +128,38 @@ function Account() {
           <button className="btn" onClick={signOut}>Sign out</button>
         </SettingRow>
       </div>
+      {me.user && <EmailSignature userId={me.user.id} initial={me.user.email_signature ?? null} canWrite={me.scopes.includes('write')} />}
     </SettingsPage>
+  );
+}
+
+// Your own email signature (users.email_signature), saved on your user
+// record like any other property (needs Edit on users; the API cleans it).
+function EmailSignature({ userId, initial, canWrite }: { userId: string; initial: string | null; canWrite: boolean }) {
+  const { toast } = useApp();
+  const [html, setHtml] = useState(initial);
+  const [editing, setEditing] = useState(false);
+  return (
+    <SettingsSection title="Email signature" description="Added to the end of emails you send from the CRM. Images must be public links: a CRM file (its public link is turned on) or a public web address."
+      actions={canWrite && !html ? <button className="btn" onClick={() => setEditing(true)}>Add signature</button> : undefined}>
+      {html
+        ? <HtmlValue html={html} title="Email signature" onEdit={canWrite ? () => setEditing(true) : undefined} />
+        : <p className="muted">No signature yet.</p>}
+      {editing && (
+        <HtmlEditorModal
+          title="Email signature"
+          value={html ?? ''}
+          hint="Write HTML or paste a signature's HTML. Scripts and forms are removed on save."
+          onClose={() => setEditing(false)}
+          onSave={async (draft) => {
+            const res = await api<CrmRecord>('PATCH', `/v1/objects/users/${userId}`, { properties: { email_signature: draft.trim() ? draft : null } });
+            setHtml((res.properties.email_signature as string | null) ?? null);
+            setEditing(false);
+            toast('Signature saved');
+          }}
+        />
+      )}
+    </SettingsSection>
   );
 }
 

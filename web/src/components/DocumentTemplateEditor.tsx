@@ -15,7 +15,6 @@ interface TemplateOut {
   id: string;
   name: string | null;
   object: string;
-  kind: 'html' | 'react';
   status: 'draft' | 'published';
   is_default: boolean;
   unpublished_changes: boolean;
@@ -32,7 +31,6 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   const [tab, setTab] = useState<'code' | 'queries'>('code');
   const [source, setSource] = useState('');
   const [queries, setQueries] = useState('');
-  const [kind, setKind] = useState<'html' | 'react'>('html');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [records, setRecords] = useState<{ value: string; label: string }[]>([]);
@@ -45,7 +43,6 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
     setT(out);
     setSource(out.draft_source ?? '');
     setQueries(out.draft_queries ?? '');
-    setKind(out.kind);
   };
 
   useEffect(() => {
@@ -72,7 +69,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
 
   if (error && !t) return <div className="card"><div className="error">{error}</div></div>;
   if (!t) return <div className="card muted">Loading…</div>;
-  const dirty = source !== (t.draft_source ?? '') || queries !== (t.draft_queries ?? '') || kind !== t.kind;
+  const dirty = source !== (t.draft_source ?? '') || queries !== (t.draft_queries ?? '');
   const canEdit = me.is_admin;
 
   async function act(fn: () => Promise<TemplateOut>, done: string) {
@@ -101,7 +98,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
         return;
       }
     }
-    if (await act(() => api('PUT', `/v1/document-templates/${record.id}/draft`, { source, queries: parsed ?? {}, kind }), 'Draft saved')) {
+    if (await act(() => api('PUT', `/v1/document-templates/${record.id}/draft`, { source, queries: parsed ?? {} }), 'Draft saved')) {
       void showPreview();
     }
   }
@@ -153,7 +150,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
         <div className="card-head">
           <h3>Template</h3>
           <span className="muted small">
-            {t.kind === 'react' ? 'React' : 'HTML (Liquid)'} · {t.status === 'published' ? (t.unpublished_changes ? 'Published, draft has changes' : 'Published') : 'Draft, not published yet'}
+            HTML (Liquid) · {t.status === 'published' ? (t.unpublished_changes ? 'Published, draft has changes' : 'Published') : 'Draft, not published yet'}
             {t.is_default ? ' · Default for every record without its own template' : ''}
           </span>
           <span style={{ flex: 1 }} />
@@ -178,12 +175,12 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
           <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
           <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!t.source}>Published</button></div>
           <span style={{ flex: 1 }} />
-          <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>{t.kind === 'react' ? 'React' : 'HTML'}</button></div>
+          <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>HTML</button></div>
           <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Data sources</button></div>
         </div>
         {tab === 'code' ? (
           <textarea className="view-code template-code" spellCheck={false} value={shownSource} readOnly={readOnly}
-            placeholder={readOnly ? 'No code yet.' : 'An HTML page with Liquid tags, like {{ quote.name }}, or React (TSX) whose default export gets the data prop.'}
+            placeholder={readOnly ? 'No code yet.' : 'An HTML page with Liquid tags, like {{ quote.name }}.'}
             onChange={(e) => setSource(e.target.value)} aria-label="Template code" />
         ) : (
           <textarea className="view-code template-code short" spellCheck={false} value={shownQueries} readOnly={readOnly}
@@ -192,8 +189,6 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
         )}
         {which === 'draft' && canEdit && (
           <div className="template-actions">
-            <Select value={kind} onChange={(v) => setKind(v as 'html' | 'react')} aria-label="Written in"
-              options={[{ value: 'html', label: 'HTML (Liquid)' }, { value: 'react', label: 'React' }]} />
             <span style={{ flex: 1 }} />
             {dirty && <button className="btn small ghost" disabled={busy} onClick={() => load(t)}>Discard</button>}
             <button className="btn small primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? 'Saving...' : 'Save draft'}</button>

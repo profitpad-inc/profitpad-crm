@@ -9,6 +9,7 @@ import { ViewIcon } from '../lib/lucide-icons';
 import { onFrameFocus } from '../lib/frame-focus';
 import { SearchPalette } from './SearchPalette';
 import { BrandMark } from './Logo';
+import { MentionsButton } from './MentionsMenu';
 
 const EXPANDED_KEY = 'pcrm.sidebarExpanded';
 
@@ -119,6 +120,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
           {drawer && moreOpen && <InlineMore objects={objects.map((o) => o.api_name)} />}
         </div>
         <div className="sidebar-bottom">
+          {me.user && <MentionsButton expanded={expanded} />}
           {(me.is_admin || navCanEdit) && (
             <Link to="/settings/navigation" className="nav-item" title={expanded ? undefined : 'Edit menu'}>
               <Pencil size={18} strokeWidth={1.75} />
