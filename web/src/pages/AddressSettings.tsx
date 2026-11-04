@@ -113,7 +113,7 @@ export function AddressSettings() {
         >
           {state.key_unreadable && <div className="error">The saved key can't be opened on this server (its encryption key changed). Save the API key again.</div>}
           {!state.can_store_secrets ? (
-            <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_TOKEN is not set).</div>
+            <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>
           ) : (
             <div className="key-row">
               <input
@@ -192,6 +192,7 @@ export function AddressSettings() {
                                 ...props.map((p) => ({ value: p.api_name, label: p.label }))
                               ]}
                             />
+                            {g[part.key] && <code className="address-part-name">{g[part.key]}</code>}
                           </label>
                         );
                       })}

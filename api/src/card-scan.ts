@@ -63,7 +63,7 @@ async function scanSettings(): Promise<ScanSettings> {
     try {
       key = open(r.anthropic_key);
     } catch {
-      key = null; // sealed with another MASTER_ENCRYPTION_TOKEN
+      key = null; // sealed with another MASTER_ENCRYPTION_KEY
     }
   }
   return { reader: r.reader, key, key_hint: r.key_hint };
@@ -616,7 +616,7 @@ function settingsOut(s: ScanSettings, tesseract: string | null) {
     reader: s.reader,
     model: MODEL,
     has_key: s.key_hint !== null,
-    // a key is stored but cannot be opened (MASTER_ENCRYPTION_TOKEN changed or missing)
+    // a key is stored but cannot be opened (MASTER_ENCRYPTION_KEY changed or missing)
     key_unreadable: s.key_hint !== null && s.key === null,
     key_hint: s.key_hint,
     tesseract_version: tesseract,
@@ -758,7 +758,7 @@ export async function cardScanRoutes(app: FastifyInstance) {
     } else if (b.anthropic_key !== undefined) {
       const key = typeof b.anthropic_key === 'string' ? b.anthropic_key.trim() : '';
       if (!/^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(key)) throw badRequest('That does not look like an Anthropic API key (they start with sk-ant-).');
-      if (!secretBoxReady()) throw new ApiError(503, 'The server cannot store secrets: MASTER_ENCRYPTION_TOKEN is not set.', 'not_configured');
+      if (!secretBoxReady()) throw new ApiError(503, 'The server cannot store secrets: MASTER_ENCRYPTION_KEY is not set.', 'not_configured');
       await checkKey(key);
       keyChange = { sealed: seal(key), hint: key.slice(-4) };
     }

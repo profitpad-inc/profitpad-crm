@@ -63,7 +63,7 @@ async function loadSettings(): Promise<Settings> {
     try {
       key = open(r.google_key);
     } catch {
-      key = null; // sealed with another MASTER_ENCRYPTION_TOKEN
+      key = null; // sealed with another MASTER_ENCRYPTION_KEY
     }
   }
   const value: Settings = r
@@ -340,7 +340,7 @@ export async function addressRoutes(app: FastifyInstance) {
     } else if (b.google_key !== undefined) {
       const key = typeof b.google_key === 'string' ? b.google_key.trim() : '';
       if (!/^AIza[0-9A-Za-z_-]{30,60}$/.test(key)) throw badRequest('That does not look like a Google Maps API key (they start with AIza).');
-      if (!secretBoxReady()) throw new ApiError(503, 'The server cannot store secrets: MASTER_ENCRYPTION_TOKEN is not set.', 'not_configured');
+      if (!secretBoxReady()) throw new ApiError(503, 'The server cannot store secrets: MASTER_ENCRYPTION_KEY is not set.', 'not_configured');
       await checkKey(key);
       keyChange = { sealed: seal(key), hint: key.slice(-4) };
     }

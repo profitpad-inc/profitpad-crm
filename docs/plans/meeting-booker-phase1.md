@@ -31,7 +31,7 @@ Cancel and reschedule links, reminder emails, embed script, booking from a recor
 2a. **Google calendars: profitpad.com accounts only (decided 2026-11-01)**, so Google's app verification is not needed. The consent screen stays **Internal** (`docs/deploy.md` already sets it up that way), and the connect callback also refuses any ID token whose `hd` claim is not `profitpad.com` (`CALENDAR_GOOGLE_DOMAINS`, default `profitpad.com`). Switching to External later means going through verification for the calendar scopes. Microsoft has no such step; `MICROSOFT_ALLOWED_DOMAINS` applies to connections too.
 2b. **Booking forms are regular forms (decided 2026-11-01).** A booking page points at up to two `forms` records: `form_before` (shown before the time picker) and `form_after` (shown after). They are applied with the same code as a normal form submit, so contact properties are overwritten the same way. At least one of them must contain the contact `email` field (the form builder already adds and requires it once any contact property is used), because the invite and the contact both need it. Answers from both forms are sent in the one booking request, so nothing is written until a time is booked.
 2c. **No CRM confirmation email (decided 2026-11-01)**: the calendar invite is enough.
-3. **Refresh tokens are encrypted in the database** with AES-256-GCM using a key from `MASTER_ENCRYPTION_TOKEN` (32 random bytes, base64). Access tokens live only in memory.
+3. **Refresh tokens are encrypted in the database** with AES-256-GCM using a key from `MASTER_ENCRYPTION_KEY` (32 random bytes, base64). Access tokens live only in memory.
 4. **Times are stored in UTC.** Each booking page has an IANA time zone for its working hours. Slot math uses `luxon` so daylight saving changes come out right (new API dependency, pin the version at install).
 5. **Double booking** is prevented with a Postgres advisory lock per host while booking, plus a live re-check of the provider and of CRM meetings inside that lock.
 6. **Ordering on booking:** CRM records are written in a transaction, the provider event is created before commit, and if the provider call fails the transaction rolls back and the visitor is asked to pick again. If the commit fails after the event was made, the event is deleted (best effort, logged).
@@ -94,7 +94,7 @@ Add assertions to `db/tests/001_core.sql`: the object and properties exist, the 
 
 ### `api/src/secret-box.ts` (new)
 
-`seal(plain: string): Buffer` and `open(sealed: Buffer): string` with AES-256-GCM. The API refuses to start calendar routes (they report "not configured") without `MASTER_ENCRYPTION_TOKEN`.
+`seal(plain: string): Buffer` and `open(sealed: Buffer): string` with AES-256-GCM. The API refuses to start calendar routes (they report "not configured") without `MASTER_ENCRYPTION_KEY`.
 
 ### `api/src/calendar/connect.ts` (new)
 
@@ -211,7 +211,7 @@ The CSP plugin already allows `connect-src` to the API, so nothing changes there
   - `https://api.test-crm.profitpad.com/v1/calendar/microsoft/callback`
   - `http://localhost:5173/v1/calendar/microsoft/callback`
   Some tenants require admin consent for `Calendars.ReadWrite`.
-- Server `.env`: `MASTER_ENCRYPTION_TOKEN` (generate with `openssl rand -base64 32`). `docs/deploy.md` gets the steps.
+- Server `.env`: `MASTER_ENCRYPTION_KEY` (generate with `openssl rand -base64 32`). `docs/deploy.md` gets the steps.
 
 ## Testing
 
