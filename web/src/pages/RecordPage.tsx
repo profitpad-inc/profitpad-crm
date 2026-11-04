@@ -13,6 +13,7 @@ import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
 import { ViewCode } from '../components/ViewCode';
+import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
@@ -318,6 +319,13 @@ export function RecordPage() {
               <BookingPageEditor record={record} onSaved={setRecord} />
             ) : object === 'form_submissions' ? (
               <SubmissionAnswers record={record} />
+            ) : object === 'document_templates' ? (
+              <>
+                {record.record_status === 'archived'
+                  ? <div className="card muted">Archived templates are not used. Restore this template to see its code.</div>
+                  : <DocumentTemplateEditor record={record} onChanged={setRecord} />}
+                <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
+              </>
             ) : object === 'views' ? (
               <>
                 {record.record_status === 'archived'

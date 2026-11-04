@@ -23,6 +23,7 @@ import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
 import { BRAND_PATHS, brandRoutes } from './brand.js';
 import { fileRoutes, startFileSweeper } from './files.js';
 import { viewRoutes } from './routes/views.js';
+import { templateRoutes } from './routes/templates.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { startWebhookWorker } from './webhooks.js';
@@ -202,6 +203,7 @@ export async function buildApp() {
   await app.register(brandRoutes);
   await app.register(fileRoutes);
   await app.register(viewRoutes);
+  await app.register(templateRoutes);
   await app.register(integrationRoutes);
   await app.register(webhookRoutes);
   await app.register(cardScanRoutes);

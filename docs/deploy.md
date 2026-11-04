@@ -187,6 +187,8 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 3. The API loads the view frame from `${UI_URL}/view-frame/index.html` (GitHub Pages), so the UI must be deployed with the same frame version; `VIEW_FRAME_URL` or `VIEW_FRAME_FILE` override it.
 4. Check: `docker logs test-crm-renderer` shows `Listening on ws://0.0.0.0:3000/`; then ask Claude to `render_view` a view.
 
+Document templates (migration 0075) use the same renderer: PDFs of templated quotes and React templates are drawn there, so the renderer must be running wherever templates are used (HTML templates still show on the customer's page without it, and the PDF falls back to the built-in layout). Outside images in templates are fetched by the API, not the renderer, so the renderer keeps no internet access.
+
 Keep `playwright-core` in `api/package.json` and the renderer image on the same version: the client refuses a server of another version. Locally, `RENDERER_LOCAL=1` launches Chromium in the API process (`npx playwright-core install chromium` once), or run `npx playwright@1.64.1 run-server --port 3456` and set `RENDERER_WS_URL=ws://127.0.0.1:3456/`.
 
 ## 18. Object aliases (migration 0047)

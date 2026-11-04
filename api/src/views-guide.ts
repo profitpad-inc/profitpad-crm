@@ -7,8 +7,37 @@ import { MAX_QUERIES, MAX_SOURCE, PARAM_TYPES, ROW_CAP, VIEW_MODULES, parseQueri
 // AI needs to build a custom view. The runtime it describes is
 // web/src/view-runtime (kit.tsx); keep the two in step.
 
-export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'design', 'sql', 'schema', 'properties', 'integrations', 'examples'] as const;
+export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'design', 'sql', 'schema', 'properties', 'integrations', 'examples', 'document_templates'] as const;
 export type GuideTopic = (typeof GUIDE_TOPICS)[number];
+
+const DOCUMENT_TEMPLATES = `# Document templates
+
+A document template draws a record as a document: the customer's quote page and its PDF. Templates are records of the object "document_templates" (Settings shows them under /objects/document_templates). Each one is for one object type ("object": quotes for now) and is written in one of two ways ("kind"):
+- html: an HTML page with Liquid tags (liquidjs, like Shopify/HubSpot HubL). Filled in on the server. Output is HTML-escaped by default; use | raw only on text you built yourself (for example after | escape | newline_to_br | raw).
+- react: TSX like a view (import from react and @pcrm/view), default export a component that gets one prop, data. It runs in the sandboxed view frame inside the renderer's Chromium and its final HTML is kept. Hooks that fetch (useQuery, callIntegration) do not work: everything comes in data.
+
+The result is one static HTML page. The customer sees it in a sandboxed iframe (no scripts run), and the PDF is that page printed by Chromium with scripts off, so they look the same. Write a whole page (<!doctype html>, <style> in the head) sized for paper: for US Letter, 8.5in wide. Use @media print for PDF-only changes (no drop shadows, no grey backdrop) and @page { size: letter; margin: 0 } when the page draws its own margins. page_size, orientation and page_margin on the template are the PDF defaults; a CSS @page rule wins. <script> never runs: compute values with Liquid or React instead.
+
+## Which template a record uses
+The template linked to the record (association; a quote links to at most one), else the published template marked default for that object, else the CRM's built-in layout. Only published templates are used for customers; set_default_document_template picks the default.
+
+## data (the same for both kinds; see it with get_document_template_data)
+- record, and the same object under the singular name (quote): every property by api_name (a single-value dropdown as its value, numbers as numbers, dates YYYY-MM-DD, times ISO), id, and _text: each property as the CRM shows it (dropdown labels, money, long dates). public_key and customer_ip are never included.
+- lines: the line items, oldest first. company, contact, deal: the first linked one (or null). linked: every linked record by object api name (linked.companies, linked.products ...).
+- queries: the template's data sources by name. SQL sources run read-only over view_data like view queries (view_guide topic sql) with :record_id bound to the record; their rows are lists. Integration sources ({"integration": "key", "data": {...}}) call an enabled view integration while drawing; string values in data may hold Liquid ({{ quote.name }}), and the answer's data is queries.<name>.
+- org: {logo (data URL or null), theme}. today (YYYY-MM-DD), now (ISO, UTC).
+
+## Images, barcodes, fonts
+Outside images (https) and web fonts in url(...) are downloaded by the server and written into the page, so they show in the PDF too (3 MB each). Barcodes need no outside service: in Liquid {{ quote.name | barcode }} (Code 128; | barcode: "code39", 12 for type and height in mm) or {{ quote.name | qrcode }}; in either kind the address https://barcode.invalid/<type>?text=<text>&height=<mm> (code128, code39, ean13, upca, qrcode, datamatrix, pdf417 and the other bwip-js types). Linear barcodes stretch to the size CSS gives them.
+
+## Liquid filters beyond the standard ones
+money: currency ("$1,240.00"), number: decimals ("1,240.5"), fixed: decimals ("15895.500", no separators, like printed forms), barcode, qrcode, zone_abbr: "America/Chicago" (CST/CDT at that moment), and date with a time zone: {{ now | date: "%m/%d/%Y %I:%M %p", "America/Chicago" }}. sum, map, where, default and the rest of liquidjs work as usual.
+
+## How to build one (or copy an existing document exactly)
+1. get_document_template_data for a real record: learn what is there. Missing fields need properties (create_property) or a SQL source.
+2. To copy an existing page, start from its own HTML and CSS: keep the CSS as it is and put Liquid where the values are. Watch for inherited styles from stylesheets the page loads (a theme's line-height changes every box height).
+3. create_document_template (draft), then render_document_template after each change: it returns a screenshot of the page at paper width, the PDF's page count and warnings (failed queries, images that did not load). Compare with the target until they match. save_document_template_draft takes edits (find and replace) like save_view_draft.
+4. Ask the user before publish_document_template and set_default_document_template: published templates go to customers.`;
 
 const OVERVIEW = `# Custom views
 
@@ -473,5 +502,6 @@ export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', ob
     case 'properties': return PROPERTIES;
     case 'integrations': return INTEGRATIONS;
     case 'examples': return examplesTopic();
+    case 'document_templates': return DOCUMENT_TEMPLATES;
   }
 }

@@ -36,6 +36,8 @@ export interface PublicQuote {
   lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null; extra?: Record<string, string> }[];
   // what the quote shows beyond its fixed parts (Settings -> Quote document)
   layout?: QuoteLayout;
+  // the quote drawn by its document template, a whole HTML page (api/src/templates.ts); null: the built-in layout
+  document_html?: string | null;
   signing_fields: SigningField[];
   signed_fields: Record<string, string> | null;
   customer_signature: string | null;

@@ -68,6 +68,30 @@ function render(q: PublicQuote): void {
     note = el('div', { class: 'pp-note' }, 'This quote has expired. Contact us if you would like an updated one.');
   }
 
+  const payment = paymentBox(q.payment, {
+    pay: () => api.pay('quotes', key),
+    etransferSent: (body) => api.etransferSent('quotes', key, body),
+    reload: async () => void (await reload()),
+    contact: q.contact
+  });
+
+  // A document template draws the whole quote; status, signatures, paying and
+  // the buttons sit under it in a card of their own.
+  if (q.document_html) {
+    root.replaceChildren(el('main', { class: 'pp-page pp-templated' },
+      documentFrame(q.document_html, q.name ?? 'Quote'),
+      el('div', { class: 'pp-card pp-under' },
+        el('div', { class: 'pp-head' },
+          el('h2', {}, q.name ?? 'Quote'),
+          el('span', { class: `pp-pill ${q.status}` }, STATUS[q.status])),
+        note,
+        signatures(q),
+        payment,
+        actions,
+        respondBox)));
+    return;
+  }
+
   root.replaceChildren(el('main', { class: layout?.orientation === 'landscape' ? 'pp-page wide' : 'pp-page' },
     el('div', { class: 'pp-card' },
       el('div', { class: 'pp-head' },
@@ -81,14 +105,27 @@ function render(q: PublicQuote): void {
       ...(layout ? extraTables(layout.tables) : []),
       note,
       signatures(q),
-      paymentBox(q.payment, {
-        pay: () => api.pay('quotes', key),
-        etransferSent: (body) => api.etransferSent('quotes', key, body),
-        reload: async () => void (await reload()),
-        contact: q.contact
-      }),
+      payment,
       actions,
       respondBox)));
+}
+
+// The template's page in a sandboxed iframe: no scripts, forms or popups, so
+// nothing in a template can act on the customer's behalf. allow-same-origin
+// only lets this page read its height to size the frame.
+function documentFrame(html: string, title: string): HTMLElement {
+  const frame = el('iframe', { class: 'pp-document', title, sandbox: 'allow-same-origin', srcdoc: html }) as HTMLIFrameElement;
+  const fit = () => {
+    const doc = frame.contentDocument;
+    if (doc?.documentElement) frame.style.height = `${Math.max(400, doc.documentElement.scrollHeight)}px`;
+  };
+  frame.addEventListener('load', () => {
+    fit();
+    // fonts and images can change the height after load
+    setTimeout(fit, 300);
+    if (typeof ResizeObserver !== 'undefined' && frame.contentDocument?.body) new ResizeObserver(fit).observe(frame.contentDocument.body);
+  });
+  return frame;
 }
 
 async function reload() {

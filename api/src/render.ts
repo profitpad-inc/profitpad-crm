@@ -34,7 +34,7 @@ const MAX_BOXES = 400;
 
 let browser: Promise<Browser> | null = null;
 
-function getBrowser(): Promise<Browser> {
+export function getBrowser(): Promise<Browser> {
   if (browser) return browser;
   const ws = process.env.RENDERER_WS_URL;
   if (!ws && process.env.RENDERER_LOCAL !== '1') {
@@ -52,7 +52,7 @@ function getBrowser(): Promise<Browser> {
 // at most MAX_RENDERS at once; others wait their turn
 let running = 0;
 const waiting: (() => void)[] = [];
-async function slot<T>(fn: () => Promise<T>): Promise<T> {
+export async function slot<T>(fn: () => Promise<T>): Promise<T> {
   if (running >= MAX_RENDERS) await new Promise<void>((resolve) => waiting.push(resolve));
   running++;
   try {
@@ -69,7 +69,7 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
 // VIEW_FRAME_FILE, or fetched from VIEW_FRAME_URL or UI_URL; kept 5 minutes.
 let frameHtml: { html: string; at: number } | null = null;
 
-async function loadFrameHtml(): Promise<string> {
+export async function loadFrameHtml(): Promise<string> {
   if (frameHtml && Date.now() - frameHtml.at < 5 * 60_000) return frameHtml.html;
   let html: string;
   if (process.env.VIEW_FRAME_FILE) {
