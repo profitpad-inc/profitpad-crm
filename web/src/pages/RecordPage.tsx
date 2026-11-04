@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, Link2, Lock, Pencil, Plus, X } from 'lucide-react';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -98,9 +98,21 @@ async function loadLinked(object: string, id: string, codeToName: Map<string, st
   );
 }
 
+// Where the back link goes when the record was opened from somewhere other
+// than its object's table (a custom view): navigation state, kept for this
+// record while its own address changes (tabs).
+export interface RecordBack {
+  back: { to: string; label: string };
+}
+
 export function RecordPage() {
   const { object = '', id = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const backFor = useRef<{ record: string; back: RecordBack['back'] } | null>(null);
+  const given = (location.state as RecordBack | null)?.back;
+  if (given && typeof given.to === 'string' && given.to.startsWith('/')) backFor.current = { record: `${object}/${id}`, back: given };
+  const back = backFor.current?.record === `${object}/${id}` ? backFor.current.back : null;
   const { objects, objectByName, toast, me } = useApp();
   const [schema, setSchema] = useState<ObjectDef | null>(null);
   const [record, setRecord] = useState<CrmRecord | null>(null);
@@ -207,8 +219,8 @@ export function RecordPage() {
       <aside className="record-left">
         <div className="record-head">
           <div className="record-head-bar">
-            <Link to={`/objects/${object}`} className="back">
-              <ChevronLeft size={16} /> {schema.label_plural}
+            <Link to={back?.to ?? `/objects/${object}`} className="back">
+              <ChevronLeft size={16} /> {back?.label ?? schema.label_plural}
             </Link>
             <Menu
               align="right"

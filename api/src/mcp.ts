@@ -405,7 +405,7 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('render_view', {
     title: 'Render custom view',
-    description: 'Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look. The browser runs in timezone (default: your user\'s zone, else the one most users have; the report says which), so formatDateTime shows what that person sees. click clicks elements (by visible text or CSS selector, in order) before the screenshot, to check a selected row, an open panel or a tab; selections kept in address params can be rendered with params instead. Nothing is changed while rendering: record changes and integration calls are refused (listed in not_run). screenshot: false returns the report only (cheaper).',
+    description: 'Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look. The browser runs in timezone (default: your user\'s zone, else the one most users have; the report says which), so formatDateTime shows what that person sees. click runs up to 8 steps in order before the screenshot, each found by visible text or CSS selector: a click (a selected row, an open panel, a tab), or with type, typing into that box key by key so onChange and debounces run (an autocomplete). Selections kept in address params can be rendered with params instead. Record changes are refused (listed in not_run). callIntegration is refused unless you give integration_answers (a canned answer per key: nothing is sent, good for checking how results look) or call_integrations (keys really called, as the view would: the workflow really runs, so confirm with the admin first, as with test_integration); integration_calls in the report lists every call with the data the view sent and how it was answered. screenshot: false returns the report only (cheaper).',
     inputSchema: z.object({
       view: viewArg,
       width: z.number().int().min(320).max(2400).optional().describe('Screen width in pixels (default 1280; 390 for a phone)'),
@@ -417,8 +417,17 @@ function registerAdminTools(server: McpServer, p: Principal) {
       styles: z.boolean().optional().describe('Add each box\'s font size, line height and weight'),
       published: z.boolean().optional().describe('Render the published version instead of the draft'),
       timezone: z.string().optional().describe('IANA time zone, like America/Toronto'),
-      click: z.array(z.object({ text: z.string().optional(), selector: z.string().optional() })).max(5).optional()
-        .describe('Up to 5 clicks before the screenshot, each {text} (visible text, first match) or {selector} (CSS); the report says which worked')
+      click: z.array(z.object({
+        text: z.string().optional(),
+        selector: z.string().optional(),
+        type: z.string().max(200).optional().describe('Type this into the box found (after clicking it)'),
+        wait_ms: z.number().int().min(0).max(5000).optional().describe('Wait after this step (default 100 ms, 500 after typing)')
+      })).max(8).optional()
+        .describe('Up to 8 steps before the screenshot, each {text} (visible text, first match) or {selector} (CSS), clicked, and with type typed into; the report says which worked'),
+      integration_answers: z.record(z.string(), z.unknown()).optional()
+        .describe('Canned answers by integration key: callIntegration(key) gets {status: 200, data: <this>} and nothing is sent'),
+      call_integrations: z.array(z.string()).max(5).optional()
+        .describe('Integration keys really called while rendering (enabled and approved ones only; the workflow really runs)')
     }),
     annotations: { readOnlyHint: true }
   }, async ({ view, ...opts }) => {

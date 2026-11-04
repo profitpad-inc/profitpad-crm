@@ -5,6 +5,7 @@ import { ApiError, badRequest } from './errors.js';
 import { requireScope, type Principal } from './auth.js';
 import { loadView, openView, runViewQuery } from './views.js';
 import { checkPhone, DEFAULT_REGION, phoneRegions } from './phone.js';
+import { callFromView } from './integrations.js';
 
 // render_view (MCP): draws a custom view in a headless Chromium as the
 // caller and reports what it looks like: a screenshot, the boxes of the
@@ -226,9 +227,19 @@ export interface RenderOptions {
   styles?: boolean;
   // IANA zone the browser runs in; default the caller's (users.timezone)
   timezone?: string;
-  // clicked in order before the screenshot: visible text, or a CSS selector
-  click?: { text?: string; selector?: string }[];
+  // steps in order before the screenshot, found by visible text or a CSS
+  // selector: a click, or with type, typing into that box (key by key, so
+  // onChange and debounces run), each followed by wait_ms and a settle
+  click?: { text?: string; selector?: string; type?: string; wait_ms?: number }[];
+  // callIntegration while rendering: canned answers per key (nothing is
+  // sent), and keys that are really called (the workflow really runs)
+  integration_answers?: Record<string, unknown>;
+  call_integrations?: string[];
 }
+
+const MAX_STEPS = 8;
+// after typing, long enough for a 300 ms debounce to fire before settling
+const TYPE_WAIT_MS = 500;
 
 const validZone = (z: string) => {
   try {
@@ -266,10 +277,16 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
   if (o.timezone !== undefined && !validZone(o.timezone)) throw badRequest(`"${o.timezone}" is not a time zone (use names like America/Toronto)`);
   const zone = o.timezone ? { zone: o.timezone, from: 'the timezone you gave' } : await defaultZone(p);
   const clicks = o.click ?? [];
-  if (clicks.length > 5) throw badRequest('at most 5 clicks');
+  if (clicks.length > MAX_STEPS) throw badRequest(`at most ${MAX_STEPS} steps`);
   for (const c of clicks) {
-    if (!c || (typeof c.text === 'string') === (typeof c.selector === 'string')) throw badRequest('each click needs either text or selector');
+    if (!c || (typeof c.text === 'string') === (typeof c.selector === 'string')) throw badRequest('each step needs either text or selector');
+    if (c.type !== undefined && (typeof c.type !== 'string' || c.type.length > 200)) throw badRequest('type is text up to 200 characters');
+    if (c.wait_ms !== undefined && !(Number.isInteger(c.wait_ms) && c.wait_ms >= 0 && c.wait_ms <= 5000)) throw badRequest('wait_ms must be 0 to 5000');
   }
+  const answers = o.integration_answers ?? {};
+  const live = new Set(o.call_integrations ?? []);
+  if (live.size > 5) throw badRequest('call_integrations takes at most 5 keys');
+  for (const k of live) if (k in answers) throw badRequest(`integration "${k}" is in both integration_answers and call_integrations`);
 
   const v = await loadView(pool, slug);
   const opened = openView(p, v, draft);
@@ -303,6 +320,12 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
     const failedQueries: { query: string; message: string }[] = [];
     const refused: string[] = [];
     const navigations: string[] = [];
+    // what the view sent with callIntegration, and how it was answered
+    const integrationCalls: { key: string; data: unknown; answered: 'canned' | 'sent' | 'refused'; status?: number; error?: string }[] = [];
+    const shortData = (d: unknown) => {
+      const text = JSON.stringify(d ?? null);
+      return text.length > 2000 ? `${text.slice(0, 2000)}...` : JSON.parse(text);
+    };
     let blocked = 0;
     try {
       // nothing leaves the browser: the two pages come from here, the rest is refused
@@ -343,6 +366,28 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
             case 'navigate':
               navigations.push(`${method}(${args.map((a) => JSON.stringify(a)).join(', ')})`);
               return { ok: true, value: null };
+            case 'callIntegration': {
+              const key = String(args[0] ?? '');
+              const data = args[1] ?? null;
+              if (integrationCalls.length >= 50) throw new Error('more than 50 integration calls in one render');
+              if (key in answers) {
+                integrationCalls.push({ key, data: shortData(data), answered: 'canned', status: 200 });
+                return { ok: true, value: { status: 200, data: answers[key] } };
+              }
+              if (live.has(key)) {
+                try {
+                  const out = await callFromView(p, v.slug, key, data, draft);
+                  integrationCalls.push({ key, data: shortData(data), answered: 'sent', status: out.status });
+                  return { ok: true, value: out };
+                } catch (err) {
+                  integrationCalls.push({ key, data: shortData(data), answered: 'sent', error: (err as Error).message.slice(0, 300) });
+                  throw err;
+                }
+              }
+              integrationCalls.push({ key, data: shortData(data), answered: 'refused' });
+              refused.push(method);
+              throw new Error(`${method}("${key}") is not run while rendering: give render_view integration_answers or call_integrations for it`);
+            }
             default:
               refused.push(method);
               throw new Error(`${method} is not run while rendering (render_view changes nothing)`);
@@ -358,10 +403,11 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
       let settled = await settle();
       const fill = await page.evaluate('window.__pcrm.fill()') as boolean;
       const view = page.frames().find((f) => f.url() === FRAME_URL);
-      // clicks, each followed by whatever it loads
+      // steps (clicks and typing), each followed by whatever it loads
       const clicked: { click: string; ok: boolean; error?: string }[] = [];
       for (const c of clicks) {
-        const what = c.text !== undefined ? `text "${c.text}"` : `selector ${c.selector}`;
+        const where = c.text !== undefined ? `text "${c.text}"` : `selector ${c.selector}`;
+        const what = c.type !== undefined ? `type "${c.type}" into ${where}` : where;
         if (!view) {
           clicked.push({ click: what, ok: false, error: 'the view did not load' });
           continue;
@@ -369,11 +415,12 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
         try {
           const target = c.text !== undefined ? view.getByText(c.text).first() : view.locator(c.selector!).first();
           await target.click({ timeout: 3000 });
+          if (c.type !== undefined) await target.pressSequentially(c.type, { delay: 25, timeout: 10_000 });
           clicked.push({ click: what, ok: true });
         } catch (err) {
           clicked.push({ click: what, ok: false, error: (err as Error).message.split('\n')[0].slice(0, 300) });
         }
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(c.wait_ms ?? (c.type !== undefined ? TYPE_WAIT_MS : 100));
         settled = (await settle()) && settled;
       }
       if (scrollY > 0) {
@@ -422,6 +469,7 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
           console: logs,
           failed_queries: failedQueries,
           ...(refused.length ? { not_run: [...new Set(refused)] } : {}),
+          ...(integrationCalls.length ? { integration_calls: integrationCalls } : {}),
           ...(navigations.length ? { navigations } : {}),
           ...(blocked ? { blocked_requests: blocked } : {}),
           boxes: layout.boxes,

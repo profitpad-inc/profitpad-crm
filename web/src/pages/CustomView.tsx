@@ -6,6 +6,7 @@ import { useIsMobile } from '../lib/use-mobile';
 import { MobileHeader } from '../components/MobileNav';
 import { Modal } from '../components/ui';
 import { useAddToMenu } from '../lib/use-add-to-menu';
+import type { RecordBack } from './RecordPage';
 import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewInit } from '../view-runtime/protocol';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
@@ -217,6 +218,12 @@ export function CustomView() {
     if (view) send({ type: 'pcrm:params', params });
   }, [paramKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // a record opened from the view: its back link returns here, to the same
+  // address (params keep an open panel or filters), not to the object's table
+  const backHere = (): RecordBack => ({
+    back: { to: `${location.pathname}${location.search}${location.hash}`, label: latest.current.view?.name ?? latest.current.slug ?? 'View' }
+  });
+
   const runCall = useCallback(async (method: BridgeMethod, args: unknown[]): Promise<unknown> => {
     const { slug: s, params: current, draft: d } = latest.current;
     const str = (v: unknown, what: string) => {
@@ -227,7 +234,7 @@ export function CustomView() {
       case 'query':
         return api('POST', `/v1/views/${str(s, 'slug')}/queries/${str(args[0], 'query name')}${d ? '?draft=1' : ''}`, { params: args[1] ?? {} });
       case 'openRecord':
-        navigate(`/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`);
+        navigate(`/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`, { state: backHere() });
         return null;
       case 'phoneRegions': {
         // a public route: without cookies, or the browser refuses the answer (no allow-credentials)
@@ -242,7 +249,7 @@ export function CustomView() {
         const path = args[0];
         // only places inside the CRM
         if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) throw new Error('navigate takes a path inside the CRM, like /objects/deals');
-        navigate(path);
+        navigate(path, { state: backHere() });
         return null;
       }
       case 'setParams': {
@@ -274,7 +281,7 @@ export function CustomView() {
         return api('PUT', `/v1/objects/${str(args[0], 'object')}/${str(args[1], 'id')}/associations/${str(args[2], 'object')}/${str(args[3], 'id')}`, {});
     }
     throw new Error(`unknown call ${method}`);
-  }, [navigate, location.pathname, location.search, objectByName, confirmWrite]);
+  }, [navigate, location.pathname, location.search, location.hash, objectByName, confirmWrite]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onMessage = (e: MessageEvent<FromFrame>) => {
