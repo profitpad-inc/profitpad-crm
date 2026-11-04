@@ -259,6 +259,24 @@ export async function readCard(image: Buffer, mediaType: ImageType, opts: { apiK
   }
 }
 
+// Phones as the CRM shows them (+1 888-706-7227 ext703), so the review form
+// starts formatted: read as the card's country first, then as the CRM's
+// default (+1), since cards abroad often list North American numbers.
+// Numbers that do not check out either way are left as read.
+export function formatPhones(fields: CardFields): void {
+  const country = fields.address_country?.toUpperCase() ?? '';
+  const regions = isRegion(country) ? [country, undefined] : [undefined];
+  const format = (n: string) => {
+    for (const region of regions) {
+      const c = checkPhone(n, region);
+      if (c.valid && c.display) return c.display;
+    }
+    return n;
+  };
+  if (fields.phone) fields.phone = format(fields.phone);
+  fields.other_phones = (fields.other_phones ?? []).map((p) => ({ ...p, number: p.number ? format(p.number) : p.number }));
+}
+
 // ---- matching -----------------------------------------------------------------
 
 // Mail providers whose domain says nothing about the company.
@@ -656,6 +674,7 @@ export async function cardScanRoutes(app: FastifyInstance) {
     const scanId = await recordScan(p, {
       name: scanName(fields), reader, model, outcome: fields.is_business_card ? 'read' : 'not_a_card', error: null, usage, seconds: seconds(), fileId
     });
+    formatPhones(fields);
     const domain = companyDomain(fields.email, fields.website);
     const [contacts, companies] = await Promise.all([matchContacts(p, fields), matchCompanies(p, fields.company, domain)]);
     return { scan_id: scanId, reader, fields, company_domain: domain, matches: { contacts, companies } };

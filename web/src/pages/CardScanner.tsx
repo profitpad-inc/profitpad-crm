@@ -145,12 +145,24 @@ export function CardScanner() {
   const takeInput = useRef<HTMLInputElement>(null);
   const pickInput = useRef<HTMLInputElement>(null);
 
+  // Claude reads photos as taken (scripts/card-bench), so it skips the
+  // corners step and gets the whole photo; Tesseract needs the card cut out
+  // and straightened, so the person checks the corners first.
+  const readerRef = useRef(setup?.reader);
+  readerRef.current = setup?.reader;
+  const readRef = useRef<(s: Extract<Step, { kind: 'crop' }>) => Promise<void>>(async () => undefined);
+
   const openPhoto = useCallback(async (file: Blob) => {
     setError(null);
     try {
       const photo = await loadPhoto(file);
-      const found = findCard(photo);
       const url = photo.toDataURL('image/jpeg', 0.85);
+      if (readerRef.current === 'claude') {
+        const { width: w, height: h } = photo;
+        await readRef.current({ kind: 'crop', photo, url, quad: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }], found: true });
+        return;
+      }
+      const found = findCard(photo);
       setStep({ kind: 'crop', photo, url, quad: found ?? insetQuad(photo.width, photo.height), found: found !== null });
     } catch (err) {
       setError((err as Error).message);
@@ -201,9 +213,10 @@ export function CardScanner() {
     } catch (err) {
       setError(`${(err as Error).message}${fileId ? ' Type the details in below.' : ''}`);
       if (fileId) startReview(null, { contacts: [], companies: [] }, null, cardUrl, fileId);
-      else setStep(s);
+      else setStep(readerRef.current === 'claude' ? { kind: 'capture' } : s);
     }
   }
+  readRef.current = readCard;
 
   // matches again after the details change
   const firstMatch = useRef(true);

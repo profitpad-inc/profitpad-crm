@@ -35,7 +35,8 @@ const REASONS: Record<number, string> = {
 
 export function checkPhone(input: string, region: string = DEFAULT_REGION): PhoneCheck {
   const invalid = (reason: string): PhoneCheck => ({ input, valid: false, value: null, display: null, e164: null, extension: null, region: null, type: null, reason });
-  const raw = input.trim();
+  // business cards print extensions as "× 703"; libphonenumber knows "x"
+  const raw = input.trim().replace(/\s*[×✕✖]\s*/g, ' x ');
   if (!raw) return invalid('the number is empty');
   if (raw.length > 64) return invalid('the number is too long');
   let n: lib.PhoneNumber;

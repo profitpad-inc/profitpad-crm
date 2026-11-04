@@ -91,3 +91,13 @@ test('TSV words become lines, a wide gap splits a row into two', () => {
   const lines = wordsToLines(wordsFromTsv(tsv));
   assert.deepEqual(lines.map((l) => l.text), ['Dana Whitfield', 'Direct', 'CEO']);
 });
+
+test('phones read off a card come back formatted, "×" extensions included', async () => {
+  const { formatPhones } = await import('./card-scan.js');
+  const f = parseCard(['Dana Whitfield', 'dana@northgate.example', 'T 1 888 706 7227 × 703', 'F 613.555.0148']);
+  f.phone = '1 888 706 7227 × 703';
+  f.address_country = 'GB';
+  formatPhones(f);
+  assert.equal(f.phone, '+1 888-706-7227 ext703');
+  assert.equal(f.other_phones[0]?.number, '+1 613-555-0148');
+});
