@@ -33,7 +33,7 @@ export function ObjectTable() {
 function ObjectTableFor({ object }: { object: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { objectByName, toast } = useApp();
+  const { objectByName, toast, me } = useApp();
 
   const [schema, setSchema] = useState<ObjectDef | null>(null);
   const [views, setViews] = useState<View[]>([]);
@@ -62,7 +62,7 @@ function ObjectTableFor({ object }: { object: string }) {
   // records ticked in the checkbox column, for Edit all and Delete all
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const lastPicked = useRef<number | null>(null);
-  const [bulk, setBulk] = useState<null | 'edit' | 'delete'>(null);
+  const [bulk, setBulk] = useState<null | 'edit' | 'delete' | 'remove'>(null);
 
   const viewId = searchParams.get('view');
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
@@ -550,6 +550,11 @@ function ObjectTableFor({ object }: { object: string }) {
               <RotateCcw size={14} /> {restoring ? 'Restoring…' : 'Restore all'}
             </button>
           )}
+          {archived && me?.is_admin && (
+            <button className="btn small ghost danger-text" onClick={() => setBulk('remove')}>
+              <Trash2 size={14} /> Delete permanently
+            </button>
+          )}
           {!archived && schema?.permissions.edit && (
             <button className="btn small ghost" onClick={() => setBulk('edit')}>
               <Pencil size={14} /> Edit all
@@ -743,6 +748,15 @@ function ObjectTableFor({ object }: { object: string }) {
             bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`, false);
             if (AMOUNT_FIELDS.includes(property)) void offerForLines(ids);
           }}
+        />
+      )}
+      {bulk === 'remove' && (
+        <BulkRemoveModal
+          object={object}
+          schema={schema}
+          ids={[...picked]}
+          onClose={() => setBulk(null)}
+          onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} permanently deleted`, true)}
         />
       )}
       {bulk === 'delete' && (
@@ -1066,6 +1080,44 @@ function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
       }
     >
       <p>The selected {label} are archived (moved to the recycle bin), not removed for good.</p>
+      {error && <div className="error">{error}</div>}
+    </Modal>
+  );
+}
+
+// "Delete permanently" in the archived list (admins only): every value and
+// the history are wiped, only the record IDs are kept.
+function BulkRemoveModal({ object, schema, ids, onClose, onDone }: {
+  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const label = (ids.length === 1 ? schema.label_singular : schema.label_plural).toLowerCase();
+
+  async function remove() {
+    setSaving(true);
+    setError(null);
+    try {
+      await inChunks(ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/permanently-delete`, { ids: chunk }));
+      onDone(ids.length);
+    } catch (err) {
+      setSaving(false);
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <Modal
+      title={`Permanently delete ${ids.length.toLocaleString()} ${label}?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn danger" onClick={remove} disabled={saving}>{saving ? 'Deleting…' : `Delete ${ids.length.toLocaleString()} ${label} permanently`}</button>
+        </>
+      }
+    >
+      <p>Every value, link and change history of the selected {label} is erased for good. This cannot be undone.</p>
       {error && <div className="error">{error}</div>}
     </Modal>
   );

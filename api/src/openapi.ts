@@ -310,6 +310,14 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
         responses: { 200: json({ type: 'object', properties: { restored: { type: 'integer' } } }), ...errors }
       }
     },
+    [`${base}/bulk/permanently-delete`]: {
+      post: {
+        tags: [tag], summary: 'Permanently delete many archived records', operationId: `bulk_permanently_delete_${o.api_name}`,
+        description: 'Admin only. Up to 500 records in one all-or-nothing transaction, each wiped like /permanently-delete (values and history gone, only the id kept). Every id must be archived; cannot be undone.',
+        requestBody: body({ type: 'object', required: ['ids'], properties: { ids: { type: 'array', maxItems: 500, items: { type: 'string' } } } }),
+        responses: { 200: json({ type: 'object', properties: { deleted: { type: 'integer' } } }), ...errors }
+      }
+    },
     [`${base}/batch/read`]: {
       post: {
         tags: [tag], summary: 'Batch read', operationId: `batch_read_${o.api_name}`,

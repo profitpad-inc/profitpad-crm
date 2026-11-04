@@ -101,7 +101,7 @@ async function loadLinked(object: string, id: string, codeToName: Map<string, st
 export function RecordPage() {
   const { object = '', id = '' } = useParams();
   const navigate = useNavigate();
-  const { objects, objectByName, toast } = useApp();
+  const { objects, objectByName, toast, me } = useApp();
   const [schema, setSchema] = useState<ObjectDef | null>(null);
   const [record, setRecord] = useState<CrmRecord | null>(null);
   const [associated, setAssociated] = useState<Associated[]>([]);
@@ -178,6 +178,14 @@ export function RecordPage() {
     toast('Restored');
   }
 
+  // admins only: wipes every value and the history, keeping only the id
+  async function removeForGood() {
+    if (!confirm('Permanently delete this record? Every value, link and change history is erased for good. This cannot be undone.')) return;
+    await api('POST', `/v1/objects/${object}/${id}/permanently-delete`, { confirm: id });
+    toast('Permanently deleted');
+    navigate(`/objects/${object}?status=archived`);
+  }
+
   if (error) return <div className="page"><div className="error">{error}</div></div>;
   if (!schema || !record) return <RecordSkeleton />;
   const name = recordName(record);
@@ -212,7 +220,12 @@ export function RecordPage() {
             >
               {(close) => (
                 record.record_status === 'archived'
-                  ? <button onClick={() => { close(); restore(); }}>Restore</button>
+                  ? (
+                    <>
+                      <button onClick={() => { close(); restore(); }}>Restore</button>
+                      {me?.is_admin && <button className="danger" onClick={() => { close(); removeForGood(); }}>Delete permanently</button>}
+                    </>
+                  )
                   : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
               )}
             </Menu>
@@ -221,7 +234,12 @@ export function RecordPage() {
             <div className="record-archived" role="status">
               <Archive size={15} strokeWidth={1.75} aria-hidden />
               <span>This record is archived (in the recycle bin).</span>
-              {schema.permissions.delete && <button className="btn small" onClick={restore}>Restore</button>}
+              {schema.permissions.delete && (
+                <div className="record-archived-actions">
+                  <button className="btn small" onClick={restore}>Restore</button>
+                  {me?.is_admin && <button className="btn small danger-text" onClick={removeForGood}>Delete permanently</button>}
+                </div>
+              )}
             </div>
           )}
           <div className="record-identity">
@@ -251,7 +269,9 @@ export function RecordPage() {
               <SubmissionAnswers record={record} />
             ) : object === 'views' ? (
               <>
-                <ViewCode record={record} onChanged={setRecord} />
+                {record.record_status === 'archived'
+                  ? <div className="card muted">Archived views do not open. Restore this view to see its code.</div>
+                  : <ViewCode record={record} onChanged={setRecord} />}
                 <ActivityStream object={object} id={id} record={record} associated={associated} onChanged={loadAssociations} schema={schema} />
               </>
             ) : (

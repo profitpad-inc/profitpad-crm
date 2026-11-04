@@ -47,6 +47,8 @@
 }
 .record-page .record-archived svg { flex: none; }
 .record-page .record-archived span { flex: 1 1 160px; }
+.record-page .record-archived-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.record-page .record-archived-actions .danger-text { color: var(--danger); }
 
 /* ---- properties --------------------------------------------------------------- */
 .record-page .prop-section { border-color: var(--border); box-shadow: none; padding: 0 14px; margin-bottom: 10px; }

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { pool, withTx } from '../db.js';
+import { pool, quoteIdent, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { requireObjectPermission, requireScope } from '../auth.js';
 import {
@@ -248,6 +248,26 @@ export async function recordRoutes(app: FastifyInstance) {
     });
     await drainCalcQueue(5);
     return { restored: n };
+  });
+
+  // Permanently deletes up to 500 archived records, all or nothing: like
+  // /:id/permanently-delete (every value and the history wiped, only the id
+  // kept), but only for records already in the recycle bin. Admin only.
+  app.post<{ Params: ObjParams; Body: { ids?: string[] } }>('/v1/objects/:object/bulk/permanently-delete', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'admin');
+    const obj = await objectForWrite(req.params.object);
+    const ids = [...new Set(bulkIds(req.body?.ids))];
+    const n = await withTx({ principal: p }, async (c) => {
+      const { rows } = await c.query(
+        `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} where ${quoteIdent(obj.id_column)} = any ($1) and record_status = 'archived'`,
+        [ids]
+      );
+      if (rows[0].n !== ids.length) throw badRequest('only archived records can be permanently deleted here; nothing was changed');
+      for (const id of ids) await c.query('select meta.delete_record($1, $2)', [obj.object_type_id, id]);
+      return ids.length;
+    });
+    return { deleted: n };
   });
 
   // Copies another record's active line items onto this one (a deal's lines
