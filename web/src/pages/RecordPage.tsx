@@ -265,6 +265,10 @@ export function RecordPage() {
     .filter((o) => o !== 'document_templates');
   const lineCount = associated.find((a) => a.object === 'lines')?.records.length ?? 0;
   const isUser = object === 'users';
+  // an accepted or signed quote is archived by Super Admins only (migration 0084; the API refuses others)
+  const quoteStatus = Array.isArray(record.properties.status) ? record.properties.status[0] : record.properties.status;
+  const archiveLocked = object === 'quotes' && !me?.is_admin
+    && (quoteStatus === 'accepted' || quoteStatus === 'pending_countersign' || !!record.properties.customer_signed_at);
   // the Standard quote template came with the CRM: it can be archived, never deleted (migration 0080)
   const builtIn = object === 'document_templates' && String(Array.isArray(record.properties.is_builtin) ? record.properties.is_builtin[0] : record.properties.is_builtin) === 'true';
   // "Sign in as": Super Admins, on another active user who is not a Super Admin
@@ -333,7 +337,9 @@ export function RecordPage() {
                   : (
                     <>
                       {canSignInAs && <button onClick={() => { close(); signInAs(); }}>Sign in as {name}</button>}
-                      <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
+                      {archiveLocked
+                        ? <button disabled title="Only a Super Admin can archive an accepted or signed quote">Archive (Super Admin only)</button>
+                        : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>}
                     </>
                   )
               )}
@@ -1815,7 +1821,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
           )
         )}
       </div>
-      {linesLocked && <div className="card-empty"><Lock size={12} aria-hidden /> Locked because the quote is accepted.</div>}
+      {linesLocked && <div className="card-empty card-locked"><Lock size={12} aria-hidden /> Locked because the quote is accepted.</div>}
       {dialog === 'line' && (
         <LineItemsEditor
           parent={{ object: self, id: selfId }}

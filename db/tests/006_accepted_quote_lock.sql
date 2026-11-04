@@ -29,6 +29,8 @@ declare
   v_product2 text;
 begin
   perform set_config('crm.actor', 'test', true);
+  -- archiving an accepted quote needs a Super Admin (0084, tested in 009)
+  perform set_config('crm.super_admin', 'on', true);
   insert into crm.pc_0021 (name) values ('Widget') returning pc_0021_id into v_product;
   insert into crm.pc_0021 (name) values ('Gadget') returning pc_0021_id into v_product2;
   insert into crm.pc_0022 (name, amount, currency, expiration_date, status)

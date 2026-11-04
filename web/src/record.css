@@ -345,6 +345,8 @@
 .card-empty { padding: 10px 14px 14px; border-top: 1px solid var(--hairline); font-size: 13px; color: var(--muted-text); line-height: 1.5; }
 .card-empty svg { vertical-align: -2px; }
 .card-add > .card-empty { padding: 0 0 8px; border-top: 0; }
+/* the accepted-quote note sits right under the card title, no rule above it */
+.card-empty.card-locked { border-top: 0; padding-top: 0; margin-top: -4px; }
 .card-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
 .card-pick:focus-visible { outline-offset: -2px; }
 .card-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

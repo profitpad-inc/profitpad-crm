@@ -43,9 +43,13 @@ export async function withTx<T>(ctx: TxContext, fn: (client: pg.PoolClient) => P
   try {
     await client.query('begin');
     const p = ctx.principal;
+    // crm.super_admin: the caller is a Super Admin (a user whose roles include
+    // an admin role) or an admin-scope key, as isAdmin in routes/ui.ts; some
+    // rules in the database only give way to them (migration 0084)
     await client.query(
-      "select set_config('crm.actor', $1, true), set_config('crm.source', $2, true), set_config('crm.channel', $3, true), set_config('crm.api_key_id', $4, true)",
-      [p ? p.actor : ctx.actor, ctx.source ?? 'api', (p && channelOf(p)) ?? '', p?.keyId != null ? String(p.keyId) : '']
+      "select set_config('crm.actor', $1, true), set_config('crm.source', $2, true), set_config('crm.channel', $3, true), set_config('crm.api_key_id', $4, true), set_config('crm.super_admin', $5, true)",
+      [p ? p.actor : ctx.actor, ctx.source ?? 'api', (p && channelOf(p)) ?? '', p?.keyId != null ? String(p.keyId) : '',
+        p && (p.scopes.has('admin') || (p.userId !== null && p.permissions === null)) ? 'on' : '']
     );
     const result = await fn(client);
     await client.query('commit');
