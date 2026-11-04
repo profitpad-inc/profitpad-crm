@@ -6,6 +6,8 @@ import { requireScope, type Principal } from './auth.js';
 import { loadView, openView, runViewQuery } from './views.js';
 import { checkPhone, DEFAULT_REGION, phoneRegions } from './phone.js';
 import { callFromView } from './integrations.js';
+import { CONTENT_MAX_BYTES, fileSummaries, readFileBytes } from './files.js';
+import { checkExternalUrl } from './external-url.js';
 
 // render_view (MCP): draws a custom view in a headless Chromium as the
 // caller and reports what it looks like: a screenshot, the boxes of the
@@ -130,7 +132,16 @@ window.addEventListener('message', async (e) => {
         send({ type: 'pcrm:reply', id: m.id, ok: true, value: null });
         send({ type: 'pcrm:params', params: next });
       } else {
-        const r = await window.pcrmCall(m.method, Array.isArray(m.args) ? m.args : []);
+        // a File cannot cross exposeFunction: uploads are refused by name only
+        const args = m.method === 'uploadFile' ? [] : (Array.isArray(m.args) ? m.args : []);
+        const r = await window.pcrmCall(m.method, args);
+        // file bytes come back as base64 and reach the view as a Blob, as in the CRM
+        if (r.ok && r.value && typeof r.value.__blob === 'string') {
+          const bin = atob(r.value.__blob);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          r.value = new Blob([bytes], { type: r.value.type || '' });
+        }
         send({ type: 'pcrm:reply', id: m.id, ...r });
       }
     } finally {
@@ -362,10 +373,25 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
               return { ok: true, value: { default: DEFAULT_REGION, regions: phoneRegions() } };
             case 'checkPhone':
               return { ok: true, value: checkPhone(String(args[0] ?? '')) };
+            // files: reading works (as you), uploading is refused like other changes
+            case 'getFiles':
+              return { ok: true, value: await fileSummaries(pool, p, Array.isArray(args[0]) ? args[0].map(String) : []) };
+            case 'fileBlob': {
+              const file = await readFileBytes(pool, p, String(args[0] ?? ''), CONTENT_MAX_BYTES);
+              return { ok: true, value: { __blob: file.bytes.toString('base64'), type: file.mime_type } };
+            }
+            case 'openFile':
             case 'openRecord':
             case 'navigate':
               navigations.push(`${method}(${args.map((a) => JSON.stringify(a)).join(', ')})`);
               return { ok: true, value: null };
+            // nothing is opened: the report's navigations shows the address
+            case 'openUrl': {
+              const link = checkExternalUrl(args[0]);
+              if (!link.ok) throw new Error(link.error);
+              navigations.push(`openUrl(${JSON.stringify(link.url)}) (not opened while rendering)`);
+              return { ok: true, value: { opened: false } };
+            }
             case 'callIntegration': {
               const key = String(args[0] ?? '');
               const data = args[1] ?? null;

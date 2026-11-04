@@ -34,6 +34,12 @@ async function send<T>(method: string, path: string, body: unknown, retried: boo
     // admin changes need a recent sign-in: the app asks for one over the page
     // (the check runs before anything is written), then sends this again
     if (data?.error === 'reauth_required' && !retried && (await requestReauth())) return send<T>(method, path, body, true);
+    // a "Sign in as" session that stopped holding (the user became a Super
+    // Admin, say): say so, then load the app again as the Super Admin
+    if (data?.error === 'sign_in_as_ended') {
+      window.alert(data.message);
+      window.location.reload();
+    }
     throw new ApiError(res.status, data?.message ?? res.statusText, data?.error, data?.details);
   }
   return data as T;
@@ -47,6 +53,8 @@ export interface Me {
   scopes: string[];
   is_admin: boolean;
   user: { id: string; name: string | null; first_name: string | null; last_name: string | null; email: string | null } | null;
+  // set while a Super Admin is signed in as this user ("Sign in as"): the Super Admin
+  signed_in_as_by: { id: string; name: string | null; email: string | null } | null;
   readable_objects: string[];
 }
 

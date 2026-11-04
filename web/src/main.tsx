@@ -22,18 +22,24 @@ import { RecordPage } from './pages/RecordPage';
 import { Settings } from './pages/Settings';
 import { CustomView } from './pages/CustomView';
 import { CardScanner } from './pages/CardScanner';
+import { SignedInAsBanner } from './components/SignedInAsBanner';
 
 // Desktop: sidebar rail on the left. Phone: bottom bar, with the full menu
 // in a hamburger drawer on the home page.
+// A Super Admin signed in as another user sees a banner above everything
+// that cannot be closed.
 function Layout() {
   const mobile = useIsMobile();
   return (
-    <div className={`app${mobile ? ' mobile' : ''}`}>
-      {!mobile && <Sidebar />}
-      <main className="main">
-        <Outlet />
-      </main>
-      {mobile && <BottomBar />}
+    <div className={`app-shell${mobile ? ' mobile' : ''}`}>
+      <SignedInAsBanner />
+      <div className={`app${mobile ? ' mobile' : ''}`}>
+        {!mobile && <Sidebar />}
+        <main className="main">
+          <Outlet />
+        </main>
+        {mobile && <BottomBar />}
+      </div>
     </div>
   );
 }

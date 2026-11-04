@@ -34,8 +34,10 @@ const STARTS_WITH: Record<string, Record<string, unknown>> = {
 };
 
 // The same rule as the UI's isEditable, plus the caller's property access.
-function editable(pr: PropertyDef, p?: Principal): boolean {
-  if (pr.record_status !== 'active' || pr.type === 'calculation' || pr.type === 'file') return false;
+// File properties are left out of the native create form (files are added on
+// the record page) unless files is set; the API and views can set them.
+function editable(pr: PropertyDef, p?: Principal, files = false): boolean {
+  if (pr.record_status !== 'active' || pr.type === 'calculation' || (pr.type === 'file' && !files)) return false;
   if (p && propertyAccess(p, pr) !== 'full') return false;
   if (pr.is_base) return pr.api_name === 'name';
   return !pr.read_only;
@@ -62,6 +64,7 @@ const labelOf = (obj: ObjectDef, name: string) => obj.byName.get(name.toLowerCas
 export function describeCreateForm(obj: ObjectDef, p: Principal) {
   const form = createForm(obj, p);
   const calculatedName = obj.byName.get('name')?.type === 'calculation';
+  const fileProps = obj.properties.filter((pr) => pr.type === 'file' && editable(pr, p, true));
   return {
     object: obj.api_name,
     title: `Create ${obj.label_singular.toLowerCase()}`,
@@ -78,6 +81,10 @@ export function describeCreateForm(obj: ObjectDef, p: Principal) {
     required: [],
     required_note: 'No field is required: the API creates a record with any of them blank. Unique properties (like a page address) are refused when the value is taken.',
     ...(Object.keys(form.starts_with).length ? { starts_with: form.starts_with } : {}),
+    ...(fileProps.length ? {
+      file_properties: fileProps.map((pr) => ({ api_name: pr.api_name, label: pr.label, ...(typeof pr.options.max_files === 'number' ? { max_files: pr.options.max_files } : {}) })),
+      file_note: 'Not on the native form (people add files on the record page). A view can still set them: upload with FileInput or uploadFile from @pcrm/view, then pass the file ids (an array, at most max_files) in createRecord / updateRecord. See view_guide topic runtime, "Files".'
+    } : {}),
     ...(calculatedName ? { name_note: 'name is a calculation, so it is not asked: it fills itself once the record is saved (see describe_object for its parts)' } : {}),
     after_create: 'opens the new record page',
     other_properties: 'everything else is edited on the record page'

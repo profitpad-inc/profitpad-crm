@@ -155,6 +155,23 @@ export async function readFileBytes(db: Db, p: Principal, id: string, maxBytes: 
   return { bytes: await readFile(diskPath(f.storage_key)), mime_type: f.mime_type, name: f.name };
 }
 
+// Name, type, size and status of the files the caller can open, in the order
+// asked; others are left out (render_view answers a view's getFiles with it).
+export async function fileSummaries(db: Db, p: Principal, ids: string[]) {
+  const out = [];
+  for (const id of [...new Set(ids)].filter((s) => HEX_ID.test(s)).slice(0, 100)) {
+    const f = await loadFile(db, id);
+    if (f && (f.created_by === p.actor || (await canAccessFile(db, p, id, 'read')))) {
+      out.push({ id: f.id, name: f.name, mime_type: f.mime_type, size_bytes: f.size_bytes === null ? null : Number(f.size_bytes), status: f.status?.[0] ?? null });
+    }
+  }
+  return out;
+}
+
+// What GET /v1/files/:id/content sends at most: it hands bytes to custom
+// views (which cannot load links), so images and documents, not videos.
+export const CONTENT_MAX_BYTES = 25 * 1024 ** 2;
+
 onFilePropertyWrite(async (db, p, ids, property) => {
   for (const id of ids) {
     const f = await loadFile(db, id);
@@ -435,6 +452,27 @@ export async function fileRoutes(app: FastifyInstance) {
     const f = await fileFor(pool, p, req.params.id);
     if (!isReady(f)) throw new ApiError(409, 'this file has not finished uploading', 'conflict');
     return { ...signedUrl(req, f.id, req.query.download === '1' || req.query.download === 'true'), public_url: f.public_token ? publicUrl(req, f) : null };
+  });
+
+  // The bytes for a signed-in caller who may open the file, read by script
+  // (the CRM page hands them to custom views, whose frame cannot load links).
+  // Streamed by the API itself, so the CORS headers stay on the answer, and
+  // always as a download: it is data for a script, never a page to show.
+  app.get<{ Params: { id: string } }>('/v1/files/:id/content', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const f = await fileFor(pool, p, req.params.id);
+    if (!isReady(f) || !f.storage_key || f.record_status !== 'active') throw new ApiError(409, 'this file has not finished uploading', 'conflict');
+    if (Number(f.size_bytes) > CONTENT_MAX_BYTES) {
+      throw badRequest(`this file is too large to read here (at most ${CONTENT_MAX_BYTES / 1024 ** 2} MB); open it instead`);
+    }
+    const type = f.mime_type && CONTENT_TYPE.test(f.mime_type) ? f.mime_type : 'application/octet-stream';
+    reply.header('content-type', type);
+    reply.header('content-disposition', disposition(false, f.name));
+    reply.header('content-security-policy', DOWNLOAD_CSP);
+    reply.header('cache-control', 'private, no-cache');
+    reply.header('content-length', String((await stat(diskPath(f.storage_key))).size));
+    return reply.send(createReadStream(diskPath(f.storage_key)));
   });
 
   // The bytes, for a signed link (no sign-in: the signature is the permission).

@@ -460,44 +460,7 @@ export async function adminRoutes(app: FastifyInstance) {
     reply.code(204);
   });
 
-  // ---- Currencies ----------------------------------------------------------
-  app.get('/v1/currencies', async (req) => {
-    requireScope(req.principal!, 'read');
-    const { rows } = await pool.query('select code, name, symbol, decimals, rate_to_base, is_base, record_status from meta.pc_0007 order by code');
-    return { results: rows };
-  });
-
-  app.post<{ Body: { code: string; name: string; symbol?: string; decimals?: number; rate_to_base?: number } }>('/v1/currencies', async (req, reply) => {
-    const p = req.principal!;
-    requireScope(p, 'admin');
-    const b = req.body ?? ({} as never);
-    const row = await withTx({ principal: p }, async (c) => {
-      const { rows } = await c.query(
-        `insert into meta.pc_0007 (code, name, symbol, decimals, rate_to_base) values ($1, $2, $3, coalesce($4, 2), coalesce($5, 1))
-         returning code, name, symbol, decimals, rate_to_base, is_base`,
-        [b.code, b.name, b.symbol ?? null, b.decimals ?? null, b.rate_to_base ?? null]
-      );
-      return rows[0];
-    });
-    reply.code(201);
-    return row;
-  });
-
-  app.patch<{ Params: { code: string }; Body: { name?: string; symbol?: string; rate_to_base?: number; record_status?: string } }>('/v1/currencies/:code', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'admin');
-    const b = req.body ?? {};
-    const row = await withTx({ principal: p }, async (c) => {
-      const { rows } = await c.query(
-        `update meta.pc_0007 set name = coalesce($2, name), symbol = coalesce($3, symbol), rate_to_base = coalesce($4, rate_to_base),
-           record_status = coalesce($5, record_status) where code = $1 returning code, name, symbol, decimals, rate_to_base, is_base, record_status`,
-        [req.params.code, b.name ?? null, b.symbol ?? null, b.rate_to_base ?? null, b.record_status ?? null]
-      );
-      return rows[0];
-    });
-    if (!row) throw notFound('currency not found');
-    return row;
-  });
+  // Currencies: api/src/currency.ts
 
   // ---- Integration tables (read-only through the API) ----------------------
   app.get('/v1/integrations', async (req) => {

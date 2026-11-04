@@ -7,7 +7,9 @@ import { MobileHeader } from '../components/MobileNav';
 import { Modal } from '../components/ui';
 import { useAddToMenu } from '../lib/use-add-to-menu';
 import type { RecordBack } from './RecordPage';
-import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewInit } from '../view-runtime/protocol';
+import { fileInfo, fileLink, formatBytes, openFile, uploadFile } from '../lib/files';
+import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewFile, ViewInit } from '../view-runtime/protocol';
+import { checkExternalUrl } from '../view-runtime/external-url';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
 // sandboxed iframe (public/view-frame, opaque origin, no network); this page
@@ -45,7 +47,7 @@ function parseHash(hash: string): { slug: string; params: Params } {
 type Ask = { title: string; lines: string[] };
 
 // What a view asks to change, in words for the confirmation (values cut short)
-function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords', args: unknown[]): Ask {
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'uploadFile', args: unknown[]): Ask {
   const short = (v: unknown) => {
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 79) + '…' : s;
@@ -54,11 +56,52 @@ function describeChange(label: (o: string) => string, method: 'createRecord' | '
     const entries = Object.entries((v ?? {}) as Record<string, unknown>);
     return [...entries.slice(0, 12).map(([k, x]) => `${k}: ${x === null ? '(cleared)' : short(x)}`), ...(entries.length > 12 ? [`and ${entries.length - 12} more`] : [])];
   };
+  if (method === 'uploadFile') {
+    const blob = args[0] as Blob;
+    return { title: 'Upload a file', lines: [`${String(args[1] ?? '') || (blob as File).name || 'file'} (${formatBytes(blob.size)})`] };
+  }
   const obj = String(args[0] ?? '');
   if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
   if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
   return { title: 'Link two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `to ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
 }
+
+// Links a view opens (openUrl). The viewer is asked "You're leaving the CRM
+// for <domain>" each time, unless they ticked "Don't ask again" for that exact
+// domain, which this browser remembers for them (not a shared allowlist: a
+// link carries no CRM data on its own, so trusting a site is each viewer's
+// call). A link the viewer did not just tap or click always asks, so a view
+// cannot open tabs by itself, and the dialog's Open button is a real link the
+// viewer taps, which phones accept as the user's own gesture.
+const trustedKey = (userId: string | null | undefined) => `pcrm.trustedLinkDomains.${userId ?? 'anon'}`;
+function trustedDomains(userId: string | null | undefined): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(trustedKey(userId)) ?? '[]');
+    return Array.isArray(list) ? list.filter((d): d is string => typeof d === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function trustDomain(userId: string | null | undefined, host: string) {
+  try {
+    const list = [host, ...trustedDomains(userId).filter((d) => d !== host)].slice(0, 200);
+    localStorage.setItem(trustedKey(userId), JSON.stringify(list));
+  } catch {
+    // private window or blocked storage: it asks again next time
+  }
+}
+// The viewer tapped or clicked within the last few seconds. A tap inside the
+// view's frame counts for this page too (browsers pass it up to the frame's
+// parents), and the bridge message arrives well within that time.
+function hasUserGesture(): boolean {
+  const ua = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+  return ua?.isActive === true;
+}
+function openTab(url: string): void {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+type LinkAsk = { url: string; host: string; resolve: (opened: boolean) => void };
 
 function buildHash(slug: string, params: Params): string {
   const qs = new URLSearchParams(params).toString();
@@ -86,6 +129,13 @@ export function CustomView() {
   // question is open wait for the same answer. Integrations are never asked:
   // an admin turning one on is the approval.
   const [asking, setAsking] = useState<(Ask & { resolve: (ok: boolean) => void }) | null>(null);
+  // a file the view asked to open when the browser blocked the new tab: the
+  // viewer opens it with a click of their own
+  const [blockedOpen, setBlockedOpen] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<LinkAsk | null>(null);
+  const [dontAskAgain, setDontAskAgain] = useState(false);
+  const leavingRef = useRef<LinkAsk | null>(null);
+  leavingRef.current = leaving;
   const allowWrites = useRef(false);
   const pendingAsk = useRef<Promise<boolean> | null>(null);
   // the frame loads once; a second load means the view navigated it away
@@ -118,6 +168,9 @@ export function CustomView() {
   useEffect(() => {
     allowWrites.current = false;
     pendingAsk.current = null;
+    leavingRef.current?.resolve(false);
+    leavingRef.current = null;
+    setLeaving(null);
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
@@ -189,6 +242,14 @@ export function CustomView() {
     setAsking(null);
   }
 
+  const finishLink = (opened: boolean) => {
+    const ask = leavingRef.current;
+    if (!ask) return;
+    if (opened && dontAskAgain) trustDomain(me.user?.id, ask.host);
+    ask.resolve(opened);
+    setLeaving(null);
+  };
+
   // the draft bar's Publish and Revert to published (admins)
   async function draftAction(action: 'publish' | 'revert') {
     const v = latest.current.view;
@@ -224,13 +285,57 @@ export function CustomView() {
     back: { to: `${location.pathname}${location.search}${location.hash}`, label: latest.current.view?.name ?? latest.current.slug ?? 'View' }
   });
 
-  const runCall = useCallback(async (method: BridgeMethod, args: unknown[]): Promise<unknown> => {
+  // callId: the frame's id for this call, for upload progress messages
+  const runCall = useCallback(async (method: BridgeMethod, args: unknown[], callId: number): Promise<unknown> => {
     const { slug: s, params: current, draft: d } = latest.current;
     const str = (v: unknown, what: string) => {
       if (typeof v !== 'string' || v === '') throw new Error(`${what} must be a string`);
       return encodeURIComponent(v);
     };
+    const fileId = (v: unknown) => {
+      if (typeof v !== 'string' || !/^[0-9a-f]{10}$/.test(v)) throw new Error('a file id is 10 characters, 0-9 and a-f');
+      return v;
+    };
+    const asViewFile = (f: { id: string; name: string | null; mime_type: string | null; size_bytes: number | null }): ViewFile =>
+      ({ id: f.id, name: f.name, mime_type: f.mime_type, size_bytes: f.size_bytes });
     switch (method) {
+      case 'openFile': {
+        // the tab opens before any await, while the viewer's click still counts
+        const id = fileId(args[0]);
+        if (args[1] === true) {
+          await openFile(id, true);
+          return null;
+        }
+        const tab = window.open('', '_blank');
+        if (!tab) {
+          setBlockedOpen(id);
+          return null;
+        }
+        try {
+          const url = await fileLink(id);
+          tab.opener = null;
+          tab.location.href = url;
+        } catch (err) {
+          tab.close();
+          throw err;
+        }
+        return null;
+      }
+      case 'getFiles': {
+        const ids = args[0];
+        if (!Array.isArray(ids) || ids.length > 100) throw new Error('getFiles takes a list of up to 100 file ids');
+        const wanted = [...new Set(ids.map(fileId))];
+        return (await fileInfo(wanted)).map(asViewFile);
+      }
+      case 'fileBlob': {
+        // the frame cannot load links, so the page reads the bytes and hands them over
+        const res = await fetch(`${API_BASE}/v1/files/${fileId(args[0])}/content`, { credentials: 'include' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new ApiError(res.status, data?.message ?? `Could not read the file (HTTP ${res.status})`, data?.error);
+        }
+        return res.blob();
+      }
       case 'query':
         return api('POST', `/v1/views/${str(s, 'slug')}/queries/${str(args[0], 'query name')}${d ? '?draft=1' : ''}`, { params: args[1] ?? {} });
       case 'openRecord':
@@ -261,12 +366,34 @@ export function CustomView() {
         navigate({ pathname: location.pathname, search: location.search, hash: buildHash(s, next) }, { replace: true });
         return null;
       }
+      // an upload is a change like the others (it creates a file record)
+      case 'uploadFile':
       case 'createRecord':
       case 'updateRecord':
       case 'linkRecords': {
+        if (method === 'uploadFile') {
+          if (!(args[0] instanceof Blob)) throw new Error('uploadFile takes a File or Blob');
+          if (args[1] !== null && args[1] !== undefined && typeof args[1] !== 'string') throw new Error('the file name must be a string');
+        }
         const label = (o: string) => objectByName.get(o)?.label_plural ?? o;
         if (!(await confirmWrite(describeChange(label, method, args)))) throw new Error('The viewer did not allow this change');
         break;
+      }
+      case 'openUrl': {
+        const link = checkExternalUrl(args[0]);
+        if (!link.ok) throw new Error(link.error);
+        if (hasUserGesture() && trustedDomains(me.user?.id).includes(link.host)) {
+          openTab(link.url);
+          return { opened: true };
+        }
+        if (leavingRef.current) throw new Error('Another link is already waiting for the viewer');
+        const opened = await new Promise<boolean>((resolve) => {
+          const ask = { url: link.url, host: link.host, resolve };
+          leavingRef.current = ask;
+          setDontAskAgain(false);
+          setLeaving(ask);
+        });
+        return { opened };
       }
       case 'callIntegration':
         // not asked: an admin enabled the integration and chose who may use it
@@ -277,11 +404,24 @@ export function CustomView() {
         return api('POST', `/v1/objects/${str(args[0], 'object')}`, { properties: args[1] ?? {}, associations: args[2] ?? [] });
       case 'updateRecord':
         return api('PATCH', `/v1/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`, { properties: args[2] ?? {} });
+      case 'uploadFile': {
+        const blob = args[0] as Blob;
+        const name = (typeof args[1] === 'string' && args[1].trim()) || (blob instanceof File && blob.name) || 'file';
+        const file = blob instanceof File && blob.name === name ? blob : new File([blob], name, { type: blob.type });
+        const t = args[2] as { object?: unknown; id?: unknown; property?: unknown } | null;
+        const target = t && typeof t === 'object'
+          ? { object: String(t.object ?? ''), record_id: String(t.id ?? ''), property: String(t.property ?? '') }
+          : null;
+        if (target && (!target.object || !target.record_id || !target.property)) throw new Error('uploadFile: object, id and property go together');
+        const id = await uploadFile(file, target, (fraction) => send({ type: 'pcrm:progress', id: callId, fraction }));
+        const [info] = await fileInfo([id]);
+        return info ? asViewFile(info) : { id, name, mime_type: file.type || null, size_bytes: file.size };
+      }
       case 'linkRecords':
         return api('PUT', `/v1/objects/${str(args[0], 'object')}/${str(args[1], 'id')}/associations/${str(args[2], 'object')}/${str(args[3], 'id')}`, {});
     }
     throw new Error(`unknown call ${method}`);
-  }, [navigate, location.pathname, location.search, location.hash, objectByName, confirmWrite]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [navigate, location.pathname, location.search, location.hash, objectByName, confirmWrite, send, me.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onMessage = (e: MessageEvent<FromFrame>) => {
@@ -309,7 +449,7 @@ export function CustomView() {
       } else if (msg.type === 'pcrm:error') {
         setError(`This view could not start: ${msg.message}`);
       } else if (msg.type === 'pcrm:call') {
-        runCall(msg.method, Array.isArray(msg.args) ? msg.args : [])
+        runCall(msg.method, Array.isArray(msg.args) ? msg.args : [], msg.id)
           .then((value) => {
             send({ type: 'pcrm:reply', id: msg.id, ok: true, value });
             if (msg.method === 'createRecord' || msg.method === 'updateRecord' || msg.method === 'linkRecords') toast();
@@ -370,6 +510,51 @@ export function CustomView() {
           />
         )}
       </div>
+      {blockedOpen && (
+        <Modal
+          title="Open the file?"
+          onClose={() => setBlockedOpen(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setBlockedOpen(null)}>Cancel</button>
+              <button
+                className="btn primary"
+                onClick={() => {
+                  const id = blockedOpen;
+                  setBlockedOpen(null);
+                  openFile(id).catch((e: Error) => setError(e.message));
+                }}
+              >
+                Open
+              </button>
+            </>
+          }
+        >
+          <p className="muted small" style={{ margin: 0 }}>The browser stopped the view from opening a new tab. Open the file here instead.</p>
+        </Modal>
+      )}
+      {leaving && (
+        <Modal
+          title="You're leaving the CRM"
+          onClose={() => finishLink(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => finishLink(false)}>Cancel</button>
+              {/* a real link, so the tap itself opens the tab (phones block tabs opened later) */}
+              <a className="btn primary" href={leaving.url} target="_blank" rel="noopener noreferrer" onClick={() => finishLink(true)}>
+                Open {leaving.host}
+              </a>
+            </>
+          }
+        >
+          <p style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to open a page on <strong>{leaving.host}</strong> in a new tab.</p>
+          <p className="muted small" style={{ wordBreak: 'break-all' }}>{leaving.url.length > 300 ? leaving.url.slice(0, 299) + '…' : leaving.url}</p>
+          <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0 }}>
+            <input type="checkbox" checked={dontAskAgain} onChange={(e) => setDontAskAgain(e.target.checked)} />
+            Don't ask again for {leaving.host}
+          </label>
+        </Modal>
+      )}
       {asking && (
         <Modal
           title="Allow this view to make changes?"

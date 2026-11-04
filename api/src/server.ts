@@ -27,6 +27,7 @@ import { integrationRoutes } from './routes/integrations.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { startWebhookWorker } from './webhooks.js';
 import { cardScanRoutes } from './card-scan.js';
+import { currencyRoutes, startCurrencyScheduler } from './currency.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -203,6 +204,7 @@ export async function buildApp() {
   await app.register(integrationRoutes);
   await app.register(webhookRoutes);
   await app.register(cardScanRoutes);
+  await app.register(currencyRoutes);
   return app;
 }
 
@@ -226,10 +228,12 @@ const app = await buildApp();
 const worker = startCalcWorker(app.log);
 const stopFileSweeper = startFileSweeper(app.log);
 const stopWebhooks = startWebhookWorker(app.log);
+const stopCurrencies = startCurrencyScheduler(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
   stopWebhooks();
+  stopCurrencies();
   await app.close();
   await pool.end();
   process.exit(0);

@@ -117,7 +117,19 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .icon-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
 
 /* layout */
+.app-shell { display: flex; flex-direction: column; height: 100%; }
 .app { display: flex; height: 100%; }
+.app-shell > .app { flex: 1; min-height: 0; height: auto; }
+
+/* "Sign in as" banner: always shown while a Super Admin acts as another user, no close button */
+.signed-in-as { flex-shrink: 0; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 14px;
+  padding: 8px 16px; background: var(--warn); color: #fff; font-size: 13px; line-height: 1.35; text-align: center; z-index: 30; }
+.signed-in-as svg { flex-shrink: 0; }
+.signed-in-as-text { display: inline-flex; align-items: center; gap: 8px; }
+.signed-in-as button { padding: 4px 10px; border: 1px solid rgba(255, 255, 255, 0.7); border-radius: var(--radius); background: transparent;
+  color: #fff; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.signed-in-as button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.signed-in-as button:disabled { opacity: 0.7; cursor: default; }
 .main { flex: 1; min-width: 0; overflow: auto; }
 
 /* sidebar */
@@ -484,6 +496,8 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 
 @media (max-width: 767px) {
   .app.mobile { flex-direction: column; height: 100dvh; }
+  .app-shell.mobile { height: 100dvh; }
+  .app-shell > .app.mobile { height: auto; }
   input, .select-face, textarea { font-size: 16px; } /* stops iOS zooming into fields */
 
   .page { padding: 16px; }

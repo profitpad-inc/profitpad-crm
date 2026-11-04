@@ -165,3 +165,16 @@ input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
   background: #0f172a; color: #f1f5f9; font: 500 12px/1.35 var(--font-body, system-ui, sans-serif); white-space: pre-line;
   overflow-wrap: anywhere; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2); pointer-events: none; }
 .app-tooltip[hidden] { display: none; }
+
+/* FileInput, FileImage */
+.v-file-input { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.v-file-drop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px; border: 1px dashed var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.v-file-drop.over { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--page-background)); }
+.v-file-drop.disabled { opacity: 0.7; }
+.v-file-progress { display: flex; flex-direction: column; gap: 4px; flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-file-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.v-file-bar > div { height: 100%; background: var(--primary); transition: width 0.2s; }
+.v-file-image { display: block; max-width: 100%; border-radius: var(--radius); background: var(--surface); }
+.v-file-image.loading { min-height: 48px; }
+.v-file-image.missing { display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 48px; text-align: center; }
+@media (pointer: coarse) { .v-file-drop-text { display: none; } }

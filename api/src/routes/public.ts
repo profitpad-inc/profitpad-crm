@@ -8,6 +8,7 @@ import { cleanSlug, onWrite, SLUG_RE, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderQuotePdf } from '../pdf/quote.js';
+import { buildQuoteLayout, loadQuoteDocument, type QuoteLayout } from '../quote-document.js';
 import { invoicePayable, publicPayment, quotePayable, type PublicPayment } from '../payments/state.js';
 
 // Public pages: customers open quotes (/p/quote/#key) and fill in forms
@@ -121,7 +122,10 @@ export interface PublicQuote {
   decline_reason: string | null;
   company: string | null;
   contact: { name: string | null; email: string | null } | null;
-  lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null }[];
+  // extra: the configured extra columns' strings, by property (quote-document.ts)
+  lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null; extra?: Record<string, string> }[];
+  // what the quote shows beyond its fixed parts (Settings -> Quote document)
+  layout: QuoteLayout;
   signing_fields: SigningField[];
   signed_fields: Record<string, string> | null;
   customer_signature: string | null;
@@ -274,7 +278,9 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
   if (!q || !['sent', 'pending_countersign', 'accepted', 'rejected', 'expired'].includes(q.status)) throw notFound('quote not found');
   const status = q.status === 'sent' && q.past_expiry ? 'expired' : q.status;
 
-  const { lines: outLines, company, contact } = await linkedParts('pc_0022', q.id);
+  const { lines: withIds, company, contact } = await linkedParts('pc_0022', q.id);
+  const { layout, lineExtra } = await buildQuoteLayout(await loadQuoteDocument(), q.id, withIds.map((l) => l.id), q.currency);
+  const outLines = withIds.map(({ id, ...l }) => (lineExtra.has(id) ? { ...l, extra: lineExtra.get(id) } : l));
   const lineTotal = outLines.reduce((s, l) => s + (l.amount ?? 0), 0);
   const amount = q.amount !== null ? Number(q.amount) : outLines.length ? lineTotal : null;
   const payable = quotePayable({
@@ -294,6 +300,7 @@ export async function loadPublicQuote(key: string): Promise<PublicQuote> {
     company,
     contact,
     lines: outLines,
+    layout,
     signing_fields: parseJson<SigningField[]>(q.signing_fields, []),
     signed_fields: parseJson<Record<string, string> | null>(q.signed_fields, null),
     customer_signature: q.customer_signature,
@@ -318,11 +325,12 @@ async function linkedParts(table: 'pc_0022' | 'pc_0023', id: string) {
         [table, id, otherType]
       )
     ).rows;
-  const lines = await linked('pc_0020', 'o.name, o.sku, o.quantity, o.unit_price, o.discount, o.amount', 'pc_0020_id');
+  const lines = await linked('pc_0020', 'o.pc_0020_id as id, o.name, o.sku, o.quantity, o.unit_price, o.discount, o.amount', 'pc_0020_id');
   const companies = await linked('pc_0011', 'o.name', 'pc_0011_id');
   const contacts = await linked('pc_0010', 'o.name, o.email', 'pc_0010_id');
   return {
     lines: lines.map((l) => ({
+      id: l.id as string,
       name: l.name, sku: l.sku, quantity: num(l.quantity), unit_price: num(l.unit_price), discount: num(l.discount), amount: num(l.amount)
     })),
     company: (companies[0]?.name ?? null) as string | null,
@@ -340,7 +348,8 @@ export async function loadPublicInvoice(key: string): Promise<PublicInvoice> {
   );
   const i = rows[0];
   if (!i || !['open', 'paid'].includes(i.status)) throw notFound('invoice not found');
-  const { lines, company, contact } = await linkedParts('pc_0023', i.id);
+  const { lines: withIds, company, contact } = await linkedParts('pc_0023', i.id);
+  const lines = withIds.map(({ id: _id, ...l }) => l);
   const lineTotal = lines.reduce((s, l) => s + (l.amount ?? 0), 0);
   const amount = i.amount !== null ? Number(i.amount) : lines.length ? lineTotal : null;
   return {

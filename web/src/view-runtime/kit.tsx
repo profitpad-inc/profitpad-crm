@@ -2,7 +2,7 @@ import {
   Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type ReactNode
 } from 'react';
 import { call, getInit, getParams, getViewport, report, subscribeParams, subscribeViewport } from './bridge';
-import type { Params, Viewport } from './protocol';
+import type { Params, ViewFile, Viewport } from './protocol';
 import { Select as Dropdown } from '../components/Select';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
@@ -115,6 +115,80 @@ export const linkRecords = (object: string, id: string, toObject: string, toId: 
 // Sends data to an integration an admin set up (an n8n webhook, say); the
 // API makes the request and resolves with the endpoint's answer.
 export const callIntegration = <T = unknown>(key: string, data?: unknown) => call<{ status: number; data: T }>('callIntegration', [key, data ?? null]);
+// Opens a web page (http or https only) in a new tab. Call it from a click:
+// the CRM opens the tab with the viewer's tap, and asks "You're leaving the
+// CRM for <domain>" unless the viewer said not to ask again for that domain.
+// Resolves with { opened: false } when the viewer cancels.
+export const openUrl = (url: string) => call<{ opened: boolean }>('openUrl', [url]);
+
+// ---- files (the page uploads and reads them as the viewer) -------------------------
+
+export type { ViewFile };
+
+export interface UploadOptions {
+  // the file's name in the CRM (default: the File's own name, else "file")
+  name?: string;
+  // the record and file property it is meant for: then edit access to that
+  // record is enough, without Create on files (attach it with updateRecord)
+  object?: string;
+  id?: string;
+  property?: string;
+  onProgress?: (fraction: number) => void;
+}
+
+// Uploads a File or Blob as the viewer and resolves with the new file once it
+// is stored. Put file.id in a file property with createRecord / updateRecord.
+export function uploadFile(file: Blob, options: string | UploadOptions = {}): Promise<ViewFile> {
+  const o = typeof options === 'string' ? { name: options } : options;
+  if (!(file instanceof Blob)) return Promise.reject(new Error('uploadFile takes a File or Blob'));
+  const target = o.object || o.id || o.property ? { object: o.object, id: o.id, property: o.property } : null;
+  return call<ViewFile>('uploadFile', [file, o.name ?? null, target], o.onProgress);
+}
+
+// Name, type and size of files the viewer can open (others are left out).
+export const getFiles = (ids: string[]) => call<ViewFile[]>('getFiles', [ids]);
+// The file's bytes (up to 25 MB), e.g. for URL.createObjectURL; useFileUrl does that for you.
+export const getFileBlob = (id: string) => call<Blob>('fileBlob', [id]);
+// Opens the file in a new tab (images, PDF, video, audio, text), or downloads it.
+export const openFile = (id: string, options: { download?: boolean } = {}) => call<void>('openFile', [id, options.download === true]);
+
+// Bytes already read, kept for the frame's life (at most 40 files) so a list
+// of thumbnails re-renders without reading them again.
+const blobs = new Map<string, Promise<Blob>>();
+function cachedBlob(id: string): Promise<Blob> {
+  let p = blobs.get(id);
+  if (!p) {
+    p = getFileBlob(id);
+    blobs.set(id, p);
+    p.catch(() => blobs.delete(id));
+    if (blobs.size > 40) blobs.delete(blobs.keys().next().value!);
+  }
+  return p;
+}
+
+// A blob: URL for a file (to show in <img>, <video> or <iframe>), revoked when
+// the component goes away. url is null while loading, on error, or without id.
+export function useFileUrl(id: string | null | undefined): { url: string | null; type: string | null; loading: boolean; error: Error | null } {
+  const [state, setState] = useState<{ url: string | null; type: string | null; error: Error | null; for: string | null }>({ url: null, type: null, error: null, for: null });
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    let url: string | null = null;
+    cachedBlob(id)
+      .then((b) => {
+        if (!live) return;
+        url = URL.createObjectURL(b);
+        setState({ url, type: b.type || null, error: null, for: id });
+      })
+      .catch((e: Error) => live && setState({ url: null, type: null, error: e, for: id }));
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id]);
+  const current = state.for === (id ?? null);
+  return { url: current ? state.url : null, type: current ? state.type : null, loading: !!id && !current, error: current ? state.error : null };
+}
 
 // ---- formatters ---------------------------------------------------------------------
 
@@ -537,8 +611,176 @@ export function PhoneInput({ value, onChange, small, style, className }: { value
   );
 }
 
+// Whether a dropped file matches accept (the picker filters by itself).
+function accepts(accept: string | undefined, f: File): boolean {
+  if (!accept) return true;
+  const name = f.name.toLowerCase();
+  const type = (f.type || '').toLowerCase();
+  return accept.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).some((a) =>
+    a.startsWith('.') ? name.endsWith(a) : a.endsWith('/*') ? type.startsWith(a.slice(0, -1)) : type === a
+  );
+}
+
+export function formatBytes(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '';
+  if (n < 1024) return `${n} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toLocaleString(undefined, { maximumFractionDigits: v < 10 ? 1 : 0 })} ${units[i]}`;
+}
+
+// A drop zone with a button that opens the file picker (on phones, capture
+// opens the camera: 'environment' the back one, 'user' the front one). With
+// onUpload the files are uploaded as the viewer, with progress, and onUpload
+// gets them (id, name, mime_type, size_bytes) to put in a file property; with
+// only onFiles the view gets the picked File objects and does the rest.
+export function FileInput({
+  onUpload, onFiles, accept, multiple, capture, label, hint, disabled, small, compact, object, id, property, style, className
+}: Styled & {
+  onUpload?: (files: ViewFile[]) => void;
+  onFiles?: (files: File[]) => void;
+  accept?: string;
+  multiple?: boolean;
+  capture?: 'environment' | 'user' | boolean;
+  label?: ReactNode;
+  hint?: ReactNode;
+  disabled?: boolean;
+  small?: boolean;
+  // the button alone, without the drop zone
+  compact?: boolean;
+  // the record and file property the files are for (see uploadFile)
+  object?: string;
+  id?: string;
+  property?: string;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+  const [progress, setProgress] = useState<{ name: string; index: number; count: number; fraction: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const busy = progress !== null;
+
+  async function take(list: FileList | File[] | null) {
+    const all = Array.from(list ?? []);
+    if (input.current) input.current.value = '';
+    if (all.length === 0 || disabled || busy) return;
+    const ok = all.filter((f) => accepts(accept, f));
+    const picked = multiple ? ok : ok.slice(0, 1);
+    setError(ok.length < all.length ? `${all.length - ok.length === 1 ? 'One file is' : 'Some files are'} not a type this accepts${accept ? ` (${accept})` : ''}` : null);
+    if (picked.length === 0) return;
+    onFiles?.(picked);
+    if (!onUpload) return;
+    const done: ViewFile[] = [];
+    try {
+      for (const [index, f] of picked.entries()) {
+        setProgress({ name: f.name, index, count: picked.length, fraction: 0 });
+        done.push(await uploadFile(f, { object, id, property, onProgress: (fraction) => setProgress({ name: f.name, index, count: picked.length, fraction }) }));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProgress(null);
+    }
+    if (done.length) onUpload(done);
+  }
+
+  const text = label ?? (capture ? 'Take photo' : multiple ? 'Choose files' : 'Choose file');
+  const button = (
+    <Button small={small} disabled={disabled || busy} onClick={() => input.current?.click()}>{busy ? 'Uploading…' : text}</Button>
+  );
+  const status = busy ? (
+    <div className="v-file-progress muted small">
+      {progress.count > 1 ? `${progress.index + 1} of ${progress.count}: ` : ''}{progress.name} · {Math.round(progress.fraction * 100)}%
+      <div className="v-file-bar"><div style={{ width: `${Math.round(progress.fraction * 100)}%` }} /></div>
+    </div>
+  ) : null;
+  return (
+    <div className={cx('v-file-input', className)} style={style}>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        accept={accept}
+        multiple={multiple}
+        {...(capture ? { capture: capture === true ? 'environment' : capture } : {})}
+        onChange={(e) => take(e.target.files)}
+      />
+      {compact ? (
+        <div className="v-row" style={{ gap: 8 }}>{button}{status}</div>
+      ) : (
+        <div
+          className={cx('v-file-drop', over && 'over', (disabled || busy) && 'disabled')}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!disabled && !busy) setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setOver(false);
+            take(e.dataTransfer.files);
+          }}
+        >
+          {button}
+          <span className="muted small v-file-drop-text">or drop {multiple ? 'files' : 'a file'} here</span>
+          {hint && <span className="muted small">{hint}</span>}
+          {status}
+        </div>
+      )}
+      {error && <div className="v-field-error">{error}</div>}
+    </div>
+  );
+}
+
+// An uploaded image, read through the page (views cannot load links). Files
+// that are not images show as a link that opens them.
+export function FileImage({ id, alt = '', fit = 'cover', width, height, style, className }: {
+  id: string; alt?: string; fit?: 'cover' | 'contain'; width?: number | string; height?: number | string;
+} & Styled) {
+  const { url, type, loading, error } = useFileUrl(id);
+  const box: CSSProperties = { width, height, ...style };
+  if (loading) return <div className={cx('v-file-image loading', className)} style={box} />;
+  if (error) return <div className={cx('v-file-image missing muted small', className)} style={box} title={error.message}>Cannot show this file</div>;
+  if (!url || !type?.startsWith('image/')) return <FileLink id={id} className={className} style={style}>{alt || 'Open file'}</FileLink>;
+  return <img className={cx('v-file-image', className)} src={url} alt={alt} style={{ objectFit: fit, ...box }} />;
+}
+
+// A link that opens a file in a new tab (or downloads it).
+export function FileLink({ id, download, children, style, className }: { id: string; download?: boolean; children?: ReactNode } & Styled) {
+  return (
+    <a className={cx('v-link', className)} style={style} href="#" onClick={(e) => {
+      e.preventDefault();
+      openFile(id, { download }).catch((err: Error) => report('error', `openFile: ${err.message}`));
+    }}>{children ?? 'Open file'}</a>
+  );
+}
+
 export function RecordLink({ object, id, children, style, className }: { object: string; id: string; children?: ReactNode } & Styled) {
   return <a className={cx('v-link', className)} style={style} href="#" onClick={(e) => { e.preventDefault(); openRecord(object, id); }}>{children}</a>;
+}
+
+// A link to a page outside the CRM, opened in a new tab through openUrl
+// (a plain <a href="https://..."> in a view does the same).
+export function ExternalLink({ href, children, style, className }: { href: string; children?: ReactNode } & Styled) {
+  return (
+    <a
+      className={cx('v-link', className)}
+      style={style}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => {
+        e.preventDefault();
+        openUrl(href).catch((err: Error) => report('error', err.message));
+      }}
+    >
+      {children ?? href}
+    </a>
+  );
 }
 
 export function Loading({ label = 'Loading…' }: { label?: string }) {

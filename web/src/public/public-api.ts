@@ -10,6 +10,17 @@ export interface SigningField {
   required: boolean;
 }
 
+// api/src/quote-document.ts QuoteLayout: columns, fields and tables as ready-made text
+export interface QuoteLayout {
+  orientation: 'portrait' | 'landscape';
+  item: { label: string; width: number };
+  columns: { key: string; label: string; width: number; align: 'left' | 'right'; builtin: boolean }[];
+  details: { label: string; value: string; wide: boolean }[];
+  terms_title: string;
+  terms: { label: string; value: string; wide: boolean }[];
+  tables: { title: string; columns: { label: string; width: number; align: 'left' | 'right' }[]; rows: string[][] }[];
+}
+
 export interface PublicQuote {
   name: string | null;
   status: 'sent' | 'pending_countersign' | 'accepted' | 'rejected' | 'expired';
@@ -21,7 +32,10 @@ export interface PublicQuote {
   decline_reason: string | null;
   company: string | null;
   contact: { name: string | null; email: string | null } | null;
-  lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null }[];
+  // extra: the configured extra columns' text, by property (api/src/quote-document.ts)
+  lines: { name: string | null; sku: string | null; quantity: number | null; unit_price: number | null; discount: number | null; amount: number | null; extra?: Record<string, string> }[];
+  // what the quote shows beyond its fixed parts (Settings -> Quote document)
+  layout?: QuoteLayout;
   signing_fields: SigningField[];
   signed_fields: Record<string, string> | null;
   customer_signature: string | null;

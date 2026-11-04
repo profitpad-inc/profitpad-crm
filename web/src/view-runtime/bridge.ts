@@ -6,7 +6,7 @@ import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, Viewport, 
 
 let parentOrigin = '*';
 let nextId = 1;
-const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; progress?: (fraction: number) => void }>();
 
 export class BridgeError extends Error {
   constructor(message: string, public status?: number) {
@@ -18,10 +18,11 @@ export function post(msg: FromFrame): void {
   window.parent.postMessage(msg, parentOrigin);
 }
 
-export function call<T = unknown>(method: BridgeMethod, args: unknown[]): Promise<T> {
+// progress: the page reports how far a long call (an upload) has got
+export function call<T = unknown>(method: BridgeMethod, args: unknown[], progress?: (fraction: number) => void): Promise<T> {
   const id = nextId++;
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+    pending.set(id, { resolve: resolve as (v: unknown) => void, reject, progress });
     post({ type: 'pcrm:call', id, method, args });
   });
 }
@@ -82,6 +83,9 @@ export function listen(onInit: (msg: ViewInit) => void): void {
     } else if (msg.type === 'pcrm:params') {
       params = msg.params ?? {};
       listeners.forEach((fn) => fn());
+    } else if (msg.type === 'pcrm:progress') {
+      const f = Number(msg.fraction);
+      if (Number.isFinite(f)) pending.get(msg.id)?.progress?.(Math.max(0, Math.min(1, f)));
     } else if (msg.type === 'pcrm:reply') {
       const p = pending.get(msg.id);
       if (!p) return;

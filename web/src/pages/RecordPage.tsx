@@ -198,6 +198,9 @@ export function RecordPage() {
     navigate(`/objects/${object}?status=archived`);
   }
 
+  // whether the user on a user record is a Super Admin (from their roles), for "Sign in as"
+  const [userSuperAdmin, setUserSuperAdmin] = useState<{ id: string; admin: boolean } | null>(null);
+
   if (error) return <div className="page"><div className="error">{error}</div></div>;
   if (!schema || !record) return <RecordSkeleton />;
   const name = recordName(record);
@@ -211,6 +214,21 @@ export function RecordPage() {
     .filter((o) => object !== 'lines' || o === 'products');
   const lineCount = associated.find((a) => a.object === 'lines')?.records.length ?? 0;
   const isUser = object === 'users';
+  // "Sign in as": Super Admins, on another active user who is not a Super Admin
+  // (the API checks all of this again)
+  const canSignInAs = isUser && me?.is_admin && !me.signed_in_as_by && record.record_status === 'active'
+    && record.id !== me.user?.id && userSuperAdmin?.id === record.id && !userSuperAdmin.admin;
+  const recordId = record.id;
+  async function signInAs() {
+    if (!confirm(`Sign in as ${name}? Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.`)) return;
+    try {
+      await api('POST', `/v1/users/${recordId}/sign-in-as`);
+      // a full load, so the menu, objects and views are theirs
+      window.location.assign('/');
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  }
   // views link to nothing, so they have no association cards: no right column
   const noRight = isUser || object === 'views';
 
@@ -238,7 +256,12 @@ export function RecordPage() {
                       {me?.is_admin && <button className="danger" onClick={() => { close(); removeForGood(); }}>Delete permanently</button>}
                     </>
                   )
-                  : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
+                  : (
+                    <>
+                      {canSignInAs && <button onClick={() => { close(); signInAs(); }}>Sign in as {name}</button>}
+                      <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>
+                    </>
+                  )
               )}
             </Menu>
           </div>
@@ -262,7 +285,7 @@ export function RecordPage() {
             </div>
           </div>
         </div>
-        {isUser && <UserRoles userId={record.id} />}
+        {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
         <PropertyList schema={schema} record={record} onSaved={saved} />
       </aside>
 
@@ -967,7 +990,7 @@ function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
 }
 
 // ISO 8601 in the viewer's time zone, with its offset (2026-11-03T14:05:09-08:00),
-// shown on hover so the exact moment is a glance away from the clock time.
+// so the time matches the day heading above it.
 function isoLocal(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
@@ -1006,6 +1029,20 @@ function changeEntries(rows: HistoryRow[]): ChangeEntry[] {
     if (prev?.kind === 'link' && prev.linked === linked && prev.objectType === value.object_type_id && prev.row.changed_by === row.changed_by &&
       prev.row.via === row.via && prev.row.changed_at.slice(0, 19) === row.changed_at.slice(0, 19)) prev.links.push(value);
     else out.push({ kind: 'link', row, linked, objectType: value.object_type_id, links: [value] });
+  }
+  return out;
+}
+
+// Entries made in the same second by the same actor, the same way, share one
+// who-how-when line.
+function changeBatches(entries: ChangeEntry[]): ChangeEntry[][] {
+  const out: ChangeEntry[][] = [];
+  for (const e of entries) {
+    const first = out.at(-1)?.[0].row;
+    const h = e.row;
+    if (first && first.changed_at.slice(0, 19) === h.changed_at.slice(0, 19) && first.changed_by === h.changed_by &&
+      first.via === h.via && first.source === h.source && first.api_key_id === h.api_key_id) out.at(-1)!.push(e);
+    else out.push([e]);
   }
   return out;
 }
@@ -1124,70 +1161,73 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
           {filtered ? 'Try another property, person or way.' : 'Edits to properties and associations show here, with who made them and how.'}
         </EmptyState>
       )}
-      {history && byDay(changeEntries(history), (e) => e.row.changed_at).map(({ day, rows: entries }) => (
+      {history && byDay(changeBatches(changeEntries(history)), (b) => b[0].row.changed_at).map(({ day, rows: batches }) => (
         <LedgerDay key={day} day={day}>
-          {entries.map((e, i) => {
-            const h = e.row;
+          {batches.map((batch, bi) => {
+            const h = batch[0].row;
             const actor = actorName(h);
-            const meta = (
-              <div className="change-meta">
-                <span className="change-actor" title={h.api_key_id ? `${h.changed_by}, API key ${h.api_key_id}` : h.changed_by ?? undefined}>
-                  {actor.key && <KeyRound size={12} aria-label="API key" />}
-                  {actor.name}
-                </span>
-                <span className="change-tag">{VIA_LABELS[h.via]}</span>
-                {h.source !== h.via && h.source !== 'api' && <span className="change-tag">{h.source}</span>}
-              </div>
-            );
-            const time = <time className="ledger-time" dateTime={h.changed_at} title={isoLocal(h.changed_at)}>{timeOf(h.changed_at)}</time>;
-            if (e.kind === 'link') {
-              const other = byCode.get(e.objectType);
-              const n = e.links.length;
-              const noun = n === 1 ? other?.label_singular ?? 'Record' : `${n} ${(other?.label_plural ?? 'records').toLowerCase()}`;
-              const Icon = e.linked ? Link2 : Unlink;
-              return (
-                <div key={i} className={`ledger-entry link-change${e.linked ? '' : ' unlinked'}`}>
-                  <span className="change-dot link-dot" aria-hidden="true"><Icon size={13} /></span>
-                  <div className="change-body">
-                    <div className="change-head">
-                      <strong>{noun} {e.linked ? 'linked' : 'unlinked'}</strong>
-                      {time}
-                    </div>
-                    <ul className="change-links">
-                      {e.links.map((l) => {
-                        const name = names.get(`${l.object_type_id}:${l.record_id}`);
-                        const label = labels.get(l.label_id);
-                        return (
-                          <li key={l.association_id}>
-                            {other ? (
-                              <Link to={`/objects/${other.api_name}/${l.record_id}`} className={name ? undefined : 'muted'}>{name ?? `${other.label_singular} ${l.record_id}`}</Link>
-                            ) : <span className="muted">{l.record_id}</span>}
-                            {label && <span className="change-tag">{label}</span>}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {meta}
-                  </div>
-                </div>
-              );
-            }
-            const prop = schema.properties.find((p) => p.api_name === h.property);
             return (
-              <div key={i} className="ledger-entry">
-                <span className="change-dot" aria-hidden="true" />
-                <div className="change-body">
-                  <div className="change-head">
-                    <strong>{propLabel(h.property)}</strong>
-                    {time}
+              <div key={bi} className="change-batch">
+                <div className="change-batch-head">
+                  <div className="change-meta">
+                    <span className="change-actor" title={h.api_key_id ? `${h.changed_by}, API key ${h.api_key_id}` : h.changed_by}>
+                      {actor.key && <KeyRound size={12} aria-label="API key" />}
+                      {actor.name}
+                    </span>
+                    <span className="change-tag">{VIA_LABELS[h.via]}</span>
+                    {h.source !== h.via && h.source !== 'api' && <span className="change-tag">{h.source}</span>}
                   </div>
-                  <div className="change-values">
-                    <span className={`change-value old${h.old_value === null ? ' none' : ''}`}>{h.old_value === null ? 'Empty' : historyValue(prop, h.old_value)}</span>
-                    <ArrowRight size={13} className="change-arrow" aria-label="to" />
-                    <span className={`change-value${h.new_value === null ? ' none' : ''}`}>{h.new_value === null ? 'Empty' : historyValue(prop, h.new_value)}</span>
-                  </div>
-                  {meta}
+                  <time className="ledger-time" dateTime={h.changed_at}>{isoLocal(h.changed_at)}</time>
                 </div>
+                {batch.map((e, i) => {
+                  if (e.kind === 'link') {
+                    const other = byCode.get(e.objectType);
+                    const n = e.links.length;
+                    const noun = n === 1 ? other?.label_singular ?? 'Record' : `${n} ${(other?.label_plural ?? 'records').toLowerCase()}`;
+                    const Icon = e.linked ? Link2 : Unlink;
+                    return (
+                      <div key={i} className={`ledger-entry link-change${e.linked ? '' : ' unlinked'}`}>
+                        <span className="change-dot link-dot" aria-hidden="true"><Icon size={13} /></span>
+                        <div className="change-body">
+                          <div className="change-head">
+                            <strong>{noun} {e.linked ? 'associated' : 'disassociated'}</strong>
+                          </div>
+                          <ul className="change-links">
+                            {e.links.map((l) => {
+                              const name = names.get(`${l.object_type_id}:${l.record_id}`);
+                              const label = labels.get(l.label_id);
+                              return (
+                                <li key={l.association_id}>
+                                  {other ? (
+                                    <Link to={`/objects/${other.api_name}/${l.record_id}`} className={name ? undefined : 'muted'}>{name ?? `${other.label_singular} ${l.record_id}`}</Link>
+                                  ) : <span className="muted">{l.record_id}</span>}
+                                  {label && <span className="change-tag">{label}</span>}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      </div>
+                    );
+                  }
+                  const r = e.row;
+                  const prop = schema.properties.find((p) => p.api_name === r.property);
+                  return (
+                    <div key={i} className="ledger-entry">
+                      <span className="change-dot" aria-hidden="true" />
+                      <div className="change-body">
+                        <div className="change-head">
+                          <strong>{propLabel(r.property)}</strong>
+                        </div>
+                        <div className="change-values">
+                          <span className={`change-value old${r.old_value === null ? ' none' : ''}`}>{r.old_value === null ? 'Empty' : historyValue(prop, r.old_value)}</span>
+                          <ArrowRight size={13} className="change-arrow" aria-label="to" />
+                          <span className={`change-value${r.new_value === null ? ' none' : ''}`}>{r.new_value === null ? 'Empty' : historyValue(prop, r.new_value)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
@@ -1226,7 +1266,7 @@ interface UserRole {
   team_id: string | null;
 }
 
-function UserRoles({ userId }: { userId: string }) {
+function UserRoles({ userId, onLoaded }: { userId: string; onLoaded?: (roles: UserRole[]) => void }) {
   const { me } = useApp();
   const [roles, setRoles] = useState<UserRole[] | null>(null);
   const [allRoles, setAllRoles] = useState<{ id: string; name: string }[]>([]);
@@ -1235,7 +1275,8 @@ function UserRoles({ userId }: { userId: string }) {
   const load = useCallback(async () => {
     const r = await api<{ results: UserRole[] }>('GET', `/v1/users/${userId}/roles`);
     setRoles(r.results);
-  }, [userId]);
+    onLoaded?.(r.results);
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load().catch((e) => setError((e as Error).message));

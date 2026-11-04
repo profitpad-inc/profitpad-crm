@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
-  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
+  Menu as MenuIcon, Search, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
+  FileText, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
 import { api, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -23,6 +23,8 @@ import { ObjectSettings } from './ObjectSettings';
 import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
+import { QuoteDocumentSettings } from './QuoteDocumentSettings';
+import { CurrencySettings } from './CurrencySettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import '../settings.css';
@@ -41,7 +43,9 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
     { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'admin', element: <NavSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
-    { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> }
+    { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> },
+    { path: 'quote-document', label: 'Quote document', icon: <FileText size={16} />, gate: 'admin', element: <QuoteDocumentSettings /> },
+    { path: 'currencies', label: 'Currencies', icon: <Coins size={16} />, gate: 'admin', element: <CurrencySettings /> }
   ] },
   { label: 'People and access', links: [
     { path: 'users', label: 'Users', icon: <Users size={16} />, gate: 'admin', element: <UserSettings /> },

@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import PDFDocument from 'pdfkit';
 import type { PublicQuote } from '../routes/public.js';
+import { BUILTIN_COLUMNS, type LayoutField } from '../quote-document.js';
 
 // A one-file PDF of a quote, drawn like the customer's page on /p/quote/
 // (web/src/public/quote.ts, document.ts, public.css): a sheet of paper with the
@@ -10,6 +11,11 @@ import type { PublicQuote } from '../routes/public.js';
 // WOFF files (fontkit cannot subset their WOFF2 files). Those files hold the
 // Latin subset only, so a string with other characters falls back to Helvetica,
 // which is what the PDF used before (it shows Š and Ž, but not Ł or Cyrillic either).
+//
+// What it shows beyond the fixed parts comes from q.layout (quote-document.ts,
+// Settings -> Quote document): the line columns, a details block under the
+// parties, a terms section after the total and tables of linked records. With
+// nothing configured the layout is the default and the PDF looks as before.
 
 const require = createRequire(import.meta.url);
 const fontFile = (pkg: string, file: string) => require.resolve(`@fontsource/${pkg}/files/${file}`);
@@ -61,7 +67,8 @@ const pngBytes = (dataUrl: string) => Buffer.from(dataUrl.slice(dataUrl.indexOf(
 
 export function renderQuotePdf(q: PublicQuote, theme: Record<string, string>): Promise<Buffer> {
   const c = { ...DEFAULT_THEME, ...theme };
-  const doc = new PDFDocument({ size: 'LETTER', margin: 54, info: { Title: q.name ?? 'Quote' } });
+  const layout = q.layout;
+  const doc = new PDFDocument({ size: 'LETTER', layout: layout.orientation, margin: 54, info: { Title: q.name ?? 'Quote' } });
   for (const [name, file] of Object.entries(FONTS)) doc.registerFont(name, file);
   const chunks: Buffer[] = [];
   doc.on('data', (b: Buffer) => chunks.push(b));
@@ -112,11 +119,14 @@ export function renderQuotePdf(q: PublicQuote, theme: Record<string, string>): P
     ['Attention', ...attention],
     ['Valid until', q.expiration_date ? day(q.expiration_date) : null, null]
   ] as [string, string | null, string | null][]).filter(([, value]) => value);
-  if (parties.length) {
+  if (parties.length || layout.details.length) {
     doc.y += 18;
     hrule(doc.y, left, left + width, c.border);
+    doc.y += 13;
+  }
+  if (parties.length) {
     let x = left;
-    let y = doc.y + 13;
+    let y = doc.y;
     let rowBottom = y;
     const gap = 32;
     for (const [label, value, sub] of parties) {
@@ -134,57 +144,122 @@ export function renderQuotePdf(q: PublicQuote, theme: Record<string, string>): P
     doc.y = rowBottom;
   }
 
-  // the lines, as a ledger: one dark rule under the header, light rules between rows
-  const cols = [
-    { title: 'Item', w: width * 0.4, align: 'left' as const },
-    { title: 'Qty', w: width * 0.1, align: 'right' as const },
-    { title: 'Unit price', w: width * 0.17, align: 'right' as const },
-    { title: 'Discount', w: width * 0.15, align: 'right' as const },
-    { title: 'Amount', w: width * 0.18, align: 'right' as const }
-  ];
-  const pad = 7;
-  // cell box: no outer padding on the first and last columns, like the page
-  const cell = (i: number) => {
-    const x = left + cols.slice(0, i).reduce((s, col) => s + col.w, 0);
-    const l = i === 0 ? 0 : pad;
-    const r = i === cols.length - 1 ? 0 : pad;
-    return { x: x + l, w: cols[i].w - l - r };
-  };
-  const header = () => {
-    const y = doc.y;
-    cols.forEach((col, i) => write(col.title, 'Inter-Medium', 8.5, c.muted_text, cell(i).x, y, { width: cell(i).w, align: col.align, lineBreak: false }));
-    doc.y = y + 15;
-    hrule(doc.y, left, left + width, c.text);
-  };
-  if (q.lines.length) {
-    doc.y += 26;
+  // details: configured quote fields, label over value in a grid (a long text gets a full row)
+  if (layout.details.length) {
+    if (parties.length) doc.y += 14;
+    const perRow = layout.orientation === 'landscape' ? 4 : 3;
+    const gap = 24;
+    const colW = (width - gap * (perRow - 1)) / perRow;
+    const cellH = (f: LayoutField, w: number) => {
+      style('Inter', 8.5, c.muted_text, f.label);
+      const a = doc.heightOfString(f.label, { width: w, lineGap: 1.5 });
+      style('Inter-Medium', 10, c.text, f.value);
+      return a + 1 + doc.heightOfString(f.value, { width: w, lineGap: 1.5 });
+    };
+    // rows of cells: a wide field alone, the others perRow at a time
+    const rows: LayoutField[][] = [];
+    for (const f of layout.details) {
+      const last = rows[rows.length - 1];
+      if (f.wide) rows.push([f]);
+      else if (last && !last[0].wide && last.length < perRow) last.push(f);
+      else rows.push([f]);
+    }
+    rows.forEach((row, ri) => {
+      const w = (f: LayoutField) => (f.wide ? width : colW);
+      const h = Math.max(...row.map((f) => cellH(f, w(f))));
+      if (ri > 0) doc.y += 10;
+      room(h);
+      const y = doc.y;
+      row.forEach((f, i) => {
+        const x = left + i * (colW + gap);
+        const yy = write(f.label, 'Inter', 8.5, c.muted_text, x, y, { width: w(f) });
+        write(f.value, 'Inter-Medium', 10, c.text, x, yy + 1, { width: w(f) });
+      });
+      doc.y = y + h;
+    });
+  }
+
+  // A ledger: one dark rule under the header, light rules between rows. The
+  // widths are shares of the page width; with many columns the type gets
+  // smaller, and every cell wraps, so a wide table still fits the page.
+  type Run = { text: string; face: Face; size: number; color: string };
+  type Col = { title: string; w: number; align: 'left' | 'right' };
+  const ledger = (colsIn: { title: string; share: number; align: 'left' | 'right' }[], rows: Run[][][]) => {
+    const total = colsIn.reduce((s, col) => s + col.share, 0) || 1;
+    const cols: Col[] = colsIn.map((col) => ({ title: col.title, w: (width * col.share) / total, align: col.align }));
+    const n = cols.length;
+    const size = n <= 6 ? 10 : n <= 8 ? 9 : 8;
+    const pad = n <= 6 ? 7 : n <= 8 ? 5 : 4;
+    const headSize = size - 1.5;
+    // cell box: no outer padding on the first and last columns, like the page
+    const cell = (i: number) => {
+      const x = left + cols.slice(0, i).reduce((s, col) => s + col.w, 0);
+      const l = i === 0 ? 0 : pad;
+      const r = i === n - 1 ? 0 : pad;
+      return { x: x + l, w: Math.max(cols[i].w - l - r, 4) };
+    };
+    const runsHeight = (runs: Run[], w: number) => runs.reduce((h, r, k) => {
+      if (!r.text) return h;
+      style(r.face, r.size, r.color, r.text);
+      return h + (k > 0 ? 2 : 0) + doc.heightOfString(r.text, { width: w, lineGap: 1.5 });
+    }, 0);
+    const headHs = cols.map((col, i) => runsHeight([{ text: col.title, face: 'Inter-Medium', size: headSize, color: c.muted_text }], cell(i).w));
+    const headH = Math.max(...headHs);
+    // a title that wraps pushes the others down, so every title sits on the rule
+    const header = () => {
+      const y = doc.y;
+      cols.forEach((col, i) => write(col.title, 'Inter-Medium', headSize, c.muted_text, cell(i).x, y + headH - headHs[i], { width: cell(i).w, align: col.align }));
+      doc.y = y + Math.max(15, headH + 3);
+      hrule(doc.y, left, left + width, c.text);
+    };
+    room(Math.max(15, headH + 3) + 40);
     header();
-    for (const l of q.lines) {
-      const cells: [string, Face][] = [
-        [l.quantity === null ? '' : String(l.quantity), 'Inter'],
-        [money(l.unit_price, q.currency), 'Inter'],
-        [l.discount ? money(l.discount, q.currency) : '', 'Inter'],
-        [money(l.amount, q.currency), 'Inter-SemiBold']
-      ];
-      const item = cell(0);
-      style('Inter-Medium', 10, c.text, l.name ?? '');
-      let h = doc.heightOfString(l.name ?? '', { width: item.w, lineGap: 1.5 });
-      if (l.sku) h += 2 + (style('Inter', 8.5, c.muted_text, `SKU ${l.sku}`), doc.heightOfString(`SKU ${l.sku}`, { width: item.w, lineGap: 1.5 }));
+    for (const row of rows) {
+      const h = Math.max(size * 1.3, ...row.map((runs, i) => runsHeight(runs, cell(i).w)));
       if (doc.y + h + 20 > bottom()) {
         doc.addPage();
         doc.y = doc.page.margins.top;
         header();
       }
       const y = doc.y + 10;
-      let yy = write(l.name ?? '', 'Inter-Medium', 10, c.text, item.x, y, { width: item.w });
-      if (l.sku) yy = write(`SKU ${l.sku}`, 'Inter', 8.5, c.muted_text, item.x, yy + 2, { width: item.w });
-      cells.forEach(([s, face], i) => {
-        const box = cell(i + 1);
-        write(s, face, 10, c.text, box.x, y, { width: box.w, align: 'right', lineBreak: false });
+      row.forEach((runs, i) => {
+        const box = cell(i);
+        let yy = y;
+        runs.forEach((r, k) => {
+          if (r.text) yy = write(r.text, r.face, r.size, r.color, box.x, k > 0 ? yy + 2 : yy, { width: box.w, align: cols[i].align });
+        });
       });
-      doc.y = Math.max(yy, y + 13) + 10;
+      doc.y = y + h + 10;
       hrule(doc.y, left, left + width, c.border);
     }
+  };
+
+  // the lines: the item (name over SKU), then the configured columns
+  if (q.lines.length) {
+    doc.y += 26;
+    const size = layout.columns.length + 1 <= 6 ? 10 : layout.columns.length + 1 <= 8 ? 9 : 8;
+    const builtin = (l: PublicQuote['lines'][number], key: string): string => {
+      if (key === 'quantity') return l.quantity === null ? '' : String(l.quantity);
+      if (key === 'unit_price') return money(l.unit_price, q.currency);
+      if (key === 'discount') return l.discount ? money(l.discount, q.currency) : '';
+      if (key === 'amount') return money(l.amount, q.currency);
+      return '';
+    };
+    ledger(
+      [{ title: layout.item.label, share: layout.item.width, align: 'left' }, ...layout.columns.map((col) => ({ title: col.label, share: col.width, align: col.align }))],
+      q.lines.map((l) => [
+        [
+          { text: l.name ?? '', face: 'Inter-Medium', size, color: c.text },
+          { text: l.sku ? `SKU ${l.sku}` : '', face: 'Inter', size: size - 1.5, color: c.muted_text }
+        ],
+        ...layout.columns.map((col): Run[] => [{
+          text: col.builtin && col.key in BUILTIN_COLUMNS ? builtin(l, col.key) : l.extra?.[col.key] ?? '',
+          face: col.key === 'amount' ? 'Inter-SemiBold' : 'Inter',
+          size,
+          color: c.text
+        }])
+      ])
+    );
   }
 
   // the total: right-aligned under the amounts, closed by a double rule
@@ -201,6 +276,40 @@ export function renderQuotePdf(q: PublicQuote, theme: Record<string, string>): P
     hrule(ruleY, amountX - 16, left + width, c.text, 0.9);
     hrule(ruleY + 2.4, amountX - 16, left + width, c.text, 0.9);
     doc.y = ruleY + 3;
+  }
+
+  // a section heading for terms and extra tables
+  const heading = (title: string) => {
+    doc.y += 26;
+    room(60);
+    doc.y = write(title, 'Montserrat-Bold', 12.5, c.text, left, doc.y, { width });
+  };
+
+  // terms: configured quote fields, label and value side by side
+  if (layout.terms.length) {
+    heading(layout.terms_title);
+    doc.y += 2;
+    const labelW = Math.min(width * 0.32, Math.max(...layout.terms.map((f) => measure(f.label, 'Inter', 10))) + 1);
+    const valueW = width - labelW - 14;
+    for (const f of layout.terms) {
+      style('Inter', 10, c.text, f.value);
+      room(doc.heightOfString(f.value, { width: valueW, lineGap: 1.5 }) + 6);
+      const y = doc.y + 6;
+      const a = write(f.label, 'Inter', 10, c.muted_text, left, y, { width: labelW });
+      const b = write(f.value, 'Inter', 10, c.text, left + labelW + 14, y, { width: valueW });
+      doc.y = Math.max(a, b);
+    }
+  }
+
+  // tables of records linked to the quote (a kit or bill of materials)
+  for (const t of layout.tables) {
+    heading(t.title);
+    doc.y += 4;
+    const size = t.columns.length <= 6 ? 10 : t.columns.length <= 8 ? 9 : 8;
+    ledger(
+      t.columns.map((col) => ({ title: col.label, share: col.width, align: col.align })),
+      t.rows.map((r) => r.map((text, i): Run[] => [{ text, face: i === 0 ? 'Inter-Medium' : 'Inter', size, color: c.text }]))
+    );
   }
 
   // status note, as on the page

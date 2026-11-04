@@ -658,6 +658,8 @@ export async function oauthRoutes(app: FastifyInstance) {
     if ('redirect' in parsed) return reply.redirect(parsed.redirect, 302);
     const p = await sessionPrincipal(req);
     if (!p || !p.userId) return signInPage(req, reply, parsed.ok);
+    // an app's access would outlast "Sign in as", so it cannot be granted then
+    if (p.session?.impersonatedBy) return sendPage(reply, 403, 'Cannot connect app', '<h1>Cannot connect this app</h1><p>You are signed in as another user. Go back to your own account in the CRM to connect apps.</p>');
     return consentPage(req, reply, p, parsed.ok);
   });
 
@@ -670,6 +672,8 @@ export async function oauthRoutes(app: FastifyInstance) {
     // the session check also refuses a form posted from another site (Origin)
     const p = await sessionPrincipal(req);
     if (!p || !p.userId) return signInPage(req, reply, a);
+    // an app's access would outlast "Sign in as", so it cannot be granted then
+    if (p.session?.impersonatedBy) return sendPage(reply, 403, 'Cannot connect app', '<h1>Cannot connect this app</h1><p>You are signed in as another user. Go back to your own account in the CRM to connect apps.</p>');
     if (body.csrf !== consentToken(req)) throw forbidden('the consent form expired, start connecting the app again');
     if (body.decision !== 'allow') {
       await logEvent(req, 'oauth.denied', { userId: p.userId, target: { type: 'oauth_client', id: a.client.id }, details: { client: a.client.name } });

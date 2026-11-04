@@ -9,6 +9,8 @@ export type SecurityEvent =
   | 'sign_in.failed'
   | 'sign_out'
   | 'session.revoked'
+  | 'sign_in_as.started'
+  | 'sign_in_as.ended'
   | 'api_key.created'
   | 'api_key.revoked'
   | 'api_key.rotated'
@@ -64,7 +66,10 @@ export async function logEvent(req: FastifyRequest, event: SecurityEvent, info: 
       req.headers['user-agent'] ?? null,
       info.target?.type ?? null,
       info.target ? String(info.target.id) : null,
-      JSON.stringify(info.details ?? {})
+      // done while a Super Admin is signed in as this user: say who
+      JSON.stringify(req.principal?.session?.impersonatedBy && !info.actor
+        ? { ...info.details, signed_in_as_by: `user:${req.principal.session.impersonatedBy}` }
+        : info.details ?? {})
     ]
   );
 }

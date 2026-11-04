@@ -61,7 +61,13 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
   if (type === 'file') {
     const ids = Array.isArray(input) ? input : [input];
     if (!ids.every((id) => typeof id === 'string' && HEX_ID.test(id))) throw fail('expected file ids');
-    return { value: [...new Set(ids)], newOptions: [] };
+    const unique = [...new Set(ids as string[])];
+    // the column's check constraint enforces it too, with a less readable message
+    const max = prop.options.max_files;
+    if (typeof max === 'number' && unique.length > max) {
+      throw badRequest(`${prop.label} can hold at most ${max} ${max === 1 ? 'file' : 'files'}`, { property: prop.api_name });
+    }
+    return { value: unique, newOptions: [] };
   }
   if (type === 'dropdown') {
     // multi-value dropdowns also accept "a;b" (CSV imports and exports use ;)

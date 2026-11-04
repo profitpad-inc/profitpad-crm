@@ -7,6 +7,7 @@ import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter/latin-600.css';
 import * as kit from './kit';
 import { listen, post, report } from './bridge';
+import { hasScheme } from './external-url';
 import './frame.css';
 import { installTooltips } from '../lib/tooltips';
 
@@ -50,6 +51,22 @@ console.error = (...args: unknown[]) => {
   if (typeof first === 'string' && /The above error occurred/.test(first)) return;
   report('console', args.map(errorText).join(' ').slice(0, 2000), args.find((a): a is Error => a instanceof Error)?.stack);
 };
+
+// A plain <a href="https://..."> would navigate the sandboxed frame away (and
+// stop the view) or, with target="_blank", do nothing (no popups allowed):
+// hand such clicks to openUrl, which the CRM page opens in a new tab.
+// Relative and #hash links are left alone; a view's own onClick that calls
+// preventDefault wins.
+const onLinkClick = (e: MouseEvent) => {
+  // left click (any modifier) or middle click: either way it opens a new tab
+  if (e.defaultPrevented || (e.type === 'click' ? e.button !== 0 : e.button !== 1)) return;
+  const href = (e.target as Element | null)?.closest?.('a[href]')?.getAttribute('href');
+  if (!href || !hasScheme(href)) return;
+  e.preventDefault();
+  kit.openUrl(href).catch((err: Error) => report('error', err.message));
+};
+document.addEventListener('click', onLinkClick);
+document.addEventListener('auxclick', onLinkClick);
 
 listen((msg) => {
   for (const [k, v] of Object.entries(msg.theme ?? {})) document.documentElement.style.setProperty(k, v);

@@ -6,6 +6,7 @@ import { logEvent } from '../audit.js';
 import { approveFields, approveUrl, canApprove, requestFields } from '../approval.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
+import { validateQuoteDocument } from '../quote-document.js';
 
 // Admins: keys with the admin scope, or user keys whose roles include an admin role.
 export function isAdmin(p: Principal): boolean {
@@ -316,12 +317,19 @@ export async function uiRoutes(app: FastifyInstance) {
       );
       user = rows[0] ?? null;
     }
+    // the Super Admin behind a "Sign in as" session (the UI shows a banner)
+    let signedInAsBy = null;
+    if (p.session?.impersonatedBy) {
+      const { rows } = await pool.query('select pc_0000_id as id, name, email from crm.pc_0000 where pc_0000_id = $1', [p.session.impersonatedBy]);
+      signedInAsBy = rows[0] ?? { id: p.session.impersonatedBy, name: null, email: null };
+    }
     return {
       actor: p.actor,
       key_name: p.name,
       scopes: [...p.scopes],
       is_admin: isAdmin(p),
       user,
+      signed_in_as_by: signedInAsBy,
       readable_objects: reg.objects.filter((o) => o.record_status === 'active' && canRead(p, o)).map((o) => o.api_name)
     };
   });
@@ -337,10 +345,12 @@ export async function uiRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdmin(p);
     if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
-    const validators: Record<string, (v: unknown) => unknown> = { theme: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo };
+    const validators: Record<string, (v: unknown) => unknown> = {
+      theme: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo, quote_document: validateQuoteDocument
+    };
     const validate = validators[req.params.key];
-    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, logo, forms)');
-    const value = validate(req.body);
+    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, logo, forms, quote_document)');
+    const value = await validate(req.body);
     await pool.query(
       `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)
        on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,

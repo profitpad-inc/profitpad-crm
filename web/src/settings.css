@@ -308,3 +308,18 @@
 .key-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .key-row input { flex: 1 1 220px; min-width: 0; }
 .settings .grid th.cell-check .column-check { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+
+/* Quote document (QuoteDocumentSettings.tsx) */
+.settings .quote-add { margin-top: 10px; max-width: 260px; }
+.settings .quote-add .select-face { color: var(--primary); font-weight: 600; }
+.settings .quote-width { display: inline-flex; align-items: center; gap: 8px; }
+.settings .quote-width input { width: 72px; }
+.settings .quote-sort { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings .quote-table-card { margin-bottom: 12px; }
+.settings .quote-table-card .access-table { margin-top: 10px; }
+
+/* Settings → Currencies */
+.currency-settings th.num, .currency-settings td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.currency-settings .stack-sm { display: grid; gap: 6px; justify-items: start; }
+.currency-settings label.small { display: inline-flex; align-items: center; gap: 6px; }
+.currency-settings tr.muted td { color: var(--muted-text); }

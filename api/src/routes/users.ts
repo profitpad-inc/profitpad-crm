@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool } from '../db.js';
-import { forbidden, notFound } from '../errors.js';
-import { requireObjectPermission, requireRecentSignIn, requireScope, sessionEndsAt, userIsAdmin, type Principal } from '../auth.js';
+import { badRequest, forbidden, notFound } from '../errors.js';
+import { requireObjectPermission, requireRecentSignIn, requireScope, sessionEndsAt, USER_CAN_SIGN_IN, userIsAdmin, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { getObject } from '../registry.js';
 import { isAdmin } from './ui.js';
@@ -89,5 +89,42 @@ export async function userRoutes(app: FastifyInstance) {
     );
     await logEvent(req, 'session.revoked', { userId: req.params.id, details: { all: true, kept_current: keep !== null, count: rowCount } });
     return { revoked: rowCount };
+  });
+
+  // "Sign in as": a Super Admin's browser session becomes the user's (their
+  // roles, their name on every change) until they end it or sign out. Never
+  // another Super Admin, and not from an API key, OAuth app or the MCP.
+  app.post<{ Params: { id: string } }>('/v1/users/:id/sign-in-as', async (req) => {
+    const p = req.principal!;
+    if (!p.session) throw forbidden('"Sign in as" works only from the CRM in a browser');
+    if (p.session.impersonatedBy) throw forbidden('you are already signed in as someone else: go back to your own account first');
+    if (!isAdmin(p)) throw forbidden('only Super Admins can sign in as another user');
+    requireRecentSignIn(p);
+    const target = req.params.id;
+    if (target === p.userId) throw badRequest('that is you');
+    const { rows } = await pool.query(
+      `select pc_0000_id as id, name, email, ${USER_CAN_SIGN_IN('u')} as can_sign_in from crm.pc_0000 u where pc_0000_id = $1`,
+      [target]
+    );
+    if (rows.length === 0) throw notFound('user not found');
+    if (!rows[0].can_sign_in) throw badRequest('this user is archived or deactivated, so nobody can sign in as them');
+    if (await userIsAdmin(target)) throw forbidden('you cannot sign in as another Super Admin');
+    await pool.query(
+      'update auth.sessions set acting_as_user_id = $2, acting_since = now() where id = $1 and revoked_at is null',
+      [p.session.id, target]
+    );
+    await logEvent(req, 'sign_in_as.started', { userId: target, target: { type: 'session', id: p.session.id }, details: { name: rows[0].name, email: rows[0].email } });
+    return { user: { id: rows[0].id, name: rows[0].name, email: rows[0].email } };
+  });
+
+  // Back to the Super Admin's own account. Open to the session itself, since
+  // while signed in as someone it has that user's (non-admin) permissions.
+  app.post('/v1/sign-in-as/end', async (req) => {
+    const p = req.principal!;
+    const by = p.session?.impersonatedBy;
+    if (!p.session || !by) throw badRequest('you are not signed in as another user');
+    await pool.query('update auth.sessions set acting_as_user_id = null, acting_since = null where id = $1', [p.session.id]);
+    await logEvent(req, 'sign_in_as.ended', { actor: `user:${by}`, userId: p.userId, target: { type: 'session', id: p.session.id } });
+    return { ok: true };
   });
 }

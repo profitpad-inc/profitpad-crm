@@ -15,8 +15,21 @@ export interface ViewInit {
   view: { id: string; name: string | null; slug: string; draft: boolean };
 }
 
-// phoneRegions and checkPhone serve the kit's PhoneInput (read only, never asked)
-export type BridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone';
+// phoneRegions and checkPhone serve the kit's PhoneInput (read only, never asked).
+// Files: uploadFile gets a File or Blob (structured clone carries it across),
+// fileBlob answers with a Blob, which the view shows through a blob: URL.
+type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone'
+  | 'uploadFile' | 'getFiles' | 'fileBlob' | 'openFile';
+// openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
+export type BridgeMethod = BaseBridgeMethod | 'openUrl';
+
+// What a view learns about a file (uploadFile's answer, getFiles' rows)
+export interface ViewFile {
+  id: string;
+  name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+}
 
 // Where the frame sits in the CRM page's visible area, in frame pixels:
 // scrollTop is how much of the frame is scrolled out of view above,
@@ -38,6 +51,8 @@ export type ToFrame =
   | ViewInit
   | { type: 'pcrm:viewport'; viewport: Viewport }
   | { type: 'pcrm:params'; params: Params }
+  // how far an uploadFile call (id) has got, 0 to 1
+  | { type: 'pcrm:progress'; id: number; fraction: number }
   | { type: 'pcrm:reply'; id: number; ok: true; value: unknown }
   | { type: 'pcrm:reply'; id: number; ok: false; error: { message: string; status?: number } };
 

@@ -6,7 +6,7 @@ import './public.css';
 import { applyTheme } from '../lib/theme';
 import { el, keyFromHash, publicApi, queryParamsFromLocation, type PublicQuote } from './public-api';
 import { attachSignaturePad } from './signature-pad';
-import { attention, day, linesTable, parties, totalRow } from './document';
+import { attention, day, details, extraTables, linesTable, parties, terms, totalRow } from './document';
 import { afterCheckout, paymentBox } from './payment-box';
 
 // Customer view of a quote: /p/quote/#<public key>. View, accept (fill in the
@@ -40,7 +40,8 @@ function render(q: PublicQuote): void {
     ['Valid until', q.expiration_date ? day(q.expiration_date) : null]
   ]);
 
-  const lines = linesTable(q.lines, q.currency);
+  const layout = q.layout;
+  const lines = linesTable(q.lines, q.currency, layout);
 
   const actions = el('div', { class: 'pp-actions' });
   const respondBox = el('div', {});
@@ -67,14 +68,17 @@ function render(q: PublicQuote): void {
     note = el('div', { class: 'pp-note' }, 'This quote has expired. Contact us if you would like an updated one.');
   }
 
-  root.replaceChildren(el('main', { class: 'pp-page' },
+  root.replaceChildren(el('main', { class: layout?.orientation === 'landscape' ? 'pp-page wide' : 'pp-page' },
     el('div', { class: 'pp-card' },
       el('div', { class: 'pp-head' },
         el('h1', {}, q.name ?? 'Quote'),
         el('span', { class: `pp-pill ${q.status}` }, STATUS[q.status])),
       meta,
+      layout ? details(layout.details) : null,
       lines,
       totalRow(q.amount, q.currency),
+      layout ? terms(layout.terms_title, layout.terms) : null,
+      ...(layout ? extraTables(layout.tables) : []),
       note,
       signatures(q),
       paymentBox(q.payment, {

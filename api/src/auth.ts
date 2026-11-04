@@ -42,8 +42,9 @@ export interface Principal {
   actor: string;
   // null means unrestricted (service key, or a user with an admin role)
   permissions: Permissions | null;
-  // set for a browser session: when its user signed in
-  session?: { id: string; signedInAt: Date };
+  // set for a browser session: when its user signed in, and the Super Admin
+  // behind it while they are signed in as this user ("Sign in as")
+  session?: { id: string; signedInAt: Date; impersonatedBy?: string };
   // set for an OAuth access token: the app and the user's grant to it
   oauth?: { clientId: string; clientName: string; grantId: number; expiresAt: Date };
   // set where the route knows better than the credential (the MCP server);
@@ -186,15 +187,16 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
     }
   }
   const { rows } = await pool.query(
-    `select s.id, s.user_id, s.created_at, s.last_seen_at, s.expires_at from auth.sessions s join crm.pc_0000 u on u.pc_0000_id = s.user_id
+    `select s.id, s.user_id, s.acting_as_user_id, s.created_at, s.last_seen_at, s.expires_at from auth.sessions s join crm.pc_0000 u on u.pc_0000_id = s.user_id
      where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and ${USER_CAN_SIGN_IN('u')}`,
     [hashKey(token)]
   );
   if (rows.length === 0) throw new ApiError(401, 'session expired, signed out, or user deactivated', 'unauthorized');
   const s = rows[0];
-  const userId: string = s.user_id;
-  const permissions = await loadPermissions(pool, userId);
-  if (sessionEndsAt(permissions === null, s.created_at, s.last_seen_at, s.expires_at).getTime() <= Date.now()) {
+  const signedInUser: string = s.user_id;
+  const ownPermissions = await loadPermissions(pool, signedInUser);
+  // the session's limits are those of the person who signed in
+  if (sessionEndsAt(ownPermissions === null, s.created_at, s.last_seen_at, s.expires_at).getTime() <= Date.now()) {
     // idle too long or past its maximum: end it for good, so the history shows it
     await pool.query('update auth.sessions set expires_at = least(expires_at, now()) where id = $1', [s.id]);
     throw new ApiError(401, 'session expired, sign in again', 'unauthorized');
@@ -203,6 +205,24 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
   if (!s.last_seen_at || Date.now() - s.last_seen_at.getTime() > 60_000) {
     await pool.query('update auth.sessions set last_seen_at = now() where id = $1', [s.id]);
   }
+  let userId = signedInUser;
+  let permissions = ownPermissions;
+  let impersonatedBy: string | undefined;
+  if (s.acting_as_user_id) {
+    // "Sign in as": holds only while the signer is a Super Admin and the user
+    // can sign in and is not one; otherwise it ends and the request is refused
+    // (rather than quietly going ahead as the Super Admin)
+    const target: string = s.acting_as_user_id;
+    const { rows: ok } = await pool.query(`select 1 from crm.pc_0000 u where u.pc_0000_id = $1 and ${USER_CAN_SIGN_IN('u')}`, [target]);
+    const targetPermissions = ok.length ? await loadPermissions(pool, target) : null;
+    if (ownPermissions !== null || targetPermissions === null) {
+      await pool.query('update auth.sessions set acting_as_user_id = null, acting_since = null where id = $1', [s.id]);
+      throw new ApiError(409, '"Sign in as" ended: you are no longer a Super Admin, or that user was deactivated or became a Super Admin. Reload the page.', 'sign_in_as_ended');
+    }
+    userId = target;
+    permissions = targetPermissions;
+    impersonatedBy = signedInUser;
+  }
   return {
     keyId: null,
     name: 'session',
@@ -210,7 +230,7 @@ async function authenticateSession(req: FastifyRequest, token: string): Promise<
     userId,
     actor: `user:${userId}`,
     permissions,
-    session: { id: String(s.id), signedInAt: s.created_at }
+    session: { id: String(s.id), signedInAt: s.created_at, ...(impersonatedBy ? { impersonatedBy } : {}) }
   };
 }
 
