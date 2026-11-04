@@ -32,6 +32,7 @@ import { Select } from '../components/Select';
 import { ShowMore } from '../components/ShowMore';
 import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
+import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 
 interface Link_ {
   association_id: string;
@@ -174,6 +175,17 @@ export function RecordPage() {
   const [mentioned, setMentioned] = useState<{ object: string; id: string }[] | null>(null);
   // bumped when a save changes a line's amount, so its parent can be offered the new total
   const [lineSaves, setLineSaves] = useState(0);
+  // live updates (lib/live.ts): how often each watched record changed, the
+  // properties that just changed (they flash), who changed each, a short
+  // "Updated by" note, and whether the record went away while it was open
+  const [versions, setVersions] = useState<Map<string, number>>(new Map());
+  const [stamp, setStamp] = useState(0);
+  const [flash, setFlash] = useState<Set<string> | null>(null);
+  const [changedBy, setChangedBy] = useState<Record<string, string | null>>({});
+  const [liveNote, setLiveNote] = useState<string | null>(null);
+  const [gone, setGone] = useState(false);
+  const recordRef = useRef<CrmRecord | null>(null);
+  recordRef.current = record;
   // the activity being written in the stream (the name card's buttons and each tab's own);
   // key changes on every ask so the box takes focus again
   const [compose, setCompose] = useState<{ object: ComposeObject; key: number } | null>(null);
@@ -198,6 +210,11 @@ export function RecordPage() {
     setError(null);
     setMentioned(null);
     setLinksLoaded(false);
+    setVersions(new Map());
+    setFlash(null);
+    setChangedBy({});
+    setLiveNote(null);
+    setGone(false);
     Promise.all([getSchema(object), api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)])
       .then(([s, r]) => {
         if (cancelled) return;
@@ -274,6 +291,65 @@ export function RecordPage() {
     navigate(`/objects/${object}?status=archived`);
   }
 
+  // Live updates: this record and everything linked to it (activities
+  // included, so their edits and comments show). Another person's change
+  // flashes the changed properties and names them; a value being edited here
+  // is never replaced (PropertyList says it changed instead).
+  const recordId_ = record?.id;
+  const watch = useMemo(() => {
+    if (!recordId_) return [];
+    const keys = [`${object}:${recordId_}`, ...associated.flatMap((a) => a.records.map((r) => `${a.object}:${r.record.id}`))];
+    return [...new Set(keys)].slice(0, 200);
+  }, [object, recordId_, associated]);
+  const onLive = useCallback(async (events: LiveEvents) => {
+    setVersions((prev) => bumpVersions(prev, events, watch));
+    setStamp((n) => n + 1);
+    if (object !== 'users') loadAssociations().catch(() => undefined);
+    const mine = events === 'all' ? [] : events.filter((e) => e.object === object && e.id === id);
+    if (events !== 'all' && mine.length === 0) return;
+    let r: CrmRecord;
+    try {
+      r = await api<CrmRecord>('GET', `/v1/objects/${object}/${id}`);
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) setGone(true);
+      return;
+    }
+    // no longer readable through the role (only an @mention left)
+    if (r.via_mention) { setGone(true); return; }
+    // merged into another record
+    if (r.id !== id) { navigate(`/objects/${object}/${r.id}${window.location.search}`, { replace: true }); return; }
+    setGone(false);
+    const before = recordRef.current;
+    const keys = before
+      ? Object.keys({ ...before.properties, ...r.properties }).filter((k) => JSON.stringify(before.properties[k] ?? null) !== JSON.stringify(r.properties[k] ?? null))
+      : [];
+    const others = mine.filter((e) => !e.self);
+    if (keys.length && (others.length || events === 'all')) {
+      setFlash(new Set(keys));
+      const person = others.find((e) => e.by?.name)?.by?.name ?? null;
+      setChangedBy((prev) => ({ ...prev, ...Object.fromEntries(keys.map((k) => [k, person])) }));
+      // people only: calculations follow other changes and need no note
+      const people = [...new Set(others.filter((e) => e.by?.name && !e.by.actor.startsWith('system:')).map((e) => e.by!.name!))];
+      if (people.length) {
+        const more = people.length - 1;
+        setLiveNote(`Updated by ${people[0]}${more ? ` and ${more} other${more > 1 ? 's' : ''}` : ''} just now`);
+      }
+    }
+    setRecord(r);
+  }, [object, id, watch, loadAssociations, navigate]);
+  useLiveRecords(watch, (events) => void onLive(events));
+  useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), 2400);
+    return () => window.clearTimeout(t);
+  }, [flash]);
+  useEffect(() => {
+    if (!liveNote) return;
+    const t = window.setTimeout(() => setLiveNote(null), 10_000);
+    return () => window.clearTimeout(t);
+  }, [liveNote]);
+  const live = useMemo(() => ({ versions, stamp }), [versions, stamp]);
+
   // whether the user on a user record is a Super Admin (from their roles), for "Sign in as"
   const [userSuperAdmin, setUserSuperAdmin] = useState<{ id: string; admin: boolean } | null>(null);
 
@@ -346,6 +422,7 @@ export function RecordPage() {
   const streamProps = { linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, onCompose: (o: ComposeObject | null) => { if (o) void startCompose(o); else { composeDirty.current = false; setCompose(null); } } };
 
   return (
+    <LiveContext.Provider value={live}>
     <SnippetRecordProvider object={object} id={id}>
     <div className={`record-page${noRight ? ' two-col' : ''}`}>
       <aside className="record-left">
@@ -393,6 +470,12 @@ export function RecordPage() {
               )}
             </div>
           )}
+          {gone && (
+            <div className="record-archived" role="status">
+              <Archive size={15} strokeWidth={1.75} aria-hidden />
+              <span>This record was deleted, or you can no longer see it. The page shows it as it was.</span>
+            </div>
+          )}
           <div className="record-identity">
             {object === 'views' ? <ViewIconAvatar record={record} onChanged={setRecord} /> : <span className="record-avatar">{initials(name)}</span>}
             <div className="record-title">
@@ -400,6 +483,7 @@ export function RecordPage() {
               {subtitle && subtitle !== name && <div className="record-subtitle">{subtitle}</div>}
             </div>
           </div>
+          {liveNote && <div className="record-live-note" role="status">{liveNote}</div>}
           {composable.length > 0 && (
             <div className="record-quick-actions">
               {composable.map((o) => {
@@ -416,7 +500,7 @@ export function RecordPage() {
           )}
         </div>
         {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
-        <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} />
+        <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} flash={flash} changedBy={changedBy} />
       </aside>
 
       {isUser ? (
@@ -472,6 +556,7 @@ export function RecordPage() {
       )}
     </div>
     </SnippetRecordProvider>
+    </LiveContext.Provider>
   );
 }
 
@@ -491,10 +576,17 @@ const HTML_HINTS: Record<string, string> = {
   'users.email_signature': 'Added to the end of emails this user sends. Images must be public links: upload one to CRM files (its public link is turned on), choose a CRM file, or use a public web address. Scripts and forms are removed on save.'
 };
 
-function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; record: CrmRecord; lock: RecordLock | null; onSaved: (r: CrmRecord) => void }) {
+// flash: properties someone else just changed; changedBy: who changed each (live updates)
+function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy = {} }: {
+  schema: ObjectDef; record: CrmRecord; lock: RecordLock | null; onSaved: (r: CrmRecord) => void;
+  flash?: Set<string> | null; changedBy?: Record<string, string | null>;
+}) {
   const { toast } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  // the value when editing started: if it changes underneath (someone else
+  // saved it), the box keeps what is being typed and says so
+  const startValue = useRef('null');
   // false when the editor reopens after a refused save: it shows the text
   // without taking focus back from wherever the user went
   const [focusEditor, setFocusEditor] = useState(true);
@@ -525,6 +617,7 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
     }
     setEditing(p.api_name);
     setFocusEditor(true);
+    startValue.current = JSON.stringify(record.properties[p.api_name] ?? null);
     // after a refused save, carry on from the refused text
     setDraft(error?.property === p.api_name ? error.failed : toInput(p, record.properties[p.api_name]));
     if (error?.property !== p.api_name) setError(null);
@@ -538,7 +631,8 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
     const value = fromInput(p, text);
     const before = JSON.stringify(record.properties[p.api_name] ?? null);
     setEditing(null);
-    if (JSON.stringify(value) === before) {
+    // unchanged here: nothing to save (and never put back a value someone else just changed)
+    if (JSON.stringify(value) === before || JSON.stringify(value) === startValue.current) {
       setError(null);
       return;
     }
@@ -611,7 +705,7 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
   // showLock: mark properties nobody can edit here (calculations, read-only),
   // in the main section only; System is all set by the CRM
   const row = (p: Property, showLock: boolean) => (
-    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
+    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}${flash?.has(p.api_name) && editing !== p.api_name ? ' live-changed' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
       <div className="prop-label">
         <span>{p.label}</span>
         {editable(p) && editing !== p.api_name && <Pencil className="prop-hint" size={12} aria-hidden />}
@@ -638,6 +732,11 @@ function PropertyList({ schema, record, lock, onSaved }: { schema: ObjectDef; re
         </div>
       ) : (
         <div className="prop-value">{propValue(p, record.properties[p.api_name])}</div>
+      )}
+      {editing === p.api_name && JSON.stringify(record.properties[p.api_name] ?? null) !== startValue.current && (
+        <div className="prop-conflict" role="status">
+          {changedBy[p.api_name] ?? 'Someone else'} changed this to {displayValue(p, record.properties[p.api_name]) || 'nothing'} while you were editing. Saving replaces it.
+        </div>
       )}
       {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
     </div>
@@ -730,6 +829,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const { objectByName, toast } = useApp();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const liveStamp = useLiveStamp();
   const linksTo = objectByName.get(object)?.links_to ?? [];
   const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
   const tabParam = params.get('tab') as Tab | null;
@@ -808,7 +908,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
       .then(() => { if (!cancelled) setCommentCounts(next); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [activityIds]);
+  }, [activityIds, liveStamp]);
 
   // a link to an activity scrolls to it once it has loaded
   const scrolledTo = useRef<string | null>(null);
@@ -989,7 +1089,17 @@ function MentionedOnly({ object, id, items, back }: { object: string; id: string
   const label = objectByName.get(object)?.label_singular ?? object;
   const self = items.length === 1 && items[0]!.object === object && items[0]!.id === id;
   const lower = label.toLowerCase();
+  // live updates for the tagged activities and their comments
+  const [versions, setVersions] = useState<Map<string, number>>(new Map());
+  const [stamp, setStamp] = useState(0);
+  const watch = useMemo(() => items.map((it) => `${it.object}:${it.id}`), [items]);
+  useLiveRecords(watch, (events) => {
+    setVersions((prev) => bumpVersions(prev, events, watch));
+    setStamp((n) => n + 1);
+  });
+  const live = useMemo(() => ({ versions, stamp }), [versions, stamp]);
   return (
+    <LiveContext.Provider value={live}>
     <div className="record-mentioned">
       {back
         ? <Link to={back.to} className="back"><ChevronLeft size={16} /> {back.label}</Link>
@@ -1007,6 +1117,7 @@ function MentionedOnly({ object, id, items, back }: { object: string; id: string
       </div>
       {items.map((it) => <MentionedActivity key={`${it.object}-${it.id}`} object={it.object} id={it.id} highlight={params.get('comment')} />)}
     </div>
+    </LiveContext.Provider>
   );
 }
 
@@ -1015,13 +1126,14 @@ function MentionedActivity({ object, id, highlight, quiet = false }: { object: s
   const { objectByName } = useApp();
   const [record, setRecord] = useState<CrmRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const version = useLiveVersion(object, id);
   useEffect(() => {
     let cancelled = false;
     api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)
       .then((r) => !cancelled && setRecord(r))
       .catch((err) => !cancelled && setError((err as Error).message));
     return () => { cancelled = true; };
-  }, [object, id]);
+  }, [object, id, version]);
   if (error) return quiet ? null : <div className="error">{error}</div>;
   if (!record) return quiet ? null : <div className="card muted small">Loading…</div>;
   const Icon = objectIcon(object);
@@ -1079,6 +1191,7 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
   const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const version = useLiveVersion(object, id);
   useEffect(() => {
     let cancelled = false;
     Promise.all([getSchema(object), api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)])
@@ -1092,7 +1205,7 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
     return () => {
       cancelled = true;
     };
-  }, [object, id]);
+  }, [object, id, version]);
 
   const p = record.properties;
   const body = typeof p.body === 'string' ? p.body.trim() : '';
@@ -1520,17 +1633,24 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
     setVia('');
   }, [object, id]);
 
+  // a live change loads it again in place; other changes start from empty
+  const version = useLiveVersion(object, id);
+  const shownFor = useRef('');
   useEffect(() => {
-    setHistory(null);
+    const key = [object, id, property, changedBy, via].join('|');
+    if (shownFor.current !== key) setHistory(null);
+    shownFor.current = key;
     setError(null);
+    let cancelled = false;
     const q = new URLSearchParams({ limit: '200' });
     if (property) q.set('property', property);
     if (changedBy) q.set('changed_by', changedBy);
     if (via) q.set('via', via);
     api<{ results: HistoryRow[]; facets: HistoryFacets }>('GET', `/v1/objects/${object}/${id}/history?${q}`)
-      .then((r) => { setHistory(r.results); setFacets(r.facets); })
-      .catch((e) => setError((e as Error).message));
-  }, [object, id, property, changedBy, via]);
+      .then((r) => { if (!cancelled) { setHistory(r.results); setFacets(r.facets); } })
+      .catch((e) => !cancelled && setError((e as Error).message));
+    return () => { cancelled = true; };
+  }, [object, id, property, changedBy, via, version]);
 
   const propLabel = (name: string) => (name === 'association' ? 'Association' : schema.properties.find((p) => p.api_name === name)?.label ?? (name === 'merged_into_id' ? 'Merged into' : name));
   // associations, then merges (on the record kept and the one merged away), then the rest A to Z

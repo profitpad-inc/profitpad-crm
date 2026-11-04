@@ -32,6 +32,7 @@ import { snippetRoutes } from './snippets.js';
 import { commentRoutes } from './comments.js';
 import { addressRoutes } from './address.js';
 import { currencyRoutes, startCurrencyScheduler } from './currency.js';
+import { liveRoutes, startLiveListener } from './live.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -213,6 +214,7 @@ export async function buildApp() {
   await app.register(currencyRoutes);
   await app.register(snippetRoutes);
   await app.register(commentRoutes);
+  await app.register(liveRoutes);
   return app;
 }
 
@@ -237,11 +239,13 @@ const worker = startCalcWorker(app.log);
 const stopFileSweeper = startFileSweeper(app.log);
 const stopWebhooks = startWebhookWorker(app.log);
 const stopCurrencies = startCurrencyScheduler(app.log);
+const stopLive = startLiveListener(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
   stopWebhooks();
   stopCurrencies();
+  stopLive();
   await app.close();
   await pool.end();
   process.exit(0);

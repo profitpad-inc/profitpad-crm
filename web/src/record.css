@@ -77,6 +77,23 @@
   margin: 4px -8px; animation: panel-in 120ms ease-out;
 }
 .record-page .prop-edit .btn.small { align-self: flex-start; }
+/* live updates (lib/live.ts): a property someone else just changed fades from
+   a highlight; a value changed while it is being edited says so under the box */
+.record-page .prop-row.live-changed { animation: live-changed 2.4s ease-out; }
+@keyframes live-changed {
+  0%, 30% { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+  100% { background: transparent; }
+}
+.record-page .prop-conflict {
+  margin: 6px 0 0; padding: 6px 8px; border-radius: var(--radius); font-size: 12.5px; line-height: 1.4;
+  background: color-mix(in srgb, var(--warn) 8%, var(--page-background));
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border));
+  color: color-mix(in srgb, var(--warn) 70%, var(--text));
+}
+.record-page .record-live-note {
+  margin: 0 10px; padding: 0 2px; font-size: 12.5px; color: var(--muted-text);
+  animation: panel-in 160ms ease-out;
+}
 .record-page .file-upload-btn { margin-top: 6px; }
 .record-page .file-row { padding: 2px 0; }
 
@@ -537,7 +554,8 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .record-page .prop-row.editing, .file-preview-skeleton, .skeleton-block { animation: none; }
+  .record-page .prop-row.editing, .file-preview-skeleton, .skeleton-block, .record-page .record-live-note { animation: none; }
+  .record-page .prop-row.live-changed { animation: none; background: color-mix(in srgb, var(--warn) 10%, transparent); }
   .record-page .composer { transition: none; }
 }
 

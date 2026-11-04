@@ -214,6 +214,13 @@ Locally: `brew install tesseract`.
 3. Rebuild and restart the API (`docker compose up -d --build`), then deploy the UI.
 4. An admin adds the Google Maps key in Settings → Address autocomplete (Places API (New) turned on for it, restricted by API rather than by website, since the calls come from the API server).
 
+## 21. Live updates on record pages (migration 0086)
+
+1. Apply migration `0086_record_change_notify.sql` (`./db/migrate.sh`). It adds a trigger on `meta.record_history` that sends `NOTIFY record_changes`; nothing listens until the new API runs, and an unheard notice costs next to nothing.
+2. nginx: add the `location /v1/live/` block from `deploy/nginx-api.test-crm.profitpad.com.conf` to the live site (keep the `listen 443 ssl` and certificate lines certbot added), then `sudo nginx -t && sudo systemctl reload nginx`. Without it the stream still works (the API sends `X-Accel-Buffering: no` and pings every 25 s, inside the 120 s read timeout), but the block makes it explicit.
+3. Check that the 443 server has HTTP/2 (`listen 443 ssl http2;` on older nginx, or `http2 on;` on 1.25.1 and later; `curl -sI --http2 https://api.test-crm.profitpad.com/health | head -1` should say `HTTP/2`). Over HTTP/1.1 a browser opens at most 6 connections to the API, and each open record tab holds one. Hidden tabs close their stream, but HTTP/2 removes the limit.
+4. Rebuild and restart the API (`docker compose up -d --build`), then deploy the UI.
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.

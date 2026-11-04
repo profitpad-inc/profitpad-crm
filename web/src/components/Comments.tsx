@@ -7,6 +7,7 @@ import { TextArea } from '../lib/snippets';
 import { MENTION_TOKEN, encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
 import { MentionText } from './MentionText';
 import { confirmDialog, alertDialog } from './confirm';
+import { useLiveVersion } from '../lib/live';
 
 // Comments on a call, email, note, task, form submission, marketing event
 // participation or object event occurrence (native object comments, pc_0034;
@@ -51,9 +52,14 @@ export function Comments({ object, id, readOnly = false, onCount, highlight }: {
   const countRef = useRef(onCount);
   countRef.current = onCount;
 
+  // a live change on the record (a comment added, edited or removed) loads
+  // the thread again in place
+  const version = useLiveVersion(object, id);
+  const shownFor = useRef('');
   useEffect(() => {
     let cancelled = false;
-    setList(null);
+    if (shownFor.current !== `${object}:${id}`) setList(null);
+    shownFor.current = `${object}:${id}`;
     api<{ results: Comment[] }>('GET', `/v1/objects/${object}/${id}/comments`)
       .then((r) => { if (!cancelled) { setList(r.results); countRef.current?.(r.results.length); } })
       .catch((err) => {
@@ -63,7 +69,7 @@ export function Comments({ object, id, readOnly = false, onCount, highlight }: {
         else setError((err as Error).message);
       });
     return () => { cancelled = true; };
-  }, [object, id]);
+  }, [object, id, version]);
 
   useEffect(() => {
     if (!highlight || !list?.some((c) => c.id === highlight)) return;

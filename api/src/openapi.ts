@@ -171,6 +171,19 @@ function viewPaths(): Record<string, Schema> {
   };
 }
 
+// Live updates for record pages (live.ts)
+function livePaths(): Record<string, Schema> {
+  return {
+    '/v1/live/records': { get: {
+      tags: ['Live updates'], summary: 'Stream changes to records (CRM web app)',
+      description: 'Browser sessions only (API keys and OAuth apps get 403). A Server-Sent Events stream: event `ready` {watching}, then `change` {object, id, by: {actor, name} | null, self} each time a watched record changes (values are not sent; read the record again), and `bulk` {objects} after a big import or recalculation. Records the caller cannot read are left out when the stream opens; 204 when none is left (browsers then stop reconnecting). The stream ends after about 10 minutes; browsers reconnect by themselves.',
+      operationId: 'live_records',
+      parameters: [{ name: 'watch', in: 'query', required: true, description: 'Up to 200 records as <object>:<id>, comma separated', schema: { type: 'string' } }],
+      responses: { 200: { description: 'text/event-stream', content: { 'text/event-stream': { schema: { type: 'string' } } } }, ...errors }
+    } }
+  };
+}
+
 // Webhooks (webhooks.ts, routes/webhooks.ts)
 function webhookPaths(): Record<string, Schema> {
   const tags = ['Webhooks'];
@@ -548,6 +561,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     ...oauthPaths(),
     ...viewPaths(),
     ...webhookPaths(),
+    ...livePaths(),
     '/v1/view-integrations/{table}': { get: { tags: ['View integrations'], summary: 'Read an integration table', operationId: 'read_integration', parameters: [{ name: 'table', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
   for (const o of objects) Object.assign(paths, recordPaths(o));
