@@ -347,6 +347,10 @@ begin
   perform meta.associate('users', v_user, 'teams', v_team);
   perform meta.associate('notes', v_note, 'contacts', '0000000001');
   perform meta._test_check(meta.association_allowed('pc_0022', 'pc_0010') and not meta.association_allowed('pc_0010', 'pc_0051'), 'association_allowed');
+  -- quotes and form submissions never link (0081)
+  perform meta._test_check(not meta.association_allowed('pc_0022', 'pc_0053') and not meta.association_allowed('pc_0053', 'pc_0022')
+    and meta.association_allowed('pc_0053', 'pc_0010'), 'no quote to form submission links');
+  perform meta._test_expect_error($$select meta.create_association_label('quotes', 'form_submissions', 'From')$$, 'cannot be associated');
   perform meta._test_check(meta.association_system_only('pc_0053', 'pc_0052') and not meta.association_system_only('pc_0053', 'pc_0010'), 'association_system_only');
 end $t$;
 

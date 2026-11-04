@@ -50,8 +50,6 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
   booking_pages: ['calls'],
-  // quote pages list submissions as activities, so the link starts here
-  form_submissions: [...DEFAULT_CARDS, 'quotes'],
   deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],
   // the parent has its own card (LineParentCard)
   lines: ['products'],
