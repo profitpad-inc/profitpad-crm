@@ -332,6 +332,11 @@
 .assoc-card > .card-row .card-row-main > .link-btn:hover, .assoc-card > .card-row .line-qty:hover { color: var(--primary); text-decoration: none; }
 .assoc-card > .card-row .line-qty { color: var(--muted-text); font-weight: 400; }
 .assoc-card > .card-row .line-figures { font-size: 13px; }
+/* a published quote's, invoice's or file's link: copy and open, just the icons */
+.assoc-card > .card-row .card-row-links { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.assoc-card > .card-row .card-row-links + .push-right { margin-left: 0; }
+.assoc-card > .card-row .card-row-links .icon-btn { color: var(--muted-text); }
+.assoc-card > .card-row .card-row-links .icon-btn:hover { color: var(--primary); }
 .assoc-card > .card-row .line-figures > span:last-child { font-weight: 500; }
 .card-row:focus-within .faint-btn { opacity: 1; }
 .assoc-card > .card-add { margin: 0; padding: 10px 12px 12px; gap: 2px; border-top: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 45%, var(--page-background)); }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, EllipsisVertical, History, Inbox, KeyRound, Link2, Lock, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { fileInfo } from '../lib/files';
 import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
@@ -69,6 +70,23 @@ const ACTIVITY_PROPS: Record<string, string[]> = {
     'customer_signed_at', 'requires_countersign', 'countersigned_at', 'countersigner_name'],
   lines: ['quantity', 'amount']
 };
+// Read along with linked quotes and invoices so their card rows can offer the customer's link.
+const LINK_PROPS: Record<string, string[]> = { quotes: ['status', 'public_key', 'slug'], invoices: ['status', 'public_key', 'slug'] };
+// The statuses the customer's page opens for (api/src/routes/public.ts loadPublicQuote / loadPublicInvoice).
+const LIVE: Record<string, { path: string; statuses: string[] }> = {
+  quotes: { path: 'quote', statuses: ['sent', 'pending_countersign', 'accepted', 'rejected', 'expired'] },
+  invoices: { path: 'invoice', statuses: ['open', 'paid'] }
+};
+
+// The customer's link to a published quote or invoice, else null.
+function publishedUrl(object: string, r: CrmRecord): string | null {
+  const live = LIVE[object];
+  if (!live) return null;
+  const status = Array.isArray(r.properties.status) ? r.properties.status[0] : r.properties.status;
+  const key = (typeof r.properties.slug === 'string' && r.properties.slug) || (typeof r.properties.public_key === 'string' && r.properties.public_key);
+  return key && live.statuses.includes(String(status)) ? `${window.location.origin}/p/${live.path}/#${key}` : null;
+}
+
 // Shown elsewhere on the page (builder, answers, link and signing cards) rather than as raw values
 const HIDDEN_PROPS: Record<string, string[]> = {
   forms: ['definition', 'public_key', 'slug'],
@@ -110,7 +128,7 @@ async function loadLinked(object: string, id: string, codeToName: Map<string, st
   return Promise.all(
     [...byObject].map(async ([name, ids]) => {
       const s = await getSchema(name);
-      const wanted = new Set([...nameProperties(s.properties), ...(ACTIVITY_PROPS[name] ?? [])]);
+      const wanted = new Set([...nameProperties(s.properties), ...(ACTIVITY_PROPS[name] ?? []), ...(LINK_PROPS[name] ?? [])]);
       const props = s.properties.filter((p) => wanted.has(p.api_name)).map((p) => p.api_name);
       const all = [...ids.keys()];
       const records: CrmRecord[] = [];
@@ -1681,6 +1699,17 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
   // the line and field to highlight when the dialog is opened from a row
   const [lineTarget, setLineTarget] = useState<LineTarget | undefined>(undefined);
   const [createSchema, setCreateSchema] = useState<ObjectDef | null>(null);
+  // linked files' public links (only files whose public link is on)
+  const [fileUrls, setFileUrls] = useState<Map<string, string>>(() => new Map());
+  const fileIds = other === 'files' ? items.map((i) => i.record.id).join(',') : '';
+  useEffect(() => {
+    if (!fileIds) { setFileUrls(new Map()); return; }
+    let live = true;
+    fileInfo(fileIds.split(',')).then((list) => {
+      if (live) setFileUrls(new Map(list.filter((f) => f.public_url).map((f) => [f.id, f.public_url!])));
+    }).catch(() => { /* rows just show no link icons */ });
+    return () => { live = false; };
+  }, [fileIds]);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CrmRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1847,6 +1876,9 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
               : <Link to={`/objects/${other}/${record.id}`}>{recordName(record)}</Link>}
             {labels.some(Boolean) && <div className="small muted">{labels.filter(Boolean).join(', ')}</div>}
           </div>
+          {(fileUrls.get(record.id) ?? publishedUrl(other, record)) && (
+            <PublishedLinkIcons url={(fileUrls.get(record.id) ?? publishedUrl(other, record))!} />
+          )}
           {other === 'lines' && (
             <LineFigures record={record} schema={otherSchema} onQty={newLines && editable ? () => openLines({ lineId: record.id, field: 'qty' }) : undefined} />
           )}
@@ -1858,6 +1890,25 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
         </div>
       ))}
     </div>
+  );
+}
+
+// Copy and open icons for a published quote's, invoice's or file's public link.
+function PublishedLinkIcons({ url }: { url: string }) {
+  const { toast } = useApp();
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Link copied');
+    } catch {
+      toast('Could not copy the link');
+    }
+  }
+  return (
+    <span className="card-row-links">
+      <button className="icon-btn" onClick={copy} aria-label="Copy link" title="Copy link"><Copy size={14} /></button>
+      <a className="icon-btn" href={url} target="_blank" rel="noreferrer" aria-label="Open published version" title="Open published version"><ExternalLink size={14} /></a>
+    </span>
   );
 }
 
