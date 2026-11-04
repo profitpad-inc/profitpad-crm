@@ -144,45 +144,50 @@ export function CurrencySettings() {
         </SettingRow>
         <SettingRow
           label="Keep rates up to date"
-          htmlFor="rate-mode"
           hint={draft.mode === 'manual'
             ? 'You type each rate below. Nothing is looked up.'
-            : 'Rates are looked up on the schedule below. You can still pin a rate by hand for any currency; lookups then leave that currency alone.'}
+            : 'Checked every hour; days are counted in UTC from the last successful lookup. You can still pin a rate by hand for any currency; lookups then leave that currency alone.'}
         >
-          <Select
-            id="rate-mode"
-            value={draft.mode}
-            onChange={(v) => setDraft({ ...draft, mode: v })}
-            options={[
-              { value: 'manual', label: 'Manual: type each rate' },
-              { value: 'automatic', label: 'Automatic lookup' }
-            ]}
-          />
+          <div className="rate-options">
+            <label className="field" htmlFor="rate-mode">
+              <span>Rates</span>
+              <Select
+                id="rate-mode"
+                value={draft.mode}
+                onChange={(v) => setDraft({ ...draft, mode: v })}
+                options={[
+                  { value: 'manual', label: 'Manual: type each rate' },
+                  { value: 'automatic', label: 'Automatic lookup' }
+                ]}
+              />
+            </label>
+            {draft.mode === 'automatic' && (
+              <>
+                <label className="field" htmlFor="rate-schedule">
+                  <span>How often</span>
+                  <Select
+                    id="rate-schedule"
+                    value={draft.schedule}
+                    onChange={(v) => setDraft({ ...draft, schedule: v })}
+                    options={settings.schedules.map((s) => ({ value: s, label: SCHEDULE_LABEL[s] ?? s }))}
+                  />
+                </label>
+                <label className="field" htmlFor="rate-provider">
+                  <span>Rates from</span>
+                  <Select
+                    id="rate-provider"
+                    value={draft.provider}
+                    onChange={(v) => setDraft({ ...draft, provider: v })}
+                    options={settings.providers.map((p) => ({ value: p.key, label: p.label }))}
+                  />
+                </label>
+              </>
+            )}
+          </div>
+          {draft.mode === 'automatic' && provider && (
+            <p className="muted small">{provider.about} <a href={provider.url} target="_blank" rel="noreferrer">About {provider.label}</a></p>
+          )}
         </SettingRow>
-        {draft.mode === 'automatic' && (
-          <>
-            <SettingRow label="How often" htmlFor="rate-schedule" hint="Checked every hour; days are counted in UTC from the last successful lookup.">
-              <Select
-                id="rate-schedule"
-                value={draft.schedule}
-                onChange={(v) => setDraft({ ...draft, schedule: v })}
-                options={settings.schedules.map((s) => ({ value: s, label: SCHEDULE_LABEL[s] ?? s }))}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Rates from"
-              htmlFor="rate-provider"
-              hint={provider && <>{provider.about} <a href={provider.url} target="_blank" rel="noreferrer">About {provider.label}</a></>}
-            >
-              <Select
-                id="rate-provider"
-                value={draft.provider}
-                onChange={(v) => setDraft({ ...draft, provider: v })}
-                options={settings.providers.map((p) => ({ value: p.key, label: p.label }))}
-              />
-            </SettingRow>
-          </>
-        )}
         {automatic && (
           <SettingRow label="Last lookup">
             <div className="stack-sm">

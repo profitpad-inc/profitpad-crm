@@ -323,6 +323,9 @@
 .currency-settings .stack-sm { display: grid; gap: 6px; justify-items: start; }
 .currency-settings label.small { display: inline-flex; align-items: center; gap: 6px; }
 .currency-settings tr.muted td { color: var(--muted-text); }
+.currency-settings .rate-options { display: flex; flex-wrap: wrap; gap: 12px 16px; width: 100%; }
+.currency-settings .rate-options > .field { flex: 1 1 200px; max-width: 300px; min-width: 0; }
+.currency-settings .rate-options .select-face { width: 100%; }
 
 /* Settings → Address autocomplete */
 .address-groups { display: flex; flex-direction: column; gap: 12px; }
