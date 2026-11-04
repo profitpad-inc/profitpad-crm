@@ -176,13 +176,12 @@ export function RecordPage() {
   // bumped when a save changes a line's amount, so its parent can be offered the new total
   const [lineSaves, setLineSaves] = useState(0);
   // live updates (lib/live.ts): how often each watched record changed, the
-  // properties that just changed (they flash), who changed each, a short
-  // "Updated by" note, and whether the record went away while it was open
+  // properties that just changed (they flash), who changed each, and whether
+  // the record went away while it was open (who changed it shows as a toast)
   const [versions, setVersions] = useState<Map<string, number>>(new Map());
   const [stamp, setStamp] = useState(0);
   const [flash, setFlash] = useState<Set<string> | null>(null);
   const [changedBy, setChangedBy] = useState<Record<string, string | null>>({});
-  const [liveNote, setLiveNote] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
   const recordRef = useRef<CrmRecord | null>(null);
   recordRef.current = record;
@@ -213,7 +212,6 @@ export function RecordPage() {
     setVersions(new Map());
     setFlash(null);
     setChangedBy({});
-    setLiveNote(null);
     setGone(false);
     Promise.all([getSchema(object), api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)])
       .then(([s, r]) => {
@@ -296,11 +294,21 @@ export function RecordPage() {
   // flashes the changed properties and names them; a value being edited here
   // is never replaced (PropertyList says it changed instead).
   const recordId_ = record?.id;
+  // An activity opened from a link (?pc_0032=<id>) is watched too: the stream
+  // may not list it (an @mention opened it), and then it is pinned above.
+  const openedActivity = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return ACTIVITY_OBJECTS.flatMap((o) => {
+      const code = objectByName.get(o)?.object_type_id;
+      const rid = code ? params.get(code) : null;
+      return rid ? [`${o}:${rid}`] : [];
+    });
+  }, [location.search, objectByName]);
   const watch = useMemo(() => {
     if (!recordId_) return [];
-    const keys = [`${object}:${recordId_}`, ...associated.flatMap((a) => a.records.map((r) => `${a.object}:${r.record.id}`))];
+    const keys = [`${object}:${recordId_}`, ...openedActivity, ...associated.flatMap((a) => a.records.map((r) => `${a.object}:${r.record.id}`))];
     return [...new Set(keys)].slice(0, 200);
-  }, [object, recordId_, associated]);
+  }, [object, recordId_, associated, openedActivity]);
   const onLive = useCallback(async (events: LiveEvents) => {
     setVersions((prev) => bumpVersions(prev, events, watch));
     setStamp((n) => n + 1);
@@ -332,22 +340,17 @@ export function RecordPage() {
       const people = [...new Set(others.filter((e) => e.by?.name && !e.by.actor.startsWith('system:')).map((e) => e.by!.name!))];
       if (people.length) {
         const more = people.length - 1;
-        setLiveNote(`Updated by ${people[0]}${more ? ` and ${more} other${more > 1 ? 's' : ''}` : ''} just now`);
+        toast(`Updated by ${people[0]}${more ? ` and ${more} other${more > 1 ? 's' : ''}` : ''}`);
       }
     }
     setRecord(r);
-  }, [object, id, watch, loadAssociations, navigate]);
+  }, [object, id, watch, loadAssociations, navigate, toast]);
   useLiveRecords(watch, (events) => void onLive(events));
   useEffect(() => {
     if (!flash) return;
     const t = window.setTimeout(() => setFlash(null), 2400);
     return () => window.clearTimeout(t);
   }, [flash]);
-  useEffect(() => {
-    if (!liveNote) return;
-    const t = window.setTimeout(() => setLiveNote(null), 10_000);
-    return () => window.clearTimeout(t);
-  }, [liveNote]);
   const live = useMemo(() => ({ versions, stamp }), [versions, stamp]);
 
   // whether the user on a user record is a Super Admin (from their roles), for "Sign in as"
@@ -483,7 +486,6 @@ export function RecordPage() {
               {subtitle && subtitle !== name && <div className="record-subtitle">{subtitle}</div>}
             </div>
           </div>
-          {liveNote && <div className="record-live-note" role="status">{liveNote}</div>}
           {composable.length > 0 && (
             <div className="record-quick-actions">
               {composable.map((o) => {
