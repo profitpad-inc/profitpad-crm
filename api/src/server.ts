@@ -29,6 +29,7 @@ import { webhookRoutes } from './routes/webhooks.js';
 import { startWebhookWorker } from './webhooks.js';
 import { cardScanRoutes } from './card-scan.js';
 import { snippetRoutes } from './snippets.js';
+import { commentRoutes } from './comments.js';
 import { addressRoutes } from './address.js';
 import { currencyRoutes, startCurrencyScheduler } from './currency.js';
 
@@ -211,6 +212,7 @@ export async function buildApp() {
   await app.register(addressRoutes);
   await app.register(currencyRoutes);
   await app.register(snippetRoutes);
+  await app.register(commentRoutes);
   return app;
 }
 

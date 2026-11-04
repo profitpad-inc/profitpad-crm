@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo } from '../lib/files';
-import { api, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
+import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
@@ -22,6 +22,7 @@ import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { COMMENT_TARGETS, Comments } from '../components/Comments';
 import { ActivityComposer, COMPOSE_OBJECTS, COMPOSE_VERB, type ComposeObject } from '../components/ActivityComposer';
 import { SnippetRecordProvider, TextArea } from '../lib/snippets';
 import { MentionText } from '../components/MentionText';
@@ -120,25 +121,32 @@ async function loadLinked(object: string, id: string, codeToName: Map<string, st
   const byObject = new Map<string, Map<string, (string | null)[]>>();
   for (const l of res.results) {
     const name = codeToName.get(l.object_type_id);
-    if (!name) continue;
+    // comments show in their own thread (components/Comments.tsx), not as links
+    if (!name || name === 'comments') continue;
     const m = byObject.get(name) ?? new Map();
     m.set(l.record_id, [...(m.get(l.record_id) ?? []), l.label]);
     byObject.set(name, m);
   }
-  return Promise.all(
+  const groups = await Promise.all(
     [...byObject].map(async ([name, ids]) => {
-      const s = await getSchema(name);
-      const wanted = new Set([...nameProperties(s.properties), ...(ACTIVITY_PROPS[name] ?? []), ...(LINK_PROPS[name] ?? [])]);
-      const props = s.properties.filter((p) => wanted.has(p.api_name)).map((p) => p.api_name);
-      const all = [...ids.keys()];
-      const records: CrmRecord[] = [];
-      for (let i = 0; i < all.length; i += 100) {
-        const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: all.slice(i, i + 100), properties: props });
-        records.push(...r.results);
+      // an object the role cannot read is left out, not the whole list
+      try {
+        const s = await getSchema(name);
+        const wanted = new Set([...nameProperties(s.properties), ...(ACTIVITY_PROPS[name] ?? []), ...(LINK_PROPS[name] ?? [])]);
+        const props = s.properties.filter((p) => wanted.has(p.api_name)).map((p) => p.api_name);
+        const all = [...ids.keys()];
+        const records: CrmRecord[] = [];
+        for (let i = 0; i < all.length; i += 100) {
+          const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: all.slice(i, i + 100), properties: props });
+          records.push(...r.results);
+        }
+        return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
+      } catch {
+        return null;
       }
-      return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
     })
   );
+  return groups.filter((g): g is Associated => g !== null);
 }
 
 // Where the back link goes when the record was opened from somewhere other
@@ -161,6 +169,9 @@ export function RecordPage() {
   const [record, setRecord] = useState<CrmRecord | null>(null);
   const [associated, setAssociated] = useState<Associated[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // set when the user may not open this record but was @mentioned on it: the
+  // activities they were tagged in (or this record, when it is one of them)
+  const [mentioned, setMentioned] = useState<{ object: string; id: string }[] | null>(null);
   // bumped when a save changes a line's amount, so its parent can be offered the new total
   const [lineSaves, setLineSaves] = useState(0);
   // the activity being written in the stream (the name card's buttons and each tab's own);
@@ -173,8 +184,11 @@ export function RecordPage() {
   const labelOf = useCallback((o: string) => objectByName.get(o)?.label_singular ?? o, [objectByName]);
   const codeToName = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o.api_name])), [objects]);
 
+  // whether the links have come back once (the stream pins an opened activity it cannot list)
+  const [linksLoaded, setLinksLoaded] = useState(false);
   const loadAssociations = useCallback(async () => {
     setAssociated(await loadLinked(object, id, codeToName));
+    setLinksLoaded(true);
   }, [object, id, codeToName]);
 
 
@@ -182,14 +196,27 @@ export function RecordPage() {
     let cancelled = false;
     setRecord(null);
     setError(null);
+    setMentioned(null);
+    setLinksLoaded(false);
     Promise.all([getSchema(object), api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)])
       .then(([s, r]) => {
         if (cancelled) return;
         setSchema(s);
+        // open only through an @mention: the activity alone, nothing around it
+        if (r.via_mention) { setMentioned([{ object, id: r.id }]); return; }
         setRecord(r);
         if (r.id !== id) navigate(`/objects/${object}/${r.id}${window.location.search}`, { replace: true }); // merged id
       })
-      .catch((err) => !cancelled && setError((err as Error).message));
+      .catch(async (err) => {
+        if (cancelled) return;
+        // no access: the activities on it the user was tagged in, if any
+        if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+          const m = await api<{ results: { object: string; id: string }[] }>('GET', `/v1/objects/${object}/${id}/mentioned`).catch(() => null);
+          if (cancelled) return;
+          if (m && m.results.length > 0) { setMentioned(m.results); return; }
+        }
+        setError((err as Error).message);
+      });
     // users have no association cards or activity stream
     if (object !== 'users') loadAssociations().catch(() => undefined);
     return () => {
@@ -250,6 +277,7 @@ export function RecordPage() {
   // whether the user on a user record is a Super Admin (from their roles), for "Sign in as"
   const [userSuperAdmin, setUserSuperAdmin] = useState<{ id: string; admin: boolean } | null>(null);
 
+  if (mentioned) return <MentionedOnly object={object} id={id} items={mentioned} back={back} />;
   if (error) return <div className="page"><div className="error">{error}</div></div>;
   if (!schema || !record) return <RecordSkeleton />;
   const name = recordName(record);
@@ -259,7 +287,9 @@ export function RecordPage() {
   const lineCard = object !== 'products' && object !== 'lines' && linksTo.includes('lines') ? ['lines'] : [];
   const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...lineCard, ...associated.map((a) => a.object)])]
     // a form lists its submissions and a booking page its meetings as a card; elsewhere they are activities
-    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls'))
+    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls') || object === 'comments')
+    // comments show in the thread on the record they are on
+    .filter((o) => o !== 'comments')
     .filter((o) => object !== 'lines' || o === 'products')
     // a quote's template is picked in its Template card
     .filter((o) => o !== 'document_templates');
@@ -307,7 +337,13 @@ export function RecordPage() {
     next.set('tab', o);
     navigate({ search: `?${next.toString()}` }, { replace: true });
   }
-  const streamProps = { object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, onCompose: (o: ComposeObject | null) => { if (o) void startCompose(o); else { composeDirty.current = false; setCompose(null); } } };
+  // calls, emails, notes, tasks, submissions, participations and occurrences carry a comment thread
+  const commentThread = COMMENT_TARGETS.includes(object) && (
+    <div className="card record-comments">
+      <Comments object={object} id={record.id} readOnly={record.record_status === 'archived'} highlight={new URLSearchParams(location.search).get('comment')} />
+    </div>
+  );
+  const streamProps = { linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, onCompose: (o: ComposeObject | null) => { if (o) void startCompose(o); else { composeDirty.current = false; setCompose(null); } } };
 
   return (
     <SnippetRecordProvider object={object} id={id}>
@@ -395,7 +431,10 @@ export function RecordPage() {
             ) : object === 'booking_pages' ? (
               <BookingPageEditor record={record} onSaved={setRecord} />
             ) : object === 'form_submissions' ? (
-              <SubmissionAnswers record={record} />
+              <>
+                <SubmissionAnswers record={record} />
+                {commentThread}
+              </>
             ) : object === 'document_templates' ? (
               <>
                 {record.record_status === 'archived'
@@ -411,7 +450,10 @@ export function RecordPage() {
                 <ActivityStream {...streamProps} />
               </>
             ) : (
-              <ActivityStream {...streamProps} />
+              <>
+                {commentThread}
+                <ActivityStream {...streamProps} />
+              </>
             )}
           </section>
 
@@ -681,8 +723,8 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
   return q ? `?${q}` : '';
 }
 
-function ActivityStream({ object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty }: {
-  object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
+function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty }: {
+  linksLoaded: boolean; object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
   compose: { object: ComposeObject; key: number } | null; onCompose: (o: ComposeObject | null) => void; onComposeDirty: (dirty: boolean) => void;
 }) {
   const { objectByName, toast } = useApp();
@@ -747,10 +789,34 @@ function ActivityStream({ object, id, record, associated, onChanged, schema, com
 
   const countOf = (o: string) => associated.find((a) => a.object === o)?.records.length ?? 0;
 
+  // comments on each listed activity, for the count on collapsed entries
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const activityIds = associated
+    .filter((a) => (ACTIVITY_OBJECTS as readonly string[]).includes(a.object) && COMMENT_TARGETS.includes(a.object))
+    .map((a) => `${a.object}:${a.records.map((r) => r.record.id).join(',')}`).join('|');
+  useEffect(() => {
+    let cancelled = false;
+    const next: Record<string, number> = {};
+    Promise.all(activityIds.split('|').filter(Boolean).map(async (part) => {
+      const [o, list] = part.split(':') as [string, string];
+      const ids = list.split(',').filter(Boolean);
+      for (let i = 0; i < ids.length; i += 100) {
+        const r = await api<{ counts: Record<string, number> }>('POST', '/v1/comments/counts', { object: o, ids: ids.slice(i, i + 100) });
+        for (const [rid, n] of Object.entries(r.counts)) next[`${o}-${rid}`] = n;
+      }
+    }))
+      .then(() => { if (!cancelled) setCommentCounts(next); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [activityIds]);
+
   // a link to an activity scrolls to it once it has loaded
   const scrolledTo = useRef<string | null>(null);
   const openedKey = opened ? `${opened.object}-${opened.id}` : null;
   const openedListed = items.some((x) => !x.quoteResponse && `${x.object}-${x.record.id}` === openedKey);
+  // a linked activity the stream cannot list (the role cannot read it, but an
+  // @mention opens it): shown on its own above the stream
+  const openedHidden = !!opened && linksLoaded && !allItems.some((x) => !x.quoteResponse && `${x.object}-${x.record.id}` === openedKey);
   useEffect(() => {
     if (!openedKey || !openedListed || scrolledTo.current === openedKey) return;
     scrolledTo.current = openedKey;
@@ -783,6 +849,9 @@ function ActivityStream({ object, id, record, associated, onChanged, schema, com
       {compose && record.record_status !== 'archived' && (
         <ActivityComposer key={compose.object} hidden={!composing} object={compose.object} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
           onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
+      )}
+      {openedHidden && opened && tab !== 'changes' && (
+        <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet />
       )}
       {tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
@@ -876,12 +945,20 @@ function ActivityStream({ object, id, record, associated, onChanged, schema, com
                         </Link>
                       </span>
                     ) : (
-                      <span className="activity-kind push-right">{objectByName.get(o)?.label_singular}</span>
+                      <span className="activity-kind push-right">
+                        {(commentCounts[key] ?? 0) > 0 && (
+                          <span className="activity-comment-count" title={`${commentCounts[key]} comment${commentCounts[key] === 1 ? '' : 's'}`}>
+                            <MessageSquare size={12} strokeWidth={1.75} aria-hidden /> {commentCounts[key]}
+                          </span>
+                        )}
+                        {' '}{objectByName.get(o)?.label_singular}
+                      </span>
                     )}
                     {at && <time className="ledger-time" dateTime={at}>{open ? when(at) : timeOf(at)}</time>}
                   </div>
                   {open ? (
-                    <ActivityExpanded object={o} id={r.id} initial={r} page={{ object, id }} onPageLinkChanged={onChanged} />
+                    <ActivityExpanded object={o} id={r.id} initial={r} page={{ object, id }} onPageLinkChanged={onChanged}
+                      onCommentCount={(n) => setCommentCounts((m) => ({ ...m, [key]: n }))} highlightComment={params.get('comment')} />
                   ) : (
                     <>
                       {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
@@ -897,6 +974,72 @@ function ActivityStream({ object, id, record, associated, onChanged, schema, com
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// A record the user may not open, reached through an @mention: only its ID
+// and the activities they were tagged in (a note's body or a comment), each
+// with its comments. Nothing else about the record, and no links from the
+// activities to other records (the API opens the activities alone).
+function MentionedOnly({ object, id, items, back }: { object: string; id: string; items: { object: string; id: string }[]; back: RecordBack['back'] | null }) {
+  const { objectByName } = useApp();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const label = objectByName.get(object)?.label_singular ?? object;
+  const self = items.length === 1 && items[0]!.object === object && items[0]!.id === id;
+  const lower = label.toLowerCase();
+  return (
+    <div className="record-mentioned">
+      {back
+        ? <Link to={back.to} className="back"><ChevronLeft size={16} /> {back.label}</Link>
+        : <button className="back link-btn" onClick={() => navigate(-1)}><ChevronLeft size={16} /> Back</button>}
+      <div className="record-mentioned-head">
+        <span className="record-avatar" aria-hidden><Lock size={18} strokeWidth={1.75} /></span>
+        <div>
+          <h1>{label} {id}</h1>
+          <p className="muted">
+            {self
+              ? `You were tagged in this ${lower}, so you can see it and its comments, though your role does not give you access.`
+              : `You don't have access to this ${lower}. You were tagged in ${items.length === 1 ? 'the activity' : 'the activities'} below, so you can see ${items.length === 1 ? 'it' : 'them'} and the comments.`}
+          </p>
+        </div>
+      </div>
+      {items.map((it) => <MentionedActivity key={`${it.object}-${it.id}`} object={it.object} id={it.id} highlight={params.get('comment')} />)}
+    </div>
+  );
+}
+
+// quiet: shows nothing when it cannot be read (a stale link on a page the user can open)
+function MentionedActivity({ object, id, highlight, quiet = false }: { object: string; id: string; highlight: string | null; quiet?: boolean }) {
+  const { objectByName } = useApp();
+  const [record, setRecord] = useState<CrmRecord | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<CrmRecord>('GET', `/v1/objects/${object}/${id}`)
+      .then((r) => !cancelled && setRecord(r))
+      .catch((err) => !cancelled && setError((err as Error).message));
+    return () => { cancelled = true; };
+  }, [object, id]);
+  if (error) return quiet ? null : <div className="error">{error}</div>;
+  if (!record) return quiet ? null : <div className="card muted small">Loading…</div>;
+  const Icon = objectIcon(object);
+  const p = record.properties;
+  const title = object === 'emails' ? (p.subject as string) || 'Email' : object === 'notes' ? 'Note' : displayName(p, record.id);
+  const at = activityTime(object, record);
+  return (
+    <div className="activity-item open mentioned-activity">
+      <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
+      <div className="activity-body">
+        <div className="activity-head">
+          <strong>{title}</strong>
+          <span className="activity-kind push-right">{objectByName.get(object)?.label_singular ?? object}</span>
+          {at && <time className="ledger-time" dateTime={at}>{when(at)}</time>}
+        </div>
+        <ActivityExpanded object={object} id={record.id} initial={record} page={{ object, id: record.id }} onPageLinkChanged={async () => undefined}
+          highlightComment={highlight} restricted />
+      </div>
     </div>
   );
 }
@@ -925,7 +1068,12 @@ function HtmlBody({ html }: { html: string }) {
 
 // An activity opened in place in the stream: the whole body, its fields and
 // what it is linked to.
-function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { object: string; id: string; initial: CrmRecord; page: { object: string; id: string }; onPageLinkChanged: () => Promise<void> }) {
+function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onCommentCount, highlightComment, restricted = false }: {
+  object: string; id: string; initial: CrmRecord; page: { object: string; id: string }; onPageLinkChanged: () => Promise<void>;
+  onCommentCount?: (n: number) => void; highlightComment?: string | null;
+  // opened through an @mention (MentionedOnly): no links to other records
+  restricted?: boolean;
+}) {
   const [record, setRecord] = useState<CrmRecord>(initial);
   const [props, setProps] = useState<Property[]>([]);
   const [canEdit, setCanEdit] = useState(false);
@@ -1000,9 +1148,14 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged }: { ob
           ))}
         </dl>
       )}
-      <div className="activity-foot">
-        <ActivityLinks object={object} id={id} page={page} onPageLinkChanged={onPageLinkChanged} />
-      </div>
+      {COMMENT_TARGETS.includes(object) && (
+        <Comments object={object} id={id} readOnly={record.record_status === 'archived'} onCount={onCommentCount} highlight={highlightComment} />
+      )}
+      {!restricted && (
+        <div className="activity-foot">
+          <ActivityLinks object={object} id={id} page={page} onPageLinkChanged={onPageLinkChanged} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1114,7 +1267,7 @@ function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string
   const meta = objectByName.get(object);
   const systemLinks = meta?.system_links ?? [];
   const linkable = (meta?.links_to ?? [])
-    .filter((o) => objectByName.has(o))
+    .filter((o) => objectByName.has(o) && o !== 'comments')
     .map((o) => ({ object: o, label: objectByName.get(o)?.label_plural ?? o }))
     .sort((a, b) => a.label.localeCompare(b.label));
   const linked = (o: string) => groups?.find((g) => g.object === o)?.records.map((r) => r.record) ?? [];

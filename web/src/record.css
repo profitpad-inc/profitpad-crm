@@ -547,3 +547,50 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
 .template-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .template-record { min-width: 180px; max-width: 280px; }
 iframe.template-preview { display: block; width: 100%; min-height: 400px; border: 1px solid var(--hairline); border-radius: var(--radius); background: #fff; }
+
+/* ---- comments on activities (components/Comments.tsx) ------------------------------ */
+.comments { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.comments-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted-text); text-transform: uppercase; letter-spacing: 0.04em; }
+.comment-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.comment { display: flex; gap: 10px; padding: 6px 8px; margin: 0 -8px; border-radius: var(--radius); }
+.comment.highlighted { background: var(--primary-soft); }
+.comment-avatar {
+  flex-shrink: 0; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: var(--primary); background: var(--primary-soft);
+}
+.comment-main { flex: 1; min-width: 0; }
+.comment-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted-text); }
+.comment-author { font-weight: 600; color: var(--text); }
+a.comment-author:hover { color: var(--primary); }
+.comment-actions { display: inline-flex; gap: 10px; margin-left: auto; opacity: 0; transition: opacity 0.1s; }
+.comment:hover .comment-actions, .comment:focus-within .comment-actions { opacity: 1; }
+@media (hover: none) { .comment-actions { opacity: 1; } }
+.comment-actions .link-btn { font-size: 12px; }
+.comment-actions .link-btn.danger-text { color: var(--danger); }
+.comment-body { margin-top: 2px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-editor { display: flex; flex-direction: column; gap: 8px; }
+.comment-editor textarea { line-height: 1.5; }
+.comment-editor-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.activity-comment-count { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted-text); }
+/* the thread on an activity's own page */
+.record-comments.card { padding: 4px 16px 16px; margin-bottom: 16px; }
+.record-comments .comments { border-top: 0; }
+
+/* a record opened only through an @mention (MentionedOnly in RecordPage.tsx) */
+.record-mentioned { max-width: 820px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+.record-mentioned .back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; color: var(--muted-text); font-size: 13px; }
+.record-mentioned-head { display: flex; gap: 14px; align-items: flex-start; }
+.record-mentioned-head h1 { margin: 2px 0 4px; font-size: 20px; }
+.record-mentioned-head p { margin: 0; font-size: 13.5px; line-height: 1.5; }
+.mentioned-activity.activity-item.open {
+  display: flex; gap: 14px; margin: 0; padding: 12px 16px 12px 10px; cursor: auto;
+  background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop);
+}
+.mentioned-activity .activity-icon {
+  flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary);
+}
+.mentioned-activity .activity-body { flex: 1; min-width: 0; padding-top: 5px; }
+.mentioned-activity .activity-head { display: flex; align-items: baseline; gap: 10px; }
+.mentioned-activity .ledger-time { font-size: 12px; color: var(--muted-text); }
+.activity > .mentioned-activity { margin-bottom: 12px; }

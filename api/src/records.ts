@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { pool, quoteIdent, type Db } from './db.js';
-import { badRequest, notFound } from './errors.js';
+import { badRequest, forbidden, notFound } from './errors.js';
 import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode, type Principal } from './auth.js';
 import { activeProperties, getObject, getProperty, getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
@@ -18,6 +18,28 @@ export interface RecordOut {
   properties: Record<string, unknown>;
   // keyed by the associated object's api_name
   associations?: Record<string, AssociatedOut[]>;
+  // single reads only: readable only because the caller is @mentioned in it
+  // (its note body, or a comment on it), not through their role
+  via_mention?: boolean;
+}
+
+// Mention access (migration 0085): a user @mentioned in a note's body, or in a
+// comment on one of these records, may read that record whatever their role
+// says. It reaches that record (and its comments) only: never the records it
+// is linked to, its associations, edits or deletes.
+export const MENTION_GRANT_OBJECTS = new Set(['pc_0030', 'pc_0031', 'pc_0032', 'pc_0033', 'pc_0053', 'pc_0061', 'pc_0063']);
+
+export async function mentionGrant(db: Db, p: Principal, obj: ObjectDef, id: string): Promise<boolean> {
+  if (!p.userId || !MENTION_GRANT_OBJECTS.has(obj.object_type_id)) return false;
+  const { rows } = await db.query(
+    `select exists (select 1 from ui.mentions m where $2 = 'pc_0032' and m.note_id = $3 and m.user_id = $1)
+         or exists (select 1 from ui.comment_mentions m
+                    join crm.pc_0034 c on c.pc_0034_id = m.comment_id and c.record_status = 'active'
+                    join crm.associations_both a on a.object_type_id = 'pc_0034' and a.record_id = c.pc_0034_id
+                    where m.user_id = $1 and a.other_object_type_id = $2 and a.other_record_id = $3) as ok`,
+    [p.userId, obj.object_type_id, id]
+  );
+  return rows[0].ok === true;
 }
 
 export function visibleProperties(obj: ObjectDef, principal: Principal, requested?: string[]): PropertyDef[] {
@@ -142,23 +164,40 @@ async function attachAssociations(db: Db, obj: ObjectDef, principal: Principal, 
 export async function getRecord(
   db: Db, obj: ObjectDef, principal: Principal, id: string, requested?: string[], associations: AssociationSpec[] = []
 ): Promise<RecordOut> {
-  requireObjectPermission(principal, obj, 'read');
+  // the role first; failing that, an @mention of the caller (mentionGrant)
+  let viaMention = false;
+  try {
+    requireObjectPermission(principal, obj, 'read');
+  } catch (err) {
+    if (!(await mentionGrant(db, principal, obj, id))) throw err;
+    viaMention = true;
+  }
   const props = visibleProperties(obj, principal, requested);
   for (let hop = 0; hop < 5; hop++) {
     const params: unknown[] = [id];
-    const access = recordFilter(principal, obj, params);
+    const access = viaMention ? 'true' : recordFilter(principal, obj, params);
     const { rows } = await db.query(
       `select ${selectList(obj, props)} from crm.${quoteIdent(obj.object_type_id)} t
        where t.${quoteIdent(obj.id_column)} = $1 and t.record_status <> 'deleted' and ${access}`,
       params
     );
-    if (rows.length === 0) break;
+    if (rows.length === 0) {
+      // outside the caller's own/team records: an @mention still opens it
+      if (!viaMention && (await mentionGrant(db, principal, obj, id))) {
+        viaMention = true;
+        hop--;
+        continue;
+      }
+      break;
+    }
     if (rows[0].record_status === 'merged' && rows[0].merged_into_id) {
       id = rows[0].merged_into_id;
       continue;
     }
     const record = serialize(obj, props, rows[0]);
-    await attachAssociations(db, obj, principal, [record], associations);
+    // what it is linked to stays behind the caller's role
+    if (viaMention) record.via_mention = true;
+    else await attachAssociations(db, obj, principal, [record], associations);
     return record;
   }
   throw notFound(`${obj.api_name} record ${id} not found`);
@@ -324,6 +363,10 @@ export async function createRecord(
   associations: { object: string; id: string; label_id?: string }[] = []
 ): Promise<string> {
   requireObjectPermission(principal, obj, 'create');
+  // a comment goes on exactly one record (migration 0085 checks it at commit)
+  if (obj.object_type_id === 'pc_0034' && associations.length !== 1) {
+    throw badRequest('a comment must be on one record: add it with POST /v1/objects/<object>/<record id>/comments, or the add_comment MCP tool');
+  }
   const hook = writeHooks.get(obj.api_name);
   if (hook) properties = await hook(client, properties ?? {}, null);
   const plan = await planWrite(client, obj, principal, properties ?? {});
@@ -358,6 +401,10 @@ export async function updateRecord(
     params
   );
   if (rows.length === 0) throw notFound(`${obj.api_name} record ${id} not found`);
+  // only the person who wrote a comment changes it, whatever the path
+  if (obj.object_type_id === 'pc_0034' && rows[0].created_by !== principal.actor) {
+    throw forbidden('only the person who wrote a comment can change it');
+  }
   const hook = writeHooks.get(obj.api_name);
   if (hook) properties = await hook(client, properties, rows[0]);
   const plan = await planWrite(client, obj, principal, properties, rows[0]);

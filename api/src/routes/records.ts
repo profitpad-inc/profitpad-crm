@@ -98,6 +98,8 @@ export async function recordRoutes(app: FastifyInstance) {
       const p = req.principal!;
       requireScope(p, 'write');
       const obj = await objectForWrite(req.params.object);
+      // a comment is always on a record: made through that record's comments route
+      if (obj.object_type_id === 'pc_0034') throw badRequest('add comments with POST /v1/objects/<object>/<record id>/comments');
       for (const a of req.body?.associations ?? []) await assertUserLinkable(obj, a.object);
       const id = await withTx({ principal: p }, (c) => createRecord(c, obj, p, req.body?.properties ?? {}, req.body?.associations ?? []));
       await drainCalcQueue();

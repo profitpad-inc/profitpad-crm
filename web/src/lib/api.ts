@@ -127,6 +127,9 @@ export interface CrmRecord {
   requested_id?: string;
   // single reads: false when the user can see but not edit this record
   can_edit?: boolean;
+  // single reads: readable only because the user is @mentioned in it (its
+  // note body or a comment on it); its links stay hidden
+  via_mention?: boolean;
   properties: Record<string, unknown>;
   associations?: Record<string, AssociatedRecord[]>;
 }

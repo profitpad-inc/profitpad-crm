@@ -141,6 +141,17 @@ const TOKEN_RE = /@\[([^\]\n]{1,100})\]\(([0-9a-f]{10})\)/g;
 // The note body as plain text: mention tokens become @Name, HTML tags go.
 export const mentionText = (body: string) => body.replace(TOKEN_RE, '@$1').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
+// Who can be @mentioned: users who can sign in, with the name a mention shows.
+export async function mentionableUsers(): Promise<{ id: string; name: string }[]> {
+  const { rows } = await pool.query(
+    `select pc_0000_id as id, coalesce(nullif(btrim(name), ''), nullif(btrim(concat_ws(' ', first_name, last_name)), ''), email) as name
+     from crm.pc_0000 u
+     where ${USER_CAN_SIGN_IN('u')}
+     order by 2`
+  );
+  return rows.filter((r) => r.name);
+}
+
 export async function snippetRoutes(app: FastifyInstance) {
   // The caller's snippets: shared ones and their own.
   app.get('/v1/snippets', async (req) => {
@@ -218,81 +229,117 @@ export async function snippetRoutes(app: FastifyInstance) {
   // Who can be @mentioned: active users (id and name only).
   app.get('/v1/mentions/users', async (req) => {
     requireScope(req.principal!, 'read');
-    const { rows } = await pool.query(
-      `select pc_0000_id as id, coalesce(nullif(btrim(name), ''), nullif(btrim(concat_ws(' ', first_name, last_name)), ''), email) as name
-       from crm.pc_0000 u
-       where ${USER_CAN_SIGN_IN('u')}
-       order by 2`
-    );
-    return { results: rows.filter((r) => r.name) };
+    return { results: await mentionableUsers() };
   });
 
-  // Notes the caller was tagged in, newest first, with the record each note is on.
-  // Notes the caller cannot read are left out.
+  // Notes and comments (0085) the caller was tagged in, newest first,
+  // with the record each activity is on. Ones whose activity the caller cannot
+  // read are left out. Note items keep note_id; comment items carry comment_id.
   app.get<{ Querystring: { limit?: string } }>('/v1/me/mentions', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
     if (!p.userId) return { results: [], unseen: 0 };
     const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
     const { rows } = await pool.query(
-      `select m.note_id, m.created_at, m.seen_at, m.mentioned_by, u.name as mentioned_by_name
-       from ui.mentions m
-       join crm.pc_0032 n on n.pc_0032_id = m.note_id and n.record_status = 'active'
-       left join crm.pc_0000 u on u.pc_0000_id = m.mentioned_by
-       where m.user_id = $1 order by m.created_at desc limit $2`,
+      `select x.*, u.name as mentioned_by_name from (
+         select 'note' as kind, 'pc_0032' as object_type_id, m.note_id as activity_id, null::text as comment_id, null::text as comment_body,
+           m.created_at, m.seen_at, m.mentioned_by
+         from ui.mentions m
+         join crm.pc_0032 n on n.pc_0032_id = m.note_id and n.record_status = 'active'
+         where m.user_id = $1
+         union all
+         select 'comment', a.other_object_type_id, a.other_record_id, c.pc_0034_id, c.body, m.created_at, m.seen_at, m.mentioned_by
+         from ui.comment_mentions m
+         join crm.pc_0034 c on c.pc_0034_id = m.comment_id and c.record_status = 'active'
+         join crm.associations_both a on a.object_type_id = 'pc_0034' and a.record_id = c.pc_0034_id
+         where m.user_id = $1
+       ) x
+       left join crm.pc_0000 u on u.pc_0000_id = x.mentioned_by
+       order by x.created_at desc limit $2`,
       [p.userId, limit]
     );
     if (rows.length === 0) return { results: [], unseen: 0 };
-    const notes = await getObject('notes');
-    let readable: Map<string, string> = new Map();
-    try {
-      const read = await batchReadRecords(pool, notes, p, { ids: rows.map((r) => r.note_id), properties: ['body'] });
-      readable = new Map(read.results.map((r) => [r.id, String(r.properties.body ?? '')]));
-    } catch {
-      // no read access to notes at all
+
+    // The activities, read as the caller: being mentioned opens each one
+    // whatever their role says (records.ts mentionGrant). Note bodies too, for
+    // note mentions. Ones gone since are left out.
+    const readable = new Map<string, { object: string; body: string }>();
+    for (const key of new Set<string>(rows.map((r) => `${r.object_type_id}:${r.activity_id}`))) {
+      const [code, id] = key.split(':') as [string, string];
+      try {
+        const obj = await getObject(code);
+        const r = await getRecord(pool, obj, p, id, code === 'pc_0032' ? ['body'] : ['created_at']);
+        if (r.record_status === 'active') readable.set(key, { object: obj.api_name, body: String(r.properties.body ?? '') });
+      } catch {
+        // gone, or no longer readable
+      }
     }
-    const ids = [...readable.keys()];
-    // the first record each note is linked to (its name and object)
-    const { rows: links } = ids.length ? await pool.query(
-      `select distinct on (a.record_id) a.record_id as note_id, a.other_object_type_id, a.other_record_id, o.api_name, o.label_singular
+    const shown = rows.filter((r) => readable.has(`${r.object_type_id}:${r.activity_id}`));
+    if (shown.length === 0) return { results: [], unseen: 0 };
+
+    // the first record each activity is linked to (its name and object)
+    const { rows: links } = await pool.query(
+      `select distinct on (a.object_type_id, a.record_id) a.object_type_id, a.record_id, a.other_object_type_id, a.other_record_id, o.api_name, o.label_singular
        from crm.associations_both a join meta.objects o on o.object_type_id = a.other_object_type_id
-       where a.object_type_id = 'pc_0032' and a.record_id = any ($1)
-       order by a.record_id, a.other_object_type_id, a.other_record_id`,
-      [ids]
-    ) : { rows: [] };
+       where a.object_type_id = any ($1) and a.record_id = any ($2) and a.other_object_type_id <> 'pc_0034'
+       order by a.object_type_id, a.record_id, a.other_object_type_id, a.other_record_id`,
+      [[...new Set(shown.map((r) => r.object_type_id))], [...new Set(shown.map((r) => r.activity_id))]]
+    );
     const linkOf = new Map<string, { object: string; label: string; id: string; name: string | null }>();
+    // its name only when the caller may read that record (a mention opens the
+    // activity, not what it is on)
     for (const l of links) {
-      const { rows: n } = await pool.query(
-        `select name from crm.${quoteIdent(l.other_object_type_id)} where object_type_id = $1 and ${quoteIdent(`${l.other_object_type_id}_id`)} = $2`,
-        [l.other_object_type_id, l.other_record_id]
-      );
-      linkOf.set(l.note_id, { object: l.api_name, label: l.label_singular, id: l.other_record_id, name: n[0]?.name ?? null });
+      let name: string | null = null;
+      try {
+        const rec = await getRecord(pool, await getObject(l.other_object_type_id), p, l.other_record_id, ['name']);
+        if (!rec.via_mention) name = typeof rec.properties.name === 'string' ? rec.properties.name : null;
+      } catch {
+        // not readable: the link shows the object's label only
+      }
+      linkOf.set(`${l.object_type_id}:${l.record_id}`, { object: l.api_name, label: l.label_singular, id: l.other_record_id, name });
     }
-    const results = rows.filter((r) => readable.has(r.note_id)).map((r) => {
-      const text = mentionText(readable.get(r.note_id)!);
+    const results = shown.map((r) => {
+      const key = `${r.object_type_id}:${r.activity_id}`;
+      const text = mentionText(r.kind === 'note' ? readable.get(key)!.body : String(r.comment_body ?? ''));
       return {
-        note_id: r.note_id,
+        kind: r.kind as 'note' | 'comment',
+        ...(r.kind === 'note' ? { note_id: r.activity_id } : { comment_id: r.comment_id }),
+        activity: { object: readable.get(key)!.object, object_type_id: r.object_type_id, id: r.activity_id },
         created_at: r.created_at,
         seen: r.seen_at !== null,
         mentioned_by: r.mentioned_by ? { id: r.mentioned_by, name: r.mentioned_by_name } : null,
         excerpt: text.length > 200 ? `${text.slice(0, 200)}…` : text,
-        record: linkOf.get(r.note_id) ?? null
+        record: linkOf.get(key) ?? null
       };
     });
     return { results, unseen: results.filter((r) => !r.seen).length };
   });
 
-  // Marks the caller's mentions seen: the notes given, or all of them.
-  app.post<{ Body: { note_ids?: unknown } }>('/v1/me/mentions/seen', async (req) => {
+  // Marks the caller's mentions seen: the notes and comments given, or all of them.
+  app.post<{ Body: { note_ids?: unknown; comment_ids?: unknown } }>('/v1/me/mentions/seen', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
     if (!p.userId) return { updated: 0 };
-    const ids = req.body?.note_ids;
-    if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === 'string'))) throw badRequest('note_ids must be a list of note IDs');
-    const { rowCount } = await pool.query(
-      `update ui.mentions set seen_at = now() where user_id = $1 and seen_at is null and ($2::text[] is null or note_id = any ($2))`,
-      [p.userId, ids ?? null]
-    );
-    return { updated: rowCount ?? 0 };
+    const noteIds = req.body?.note_ids;
+    const commentIds = req.body?.comment_ids;
+    if (noteIds !== undefined && (!Array.isArray(noteIds) || !noteIds.every((i) => typeof i === 'string'))) throw badRequest('note_ids must be a list of note IDs');
+    if (commentIds !== undefined && (!Array.isArray(commentIds) || !commentIds.every((i) => typeof i === 'string'))) throw badRequest('comment_ids must be a list of comment IDs');
+    const all = noteIds === undefined && commentIds === undefined;
+    let updated = 0;
+    if (all || noteIds !== undefined) {
+      const { rowCount } = await pool.query(
+        `update ui.mentions set seen_at = now() where user_id = $1 and seen_at is null and ($2::text[] is null or note_id = any ($2))`,
+        [p.userId, noteIds ?? null]
+      );
+      updated += rowCount ?? 0;
+    }
+    if (all || commentIds !== undefined) {
+      const { rowCount } = await pool.query(
+        `update ui.comment_mentions set seen_at = now() where user_id = $1 and seen_at is null and ($2::text[] is null or comment_id = any ($2))`,
+        [p.userId, commentIds ?? null]
+      );
+      updated += rowCount ?? 0;
+    }
+    return { updated };
   });
 }

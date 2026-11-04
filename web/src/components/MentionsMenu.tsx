@@ -4,11 +4,15 @@ import { AtSign } from 'lucide-react';
 import { api } from '../lib/api';
 import { onFrameFocus } from '../lib/frame-focus';
 
-// The sidebar's Mentions button: notes you were tagged in (@Name), with a count
-// of the ones not looked at yet. Opening the list marks them seen.
+// The sidebar's Mentions button: notes and comments you were tagged in (@Name),
+// with a count of the ones not looked at yet. Opening the list marks them seen.
 
 interface Mention {
-  note_id: string;
+  kind: 'note' | 'comment';
+  note_id?: string;
+  comment_id?: string;
+  // the note, or the record the comment is on
+  activity: { object: string; object_type_id: string; id: string };
   created_at: string;
   seen: boolean;
   mentioned_by: { id: string; name: string | null } | null;
@@ -24,8 +28,18 @@ const ago = (iso: string) => {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-// the note opened in its record's activity stream (?pc_0032=<id>)
-const noteLink = (m: Mention) => (m.record ? `/objects/${m.record.object}/${m.record.id}?pc_0032=${m.note_id}` : `/objects/notes/${m.note_id}`);
+// objects listed in a record's activity stream (RecordPage's ACTIVITY_OBJECTS)
+const STREAM_OBJECTS = ['calls', 'emails', 'notes', 'tasks', 'form_submissions'];
+
+// The note, or the activity with the comment, opened in its record's activity
+// stream (?pc_0032=<id>); otherwise the commented record's own page.
+// ?comment= marks the comment.
+function mentionLink(m: Mention): string {
+  const a = m.activity;
+  const comment = m.kind === 'comment' ? `comment=${m.comment_id}` : '';
+  if (m.record && STREAM_OBJECTS.includes(a.object)) return `/objects/${m.record.object}/${m.record.id}?${a.object_type_id}=${a.id}${comment ? `&${comment}` : ''}`;
+  return `/objects/${a.object}/${a.id}${comment ? `?${comment}` : ''}`;
+}
 
 export function MentionsButton({ expanded }: { expanded: boolean }) {
   const [unseen, setUnseen] = useState(0);
@@ -91,14 +105,14 @@ export function MentionsButton({ expanded }: { expanded: boolean }) {
           {list === null ? (
             <div className="muted small mentions-empty">Loading…</div>
           ) : list.length === 0 ? (
-            <div className="muted small mentions-empty">When someone tags you in a note with @ and your name, it shows here.</div>
+            <div className="muted small mentions-empty">When someone tags you in a note or comment with @ and your name, it shows here.</div>
           ) : (
             <div className="mentions-list">
               {list.map((m) => (
-                <Link key={m.note_id} to={noteLink(m)} className={`mention-item${m.seen ? '' : ' new'}`} onClick={close}>
+                <Link key={`${m.kind}-${m.comment_id ?? m.note_id}`} to={mentionLink(m)} className={`mention-item${m.seen ? '' : ' new'}`} onClick={close}>
                   <div className="mention-head">
                     <strong>{m.mentioned_by?.name ?? 'Someone'}</strong>
-                    <span> tagged you{m.record ? <> on <strong>{m.record.name || m.record.label}</strong></> : null}</span>
+                    <span> tagged you{m.kind === 'comment' ? ' in a comment' : ''}{m.record ? <> on <strong>{m.record.name || m.record.label}</strong></> : null}</span>
                     <time className="push-right muted" dateTime={m.created_at}>{ago(m.created_at)}</time>
                   </div>
                   <div className="mention-excerpt">{m.excerpt}</div>

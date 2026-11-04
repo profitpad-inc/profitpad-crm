@@ -13,6 +13,8 @@ import {
 import { OPERATORS } from './search.js';
 import { mcpResourceMetadataUrl, mcpResourceUrl, SCOPES } from './oauth.js';
 import { isWritable } from './values.js';
+import { addComment, deleteComment, editComment, listComments } from './comments.js';
+import { mentionableUsers } from './snippets.js';
 import { brandIcons } from './brand.js';
 import {
   addOption, createProperty, setPropertyArchived, testCalculation, updateOption, updateProperty
@@ -53,7 +55,8 @@ export const mcpOriginAllowed = (origin: string | undefined) => !origin || allow
 
 const INSTRUCTIONS = `ProfitPad CRM: records (contacts, companies, deals, tickets, quotes and more) organised as objects with typed properties, linked to each other by associations.
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
-Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.`;
+Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.
+Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.`;
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
@@ -232,7 +235,8 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     annotations: { readOnlyHint: true }
   }, async ({ object, id, properties, associations }) => run(async () => {
     requireScope(p, 'read');
-    const obj = await readableObject(p, object);
+    // getRecord checks the role, and lets an @mentioned user read that one record (via_mention)
+    const obj = await objectForWrite(object);
     return getRecord(pool, obj, p, id, properties, (associations ?? []).map((a) => ({ object: a })));
   }));
 
@@ -249,6 +253,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
   }, async ({ object, properties, associations }) => run(async () => {
     requireScope(p, 'write');
     const obj = await objectForWrite(object);
+    if (obj.api_name === 'comments') throw badRequest('comments are added with add_comment, on the record they are about');
     for (const a of associations ?? []) await assertUserLinkable(obj, a.object);
     const id = await withTx({ principal: p, source: 'mcp' }, (c) => createRecord(c, obj, p, properties, associations ?? []));
     await drainCalcQueue();
@@ -291,6 +296,67 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     });
     await drainCalcQueue();
     return { association_id: associationId };
+  }));
+
+  const commentTargetArg = z.enum(['calls', 'emails', 'notes', 'tasks', 'form_submissions', 'marketing_event_participations', 'object_event_occurrences'])
+    .describe('The object of the record the comments are on');
+  const commentBodyArg = z.string().min(1).max(10000)
+    .describe('Plain text. To tag someone write @[Their Name](<user id>), with the id from find_users_to_mention; they are notified in their Mentions and may then view the record.');
+
+  server.registerTool('find_users_to_mention', {
+    title: 'Find users to mention',
+    description: 'Lists users who can be tagged (@mentioned) in comments and note bodies: id and name. query narrows by name.',
+    inputSchema: z.object({ query: z.string().optional().describe('Part of a name, any case') }),
+    annotations: { readOnlyHint: true }
+  }, async ({ query }) => run(async () => {
+    requireScope(p, 'read');
+    const words = (query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+    const users = (await mentionableUsers()).filter((u) => words.every((w) => u.name.toLowerCase().includes(w)));
+    return { results: users.slice(0, 50).map((u) => ({ ...u, mention: `@[${u.name}](${u.id})` })), total: users.length };
+  }));
+
+  server.registerTool('list_comments', {
+    title: 'List comments',
+    description: 'The comments on a call, email, note, task, form submission, marketing event participation or object event occurrence, oldest first, with author and whether you may edit or delete each.',
+    inputSchema: z.object({ object: commentTargetArg, id: z.string().describe('The record\'s id') }),
+    annotations: { readOnlyHint: true }
+  }, async ({ object, id }) => run(async () => {
+    requireScope(p, 'read');
+    return { results: await listComments(p, object, id) };
+  }));
+
+  server.registerTool('add_comment', {
+    title: 'Add comment',
+    description: 'Adds a comment to a call, email, note, task, form submission, marketing event participation or object event occurrence, as the signed-in user. Can tag people (see body).',
+    inputSchema: z.object({ object: commentTargetArg, id: z.string().describe('The record\'s id'), body: commentBodyArg }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: writeChallenge
+  }, async ({ object, id, body }) => run(async () => {
+    requireScope(p, 'write');
+    return addComment(p, object, id, body, 'mcp');
+  }));
+
+  server.registerTool('update_comment', {
+    title: 'Update comment',
+    description: 'Replaces the text of a comment the signed-in user wrote (no one else can change it).',
+    inputSchema: z.object({ comment_id: z.string(), body: commentBodyArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: writeChallenge
+  }, async ({ comment_id, body }) => run(async () => {
+    requireScope(p, 'write');
+    return editComment(p, comment_id, body, 'mcp');
+  }));
+
+  server.registerTool('delete_comment', {
+    title: 'Delete comment',
+    description: 'Deletes (archives) a comment: one the signed-in user wrote, or any comment for an admin. Confirm with the user first.',
+    inputSchema: z.object({ comment_id: z.string() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: writeChallenge
+  }, async ({ comment_id }) => run(async () => {
+    requireScope(p, 'write');
+    await deleteComment(p, comment_id, 'mcp');
+    return { deleted: comment_id };
   }));
 
   if (p.scopes.has('schema')) registerAdminTools(server, p);
