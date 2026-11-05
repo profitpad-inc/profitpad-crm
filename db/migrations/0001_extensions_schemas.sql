@@ -1,4 +1,4 @@
--- Extensions and schemas. Requires: grant create on database test_crm to claude_admin.
+-- Extensions and schemas. Requires: grant create on database profitpad_crm_db to claude_admin.
 
 create extension if not exists pg_trgm;
 

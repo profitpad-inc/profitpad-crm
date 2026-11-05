@@ -24,7 +24,7 @@ begin
       calc_last_error_at = null, read_only = false
     where pc_0002_id = v_prop.pc_0002_id;
     delete from meta.calc_dependencies where property_id = v_prop.pc_0002_id;
-    v_stmts := array[format('grant insert (name), update (name) on crm.%I to test_crm_api', v_code)];
+    v_stmts := array[format('grant insert (name), update (name) on crm.%I to pc_api', v_code)];
   else
     if v_prop.type = 'calculation' then
       perform meta._fail('name is already a calculation; change it with meta.update_calculation');
@@ -36,7 +36,7 @@ begin
     update meta.pc_0002 set type = 'calculation', calc_sql = p_calc_sql, calc_output_type = 'text', read_only = true
     where pc_0002_id = v_prop.pc_0002_id;
     perform meta._store_calc_deps(v_prop.pc_0002_id, v_deps);
-    v_stmts := array[format('revoke insert (name), update (name) on crm.%I from test_crm_api', v_code)];
+    v_stmts := array[format('revoke insert (name), update (name) on crm.%I from pc_api', v_code)];
   end if;
   execute v_stmts[1];
   perform meta._refresh_views(v_code);

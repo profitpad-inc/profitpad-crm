@@ -77,5 +77,5 @@ create table auth.oauth_tokens (
 create index oauth_tokens_family_idx on auth.oauth_tokens (family_id);
 create index oauth_tokens_grant_idx on auth.oauth_tokens (grant_id);
 
-grant select, insert, update, delete on auth.oauth_clients, auth.oauth_grants, auth.oauth_codes, auth.oauth_tokens to test_crm_api;
-grant usage on sequence auth.oauth_clients_id_seq, auth.oauth_grants_id_seq, auth.oauth_tokens_id_seq to test_crm_api;
+grant select, insert, update, delete on auth.oauth_clients, auth.oauth_grants, auth.oauth_codes, auth.oauth_tokens to pc_api;
+grant usage on sequence auth.oauth_clients_id_seq, auth.oauth_grants_id_seq, auth.oauth_tokens_id_seq to pc_api;

@@ -37,5 +37,5 @@ alter table ui.nav_menus
   add constraint nav_menus_group_check check ((scope = 'group') = (group_id is not null));
 create unique index nav_menus_group_uq on ui.nav_menus (group_id) where scope = 'group';
 
-grant select, insert, update, delete on ui.nav_groups, ui.nav_group_members to test_crm_api;
-grant usage on sequence ui.nav_groups_id_seq to test_crm_api;
+grant select, insert, update, delete on ui.nav_groups, ui.nav_group_members to pc_api;
+grant usage on sequence ui.nav_groups_id_seq to pc_api;

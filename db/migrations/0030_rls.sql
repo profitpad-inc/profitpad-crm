@@ -1,8 +1,8 @@
 -- Row-level security for custom view queries.
 --
--- Custom views (0031) run admin-written SQL. It runs as test_crm_view_reader
+-- Custom views (0031) run admin-written SQL. It runs as pc_view_reader
 -- (db/bootstrap/002_view_reader.sql), which reads only the view_data schema:
--- one view per object, owned by test_crm_view_reader, so Postgres applies
+-- one view per object, owned by pc_view_reader, so Postgres applies
 -- that role's row-level security policies on the crm tables (a view reads its
 -- tables as its owner; security_invoker would need Postgres 15, and local
 -- tests run on 14). The API sets these per
@@ -16,8 +16,8 @@
 
 do $$
 begin
-  if not exists (select 1 from pg_roles where rolname = 'test_crm_view_reader') then
-    raise exception 'role test_crm_view_reader is missing: run db/bootstrap/002_view_reader.sql as a superuser first';
+  if not exists (select 1 from pg_roles where rolname = 'pc_view_reader') then
+    raise exception 'role pc_view_reader is missing: run db/bootstrap/002_view_reader.sql as a superuser first';
   end if;
 end $$;
 
@@ -27,7 +27,7 @@ end $$;
 -- shared record ids and dropdown labels. It gets no usage on meta.
 create schema rls;
 revoke all on schema rls from public;
-grant usage on schema rls to test_crm_view_reader, test_crm_api;
+grant usage on schema rls to pc_view_reader, pc_api;
 
 create function rls.access() returns text
 language sql stable as $$ select coalesce(current_setting('pcrm.access', true), '') $$;
@@ -250,13 +250,13 @@ end $$;
 revoke execute on function rls.shared_ids(text) from public;
 revoke execute on function meta._filter_literal(text, jsonb, text), meta._compile_filter(text, jsonb, text), meta.compile_filter_groups(text, jsonb, text) from public;
 grant execute on function rls.access(), rls.owner_ids(), rls.creator_ids(), rls.rule_ids(), rls.shared_ids(text)
-  to test_crm_view_reader, test_crm_api;
-grant select on rls.option_labels to test_crm_view_reader;
+  to pc_view_reader, pc_api;
+grant select on rls.option_labels to pc_view_reader;
 
 -- ---- policies -----------------------------------------------------------------
 
--- Two policies per object table: everyone but test_crm_view_reader sees every
--- row (as before), and test_crm_view_reader sees what recordFilter would let
+-- Two policies per object table: everyone but pc_view_reader sees every
+-- row (as before), and pc_view_reader sees what recordFilter would let
 -- the viewer read. Users (pc_0000) have no owner: only object permissions
 -- limit them, so every user is visible. Policies read only owner/created_by,
 -- so archiving or deleting other properties is never blocked by them.
@@ -280,9 +280,9 @@ begin
   execute format('alter table crm.%I enable row level security', p_code);
   execute format('drop policy if exists view_reader_read on crm.%I', p_code);
   execute format('drop policy if exists everyone_else on crm.%I', p_code);
-  execute format('create policy everyone_else on crm.%I using (current_user <> ''test_crm_view_reader'') with check (true)', p_code);
-  execute format('create policy view_reader_read on crm.%I for select to test_crm_view_reader using (%s)', p_code, v_using);
-  execute format('grant select on crm.%I to test_crm_view_reader', p_code);
+  execute format('create policy everyone_else on crm.%I using (current_user <> ''pc_view_reader'') with check (true)', p_code);
+  execute format('create policy view_reader_read on crm.%I for select to pc_view_reader using (%s)', p_code, v_using);
+  execute format('grant select on crm.%I to pc_view_reader', p_code);
 end $$;
 
 revoke execute on function meta.refresh_rls(text) from public;
@@ -293,11 +293,11 @@ create schema view_data;
 revoke all on schema view_data from public;
 -- create lets view_reader own the views (it never runs DDL: its queries are
 -- single analyzed SELECTs in read-only transactions)
-grant usage, create on schema view_data to test_crm_view_reader;
-grant usage on schema crm to test_crm_view_reader;
+grant usage, create on schema view_data to pc_view_reader;
+grant usage on schema crm to pc_view_reader;
 
 -- Same as 0003, plus view_data.<api_name>: active rows, owned by
--- test_crm_view_reader so the crm table's policies for it apply, labels from
+-- pc_view_reader so the crm table's policies for it apply, labels from
 -- rls.option_labels.
 -- Also refreshes the object's policies (an owner property may have appeared).
 create or replace function meta._refresh_views(p_object_type_id text) returns void
@@ -361,9 +361,9 @@ begin
     execute format('create view reporting.%I as select * from crm.%I where row_status = %L', v_obj.api_name, v_obj.api_name, 'active');
     execute format('create view view_data.%I as %s', v_obj.api_name, v_data_select);
   end;
-  execute format('alter view view_data.%I owner to test_crm_view_reader', v_obj.api_name);
-  execute format('grant select on crm.%I to test_crm_api', v_obj.api_name);
-  execute format('grant select on reporting.%I to test_crm_reader', v_obj.api_name);
+  execute format('alter view view_data.%I owner to pc_view_reader', v_obj.api_name);
+  execute format('grant select on crm.%I to pc_api', v_obj.api_name);
+  execute format('grant select on reporting.%I to pc_reader', v_obj.api_name);
   perform meta.refresh_rls(p_object_type_id);
 end $$;
 
@@ -417,7 +417,7 @@ create view view_data.property_options as select * from reporting.property_optio
 create view view_data.association_labels as select * from reporting.association_labels;
 create view view_data.currencies as select * from reporting.currencies;
 grant select on view_data.associations, view_data.objects, view_data.properties, view_data.property_options,
-  view_data.association_labels, view_data.currencies to test_crm_view_reader;
+  view_data.association_labels, view_data.currencies to pc_view_reader;
 
 select meta._refresh_views(object_type_id) from meta.pc_0001 where schema_name = 'crm' and object_type_id <> 'pc_0005' order by object_type_id;
 
@@ -517,4 +517,4 @@ begin
 end $$;
 
 revoke execute on function meta.analyze_view_query(text) from public;
-grant execute on function meta.analyze_view_query(text) to test_crm_api;
+grant execute on function meta.analyze_view_query(text) to pc_api;

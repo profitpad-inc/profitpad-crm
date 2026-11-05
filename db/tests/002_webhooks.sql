@@ -61,9 +61,9 @@ begin
   exception when check_violation then null;
   end;
 
-  if not has_table_privilege('test_crm_api', 'meta.webhook_outbox', 'delete') then raise exception 'the API can take outbox rows'; end if;
-  if has_table_privilege('test_crm_api', 'meta.webhook_outbox', 'insert') then raise exception 'the API cannot write outbox rows'; end if;
-  if not has_table_privilege('test_crm_api', 'auth.webhook_deliveries', 'insert') then raise exception 'the API can queue deliveries'; end if;
+  if not has_table_privilege('pc_api', 'meta.webhook_outbox', 'delete') then raise exception 'the API can take outbox rows'; end if;
+  if has_table_privilege('pc_api', 'meta.webhook_outbox', 'insert') then raise exception 'the API cannot write outbox rows'; end if;
+  if not has_table_privilege('pc_api', 'auth.webhook_deliveries', 'insert') then raise exception 'the API can queue deliveries'; end if;
   raise notice 'ok webhooks';
 end $t$;
 

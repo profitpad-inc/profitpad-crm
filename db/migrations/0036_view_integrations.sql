@@ -28,7 +28,7 @@ create table auth.view_integrations (
   check ((secret_header is null) = (secret_value is null))
 );
 
-grant select, insert, update, delete on auth.view_integrations to test_crm_api;
+grant select, insert, update, delete on auth.view_integrations to pc_api;
 
 alter table ui.view_errors drop constraint view_errors_kind_check;
 alter table ui.view_errors add constraint view_errors_kind_check

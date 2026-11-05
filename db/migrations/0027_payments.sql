@@ -51,10 +51,10 @@ create table auth.stripe_events (
   received_at timestamptz not null default now()
 );
 
-grant select, insert, update, delete on auth.payment_connections to test_crm_api;
-grant usage on sequence auth.payment_connections_id_seq to test_crm_api;
-grant select, insert, update, delete on auth.stripe_checkout_sessions to test_crm_api;
-grant select, insert, delete on auth.stripe_events to test_crm_api;
+grant select, insert, update, delete on auth.payment_connections to pc_api;
+grant usage on sequence auth.payment_connections_id_seq to pc_api;
+grant select, insert, update, delete on auth.stripe_checkout_sessions to pc_api;
+grant select, insert, delete on auth.stripe_events to pc_api;
 
 -- e-Transfer details shown on the customer pages, and the transaction type
 -- Canadian pre-authorized debits are agreed under.

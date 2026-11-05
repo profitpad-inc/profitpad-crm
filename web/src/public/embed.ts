@@ -9,7 +9,7 @@ import bookCss from './book.css?inline';
 // (vite.embed.config.ts) served at /p/embed.js:
 //
 //   <div data-pcrm-form="FORM_KEY"></div>
-//   <script src="https://test-crm.profitpad.com/p/embed.js" async></script>
+//   <script src="https://crm.profitpad.com/p/embed.js" async></script>
 //
 // The website's origin must be listed in Settings -> Embed domains, or the API refuses
 // the submission. Forms are rendered in the page itself (not an iframe) so the
@@ -18,7 +18,7 @@ import bookCss from './book.css?inline';
 // Booking pages work the same way, on the same list of websites:
 //
 //   <div data-pcrm-booking="intro-call"></div>
-//   <script src="https://test-crm.profitpad.com/p/embed.js" async></script>
+//   <script src="https://crm.profitpad.com/p/embed.js" async></script>
 
 // Without VITE_API_URL (local builds) the API is assumed to sit behind the
 // same origin that served this script.

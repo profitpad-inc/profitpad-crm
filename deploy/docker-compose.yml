@@ -1,34 +1,66 @@
-# The CRM API container. nginx on the host terminates TLS for
-# api.test-crm.profitpad.com and forwards to 127.0.0.1:3100.
+# The CRM's containers: Postgres, the API, and the headless renderer.
+# nginx on the host terminates TLS for api.crm.profitpad.com and forwards
+# to 127.0.0.1:3100.
 # Run from this folder: docker compose up -d --build
 services:
+  # The CRM's own Postgres (moved out of the n8n container). Data lives in the
+  # pc_db_data volume, so rebuilding or restarting the API never touches it.
+  # Published on 127.0.0.1:5434 only: the SSH tunnel reaches it from the Mac,
+  # nothing outside the server can. POSTGRES_PASSWORD (the superuser,
+  # "postgres") comes from .env in this folder through compose interpolation.
+  db:
+    image: postgres:15
+    container_name: pc-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: profitpad_crm_db
+    volumes:
+      - pc_db_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5434:5432"
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d profitpad_crm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build: ../api
     image: profitpad-crm-api
-    container_name: test-crm-api
+    container_name: pc-api
     restart: unless-stopped
     # PGUSER, PGPASSWORD, PGDATABASE, CORS_ORIGINS, DOCS_PUBLIC, TRUST_PROXY, FILES_URL_KEY
     env_file: .env
     environment:
-      PGHOST: postgres          # the postgres container, reached over n8n_net
+      PGHOST: db                # the db service above, reached over db_net
       PGPORT: "5432"
       HOST: 0.0.0.0
       PORT: "3100"
       # stored files: written here by the API, read by nginx on the host
-      # from /srv/test_crm_files (location /_pcrm_files/)
+      # from /srv/profitpad_crm_files (location /_pcrm_files/)
       FILES_DIR: /data/files
       FILES_ACCEL_PREFIX: /_pcrm_files/
       # the headless browser for render_view (the renderer service below)
-      RENDERER_WS_URL: ws://test-crm-renderer:3000/
+      RENDERER_WS_URL: ws://pc-renderer:3000/
     volumes:
-      - /srv/test_crm_files:/data/files
+      - /srv/profitpad_crm_files:/data/files
     ports:
       - "127.0.0.1:3100:3100"
     networks:
-      - n8n_net
+      - db_net
       - renderer_net
+      # n8n's network: integrations may call n8n directly
+      # (INTEGRATION_PRIVATE_HOSTS=n8n). Not used for the database any more.
+      - n8n_net
     depends_on:
-      - renderer
+      db:
+        condition: service_healthy
+      renderer:
+        condition: service_started
 
   # Headless Chromium that renders custom view drafts for the MCP's
   # render_view. Reachable only by the API on renderer_net, which has no way
@@ -36,7 +68,7 @@ services:
   renderer:
     build: ./renderer
     image: profitpad-crm-renderer
-    container_name: test-crm-renderer
+    container_name: pc-renderer
     restart: unless-stopped
     init: true
     # Chromium needs more shared memory than Docker's 64 MB default
@@ -45,7 +77,11 @@ services:
     networks:
       - renderer_net
 
+volumes:
+  pc_db_data:
+
 networks:
+  db_net:
   n8n_net:
     external: true
   renderer_net:

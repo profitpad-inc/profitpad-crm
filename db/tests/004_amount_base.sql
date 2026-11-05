@@ -65,8 +65,8 @@ begin
 
   -- calculations may now carry currency_code; other calculations may call it too
   perform meta._validate_options('calculation', '{"format": "currency", "currency_code": "EUR"}');
-  if not has_function_privilege('test_crm_api', 'public.currency_to_base(numeric, text, date)', 'execute') then raise exception 'the API can convert'; end if;
-  if has_function_privilege('test_crm_view_reader', 'public.currency_to_base(numeric, text, date)', 'execute') then raise exception 'views use view_data.convert_currency'; end if;
+  if not has_function_privilege('pc_api', 'public.currency_to_base(numeric, text, date)', 'execute') then raise exception 'the API can convert'; end if;
+  if has_function_privilege('pc_view_reader', 'public.currency_to_base(numeric, text, date)', 'execute') then raise exception 'views use view_data.convert_currency'; end if;
   raise notice 'ok amount_base';
 end $t$;
 

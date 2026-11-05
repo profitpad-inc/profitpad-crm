@@ -31,7 +31,7 @@ create table ui.view_errors (
   last_seen_at timestamptz not null default now()
 );
 create index view_errors_recent on ui.view_errors (view_id, last_seen_at desc);
-grant select, insert, update, delete on ui.view_errors to test_crm_api;
+grant select, insert, update, delete on ui.view_errors to pc_api;
 
 -- ---- 2. dropdown option details ---------------------------------------------------
 

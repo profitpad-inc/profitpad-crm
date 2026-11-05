@@ -101,9 +101,9 @@ create table meta.currency_rates (
 );
 create index currency_rates_date on meta.currency_rates (rate_date);
 
-grant select, update on meta.currency_settings to test_crm_api;
-grant select, insert, update on meta.currency_rates to test_crm_api;
-grant select on meta.currency_rates to test_crm_reader;
+grant select, update on meta.currency_settings to pc_api;
+grant select, insert, update on meta.currency_rates to pc_api;
+grant select on meta.currency_rates to pc_reader;
 
 -- ---- reporting and view_data -----------------------------------------------------
 
@@ -116,9 +116,9 @@ create view reporting.currency_rates as
   select rate_date, from_code, to_code, rate, source, provider, created_at from meta.currency_rates;
 create view view_data.currency_rates as select * from reporting.currency_rates;
 
-grant select on reporting.currencies, reporting.currency_rates to test_crm_reader;
+grant select on reporting.currencies, reporting.currency_rates to pc_reader;
 -- the API converts through view_data too (GET /v1/currency-rates/convert)
-grant select on view_data.currencies, view_data.currency_rates to test_crm_view_reader, test_crm_api;
+grant select on view_data.currencies, view_data.currency_rates to pc_view_reader, pc_api;
 
 -- The same two functions in both schemas, each reading its own schema's views
 -- (the view reader has no access to reporting or meta).
@@ -178,9 +178,9 @@ $do$;
 revoke execute on function reporting.currency_rate(text, text, date), reporting.convert_currency(numeric, text, text, date),
   view_data.currency_rate(text, text, date), view_data.convert_currency(numeric, text, text, date) from public;
 grant execute on function reporting.currency_rate(text, text, date), reporting.convert_currency(numeric, text, text, date)
-  to test_crm_reader;
+  to pc_reader;
 grant execute on function view_data.currency_rate(text, text, date), view_data.convert_currency(numeric, text, text, date)
-  to test_crm_view_reader, test_crm_api;
+  to pc_view_reader, pc_api;
 
 -- ---- view query allowlist ---------------------------------------------------------
 

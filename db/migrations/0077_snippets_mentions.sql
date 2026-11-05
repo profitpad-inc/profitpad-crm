@@ -31,8 +31,8 @@ create table ui.snippets (
 create unique index snippets_shared_shortcut_uq on ui.snippets (shortcut) where owner_user_id is null;
 create unique index snippets_own_shortcut_uq on ui.snippets (owner_user_id, shortcut) where owner_user_id is not null;
 
-grant select, insert, update, delete on ui.snippets to test_crm_api;
-grant usage on sequence ui.snippets_id_seq to test_crm_api;
+grant select, insert, update, delete on ui.snippets to pc_api;
+grant usage on sequence ui.snippets_id_seq to pc_api;
 
 -- ---- mentions ------------------------------------------------------------------
 
@@ -47,7 +47,7 @@ create table ui.mentions (
 );
 create index mentions_user_idx on ui.mentions (user_id, created_at desc);
 
-grant select, insert, update, delete on ui.mentions to test_crm_api;
+grant select, insert, update, delete on ui.mentions to pc_api;
 
 -- The users a note body tags: active users only, in order of first mention.
 create or replace function meta.note_mentions(p_body text) returns text[]

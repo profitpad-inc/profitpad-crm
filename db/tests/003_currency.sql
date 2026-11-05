@@ -60,12 +60,12 @@ begin
   -- views may call the conversion functions
   perform meta.analyze_view_query('select convert_currency(amount, currency, null, close_date) as usd, currency_rate(''EUR'') as r from deals');
   perform meta.analyze_view_query('select * from currency_rates');
-  if not has_function_privilege('test_crm_view_reader', 'view_data.convert_currency(numeric, text, text, date)', 'execute') then
+  if not has_function_privilege('pc_view_reader', 'view_data.convert_currency(numeric, text, text, date)', 'execute') then
     raise exception 'the view reader can convert';
   end if;
-  if has_table_privilege('test_crm_view_reader', 'meta.currency_rates', 'select') then raise exception 'the view reader reads only view_data'; end if;
-  if not has_table_privilege('test_crm_api', 'meta.currency_rates', 'insert') then raise exception 'the API writes history'; end if;
-  if has_table_privilege('test_crm_api', 'meta.currency_rates', 'delete') then raise exception 'the API never deletes history'; end if;
+  if has_table_privilege('pc_view_reader', 'meta.currency_rates', 'select') then raise exception 'the view reader reads only view_data'; end if;
+  if not has_table_privilege('pc_api', 'meta.currency_rates', 'insert') then raise exception 'the API writes history'; end if;
+  if has_table_privilege('pc_api', 'meta.currency_rates', 'delete') then raise exception 'the API never deletes history'; end if;
   raise notice 'ok currency';
 end $t$;
 

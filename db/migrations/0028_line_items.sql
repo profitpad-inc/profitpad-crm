@@ -217,4 +217,4 @@ end $$;
 
 revoke execute on function meta.is_line_parent(text), meta._line_other_link(text, boolean, text),
   meta.tg_association_line_links(), meta.copy_lines(text, text, text, text) from public;
-grant execute on function meta.is_line_parent(text), meta.copy_lines(text, text, text, text) to test_crm_api;
+grant execute on function meta.is_line_parent(text), meta.copy_lines(text, text, text, text) to pc_api;

@@ -123,7 +123,7 @@ create trigger webhook_capture after insert on meta.record_history
   referencing new table as new_rows
   for each statement execute function meta.tg_webhook_capture();
 
-grant select, insert, update, delete on auth.webhook_endpoints, auth.webhook_subscriptions, auth.webhook_deliveries to test_crm_api;
-grant usage on sequence auth.webhook_endpoints_id_seq, auth.webhook_subscriptions_id_seq, auth.webhook_deliveries_id_seq to test_crm_api;
+grant select, insert, update, delete on auth.webhook_endpoints, auth.webhook_subscriptions, auth.webhook_deliveries to pc_api;
+grant usage on sequence auth.webhook_endpoints_id_seq, auth.webhook_subscriptions_id_seq, auth.webhook_deliveries_id_seq to pc_api;
 -- update for the worker's row locks (select ... for update)
-grant select, update, delete on meta.webhook_outbox to test_crm_api;
+grant select, update, delete on meta.webhook_outbox to pc_api;

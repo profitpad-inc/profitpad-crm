@@ -18,4 +18,4 @@ create table auth.card_scan_settings (
 
 insert into auth.card_scan_settings (id) values (true);
 
-grant select, insert, update on auth.card_scan_settings to test_crm_api;
+grant select, insert, update on auth.card_scan_settings to pc_api;

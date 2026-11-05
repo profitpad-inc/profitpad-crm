@@ -6,13 +6,13 @@ pg.types.setTypeParser(1700, (v) => v);
 pg.types.setTypeParser(1082, (v) => v);
 
 // Connects as claude_admin (password from ~/.pgpass) and immediately drops
-// into test_crm_api, so every query runs with the API's limited privileges.
+// into pc_api, so every query runs with the API's limited privileges.
 const config: pg.ClientConfig = {
   host: process.env.PGHOST ?? 'localhost',
   port: Number(process.env.PGPORT ?? 5433),
   user: process.env.PGUSER ?? 'claude_admin',
-  database: process.env.PGDATABASE ?? 'test_crm',
-  options: "-c role=test_crm_api -c statement_timeout=30000 -c timezone=UTC"
+  database: process.env.PGDATABASE ?? 'profitpad_crm_db',
+  options: "-c role=pc_api -c statement_timeout=30000 -c timezone=UTC"
 };
 export const pool = new pg.Pool({ ...config, max: Number(process.env.PGPOOL_MAX ?? 10) });
 

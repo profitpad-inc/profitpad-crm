@@ -205,10 +205,10 @@ The CSP plugin already allows `connect-src` to the API, so nothing changes there
 ## Setup outside the code
 
 - Google Cloud console (done 2026-11-01: Calendar API enabled): keep the consent screen Internal, add the calendar scopes to it, and add to the existing Web OAuth client's authorized redirect URIs:
-  - `https://api.test-crm.profitpad.com/v1/calendar/google/callback`
+  - `https://api.crm.profitpad.com/v1/calendar/google/callback`
   - `http://localhost:5173/v1/calendar/google/callback`
 - Azure app registration (done 2026-11-01: `Calendars.ReadWrite` and `offline_access` added): add to the existing Web platform redirect URIs:
-  - `https://api.test-crm.profitpad.com/v1/calendar/microsoft/callback`
+  - `https://api.crm.profitpad.com/v1/calendar/microsoft/callback`
   - `http://localhost:5173/v1/calendar/microsoft/callback`
   Some tenants require admin consent for `Calendars.ReadWrite`.
 - Server `.env`: `MASTER_ENCRYPTION_KEY` (generate with `openssl rand -base64 32`). `docs/deploy.md` gets the steps.

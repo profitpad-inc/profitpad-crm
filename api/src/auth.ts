@@ -68,7 +68,7 @@ export function generateKey(): { key: string; prefix: string } {
 }
 
 // Browser origins allowed to call the API, e.g. the GitHub Pages site:
-// CORS_ORIGINS=https://test-crm.profitpad.com,http://localhost:5173
+// CORS_ORIGINS=https://crm.profitpad.com,http://localhost:5173
 export const browserOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 // Over https the session cookie carries the __Host- prefix, so browsers only

@@ -26,5 +26,5 @@ create index security_events_time_idx on auth.security_events (occurred_at desc)
 create index security_events_user_idx on auth.security_events (user_id, occurred_at desc) where user_id is not null;
 
 -- The API may add and read events but never change or remove them.
-grant select, insert on auth.security_events to test_crm_api;
-grant usage on sequence auth.security_events_id_seq to test_crm_api;
+grant select, insert on auth.security_events to pc_api;
+grant usage on sequence auth.security_events_id_seq to pc_api;

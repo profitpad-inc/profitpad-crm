@@ -164,7 +164,7 @@ create table ui.comment_mentions (
 );
 create index comment_mentions_user_idx on ui.comment_mentions (user_id, created_at desc);
 
-grant select, insert, update, delete on ui.comment_mentions to test_crm_api;
+grant select, insert, update, delete on ui.comment_mentions to pc_api;
 
 -- Same rules as note mentions: active users only, never the writer.
 create or replace function meta.tg_comment_mentions() returns trigger

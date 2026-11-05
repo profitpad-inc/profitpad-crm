@@ -31,5 +31,5 @@ create table auth.role_sharing_rule_associations (
 create unique index role_sharing_rule_associations_uniq
   on auth.role_sharing_rule_associations (rule_id, object_type_id, coalesce(label_id, ''));
 
-grant select, insert, update, delete on auth.role_sharing_rules, auth.role_sharing_rule_associations to test_crm_api;
-grant usage on sequence auth.role_sharing_rules_id_seq, auth.role_sharing_rule_associations_id_seq to test_crm_api;
+grant select, insert, update, delete on auth.role_sharing_rules, auth.role_sharing_rule_associations to pc_api;
+grant usage on sequence auth.role_sharing_rules_id_seq, auth.role_sharing_rule_associations_id_seq to pc_api;

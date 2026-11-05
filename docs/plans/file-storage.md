@@ -6,7 +6,7 @@ Status (2026-11-02): for now files are stored on the API server's disk instead (
 
 Files are the next big missing piece (HANDOFF "What's next" item 3: "object storage + signed URLs for `pc_0050` and file properties"). The `files` object (`pc_0050`) and the `file` property type (`text[]` of `pc_0050` ids, `max_files` option, `docs/property-types.md`) already exist, but no bytes are stored anywhere. Goals from the user: extremely cheap, served from close to the viewer, an optional public URL per file, and large files (video) must work.
 
-Today the API runs in Docker on one server behind nginx (`api.test-crm.profitpad.com`), the UI is on GitHub Pages, and `profitpad.com` DNS is at name.com (checked: `NS ns*.name.com`), not Cloudflare.
+Today the API runs in Docker on one server behind nginx (`api.crm.profitpad.com`), the UI is on GitHub Pages, and `profitpad.com` DNS is at name.com (checked: `NS ns*.name.com`), not Cloudflare.
 
 ## Recommendation: Cloudflare R2, files never pass through our server
 
@@ -29,7 +29,7 @@ Pieces to build:
 - `api/src/storage.ts`: S3 client for R2 (env `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `FILES_PUBLIC_BASE`), presign helpers.
 - `api/src/routes/files.ts`: uploads, multipart parts, complete, url, publish/unpublish, delete (archive then purge, matching the existing archive/delete rules).
 - UI: a file property editor and a Files card on `web/src/pages/RecordPage.tsx` (drag-drop, progress, public toggle, copy link); re-enable `file` in Settings → Properties (`PropertySettings.tsx` currently leaves it out).
-- R2 bucket CORS: allow PUT/GET from `test-crm.profitpad.com` and localhost dev.
+- R2 bucket CORS: allow PUT/GET from `crm.profitpad.com` and localhost dev.
 - Later: quote signatures as files (HANDOFF lists this), thumbnails, Cloudflare Stream if adaptive video streaming is needed (pricing not checked).
 
 ## Why not Google Cloud Storage

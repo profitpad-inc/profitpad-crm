@@ -226,7 +226,7 @@ begin
 end $t$;
 
 -- 10. Role boundaries
-set local role test_crm_api;
+set local role pc_api;
 do $t$
 begin
   insert into crm.pc_0010 (first_name, email) values ('Via API', 'api@x.com');
@@ -239,7 +239,7 @@ begin
   perform meta._test_expect_error($$select meta._create_object_table('pc_0099', 'x', 'X', 'Xs', 'native', null)$$, 'permission denied');
 end $t$;
 reset role;
-set local role test_crm_reader;
+set local role pc_reader;
 do $t$
 begin
   perform meta._test_check((select count(*) from reporting.contacts) > 0, 'reader sees reporting views');
@@ -288,7 +288,7 @@ begin
 end $t$;
 
 -- 13. Sharing rules
-set local role test_crm_api;
+set local role pc_api;
 do $t$
 declare
   v_role bigint;
@@ -372,8 +372,8 @@ begin
   insert into crm.pc_0030 (name) values ('Booked') returning pc_0030_id into v_call;
   perform meta.associate('calls', v_call, 'booking_pages', v_page);
   perform meta._test_expect_error(format($$update crm.pc_0054 set duration_minutes = 1.5 where pc_0054_id = %L$$, v_page), '');
-  perform meta._test_check(not has_table_privilege('test_crm_reader', 'auth.calendar_connections', 'select'), 'readers cannot see calendar tokens');
-  perform meta._test_check(has_table_privilege('test_crm_api', 'auth.calendar_connections', 'insert'), 'API writes calendar connections');
+  perform meta._test_check(not has_table_privilege('pc_reader', 'auth.calendar_connections', 'select'), 'readers cannot see calendar tokens');
+  perform meta._test_check(has_table_privilege('pc_api', 'auth.calendar_connections', 'insert'), 'API writes calendar connections');
 end $t$;
 
 -- File storage (0025): upload status and public link key on files, and the
@@ -386,7 +386,7 @@ begin
     and api_name in ('mime_type', 'size_bytes', 'storage_key', 'checksum', 'status', 'public_token')) = 6, 'file storage properties are read-only');
   perform meta._test_check((select array_agg(api_value order by api_value) from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
     where p.object_type_id = 'pc_0050' and p.api_name = 'status') = '{ready,uploading}', 'file status options');
-  perform meta._test_check(has_column_privilege('test_crm_api', 'crm.pc_0050', 'public_token', 'update'), 'API writes public_token');
+  perform meta._test_check(has_column_privilege('pc_api', 'crm.pc_0050', 'public_token', 'update'), 'API writes public_token');
   insert into crm.pc_0050 (name, status, public_token) values ('a.png', '{ready}', 'tok1') returning pc_0050_id into v_file;
   perform meta._test_expect_error($$insert into crm.pc_0050 (name, public_token) values ('b.png', 'tok1')$$, '');
 end $t$;
@@ -502,7 +502,7 @@ begin
   insert into auth.role_sharing_rule_associations (rule_id, object_type_id) values (v_rule, 'pc_0010');
 
   -- own records only
-  set local role test_crm_view_reader;
+  set local role pc_view_reader;
   perform set_config('pcrm.access', 'restricted', true), set_config('pcrm.owner_ids', format('{%s}', v_u1), true), set_config('pcrm.rule_ids', '{}', true);
   select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
   select array_agg(name order by name) into v_cos from view_data.companies where name like '%Rls';
@@ -513,7 +513,7 @@ begin
   perform meta._test_check(v_users = 2, 'users are not limited by record access');
 
   -- plus a sharing rule: the matching company and the contact linked to it
-  set local role test_crm_view_reader;
+  set local role pc_view_reader;
   perform set_config('pcrm.rule_ids', format('{%s}', v_rule), true);
   select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
   select array_agg(name order by name) into v_cos from view_data.companies where name like '%Rls';
@@ -522,14 +522,14 @@ begin
   perform meta._test_check(v_cos = '{"ACME Rls"}', 'sharing rule shares matching companies');
 
   -- team: both users' records
-  set local role test_crm_view_reader;
+  set local role pc_view_reader;
   perform set_config('pcrm.owner_ids', format('{%s,%s}', v_u1, v_u2), true), set_config('pcrm.rule_ids', '{}', true);
   select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
   reset role;
   perform meta._test_check(v_names = '{"Rls linked","Rls mine","Rls theirs"}', 'team access sees teammates records');
 
   -- everything, and nothing when the settings are missing
-  set local role test_crm_view_reader;
+  set local role pc_view_reader;
   perform set_config('pcrm.access', 'all', true), set_config('pcrm.owner_ids', '', true);
   select array_agg(name order by name) into v_names from view_data.contacts where name like 'Rls%';
   perform set_config('pcrm.access', '', true);
@@ -539,15 +539,15 @@ begin
   perform meta._test_check(v_users = 0, 'no settings, no rows');
 
   -- the API still sees every row; the reader cannot write or leave view_data
-  set local role test_crm_api;
+  set local role pc_api;
   select count(*) into v_users from crm.pc_0010 where name like 'Rls%';
   reset role;
   perform meta._test_check(v_users = 3, 'API role is not filtered');
-  perform meta._test_expect_error($$set local role test_crm_view_reader; update crm.pc_0010 set name = 'x'$$, 'permission denied');
+  perform meta._test_expect_error($$set local role pc_view_reader; update crm.pc_0010 set name = 'x'$$, 'permission denied');
   reset role;
-  perform meta._test_expect_error($$set local role test_crm_view_reader; select count(*) from reporting.contacts$$, 'permission denied');
+  perform meta._test_expect_error($$set local role pc_view_reader; select count(*) from reporting.contacts$$, 'permission denied');
   reset role;
-  perform meta._test_expect_error($$set local role test_crm_view_reader; select meta.hex_id('x')$$, 'permission denied');
+  perform meta._test_expect_error($$set local role pc_view_reader; select meta.hex_id('x')$$, 'permission denied');
   reset role;
 
   -- filter compiler (same output shape as search.ts, literals inlined)
@@ -592,7 +592,7 @@ begin
   perform meta._test_check(not exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'contacts' and column_name = 'rls_tmp'), 'deleted property leaves view_data');
   perform meta.create_object('rls_things', 'Rls thing', 'Rls things');
   perform meta._test_check(exists (select 1 from pg_policies where tablename = (select object_type_id from meta.pc_0001 where api_name = 'rls_things') and policyname = 'view_reader_read'), 'new objects get policies');
-  perform meta._test_check((select viewowner from pg_views where schemaname = 'view_data' and viewname = 'rls_things') = 'test_crm_view_reader', 'new objects get a view_data view');
+  perform meta._test_check((select viewowner from pg_views where schemaname = 'view_data' and viewname = 'rls_things') = 'pc_view_reader', 'new objects get a view_data view');
 end $t$;
 
 
@@ -617,7 +617,7 @@ begin
   perform meta._test_expect_error($$select meta.update_property('deals', 'pipeline', null, null, '{"single_value": true, "parent_property": "amount"}')$$, 'another single-value dropdown');
 
   perform meta._test_check(exists (select 1 from information_schema.columns where table_schema = 'view_data' and table_name = 'associations' and column_name = 'other_object'), 'associations carry object api_names');
-  perform meta._test_check(has_table_privilege('test_crm_api', 'ui.view_errors', 'insert'), 'the API can log view errors');
+  perform meta._test_check(has_table_privilege('pc_api', 'ui.view_errors', 'insert'), 'the API can log view errors');
 end $t$;
 
 
@@ -738,7 +738,7 @@ declare
   v_b text;
 begin
   perform meta._test_check((select type = 'calculation' and read_only from meta.pc_0002 where object_type_id = 'pc_0010' and api_name = 'name'), 'contact name is a calculation');
-  perform meta._test_check(not has_column_privilege('test_crm_api', 'crm.pc_0010', 'name', 'UPDATE'), 'the API cannot write a calculated name');
+  perform meta._test_check(not has_column_privilege('pc_api', 'crm.pc_0010', 'name', 'UPDATE'), 'the API cannot write a calculated name');
   insert into crm.pc_0010 (first_name, last_name) values ('Ada', 'Lovelace') returning pc_0010_id into v_a;
   insert into crm.pc_0010 (first_name, preferred_name) values ('Robert', 'Bob') returning pc_0010_id into v_b;
   perform meta.process_calc_queue();
@@ -765,7 +765,7 @@ begin
   perform meta._test_check((select name = 'Ada Lovelace' from crm.pc_0010 where pc_0010_id = v_b), 'merging fills the calculated name from merged values');
   perform meta.set_name_calculation('contacts', null);
   perform meta._test_check((select type = 'text' and not read_only and calc_sql is null from meta.pc_0002 where object_type_id = 'pc_0010' and api_name = 'name'), 'name back to text');
-  perform meta._test_check(has_column_privilege('test_crm_api', 'crm.pc_0010', 'name', 'UPDATE'), 'a text name is writable again');
+  perform meta._test_check(has_column_privilege('pc_api', 'crm.pc_0010', 'name', 'UPDATE'), 'a text name is writable again');
   perform meta._test_check((select name = 'Ada Lovelace' from crm.pc_0010 where pc_0010_id = v_b), 'records keep their last calculated name');
   perform meta.archive_property('contacts', 'preferred_name');
   perform meta._test_check(true, 'a text name no longer blocks archiving its inputs');

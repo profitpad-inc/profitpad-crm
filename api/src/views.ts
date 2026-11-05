@@ -9,7 +9,7 @@ import { createRecord, onWrite, SLUG_RE } from './records.js';
 import { findIcons, ICON_NAMES } from './icons.js';
 
 // Custom views (migration 0031): React (TSX) source plus named read-only SQL
-// queries over view_data, run as test_crm_view_reader so row-level security
+// queries over view_data, run as pc_view_reader so row-level security
 // (0030) limits rows to what the viewer may see. The source runs in a
 // sandboxed iframe in the browser (web/src/view-runtime), never here.
 
@@ -222,7 +222,7 @@ function rlsSettings(p: Principal): [string, string[], number[]] {
 const INT8 = 20;
 const NUMERIC = 1700;
 
-// Runs one query read-only as test_crm_view_reader with the viewer's
+// Runs one query read-only as pc_view_reader with the viewer's
 // row-level security settings, a 10s timeout and a row cap.
 export async function runQuery(
   p: Principal, name: string, spec: QuerySpec, input: Record<string, unknown> = {}, limit = ROW_CAP
@@ -246,7 +246,7 @@ export async function runQuery(
   const client = await pool.connect();
   try {
     await client.query('begin read only');
-    await client.query('set local role test_crm_view_reader');
+    await client.query('set local role pc_view_reader');
     await client.query(
       `select set_config('pcrm.access', $1, true), set_config('pcrm.owner_ids', $2, true), set_config('pcrm.rule_ids', $3, true),
               set_config('statement_timeout', $4, true), set_config('search_path', 'view_data, pg_catalog, public', true)`,

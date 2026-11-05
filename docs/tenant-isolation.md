@@ -1,6 +1,6 @@
 # Tenant isolation (design, not built)
 
-The plan (HANDOFF.md) is one Postgres database per client on shared clusters, served by one shared API. Today there is one tenant, `test_crm`, and the API is written for exactly one database. This document lists what in the current code assumes a single tenant and the design that keeps one client's data away from another's once there are several. Nothing here is implemented yet.
+The plan (HANDOFF.md) is one Postgres database per client on shared clusters, served by one shared API. Today there is one tenant, `profitpad_crm_db`, and the API is written for exactly one database. This document lists what in the current code assumes a single tenant and the design that keeps one client's data away from another's once there are several. Nothing here is implemented yet.
 
 ## Goal
 
@@ -10,12 +10,12 @@ A bug, a stolen credential or a mistake in one tenant must never expose or chang
 
 | Where | Assumption | Has to change |
 |---|---|---|
-| `api/src/db.ts` | One `pg.Pool` for `PGDATABASE`, every query runs as role `test_crm_api` | A pool per tenant, each with its own login role |
+| `api/src/db.ts` | One `pg.Pool` for `PGDATABASE`, every query runs as role `pc_api` | A pool per tenant, each with its own login role |
 | `api/src/registry.ts` | One module-level `cached` registry (objects, properties, options) | Cache keyed by tenant |
 | `api/src/routes/public.ts` | Allowed form origins cached once per process (`clearAllowedOriginsCache`) | Cache keyed by tenant |
 | `api/src/auth.ts` | API keys, sessions and roles are looked up in the one `auth` schema | Same tables, but in the tenant's own database (see below) |
 | `api/src/sso.ts` | One Google and one Microsoft client; a user is found by email in the one database | A shared sign-in step that then picks the tenant |
-| `db/migrations/*.sql` | Role names `test_crm_api`, `test_crm_reader` are fixed in grants | Role names generated per tenant (`<tenant>_api`, `<tenant>_reader`) |
+| `db/migrations/*.sql` | Role names `pc_api`, `pc_reader` are fixed in grants | Role names generated per tenant (`<tenant>_api`, `<tenant>_reader`) |
 | `deploy/` | One API container, one database name in `.env` | Tenant list (database, roles, domain) in a control database |
 | Background calculation worker (`server.ts`) | Drains one `meta.calc_queue` | Loops over tenants, one at a time per pool |
 
@@ -23,8 +23,8 @@ A bug, a stolen credential or a mistake in one tenant must never expose or chang
 
 ### 1. Database per tenant, role per tenant
 
-- Each client gets its own database, created from the migrations, and its own NOLOGIN roles: `<tenant>_api` (what `test_crm_api` is today) and `<tenant>_reader` (reporting).
-- Each tenant has its own LOGIN role for the API (like `test_crm_api_login` now), a member only of that tenant's `<tenant>_api`. Its password lives in the deploy secrets, never in the repo.
+- Each client gets its own database, created from the migrations, and its own NOLOGIN roles: `<tenant>_api` (what `pc_api` is today) and `<tenant>_reader` (reporting).
+- Each tenant has its own LOGIN role for the API (like `pc_api_login` now), a member only of that tenant's `<tenant>_api`. Its password lives in the deploy secrets, never in the repo.
 - `REVOKE CONNECT ON DATABASE <tenant> FROM PUBLIC`, then `GRANT CONNECT` to that tenant's login roles only. A pool pointed at the wrong database with the wrong credentials is refused by Postgres, which is the fail-closed check.
 - `auth` (keys, sessions, roles) stays inside each tenant database. A key or session from tenant A is never found in tenant B, so it cannot work there even if routing is wrong.
 
@@ -49,11 +49,11 @@ A bug, a stolen credential or a mistake in one tenant must never expose or chang
 
 ### 5. Row-level security as a second wall
 
-Record access (own, team, sharing rules) is enforced in the API (`recordFilter`). That is fine within one tenant, but a missed filter on a new endpoint leaks records to users of that tenant. Migration 0030 added Postgres row-level security on every `crm` object table, keyed on per-transaction settings (`pcrm.access`, `pcrm.owner_ids`, `pcrm.rule_ids`), but only custom view queries run under it so far (as `test_crm_view_reader`; every other role has an allow-all policy). Next step, before onboarding clients with strict internal access needs: have `withTx` set the same settings for every request and replace the API role's allow-all policy with the real one, keeping `recordFilter` as the fast path, and check the cost of `rls.shared_ids` on large tables.
+Record access (own, team, sharing rules) is enforced in the API (`recordFilter`). That is fine within one tenant, but a missed filter on a new endpoint leaks records to users of that tenant. Migration 0030 added Postgres row-level security on every `crm` object table, keyed on per-transaction settings (`pcrm.access`, `pcrm.owner_ids`, `pcrm.rule_ids`), but only custom view queries run under it so far (as `pc_view_reader`; every other role has an allow-all policy). Next step, before onboarding clients with strict internal access needs: have `withTx` set the same settings for every request and replace the API role's allow-all policy with the real one, keeping `recordFilter` as the fast path, and check the cost of `rls.shared_ids` on large tables.
 
 ### 6. Reporting and AI access
 
-- `<tenant>_reader` sees only that tenant's `reporting` and `integrations` schemas, as `test_crm_reader` does now.
+- `<tenant>_reader` sees only that tenant's `reporting` and `integrations` schemas, as `pc_reader` does now.
 - AI tools (MCP server, optimizer agents) get a per-tenant login; no single credential reads all tenants. Cross-tenant work (fleet-wide optimizer runs) loops over tenants with each tenant's credential.
 
 ### 7. Backups and restores

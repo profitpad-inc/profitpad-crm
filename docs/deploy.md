@@ -2,60 +2,60 @@
 
 | Piece | Where | Address |
 |---|---|---|
-| UI (static) | GitHub Pages, built by `.github/workflows/pages.yml` | `https://test-crm.profitpad.com` |
-| API | the server (34.130.249.246), Docker container behind nginx | `https://api.test-crm.profitpad.com` |
-| Database | the server, `postgres` Docker container | `test_crm` on 127.0.0.1:5432 |
+| UI (static) | GitHub Pages, built by `.github/workflows/pages.yml` | `https://crm.profitpad.com` |
+| API | the server (34.130.249.246), Docker container behind nginx | `https://api.crm.profitpad.com` |
+| Database | the server, `pc-db` Docker container (`deploy/docker-compose.yml`) | `profitpad_crm_db` on 127.0.0.1:5434 (until the cutover in section 22: `test_crm` in n8n's `postgres` container on 127.0.0.1:5432) |
 
 Hostnames use hyphens: underscores are not valid in hostnames for TLS certificates or GitHub Pages custom domains.
 
 ## 1. DNS (at the profitpad.com DNS provider)
 
-- `test-crm.profitpad.com`: CNAME to `profitpad-inc.github.io` (repo: github.com/profitpad-inc/profitpad-crm)
-- `api.test-crm.profitpad.com`: A record to `34.130.249.246` (the same server as the `*.demo.profitpad.com` sites)
+- `crm.profitpad.com`: CNAME to `profitpad-inc.github.io` (repo: github.com/profitpad-inc/profitpad-crm)
+- `api.crm.profitpad.com`: A record to `34.130.249.246` (the same server as the `*.demo.profitpad.com` sites)
 
 ## 2. GitHub
 
 1. Push the repo with `web/` and `.github/workflows/pages.yml`.
-2. Settings → Pages → Source: **GitHub Actions**. Custom domain: `test-crm.profitpad.com`, then tick **Enforce HTTPS** once the certificate is issued.
-3. Settings → Secrets and variables → Actions → **Variables**: `VITE_API_URL` = `https://api.test-crm.profitpad.com`.
+2. Settings → Pages → Source: **GitHub Actions**. Custom domain: `crm.profitpad.com`, then tick **Enforce HTTPS** once the certificate is issued.
+3. Settings → Secrets and variables → Actions → **Variables**: `VITE_API_URL` = `https://api.crm.profitpad.com`.
 4. Run the workflow (push to `main` or run it manually). `404.html` is a copy of `index.html`, so deep links like `/objects/contacts` load the app on Pages.
 
 ## 3. Server (API, in Docker)
 
-The API runs as the `test-crm-api` container (`deploy/docker-compose.yml`), on the same `n8n_net` Docker network as the `postgres` container, published only on `127.0.0.1:3100`. nginx on the host terminates TLS (certbot, auto-renewing) and forwards to it.
+The API runs as the `pc-api` container (`deploy/docker-compose.yml`), reaching Postgres in the `pc-db` container over `db_net` (and still on `n8n_net` so integrations can call n8n), published only on `127.0.0.1:3100`. nginx on the host terminates TLS (certbot, auto-renewing) and forwards to it.
 
-Already done on the server (2026-10-31): code in `/srv/test_crm` (a git checkout of `main` since 2026-11-01; the earlier copy is backed up in `~/test_crm_srv_backup_20261101_132912.tgz` on the server), image `profitpad-crm-api` built, nginx site `/etc/nginx/sites-enabled/api.test-crm.profitpad.com`, Let's Encrypt certificate, HTTP→HTTPS redirect.
+Already done on the server (2026-10-31): code in `/srv/profitpad_crm` (a git checkout of `main` since 2026-11-01; the earlier copy is backed up in `~/test_crm_srv_backup_20261101_132912.tgz` on the server), image `profitpad-crm-api` built, nginx site `/etc/nginx/sites-enabled/api.crm.profitpad.com`, Let's Encrypt certificate, HTTP→HTTPS redirect.
 
-Done since: the login below exists (see `db/bootstrap/001_api_login.sql`, which also grants CONNECT) and the container is running. For reference: Recommended: a dedicated login that can only become the API role (as the `n8n` superuser, in `test_crm`):
+Done since: the login below exists (see `db/bootstrap/001_api_login.sql`, which also grants CONNECT) and the container is running. For reference: Recommended: a dedicated login that can only become the API role (as the `n8n` superuser, in `profitpad_crm_db`):
 
 ```sql
-create role test_crm_api_login login password '<choose one>';
-grant test_crm_api to test_crm_api_login;
+create role pc_api_login login password '<choose one>';
+grant pc_api to pc_api_login;
 ```
 
 Then on the server:
 
 ```bash
-cd /srv/test_crm/deploy
-cp .env.example .env && chmod 600 .env && nano .env   # PGUSER=test_crm_api_login, PGPASSWORD=...
+cd /srv/profitpad_crm/deploy
+cp .env.example .env && chmod 600 .env && nano .env   # PGUSER=pc_api_login, PGPASSWORD=...
 docker compose up -d
-curl -s https://api.test-crm.profitpad.com/health
+curl -s https://api.crm.profitpad.com/health
 ```
 
-Updating the API later: `/srv/test_crm` is a git checkout of `main` (public repo, cloned over HTTPS, so no key is needed; `pull.ff only`). It deploys what is on GitHub, not local uncommitted work. From the Mac:
+Updating the API later: `/srv/profitpad_crm` is a git checkout of `main` (public repo, cloned over HTTPS, so no key is needed; `pull.ff only`). It deploys what is on GitHub, not local uncommitted work. From the Mac:
 
 ```bash
-ssh -o ClearAllForwardings=yes profitpad_claude_test_crm "cd /srv/test_crm && git pull && cd deploy && docker compose up -d --build"
+ssh -o ClearAllForwardings=yes profitpad_claude_profitpad_crm "cd /srv/profitpad_crm && git pull && cd deploy && docker compose up -d --build"
 ```
 
-Apply any new migrations (`./db/migrate.sh`, through the tunnel) before this, since new API code may call new database functions. `ClearAllForwardings` skips the alias's database tunnel. `deploy/.env` is gitignored, so pulls never touch it. The server has no rsync. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec test-crm-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
+Apply any new migrations (`./db/migrate.sh`, through the tunnel) before this, since new API code may call new database functions. `ClearAllForwardings` skips the alias's database tunnel. `deploy/.env` is gitignored, so pulls never touch it. The server has no rsync. Database migrations still run from a machine with the SSH tunnel: `./db/migrate.sh`. API keys for the live site: `docker exec pc-api node --import tsx src/cli/create-key.ts --name "..." --scopes admin --user <id>`.
 
 ## 4. Google & Microsoft sign-in
 
 ### Google
 1. In Google Cloud (a project owned by the profitpad.com Workspace): set up the OAuth consent screen (Internal limits sign-in to profitpad.com accounts; External is needed once client users sign in; scopes are only `openid`, `email`, `profile`).
 2. Create an OAuth client ID of type **Web application** with these authorized redirect URIs:
-   - `https://api.test-crm.profitpad.com/v1/auth/google/callback`
+   - `https://api.crm.profitpad.com/v1/auth/google/callback`
    - `http://localhost:5173/v1/auth/google/callback` (local dev, through the Vite proxy)
 
 ### Microsoft
@@ -63,7 +63,7 @@ Apply any new migrations (`./db/migrate.sh`, through the tunnel) before this, si
    - Name: `ProfitPad CRM`
    - Supported account types: "Accounts in any organizational directory and personal Microsoft accounts" (or multitenant)
    - Redirect URI (Web):
-     - `https://api.test-crm.profitpad.com/v1/auth/microsoft/callback`
+     - `https://api.crm.profitpad.com/v1/auth/microsoft/callback`
      - `http://localhost:5173/v1/auth/microsoft/callback` (local dev)
 2. Under Certificates & secrets, generate a Client Secret.
 
@@ -78,10 +78,10 @@ MICROSOFT_CLIENT_SECRET=...
 # optional: MICROSOFT_TENANT=common (default)
 # optional: MICROSOFT_ALLOWED_DOMAINS=profitpad.com,profitpad.onmicrosoft.com
 
-PUBLIC_API_URL=https://api.test-crm.profitpad.com
-UI_URL=https://test-crm.profitpad.com
+PUBLIC_API_URL=https://api.crm.profitpad.com
+UI_URL=https://crm.profitpad.com
 ```
-`CORS_ORIGINS` must list `https://test-crm.profitpad.com` (it already does for the API-key sign-in).
+`CORS_ORIGINS` must list `https://crm.profitpad.com` (it already does for the API-key sign-in).
 Each person needs an active user record whose email matches their Google or Microsoft email, and a role (an admin role for full access).
 
 ## 5. Public quote and form pages
@@ -93,9 +93,9 @@ Migration `0013_public_pages.sql` must be applied (`./db/migrate.sh`) before dep
 - Rate limits in nginx (per visitor IP: public routes 30 a minute, sign-in routes 20 a minute, with bursts). Install the zones file and the updated site, keeping the `listen 443 ssl` and certificate lines certbot added to the live site:
 
   ```bash
-  sudo cp /srv/test_crm/deploy/nginx-pcrm-limits.conf /etc/nginx/conf.d/pcrm-limits.conf
-  # merge the location blocks and server_tokens off from deploy/nginx-api.test-crm.profitpad.com.conf
-  # into /etc/nginx/sites-available/api.test-crm.profitpad.com (keep certbot's ssl lines)
+  sudo cp /srv/profitpad_crm/deploy/nginx-pcrm-limits.conf /etc/nginx/conf.d/pcrm-limits.conf
+  # merge the location blocks and server_tokens off from deploy/nginx-api.crm.profitpad.com.conf
+  # into /etc/nginx/sites-available/api.crm.profitpad.com (keep certbot's ssl lines)
   sudo nginx -t && sudo systemctl reload nginx
   ```
 
@@ -112,18 +112,18 @@ Apply `0019_security.sql` (`./db/migrate.sh`) before deploying an API that inclu
 Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019). Then:
 
 - Deploy the API (it needs `npm ci` for the new `@modelcontextprotocol/server` and `zod` packages, which the Docker build does) and the UI.
-- `PUBLIC_API_URL=https://api.test-crm.profitpad.com` must be set: it is the OAuth issuer and the MCP resource (`https://api.test-crm.profitpad.com/mcp`). Do not set `OAUTH_INSECURE_METADATA_FETCH`.
-- nginx: add the `pcrm_oauth` zone (in `deploy/nginx-pcrm-limits.conf`) and the `/oauth/` and `= /mcp` locations from `deploy/nginx-api.test-crm.profitpad.com.conf` (the `/mcp` one turns off buffering for streamed replies), as in section 5.
-- Check: `curl -s https://api.test-crm.profitpad.com/.well-known/oauth-authorization-server` returns the metadata, and `curl -si -X POST https://api.test-crm.profitpad.com/mcp` answers 401 with a `WWW-Authenticate` header.
-- Connect an MCP client to `https://api.test-crm.profitpad.com/mcp` (the address is also on Settings → Connected apps).
+- `PUBLIC_API_URL=https://api.crm.profitpad.com` must be set: it is the OAuth issuer and the MCP resource (`https://api.crm.profitpad.com/mcp`). Do not set `OAUTH_INSECURE_METADATA_FETCH`.
+- nginx: add the `pcrm_oauth` zone (in `deploy/nginx-pcrm-limits.conf`) and the `/oauth/` and `= /mcp` locations from `deploy/nginx-api.crm.profitpad.com.conf` (the `/mcp` one turns off buffering for streamed replies), as in section 5.
+- Check: `curl -s https://api.crm.profitpad.com/.well-known/oauth-authorization-server` returns the metadata, and `curl -si -X POST https://api.crm.profitpad.com/mcp` answers 401 with a `WWW-Authenticate` header.
+- Connect an MCP client to `https://api.crm.profitpad.com/mcp` (the address is also on Settings → Connected apps).
 
 ## 8. Meeting booker (migration 0022)
 
 Apply `0022_meeting_booker.sql` (`./db/migrate.sh`) before deploying the API that includes it. Then:
 
 - `deploy/.env`: `MASTER_ENCRYPTION_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). Keep it: losing or changing it means everyone connects their calendars again. Optional `CALENDAR_GOOGLE_DOMAINS` (default `profitpad.com`).
-- Google Cloud (same OAuth client as sign-in): Calendar API enabled (done 2026-11-01); consent screen stays **Internal**, with the scopes `.../auth/calendar.freebusy`, `.../auth/calendar.events`, `.../auth/calendar.calendarlist.readonly` added; authorized redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/google/callback` and `http://localhost:5173/v1/calendar/google/callback`.
-- Microsoft Entra (same app registration): delegated Graph permissions `Calendars.ReadWrite` and `offline_access` (done 2026-11-01; grant admin consent if the tenant asks for it); Web redirect URIs `https://api.test-crm.profitpad.com/v1/calendar/microsoft/callback` and `http://localhost:5173/v1/calendar/microsoft/callback`.
+- Google Cloud (same OAuth client as sign-in): Calendar API enabled (done 2026-11-01); consent screen stays **Internal**, with the scopes `.../auth/calendar.freebusy`, `.../auth/calendar.events`, `.../auth/calendar.calendarlist.readonly` added; authorized redirect URIs `https://api.crm.profitpad.com/v1/calendar/google/callback` and `http://localhost:5173/v1/calendar/google/callback`.
+- Microsoft Entra (same app registration): delegated Graph permissions `Calendars.ReadWrite` and `offline_access` (done 2026-11-01; grant admin consent if the tenant asks for it); Web redirect URIs `https://api.crm.profitpad.com/v1/calendar/microsoft/callback` and `http://localhost:5173/v1/calendar/microsoft/callback`.
 - Deploy the UI too (new page `/p/book/`).
 
 ## 9. File storage (migration 0025)
@@ -131,25 +131,25 @@ Apply `0022_meeting_booker.sql` (`./db/migrate.sh`) before deploying the API tha
 Files are stored on this server's disk for now (the plan to move them to Cloudflare R2 later is `docs/plans/file-storage.md`). Apply `0025_file_storage.sql` (`./db/migrate.sh`) before deploying the API that includes it. Then:
 
 - Folder for the files, writable by the container's `node` user (uid 1000) and readable by nginx:
-  `sudo mkdir -p /srv/test_crm_files && sudo chown 1000:1000 /srv/test_crm_files && sudo chmod 755 /srv/test_crm_files`
+  `sudo mkdir -p /srv/profitpad_crm_files && sudo chown 1000:1000 /srv/profitpad_crm_files && sudo chmod 755 /srv/profitpad_crm_files`
 - `deploy/.env`: `FILES_URL_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). It signs file links; without it the API makes a random key at start and links stop working on every restart. Optional `FILES_MAX_BYTES` (default 5 GB per file).
 - `deploy/docker-compose.yml` already mounts the folder at `/data/files` and sets `FILES_DIR` and `FILES_ACCEL_PREFIX`; `docker compose up -d --build` picks it up.
-- nginx: add the `/_pcrm_files/` and upload-chunk locations from `deploy/nginx-api.test-crm.profitpad.com.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Without the `/_pcrm_files/` location every download returns an empty body.
+- nginx: add the `/_pcrm_files/` and upload-chunk locations from `deploy/nginx-api.crm.profitpad.com.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Without the `/_pcrm_files/` location every download returns an empty body.
 - Check after deploy: upload a small PNG to a file property, open it, then `curl -sI '<signed link>'` should show `content-type: image/png`, `content-disposition: inline`, `content-security-policy: default-src 'none'; img-src 'self' data:; ...` (exactly one CSP header, no `sandbox`), `x-content-type-options: nosniff` and `accept-ranges: bytes`; a non-media file (say a .zip) should show `attachment` and `content-security-policy: sandbox; default-src 'none'`. Also open a video's public link in Chrome and check it plays. Not yet checked: that nginx keeps the API's Content-Type, Content-Disposition and Cache-Control after X-Accel-Redirect and that `$upstream_http_content_security_policy` carries the API's CSP (only tested without nginx, where the API sends the bytes itself).
-- Disk: files are not in `pg_dump` backups. Back up `/srv/test_crm_files` separately, and watch free space (`df -h /srv`).
+- Disk: files are not in `pg_dump` backups. Back up `/srv/profitpad_crm_files` separately, and watch free space (`df -h /srv`).
 
 ## 10. Payments (migration 0027, applied 2026-11-02)
 
 - Stripe (ProfitPad's account, the platform): activate it, turn on Connect and complete the platform profile (without it creating accounts fails, e.g. `connect_profile_not_submitted`). Under Settings → Connect → Payment methods, set the defaults for connected accounts (cards on; ACH Direct Debit, Canadian pre-authorized debit and Klarna on or off) and turn on "Allow connected accounts to customize their own payment methods".
-- Webhook: Workbench → Webhooks → add a destination for **Connected accounts**, snapshot payload, URL `https://api.test-crm.profitpad.com/v1/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`. Copy its signing secret.
-- `deploy/.env`: `STRIPE_SECRET_KEY=` (platform secret key; `sk_test_...` until going live) and `STRIPE_WEBHOOK_SECRET=` (`whsec_...`), and `UI_URL=https://test-crm.profitpad.com` (return links from Stripe). Then `docker compose up -d --build`.
+- Webhook: Workbench → Webhooks → add a destination for **Connected accounts**, snapshot payload, URL `https://api.crm.profitpad.com/v1/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`. Copy its signing secret.
+- `deploy/.env`: `STRIPE_SECRET_KEY=` (platform secret key; `sk_test_...` until going live) and `STRIPE_WEBHOOK_SECRET=` (`whsec_...`), and `UI_URL=https://crm.profitpad.com` (return links from Stripe). Then `docker compose up -d --build`.
 - No nginx change: the webhook is a normal `/v1/` path and Stripe's events are far below the body limit.
 - Deploy the UI too (new page `/p/invoice/`).
 - Local testing: `stripe listen --forward-connect-to localhost:3000/v1/stripe/webhook --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,charge.refunded,charge.dispute.created,charge.dispute.closed` prints a `whsec_` secret for `api/.env` (newer CLIs require the event list).
 
 ## 11. Custom views (migrations 0030 to 0032)
 
-- Once, as `n8n` (claude_admin cannot create roles): `psql -U n8n -d test_crm -v ON_ERROR_STOP=1 -f db/bootstrap/002_view_reader.sql` (creates `test_crm_view_reader`, granted to `test_crm_api`). 0030 refuses to run without it.
+- Once, as `n8n` (claude_admin cannot create roles): `psql -U n8n -d profitpad_crm_db -v ON_ERROR_STOP=1 -f db/bootstrap/002_view_reader.sql` (creates `pc_view_reader`, granted to `pc_api`). 0030 refuses to run without it.
 - Apply 0030 (row-level security, `view_data`), 0031 (views object, seed views, the Reporting menu item) and 0032 (OAuth `schema` scope), then deploy the API (new dependencies `sucrase` and `lucide`, installed by the Docker build; keep `lucide` at the same version as `lucide-react` in `web/`) and the UI (the build now also writes `view-frame/index.html`; new dependency `recharts`).
 - Migration 0034 (function allowlist for view queries) after 0033; no other step.
 - Admins who connected an MCP client before this must reconnect and leave "Build custom views..." ticked to get the view and property tools.
@@ -180,12 +180,12 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 ## 17. render_view: the headless browser (migration 0046 for the integration examples that ship with it)
 
-`deploy/docker-compose.yml` now has a second service, `renderer` (container `test-crm-renderer`, image built from `deploy/renderer/Dockerfile`: `mcr.microsoft.com/playwright:v1.64.1-noble` running `playwright run-server` on port 3000). It sits only on `renderer_net`, an internal network with no way out to the internet; the API joins it too and connects with `RENDERER_WS_URL=ws://test-crm-renderer:3000/` (set in the compose file). Chromium gets `shm_size: 512m` and the container `mem_limit: 1g`; the API renders at most 2 views at once.
+`deploy/docker-compose.yml` now has a second service, `renderer` (container `pc-renderer`, image built from `deploy/renderer/Dockerfile`: `mcr.microsoft.com/playwright:v1.64.1-noble` running `playwright run-server` on port 3000). It sits only on `renderer_net`, an internal network with no way out to the internet; the API joins it too and connects with `RENDERER_WS_URL=ws://pc-renderer:3000/` (set in the compose file). Chromium gets `shm_size: 512m` and the container `mem_limit: 1g`; the API renders at most 2 views at once.
 
 1. Apply `0046_integration_examples.sql` (`./db/migrate.sh`).
 2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/` (builds and starts both containers; the first renderer build pulls the Playwright base image, which is large).
 3. The API loads the view frame from `${UI_URL}/view-frame/index.html` (GitHub Pages), so the UI must be deployed with the same frame version; `VIEW_FRAME_URL` or `VIEW_FRAME_FILE` override it.
-4. Check: `docker logs test-crm-renderer` shows `Listening on ws://0.0.0.0:3000/`; then ask Claude to `render_view` a view.
+4. Check: `docker logs pc-renderer` shows `Listening on ws://0.0.0.0:3000/`; then ask Claude to `render_view` a view.
 
 Document templates (migration 0075) use the same renderer: PDFs of templated quotes are printed there, and since migration 0080 every quote is drawn by a template, so the renderer must be running for any quote PDF (the customer's page still shows the quote without it; the PDF answers 503). Outside images in templates are fetched by the API, not the renderer, so the renderer keeps no internet access.
 
@@ -201,7 +201,7 @@ The business card scanner (`/scan`, `api/src/card-scan.ts`) reads cards with Tes
 
 1. Apply `0063_card_scanner.sql`, `0065_card_scan_settings.sql` and `0067_card_scans.sql` (all three already applied to the server DB on 2026-11-03). 0067 adds the `card_scans` object (`pc_0056`); the new API writes to it on every read, so deploy the API after it.
 2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/`. The API image now installs `tesseract-ocr` and its English data (`api/Dockerfile`).
-3. Check: `docker exec test-crm-api tesseract --version`, then Settings → Card scanner shows "Installed".
+3. Check: `docker exec pc-api tesseract --version`, then Settings → Card scanner shows "Installed".
 4. Saving an Anthropic key needs `MASTER_ENCRYPTION_KEY` (already set for calendars); the key is sealed with it. Changing that key means the admin saves the Anthropic key again.
 5. Deploy the UI too (the page, the Settings page and the "Card scanner" menu item type).
 
@@ -217,9 +217,38 @@ Locally: `brew install tesseract`.
 ## 21. Live updates on record pages (migrations 0086 and 0087)
 
 1. Apply migrations `0086_record_change_notify.sql` and `0087_live_comment_targets.sql` (`./db/migrate.sh`). It adds a trigger on `meta.record_history` that sends `NOTIFY record_changes`; nothing listens until the new API runs, and an unheard notice costs next to nothing.
-2. nginx: add the `location /v1/live/` block from `deploy/nginx-api.test-crm.profitpad.com.conf` to the live site (keep the `listen 443 ssl` and certificate lines certbot added), then `sudo nginx -t && sudo systemctl reload nginx`. Without it the stream still works (the API sends `X-Accel-Buffering: no` and pings every 25 s, inside the 120 s read timeout), but the block makes it explicit.
-3. Check that the 443 server has HTTP/2 (`listen 443 ssl http2;` on older nginx, or `http2 on;` on 1.25.1 and later; `curl -sI --http2 https://api.test-crm.profitpad.com/health | head -1` should say `HTTP/2`). Over HTTP/1.1 a browser opens at most 6 connections to the API, and each open record tab holds one. Hidden tabs close their stream, but HTTP/2 removes the limit.
+2. nginx: add the `location /v1/live/` block from `deploy/nginx-api.crm.profitpad.com.conf` to the live site (keep the `listen 443 ssl` and certificate lines certbot added), then `sudo nginx -t && sudo systemctl reload nginx`. Without it the stream still works (the API sends `X-Accel-Buffering: no` and pings every 25 s, inside the 120 s read timeout), but the block makes it explicit.
+3. Check that the 443 server has HTTP/2 (`listen 443 ssl http2;` on older nginx, or `http2 on;` on 1.25.1 and later; `curl -sI --http2 https://api.crm.profitpad.com/health | head -1` should say `HTTP/2`). Over HTTP/1.1 a browser opens at most 6 connections to the API, and each open record tab holds one. Hidden tabs close their stream, but HTTP/2 removes the limit.
 4. Rebuild and restart the API (`docker compose up -d --build`), then deploy the UI.
+
+## 22. Rename and database move (test_crm to profitpad_crm, migration 0088)
+
+Moves the database out of n8n's `postgres` container into this project's own `pc-db` container, renames it `test_crm` to `profitpad_crm_db`, renames the roles `test_crm_*` to `pc_*` (`pc_api`, `pc_view_reader`, `pc_reader`, `pc_api_login`, `pc_admin`), and moves the hosts to `crm.profitpad.com` and `api.crm.profitpad.com`. Short API downtime. Rehearsed locally (2026-11-04): a database built from the old code, roles renamed, then 0088: no old names left in functions or policies, SQL suite passes.
+
+Code on `main` after this change expects the new names, so do not `git pull` on the server until step 4.
+
+Order matters: every migration before 0088 must already be applied while the roles still have their old names (older migrations call `meta.create_property`, which grants to the role by name).
+
+1. **Before**: bring the old database to 0087 with migration files that still say `test_crm_*`: from a checkout of the last commit before the rename (`git worktree add ../pcrm_pre_rename <that commit>`), run its `./db/migrate.sh`. This checkout's 0001 to 0087 now say `pc_*` and would fail against the old roles. Take the usual backup (`pg_dump -Fc`, libpq 18 build). On the server, as the n8n superuser, save the roles with their password hashes:
+   `docker exec postgres pg_dumpall -U n8n --roles-only > ~/pcrm_roles.sql`, then keep only the lines for `claude_admin`, `reporting_reader`, `test_crm_api`, `test_crm_api_login`, `test_crm_view_reader`, `test_crm_reader`, `test_crm_admin` and their `GRANT ... TO` membership lines.
+2. **New container**: copy the dump to the server. In `/srv/test_crm` (still the old path): `git pull`, add `POSTGRES_PASSWORD=<new superuser password>` to `deploy/.env`, `cd deploy && docker compose up -d db` (creates an empty `profitpad_crm_db`).
+3. **Restore with the old names, then rename** (as `postgres` in `pc-db`):
+   1. `psql -f pcrm_roles.sql` (the filtered roles), then `create role pc_owner nologin;`
+   2. `pg_restore -U postgres -d profitpad_crm_db --exit-on-error <dump>` (keeps owners, so `claude_admin` still owns the functions it must replace).
+   3. ```sql
+      alter role test_crm_api rename to pc_api;
+      alter role test_crm_view_reader rename to pc_view_reader;
+      alter role test_crm_reader rename to pc_reader;
+      alter role test_crm_api_login rename to pc_api_login;
+      alter role test_crm_admin rename to pc_admin;
+      alter database profitpad_crm_db owner to pc_owner;
+      ```
+      Renaming a login role clears its MD5 password; if `pg_dumpall` shows `MD5` hashes, set `pc_api_login`'s password again (`\password pc_api_login`). SCRAM hashes survive.
+   4. Run `db/bootstrap/000_superuser.sql`, `001_api_login.sql` and `002_view_reader.sql` (database-level grants and settings are not in a `pg_dump`), plus: `alter database profitpad_crm_db set timezone = 'UTC'; revoke create on schema public from public; grant create, usage on schema public to claude_admin; revoke temp on database profitpad_crm_db from public;`
+4. **Migrate and start**: point the Mac's SSH alias at the new port (rename it `profitpad_claude_profitpad_crm`, `LocalForward 5433 127.0.0.1:5434`; update `~/.pgpass` to `profitpad_crm_db`), then `./db/migrate.sh` (applies 0088). Check: `select count(*) from pg_proc where prosrc ~ 'test_crm'` and `select count(*) from pg_policies where qual ~ 'test_crm'` both 0. Update `deploy/.env`: `PGDATABASE=profitpad_crm_db`, `PGUSER=pc_api_login`, `CORS_ORIGINS` with `https://crm.profitpad.com`. Stop the old `test-crm-api` and `test-crm-renderer` containers (`docker rm -f`), then `docker compose up -d --build`.
+5. **Server paths**: stop the stack, `sudo mv /srv/test_crm /srv/profitpad_crm` and `sudo mv /srv/test_crm_files /srv/profitpad_crm_files`, start it from the new path. (The `pc_db_data` volume is named by the compose project, which is the folder name `deploy`, so moving the parent folder keeps it; check with `docker volume ls` before and after.)
+6. **Hosts**: DNS for `crm.profitpad.com` (CNAME to GitHub Pages) and `api.crm.profitpad.com` (A record); install `deploy/nginx-api.crm.profitpad.com.conf`, `certbot --nginx -d api.crm.profitpad.com`; turn the old `api.test-crm.profitpad.com` site into a 301 to the new host. GitHub: Pages custom domain `crm.profitpad.com`, repo variable `VITE_API_URL=https://api.crm.profitpad.com`, rerun the Pages workflow. Then update everything outside that points at the old hosts: Google and Microsoft OAuth redirect URIs (section 4), Google API key restrictions, the MCP connector URL in Claude, n8n flows and webhook senders calling `api.test-crm`, and embed snippets on client sites (`/p/embed.js`).
+7. **After**: create and archive a test property; run a custom view as a non-admin and check row-level security still hides records; open a public quote link and a form embed on the new host. Leave the old `test_crm` database in n8n's container for a week, then drop it (ask first, back up first).
 
 ## Notes
 

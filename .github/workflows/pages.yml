@@ -1,6 +1,6 @@
 # Builds web/ and publishes it to GitHub Pages on every push to main.
 # Repo settings: Pages -> Source: GitHub Actions, custom domain set there.
-# Repo variable VITE_API_URL = the API's public URL (e.g. https://api.test-crm.profitpad.com).
+# Repo variable VITE_API_URL = the API's public URL (e.g. https://api.crm.profitpad.com).
 name: Deploy UI to GitHub Pages
 
 on:

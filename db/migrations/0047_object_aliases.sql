@@ -27,7 +27,7 @@ begin
 end $$;
 
 revoke execute on function meta.set_object_aliases(text, text[]) from public;
-grant execute on function meta.set_object_aliases(text, text[]) to test_crm_api;
+grant execute on function meta.set_object_aliases(text, text[]) to pc_api;
 
 -- starting aliases for native objects whose names differ from everyday words
 update meta.pc_0001 o set aliases = v.aliases

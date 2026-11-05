@@ -9,9 +9,9 @@ An object-based CRM in the spirit of HubSpot, built so that almost every change 
 
 | | Address |
 |---|---|
-| Web app | https://test-crm.profitpad.com (GitHub Pages) |
-| API and docs | https://api.test-crm.profitpad.com/docs |
-| MCP server | https://api.test-crm.profitpad.com/mcp |
+| Web app | https://crm.profitpad.com (GitHub Pages) |
+| API and docs | https://api.crm.profitpad.com/docs |
+| MCP server | https://api.crm.profitpad.com/mcp |
 
 ## Repository layout
 
@@ -52,7 +52,7 @@ The API accepts two credentials, both acting as one CRM user and never doing mor
 - **API keys** (`pcrm_...`): for your own scripts, n8n flows and scheduled jobs. Admins make them in Settings → API keys; they last 90 to 365 days and can be rotated.
 - **OAuth tokens**: for apps a user connects themselves. The app sends the user to sign in and click Allow; it gets 1-hour access tokens with rotating refresh tokens, limited to read or read and write. Users see and disconnect their apps in Settings → Connected apps; admins can block an app for everyone.
 
-To use the CRM from an AI assistant such as Claude, add the MCP server address (`https://api.test-crm.profitpad.com/mcp`, also shown in Settings → Connected apps) as a connector and sign in when asked. The full authentication guide is at the top of the API docs; the design is in `docs/architecture.md` ("OAuth and MCP").
+To use the CRM from an AI assistant such as Claude, add the MCP server address (`https://api.crm.profitpad.com/mcp`, also shown in Settings → Connected apps) as a connector and sign in when asked. The full authentication guide is at the top of the API docs; the design is in `docs/architecture.md` ("OAuth and MCP").
 
 For a playground that never touches real data, `./db/test-local.sh` builds a throwaway local Postgres (Homebrew) on port 5499 with every migration applied, and `.claude/launch.json` has an API and web app pointed at it. Fill it with `PCRM_API_URL=http://127.0.0.1:3001 /usr/bin/python3 scripts/generate_sample_data.py`.
 
@@ -66,7 +66,7 @@ For a playground that never touches real data, `./db/test-local.sh` builds a thr
 Take a backup before any change to existing data (the server runs Postgres 15, so use the libpq `pg_dump`):
 
 ```bash
-/opt/homebrew/opt/libpq/bin/pg_dump -h localhost -p 5433 -U claude_admin -d test_crm -Fc -f backups/test_crm_$(date +%Y%m%d_%H%M%S).dump
+/opt/homebrew/opt/libpq/bin/pg_dump -h localhost -p 5433 -U claude_admin -d profitpad_crm_db -Fc -f backups/profitpad_crm_db_$(date +%Y%m%d_%H%M%S).dump
 ```
 
 ## Deploying
@@ -75,7 +75,7 @@ Take a backup before any change to existing data (the server runs Postgres 15, s
 - **API:** apply any new migrations first, then on the server pull and rebuild the container:
 
 ```bash
-ssh -o ClearAllForwardings=yes profitpad_claude_test_crm "cd /srv/test_crm && git pull && cd deploy && docker compose up -d --build"
+ssh -o ClearAllForwardings=yes profitpad_claude_profitpad_crm "cd /srv/profitpad_crm && git pull && cd deploy && docker compose up -d --build"
 ```
 
 Details, environment variables and first-time setup are in `docs/deploy.md`.

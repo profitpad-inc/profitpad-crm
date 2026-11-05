@@ -57,7 +57,7 @@ begin
   return p_amount * v_a / nullif(v_b, 0);
 end $$;
 revoke execute on function public.currency_to_base(numeric, text, date) from public;
-grant execute on function public.currency_to_base(numeric, text, date) to test_crm_api, test_crm_reader;
+grant execute on function public.currency_to_base(numeric, text, date) to pc_api, pc_reader;
 
 -- ---- calculations may carry a currency_code ---------------------------------------
 

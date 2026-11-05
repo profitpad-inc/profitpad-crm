@@ -32,8 +32,8 @@ create table auth.calendar_connections (
 create index calendar_connections_user_idx on auth.calendar_connections (user_id);
 create unique index calendar_connections_one_writer on auth.calendar_connections (user_id) where use_for_new_events and status <> 'disconnected';
 
-grant select, insert, update, delete on auth.calendar_connections to test_crm_api;
-grant usage on sequence auth.calendar_connections_id_seq to test_crm_api;
+grant select, insert, update, delete on auth.calendar_connections to pc_api;
+grant usage on sequence auth.calendar_connections_id_seq to pc_api;
 
 -- ---- booking pages ------------------------------------------------------------
 

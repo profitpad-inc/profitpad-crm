@@ -375,8 +375,8 @@ begin
     execute format('create view crm.%I as %s', v_obj.api_name, v_select);
     execute format('create view reporting.%I as select * from crm.%I where row_status = %L', v_obj.api_name, v_obj.api_name, 'active');
   end;
-  execute format('grant select on crm.%I to test_crm_api', v_obj.api_name);
-  execute format('grant select on reporting.%I to test_crm_reader', v_obj.api_name);
+  execute format('grant select on crm.%I to pc_api', v_obj.api_name);
+  execute format('grant select on reporting.%I to pc_reader', v_obj.api_name);
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -431,9 +431,9 @@ begin
     format('create index %I on crm.%I (row_updated_at)', p_code || '_row_updated_at_idx', p_code),
     format('create index %I on crm.%I (created_at) where row_status = %L', p_code || '_created_at_idx', p_code, 'active'),
     format('create index %I on crm.%I using gin (name public.gin_trgm_ops)', p_code || '_name_trgm_idx', p_code),
-    format('grant select on crm.%I to test_crm_api', p_code),
-    format('grant usage on sequence crm.%I to test_crm_api', v_seq),
-    format('grant insert (name, created_at), update (name, created_at) on crm.%I to test_crm_api', p_code)
+    format('grant select on crm.%I to pc_api', p_code),
+    format('grant usage on sequence crm.%I to pc_api', v_seq),
+    format('grant insert (name, created_at), update (name, created_at) on crm.%I to pc_api', p_code)
   ];
   foreach v_stmt in array v_stmts loop
     execute v_stmt;
@@ -1074,7 +1074,7 @@ begin
     execute format('insert into meta.calc_queue (object_type_id, record_id) select %L, %I from crm.%I where row_status in (''active'', ''archived'') on conflict do nothing',
       v_code, v_code || '_id', v_code);
   else
-    v_stmts := v_stmts || format('grant insert (%1$I), update (%1$I) on crm.%2$I to test_crm_api', p_api_name, v_code);
+    v_stmts := v_stmts || format('grant insert (%1$I), update (%1$I) on crm.%2$I to pc_api', p_api_name, v_code);
     execute v_stmts[cardinality(v_stmts)];
   end if;
 
@@ -1189,7 +1189,7 @@ begin
   end if;
   update meta.pc_0002 set row_status = 'archived' where pc_0002_id = v_prop.pc_0002_id;
   if v_prop.type <> 'calculation' then
-    execute format('revoke insert (%1$I), update (%1$I) on crm.%2$I from test_crm_api', v_prop.api_name, v_obj.object_type_id);
+    execute format('revoke insert (%1$I), update (%1$I) on crm.%2$I from pc_api', v_prop.api_name, v_obj.object_type_id);
   end if;
   perform meta._refresh_views(v_obj.object_type_id);
   perform meta._log_change('archive_property', v_obj.object_type_id, v_prop.pc_0002_id, jsonb_build_object('api_name', v_prop.api_name));
@@ -1203,7 +1203,7 @@ declare
 begin
   update meta.pc_0002 set row_status = 'active' where pc_0002_id = v_prop.pc_0002_id;
   if v_prop.type <> 'calculation' then
-    execute format('grant insert (%1$I), update (%1$I) on crm.%2$I to test_crm_api', v_prop.api_name, v_obj.object_type_id);
+    execute format('grant insert (%1$I), update (%1$I) on crm.%2$I to pc_api', v_prop.api_name, v_obj.object_type_id);
   else
     perform meta.enqueue_calcs(v_obj.object_type_id);
   end if;
@@ -1606,7 +1606,7 @@ begin
       p_name, array_to_string(v_defs, ', '), p_primary_key),
     format('create trigger touch before update on integrations.%I for each row execute function meta.tg_touch_row()', p_name),
     format('create index %I on integrations.%I (row_updated_at)', p_name || '_row_updated_at_idx', p_name),
-    format('grant select on integrations.%I to test_crm_api, test_crm_reader', p_name)
+    format('grant select on integrations.%I to pc_api, pc_reader', p_name)
   ];
   foreach v_stmt in array v_stmts loop
     execute v_stmt;

@@ -51,4 +51,4 @@ for each row execute function meta.tg_association_label_allowed();
 
 revoke execute on function meta.association_allowed(text, text), meta.association_system_only(text, text),
   meta.tg_association_label_allowed() from public;
-grant execute on function meta.association_allowed(text, text), meta.association_system_only(text, text) to test_crm_api;
+grant execute on function meta.association_allowed(text, text), meta.association_system_only(text, text) to pc_api;

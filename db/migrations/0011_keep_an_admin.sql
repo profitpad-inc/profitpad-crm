@@ -48,4 +48,4 @@ create trigger keep_an_admin after update of status, row_status or delete on crm
 for each row execute function meta.tg_users_keep_an_admin();
 
 revoke execute on function meta.has_active_admin(), meta._user_has_admin_role(text), meta.tg_users_keep_an_admin() from public;
-grant execute on function meta.has_active_admin() to test_crm_api;
+grant execute on function meta.has_active_admin() to pc_api;

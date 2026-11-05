@@ -26,4 +26,4 @@ create table auth.address_settings (
 
 insert into auth.address_settings (id) values (true);
 
-grant select, insert, update on auth.address_settings to test_crm_api;
+grant select, insert, update on auth.address_settings to pc_api;

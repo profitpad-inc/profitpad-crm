@@ -9,4 +9,4 @@ create table ui.view_write_approvals (
   approved_by text not null,
   approved_at timestamptz not null default now()
 );
-grant select, insert, delete on ui.view_write_approvals to test_crm_api;
+grant select, insert, delete on ui.view_write_approvals to pc_api;

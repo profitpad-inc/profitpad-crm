@@ -41,4 +41,4 @@ begin
 end $$;
 
 revoke execute on function meta.test_calculation(text, text, text, text) from public;
-grant execute on function meta.test_calculation(text, text, text, text) to test_crm_api;
+grant execute on function meta.test_calculation(text, text, text, text) to pc_api;

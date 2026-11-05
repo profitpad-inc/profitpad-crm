@@ -30,7 +30,7 @@ begin
   perform meta._log_change('set_search_properties', v_obj.object_type_id, null,
     jsonb_build_object('search_properties', p_properties, 'previous', v_obj.search_properties));
 end $$;
-grant execute on function meta.set_search_properties(text, text[]) to test_crm_api;
+grant execute on function meta.set_search_properties(text, text[]) to pc_api;
 
 -- ---------------------------------------------------------------------------
 -- ui schema
@@ -95,6 +95,6 @@ create table ui.views (
 );
 create index views_object_idx on ui.views (object_type_id, position, id);
 
-grant usage on schema ui to test_crm_api;
-grant select, insert, update, delete on all tables in schema ui to test_crm_api;
-grant usage on all sequences in schema ui to test_crm_api;
+grant usage on schema ui to pc_api;
+grant select, insert, update, delete on all tables in schema ui to pc_api;
+grant usage on all sequences in schema ui to pc_api;

@@ -111,4 +111,4 @@ begin
 end $$;
 
 revoke execute on function meta.analyze_view_query(text) from public;
-grant execute on function meta.analyze_view_query(text) to test_crm_api;
+grant execute on function meta.analyze_view_query(text) to pc_api;
