@@ -57,7 +57,8 @@ export default defineConfig(({ mode }) => ({
         quote: page('p/quote/index.html'),
         invoice: page('p/invoice/index.html'),
         form: page('p/form/index.html'),
-        book: page('p/book/index.html')
+        book: page('p/book/index.html'),
+        unsubscribe: page('p/unsubscribe/index.html')
       }
     }
   }

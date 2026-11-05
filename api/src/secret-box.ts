@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 
 // Encrypts secrets the API must read back later (calendar refresh tokens,
 // the Anthropic and Google Maps keys, view integration secret headers,
@@ -35,4 +35,11 @@ export function open(sealed: Buffer): string {
   const decipher = createDecipheriv('aes-256-gcm', k, sealed.subarray(0, 12));
   decipher.setAuthTag(sealed.subarray(12, 28));
   return Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()]).toString('utf8');
+}
+
+// A key for one purpose (HMAC-signed links), made from the master key so no
+// second secret has to be configured. Null when the master key is not set.
+export function deriveKey(purpose: string): Buffer | null {
+  const k = key();
+  return k ? createHmac('sha256', k).update(`pcrm:${purpose}`).digest() : null;
 }

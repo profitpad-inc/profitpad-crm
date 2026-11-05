@@ -25,6 +25,8 @@ import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
 import { CurrencySettings } from './CurrencySettings';
 import { AddressSettings } from './AddressSettings';
+import { EmailSettings } from './EmailSettings';
+import { Send } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { MailboxSettings } from './MailboxSettings';
 import { Select } from '../components/Select';
@@ -62,6 +64,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
     { path: 'mailboxes', label: 'Mailboxes', icon: <Mail size={16} />, gate: 'admin', element: <MailboxSettings /> },
     { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> },
+    { path: 'email', label: 'Email', icon: <Send size={16} />, gate: 'admin', element: <EmailSettings /> },
     { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: 'admin', element: <CardScannerSettings /> },
     { path: 'address-autocomplete', label: 'Address autocomplete', icon: <MapPin size={16} />, gate: 'admin', element: <AddressSettings /> }
   ] },

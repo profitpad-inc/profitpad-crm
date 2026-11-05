@@ -16,6 +16,8 @@ import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
 import { ViewCode } from '../components/ViewCode';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
+import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
+import { EmailTracking } from '../components/EmailTracking';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
 import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
@@ -57,6 +59,8 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
   booking_pages: ['calls'],
+  // its email; the emails it sent are counted, not listed
+  email_campaigns: ['email_templates'],
   deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],
   // the parent has its own card (LineParentCard)
   lines: ['products'],
@@ -67,7 +71,8 @@ const DEFAULT_CARDS_FOR: Record<string, string[]> = {
 };
 const ACTIVITY_PROPS: Record<string, string[]> = {
   calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at'],
-  emails: ['name', 'subject', 'body', 'direction', 'status', 'from_address', 'to_addresses', 'cc_addresses', 'sent_at', 'scheduled_at', 'created_at'],
+  emails: ['name', 'subject', 'body', 'direction', 'status', 'from_address', 'to_addresses', 'cc_addresses', 'sent_at', 'scheduled_at', 'created_at',
+    'stream', 'delivered_at', 'first_opened_at', 'open_count', 'first_clicked_at', 'click_count', 'replied_at'],
   // to suggest as recipients and attachments when writing an email
   contacts: ['email'],
   files: ['size_bytes'],
@@ -104,7 +109,9 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   form_submissions: ['summary', 'submission_values'],
   booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options'],
   files: ['public_token', 'storage_key'],
-  views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries']
+  views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries'],
+  email_campaigns: ['audience'],
+  emails: ['reply_token']
 };
 // An accepted quote is locked (migration 0073; the database refuses changes):
 // these properties and its line items. A line on one is locked as a whole.
@@ -534,6 +541,10 @@ export function RecordPage() {
                 <SubmissionAnswers record={record} />
                 {commentThread}
               </>
+            ) : object === 'email_campaigns' ? (
+              record.record_status === 'archived'
+                ? <div className="card muted">Archived campaigns are not sent. Restore this campaign to work on it.</div>
+                : <EmailCampaignEditor record={record} onChanged={setRecord} />
             ) : object === 'document_templates' ? (
               <>
                 {record.record_status === 'archived'
@@ -1116,6 +1127,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                       {o === 'emails' && EMAIL_SEND_STATES.includes(String(p.status)) && <EmailSendState emailId={r.id} status={String(p.status)} scheduledAt={p.scheduled_at as string | null} onChanged={onChanged} />}
                       {body && <div className="activity-text"><MentionText text={body.length > 400 ? `${body.slice(0, 400)}…` : body} /></div>}
                       {o === 'form_submissions' && <Answers record={r} limit={6} />}
+                      {o === 'emails' && <EmailTracking p={p} />}
                     </>
                   )}
                 </div>

@@ -188,6 +188,7 @@ To restore, start an empty `pc-db`, run `000_superuser.sql` and `001_api_login.s
 - **AI assistants (MCP).** Nothing to install: connect a client to `https://api.crm.example.com/mcp`; the address is also on Settings → Connected apps.
 - **Business card scanning** works out of the box with Tesseract; an admin can add an Anthropic API key in Settings → Card scanner, for better results.
 - **Address autocomplete**: an admin adds a Google Maps key (Places API (New)) in Settings → Address autocomplete.
+- **Email (Postmark)**: marketing campaigns and one-to-one email go out through a Postmark server with a transactional and a broadcast stream, your sending domain confirmed there (DKIM, Return-Path), and for replies an inbound stream whose domain (e.g. `reply.example.com`) has an MX record to `inbound.postmarkapp.com`. An admin pastes the server token, sender, mailing address and reply domain in Settings → Email, then copies the two webhook addresses shown there into Postmark. Needs `UI_URL` and `PUBLIC_API_URL` set (unsubscribe links).
 - **Integrations and webhooks** (n8n, Zapier, your own services) are called over the internet: their addresses must be https on a public address, even when the service runs on the same server.
 - **Database access from your computer**: give the migration role a password (`sudo ./db.sh psql`, then `\password pc_migrator`) and tunnel to the server's `127.0.0.1:5434` over SSH.
 

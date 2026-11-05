@@ -30,6 +30,7 @@ import {
   sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut
 } from './templates.js';
 import { findIcons } from './icons.js';
+import { registerEmailTools } from './email/mcp-tools.js';
 import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
 } from './integrations.js';
@@ -359,6 +360,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     return { deleted: comment_id };
   }));
 
+  registerEmailTools(server, p);
   if (p.scopes.has('schema')) registerAdminTools(server, p);
   return server;
 }

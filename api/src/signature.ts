@@ -7,7 +7,7 @@ import { badRequest } from './errors.js';
 // event handlers. Images and links must be web addresses: a CRM file's public
 // link or any public address (no data: or cid: images, which many clients
 // block or drop).
-const SIGNATURE_OPTIONS: sanitizeHtml.IOptions = {
+export const SIGNATURE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
     'div', 'span', 'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code',
     'ul', 'ol', 'li', 'strong', 'b', 'em', 'i', 'u', 's', 'small', 'sub', 'sup', 'font', 'center',

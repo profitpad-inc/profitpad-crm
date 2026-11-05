@@ -1,0 +1,23 @@
+/* Email campaigns (components/EmailCampaignEditor.tsx) and email tracking on the timeline */
+
+.campaign-editor { display: flex; flex-direction: column; gap: 16px; }
+.campaign-editor .card { display: flex; flex-direction: column; gap: 10px; }
+.campaign-editor .card-head { display: flex; align-items: center; gap: 8px; }
+.campaign-editor .card-head h3 { font-size: 14px; font-weight: 600; }
+.campaign-editor .callout ul { margin: 0; padding-left: 18px; }
+
+.campaign-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.campaign-stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius); }
+.campaign-stat strong { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.campaign-stat span { font-size: 12px; color: var(--muted-text); }
+
+.campaign-all { display: inline-flex; align-items: center; gap: 8px; }
+.campaign-count { font-size: 13px; }
+.campaign-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.campaign-editor .card > .campaign-actions { justify-content: flex-end; }
+.campaign-send { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.campaign-or { font-size: 13px; }
+
+iframe.campaign-preview { display: block; width: 100%; min-height: 400px; border: 1px solid var(--hairline); border-radius: var(--radius); background: #fff; }
+
+.email-track { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }

@@ -674,3 +674,12 @@ export async function sampleRecord(object: string): Promise<string> {
 export function requireTemplateRead(p: Principal): void {
   requireScope(p, 'read');
 }
+
+// ---- Liquid for other users (email templates, api/src/email/render.ts) ----
+
+// The same Liquid (filters, limits, escaping) for any source and data.
+export async function renderLiquid(source: string, data: object): Promise<string> {
+  return liquid.render(parseLiquid(source), data);
+}
+// A record as Liquid sees it (see recordOut).
+export const liquidRecord = (obj: ObjectDef, row: Record<string, unknown>): Record<string, unknown> => recordOut(obj, row, null);

@@ -3,6 +3,7 @@ import {
   ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
   Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, MessageSquare, type LucideIcon
 } from 'lucide-react';
+import { Send } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { CrmRecord, Property } from './api';
 import { ColorPill } from '../components/ColorPicker';
@@ -29,6 +30,7 @@ const OBJECT_ICONS: Record<string, LucideIcon> = {
   booking_pages: CalendarClock,
   files: File,
   email_templates: MailPlus,
+  email_campaigns: Send,
   forms: ClipboardList,
   form_submissions: TextQuote,
   marketing_events: Megaphone,
@@ -52,7 +54,7 @@ export const ReportingIcon = BarChart3;
 export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'CRM', objects: ['contacts', 'companies', 'deals', 'tickets', 'products', 'orders', 'services', 'lines', 'quotes', 'invoices', 'payments', 'carts'] },
   { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks', 'booking_pages'] },
-  { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'marketing_events', 'marketing_event_participations', 'card_scans'] },
+  { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'email_campaigns', 'marketing_events', 'marketing_event_participations', 'card_scans'] },
   { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'document_templates', 'object_events', 'object_event_occurrences', 'comments'] }
 ];
 

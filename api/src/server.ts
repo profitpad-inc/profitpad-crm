@@ -35,6 +35,8 @@ import { currencyRoutes, startCurrencyScheduler } from './currency.js';
 import { liveRoutes, startLiveListener } from './live.js';
 import { mailboxRoutes } from './mailbox/routes.js';
 import { startMailWorker } from './mailbox/send.js';
+import { emailRoutes } from './routes/email.js';
+import { startEmailWorker } from './email/campaigns.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -132,6 +134,8 @@ export async function buildApp() {
     if (/^\/v1\/calendar\/[a-z]+\/callback$/.test(path)) return;
     // Stripe signs its webhook calls (routes/payments.ts)
     if (path === '/v1/stripe/webhook') return;
+    // Postmark calls with basic auth, checked by the route (routes/email.ts)
+    if (path === '/v1/postmark/webhook' || path === '/v1/postmark/inbound') return;
     // customer-facing quote and form pages find records by their public key
     if (path.startsWith('/v1/public/')) return;
     // OAuth (oauth.ts) and the MCP server (mcp.ts, OAuth tokens only) check their own callers
@@ -218,6 +222,7 @@ export async function buildApp() {
   await app.register(commentRoutes);
   await app.register(liveRoutes);
   await app.register(mailboxRoutes);
+  await app.register(emailRoutes);
   return app;
 }
 
@@ -244,6 +249,7 @@ const stopWebhooks = startWebhookWorker(app.log);
 const stopCurrencies = startCurrencyScheduler(app.log);
 const stopLive = startLiveListener(app.log);
 const stopMail = startMailWorker(app.log);
+const stopEmail = startEmailWorker(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
@@ -251,6 +257,7 @@ const shutdown = async () => {
   stopCurrencies();
   stopLive();
   stopMail();
+  stopEmail();
   await app.close();
   await pool.end();
   process.exit(0);

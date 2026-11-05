@@ -277,6 +277,19 @@ Users send email from record pages as themselves through the organization's Goog
    6. Settings → Mailboxes → Microsoft: tenant ID, client ID, secret, domains, turn Sending on, press Test.
 5. Shared mailboxes (sales@, support@): Settings → Mailboxes → Add shared mailbox, then pick who may send from it. On Google it must be a real user mailbox (or use a group address as a send-as alias of someone's mailbox).
 
+## 23. Email through Postmark (migration 0094)
+
+1. Apply `0094_email_postmark.sql` (`./db/migrate.sh` through the tunnel, or `./db.sh migrate` on the server) before deploying the API: the email worker starts with the API and reads the new tables.
+2. `deploy/.env` needs `UI_URL` (for unsubscribe page links) and `PUBLIC_API_URL` (for one-click unsubscribe and the webhook addresses), plus `MASTER_ENCRYPTION_KEY` (already set). Campaigns refuse to send without the first two.
+3. Add the `location /v1/postmark/` block from `deploy/nginx-api.conf` to the live site (40 MB body limit, no rate limit; keep the certbot lines), then `sudo nginx -t && sudo systemctl reload nginx`.
+4. Rebuild and restart the API, deploy the UI (Settings → Email, the campaign page, and the new public page `/p/unsubscribe/`).
+5. Postmark (someone with the account):
+   - One server with a **Transactional** stream (`outbound`) and a **Broadcast** stream (ask Postmark to approve broadcast sending). On the broadcast stream, set unsubscribe handling to none: the CRM adds its own link and headers. Check this setting name in Postmark when doing it.
+   - Sender signature / domain: add the sending domain and its DKIM and Return-Path DNS records; DMARC on the root domain.
+   - Inbound stream: inbound domain e.g. `reply.profitpad.com`, with an MX record `reply.profitpad.com → inbound.postmarkapp.com` (priority 10).
+6. In the CRM, Settings → Email: paste the server API token, from name and address, mailing address, reply domain (and a fallback address), turn sending on, Save. Copy the two webhook addresses shown there into Postmark: the events webhook on both the transactional and broadcast streams (Delivery, Bounce, Spam complaint, Open, Click, Subscription change; open and link tracking on for the broadcast stream), the inbound webhook on the inbound stream. Then "Send me a test".
+7. Try a campaign on 2 or 3 internal contacts before a real one: delivery, open and click counts, a reply (shows on the contact's timeline), unsubscribe (contact opted out, left out next time).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.
