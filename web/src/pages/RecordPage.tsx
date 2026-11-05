@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowRight, AtSign, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo } from '../lib/files';
@@ -24,6 +24,10 @@ import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor'
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { COMMENT_TARGETS, Comments } from '../components/Comments';
 import { ActivityComposer, COMPOSE_OBJECTS, COMPOSE_VERB, type ComposeObject } from '../components/ActivityComposer';
+import type { Attachable, Recipient } from '../components/EmailComposer';
+// the rich text editor is big: loaded when someone writes an email
+const EmailComposer = lazy(() => import('../components/EmailComposer').then((m) => ({ default: m.EmailComposer })));
+import { loadCanSend, type SendStatus } from '../lib/mailbox';
 import { SnippetRecordProvider, TextArea } from '../lib/snippets';
 import { MentionText } from '../components/MentionText';
 import { MENTION_TOKEN, encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
@@ -63,7 +67,10 @@ const DEFAULT_CARDS_FOR: Record<string, string[]> = {
 };
 const ACTIVITY_PROPS: Record<string, string[]> = {
   calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at'],
-  emails: ['name', 'subject', 'body', 'direction', 'from_address', 'to_addresses', 'sent_at', 'created_at'],
+  emails: ['name', 'subject', 'body', 'direction', 'status', 'from_address', 'to_addresses', 'cc_addresses', 'sent_at', 'scheduled_at', 'created_at'],
+  // to suggest as recipients and attachments when writing an email
+  contacts: ['email'],
+  files: ['size_bytes'],
   notes: ['name', 'body', 'created_at'],
   tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'body', 'created_at'],
   form_submissions: ['name', 'submitted_at', 'summary', 'submission_values', 'created_at'],
@@ -187,7 +194,10 @@ export function RecordPage() {
   recordRef.current = record;
   // the activity being written in the stream (the name card's buttons and each tab's own);
   // key changes on every ask so the box takes focus again
-  const [compose, setCompose] = useState<{ object: ComposeObject; key: number } | null>(null);
+  // mode send: writing an email to send (EmailComposer) rather than logging one
+  const [compose, setCompose] = useState<{ object: ComposeObject; key: number; mode?: 'send' } | null>(null);
+  const [canSend, setCanSend] = useState(false);
+  useEffect(() => { void loadCanSend().then(setCanSend); }, []);
   // whether the open composer has unsaved text
   const composeDirty = useRef(false);
   const onComposeDirty = useCallback((d: boolean) => { composeDirty.current = d; }, []);
@@ -404,14 +414,14 @@ export function RecordPage() {
   const composable = hasStream && record.record_status !== 'archived'
     ? COMPOSE_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)) : [];
   // opens the box on that activity's tab; a draft of another kind is only thrown away once confirmed
-  async function startCompose(o: ComposeObject) {
-    if (compose && compose.object !== o && composeDirty.current) {
+  async function startCompose(o: ComposeObject, mode?: 'send') {
+    if (compose && (compose.object !== o || compose.mode !== mode) && composeDirty.current) {
       const was = (objectByName.get(compose.object)?.label_singular ?? compose.object).toLowerCase();
       if (!(await confirmDialog(`Your ${was} is not saved. Starting a ${(objectByName.get(o)?.label_singular ?? o).toLowerCase()} throws it away.`,
         { title: `Discard this ${was}?`, confirmLabel: 'Discard', danger: true }))) return;
     }
-    if (compose?.object !== o) composeDirty.current = false;
-    setCompose({ object: o, key: Date.now() });
+    if (compose?.object !== o || compose.mode !== mode) composeDirty.current = false;
+    setCompose({ object: o, key: Date.now(), mode });
     const next = new URLSearchParams(location.search);
     next.set('tab', o);
     navigate({ search: `?${next.toString()}` }, { replace: true });
@@ -422,7 +432,7 @@ export function RecordPage() {
       <Comments object={object} id={record.id} readOnly={record.record_status === 'archived'} highlight={new URLSearchParams(location.search).get('comment')} />
     </div>
   );
-  const streamProps = { linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, onCompose: (o: ComposeObject | null) => { if (o) void startCompose(o); else { composeDirty.current = false; setCompose(null); } } };
+  const streamProps = { linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, canSend, onCompose: (o: ComposeObject | null, mode?: 'send') => { if (o) void startCompose(o, mode); else { composeDirty.current = false; setCompose(null); } } };
 
   return (
     <LiveContext.Provider value={live}>
@@ -491,8 +501,11 @@ export function RecordPage() {
               {composable.map((o) => {
                 const Icon = objectIcon(o);
                 const label = objectByName.get(o)?.label_singular ?? o;
+                // with a mailbox, Email writes one to send (logging stays on the Emails tab)
+                const send = o === 'emails' && canSend;
+                const verb = send ? 'Write' : COMPOSE_VERB[o];
                 return (
-                  <button key={o} onClick={() => void startCompose(o)} aria-label={`${COMPOSE_VERB[o]} ${label.toLowerCase()}`} title={`${COMPOSE_VERB[o]} ${label.toLowerCase()}`}>
+                  <button key={o} onClick={() => void startCompose(o, send ? 'send' : undefined)} aria-label={`${verb} ${label.toLowerCase()}`} title={`${verb} ${label.toLowerCase()}`}>
                     <span className="quick-icon"><Icon size={16} strokeWidth={1.75} /></span>
                     {label}
                   </button>
@@ -824,9 +837,10 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
   return q ? `?${q}` : '';
 }
 
-function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty }: {
+function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend }: {
   linksLoaded: boolean; object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
-  compose: { object: ComposeObject; key: number } | null; onCompose: (o: ComposeObject | null) => void; onComposeDirty: (dirty: boolean) => void;
+  compose: { object: ComposeObject; key: number; mode?: 'send' } | null; onCompose: (o: ComposeObject | null, mode?: 'send') => void; onComposeDirty: (dirty: boolean) => void;
+  canSend: boolean;
 }) {
   const { objectByName, toast } = useApp();
   const navigate = useNavigate();
@@ -884,10 +898,28 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const composeTab = (COMPOSE_OBJECTS as readonly string[]).includes(tab) && record.record_status !== 'archived' ? tab as ComposeObject : null;
   const composing = !!composeTab && compose?.object === composeTab;
   const createButton = composeTab && !composing && (
-    <button className="btn small activity-create" onClick={() => onCompose(composeTab)}>
-      <Plus size={14} /> {COMPOSE_VERB[composeTab]} {(objectByName.get(composeTab)?.label_singular ?? composeTab).toLowerCase()}
-    </button>
+    <span className="activity-create">
+      {composeTab === 'emails' && canSend && (
+        <button className="btn small" onClick={() => onCompose('emails', 'send')}><Plus size={14} /> Write email</button>
+      )}
+      <button className="btn small" onClick={() => onCompose(composeTab)}>
+        <Plus size={14} /> {COMPOSE_VERB[composeTab]} {(objectByName.get(composeTab)?.label_singular ?? composeTab).toLowerCase()}
+      </button>
+    </span>
   );
+  // who to suggest in To, Cc and Bcc, and which files to offer as attachments
+  const contactOf = (r: CrmRecord): Recipient | null => {
+    const email = typeof r.properties.email === 'string' ? r.properties.email.trim().toLowerCase() : '';
+    return email ? { email, name: displayName(r.properties, r.id) || null } : null;
+  };
+  const pageContact = object === 'contacts' ? contactOf(record) : null;
+  const recipients = [
+    ...(pageContact ? [pageContact] : []),
+    ...(associated.find((a) => a.object === 'contacts')?.records.map((r) => contactOf(r.record)) ?? [])
+  ].filter((c, i, all): c is Recipient => !!c && all.findIndex((x) => x?.email === c.email) === i);
+  const attachable: Attachable[] = (associated.find((a) => a.object === 'files')?.records ?? []).map((r) => ({
+    id: r.record.id, name: displayName(r.record.properties, r.record.id), size_bytes: typeof r.record.properties.size_bytes === 'number' ? r.record.properties.size_bytes : null
+  }));
 
   const countOf = (o: string) => associated.find((a) => a.object === o)?.records.length ?? 0;
 
@@ -951,10 +983,16 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
         ))}
       </div>
       {/* kept (hidden) on the other tabs, so a draft survives a look around */}
-      {compose && record.record_status !== 'archived' && (
+      {compose && record.record_status !== 'archived' && (compose.mode === 'send' ? (
+        <Suspense fallback={<div className="composer email-composer muted small" hidden={!composing}>Opening the email…</div>}>
+          <EmailComposer key="send" hidden={!composing} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
+            recipients={recipients} prefill={pageContact ? [pageContact.email] : []} attachable={attachable}
+            onSent={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
+        </Suspense>
+      ) : (
         <ActivityComposer key={compose.object} hidden={!composing} object={compose.object} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
           onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
-      )}
+      ))}
       {openedHidden && opened && tab !== 'changes' && (
         <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet pinned />
       )}
@@ -1075,6 +1113,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                   ) : (
                     <>
                       {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
+                      {o === 'emails' && EMAIL_SEND_STATES.includes(String(p.status)) && <EmailSendState emailId={r.id} status={String(p.status)} scheduledAt={p.scheduled_at as string | null} onChanged={onChanged} />}
                       {body && <div className="activity-text"><MentionText text={body.length > 400 ? `${body.slice(0, 400)}…` : body} /></div>}
                       {o === 'form_submissions' && <Answers record={r} limit={6} />}
                     </>
@@ -1177,6 +1216,48 @@ function MentionedActivity({ object, id, highlight, quiet = false, pinned = fals
         {record.via_mention ? `You were tagged in this ${kindLabel}` : `Opened from a link`}
       </div>
       {card}
+    </div>
+  );
+}
+
+// An email sent from a mailbox that has not simply gone out: scheduled (with
+// Cancel), sending, failed (with the reason and Send again) or cancelled.
+const EMAIL_SEND_STATES = ['scheduled', 'sending', 'failed', 'cancelled'];
+const EMAIL_SEND_TONES: Record<string, Tone> = { scheduled: 'pending', sending: 'info', failed: 'failed', cancelled: 'off' };
+
+function EmailSendState({ emailId, status, scheduledAt, onChanged }: { emailId: string; status: string; scheduledAt: string | null; onChanged: () => Promise<void> }) {
+  const { toast } = useApp();
+  const [info, setInfo] = useState<SendStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (status !== 'failed' && status !== 'scheduled') return;
+    let cancelled = false;
+    api<SendStatus>('GET', `/v1/mailboxes/sends/${emailId}`).then((s) => !cancelled && setInfo(s)).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [emailId, status]);
+
+  async function act(action: 'cancel' | 'retry') {
+    if (action === 'cancel' && !(await confirmDialog('The email will not be sent. It stays on the record as cancelled.', { title: 'Cancel this scheduled email?', confirmLabel: 'Cancel email', cancelLabel: 'Keep it', danger: true }))) return;
+    setBusy(true);
+    try {
+      const r = await api<{ ok: boolean; error?: string | null }>('POST', `/v1/mailboxes/sends/${emailId}/${action}`);
+      toast(action === 'cancel' ? 'Email cancelled' : r.ok ? 'Email sent' : `Not sent: ${r.error ?? 'the provider refused it'}`);
+      await onChanged();
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const label = status === 'scheduled' && scheduledAt ? `Scheduled for ${new Date(scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : status.replace(/^./, (c) => c.toUpperCase());
+  return (
+    <div className="activity-status email-send-state" onClick={(e) => e.stopPropagation()}>
+      <StatusPill tone={EMAIL_SEND_TONES[status] ?? 'off'}>{label}</StatusPill>
+      {status === 'scheduled' && info?.next_attempt_at && <span className="small muted">Retrying after a problem: {info.last_error}</span>}
+      {status === 'failed' && info?.last_error && <span className="small muted">{info.last_error}</span>}
+      {info?.can_manage && status === 'scheduled' && <button className="btn small" disabled={busy} onClick={() => act('cancel')}>Cancel</button>}
+      {info?.can_manage && status === 'failed' && <button className="btn small" disabled={busy} onClick={() => act('retry')}>{busy ? 'Sending…' : 'Send again'}</button>}
     </div>
   );
 }

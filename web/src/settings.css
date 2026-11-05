@@ -338,3 +338,12 @@
 .nav-member:hover { background: var(--surface); }
 .nav-member-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal-foot .push-right-note { margin-right: auto; align-self: center; }
+
+/* Settings → Mailboxes: the shared mailbox dialog, and the users who may send from it */
+.mailbox-modal .field + .field { margin-top: 14px; }
+.mailbox-hint { font-size: 12px; line-height: 1.4; }
+.mailbox-users { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.mailbox-users:empty { display: none; }
+.mailbox-user { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; }
+.mailbox-user-remove { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--muted-text); cursor: pointer; padding: 0; }
+.mailbox-user-remove:hover { background: var(--border); color: var(--text); }

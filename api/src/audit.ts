@@ -35,6 +35,8 @@ export type SecurityEvent =
   | 'calendar.connected'
   | 'calendar.connect_failed'
   | 'calendar.disconnected'
+  | 'mailbox.settings_changed'
+  | 'mailbox.shared_changed'
   | 'payments.connected'
   | 'payments.onboarding_link'
   | 'payments.removed'

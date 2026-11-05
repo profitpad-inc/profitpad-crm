@@ -257,6 +257,25 @@ Order matters: every migration before 0088 must already be applied while the rol
 5. **Server paths**: stop the stack, `sudo mv /srv/test_crm /srv/profitpad_crm` and `sudo mv /srv/test_crm_files /srv/profitpad_crm_files`, start it from the new path. (The `pc_db_data` volume is named by the compose project, which is the folder name `deploy`, so moving the parent folder keeps it; check with `docker volume ls` before and after.)
 6. **Hosts**: DNS for `crm.profitpad.com` (CNAME to GitHub Pages) and `api.crm.profitpad.com` (A record); install `deploy/nginx-api.conf`, `certbot --nginx -d api.crm.profitpad.com`; turn the old `api.test-crm.profitpad.com` site into a 301 to the new host. GitHub: Pages custom domain `crm.profitpad.com`, repo variable `VITE_API_URL=https://api.crm.profitpad.com`, rerun the Pages workflow. Then update everything outside that points at the old hosts: Google and Microsoft OAuth redirect URIs (section 4), Google API key restrictions, the MCP connector URL in Claude, n8n flows and webhook senders calling `api.test-crm`, and embed snippets on client sites (`/p/embed.js`).
 7. **After**: create and archive a test property; run a custom view as a non-admin and check row-level security still hides records; open a public quote link and a form embed on the new host. Leave the old `test_crm` database in n8n's container for a week, then drop it (ask first, back up first).
+## 23. Sending email from mailboxes (migration 0093)
+
+Users send email from record pages as themselves through the organization's Google Workspace or Microsoft 365. No per-user linking: an admin sets up one service account per provider in Settings → Mailboxes. Nothing goes in `deploy/.env` except `MASTER_ENCRYPTION_KEY` (already set), which seals the service account key and the client secret.
+
+1. Apply `0093_mailboxes.sql` (`./db/migrate.sh`). It adds `auth.mailbox_providers`, `auth.shared_mailboxes`, `auth.shared_mailbox_users`, `auth.mailbox_sends`, the `bcc_addresses`, `reply_to` and `scheduled_at` properties and the `scheduled`, `sending` and `cancelled` statuses on emails, and the trigger that locks a sent email's content.
+2. Rebuild and restart the API (`npm ci` picks up nodemailer, used only to build MIME), then deploy the UI (`npm ci` picks up TipTap).
+3. Google Workspace (for each domain whose people sign in with Google):
+   1. Google Cloud console: in any project, enable the Gmail API, create a service account (no roles needed) and a JSON key for it.
+   2. Google Admin (admin.google.com): Security → Access and data control → API controls → Manage Domain-wide delegation → Add new. Client ID: the service account's (Settings → Mailboxes shows it after the key is saved). Scopes: `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.settings.basic` (the second lists each person's send-as aliases).
+   3. Settings → Mailboxes → Google: paste the JSON key, enter the domains (e.g. `profitpad.com`), turn Sending on, press Test. Google can take a few minutes to apply a new delegation.
+   4. Your organization may block service account key creation (the `iam.disableServiceAccountKeyCreation` policy); an org admin can make an exception for this project.
+4. Microsoft 365 (for each domain whose people use Outlook):
+   1. Microsoft Entra admin center → App registrations → New registration (single tenant, no redirect URI).
+   2. API permissions → Add → Microsoft Graph → **Application** permissions → `Mail.Send` and `User.Read.All` → Grant admin consent.
+   3. Certificates & secrets → New client secret; copy its Value. Microsoft secrets expire (at most 24 months): put a reminder to paste a new one before then.
+   4. Recommended: limit the app to the mailboxes that send from the CRM with Exchange Online RBAC for Applications (or the older application access policy). Without it, the app can send as any mailbox in the tenant.
+   5. Sending from aliases needs Exchange Online's `SendFromAliasesEnabled` organization setting. Not verified with a real tenant yet: turn "Send from aliases" on in Settings → Mailboxes only after testing it.
+   6. Settings → Mailboxes → Microsoft: tenant ID, client ID, secret, domains, turn Sending on, press Test.
+5. Shared mailboxes (sales@, support@): Settings → Mailboxes → Add shared mailbox, then pick who may send from it. On Google it must be a real user mailbox (or use a group address as a send-as alias of someone's mailbox).
 
 ## Notes
 

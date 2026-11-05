@@ -33,6 +33,8 @@ import { commentRoutes } from './comments.js';
 import { addressRoutes } from './address.js';
 import { currencyRoutes, startCurrencyScheduler } from './currency.js';
 import { liveRoutes, startLiveListener } from './live.js';
+import { mailboxRoutes } from './mailbox/routes.js';
+import { startMailWorker } from './mailbox/send.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -215,6 +217,7 @@ export async function buildApp() {
   await app.register(snippetRoutes);
   await app.register(commentRoutes);
   await app.register(liveRoutes);
+  await app.register(mailboxRoutes);
   return app;
 }
 
@@ -240,12 +243,14 @@ const stopFileSweeper = startFileSweeper(app.log);
 const stopWebhooks = startWebhookWorker(app.log);
 const stopCurrencies = startCurrencyScheduler(app.log);
 const stopLive = startLiveListener(app.log);
+const stopMail = startMailWorker(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
   stopWebhooks();
   stopCurrencies();
   stopLive();
+  stopMail();
   await app.close();
   await pool.end();
   process.exit(0);

@@ -1,0 +1,55 @@
+/* EmailComposer: writing an email on a record page */
+.email-composer .ec-row {
+  position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.ec-label { flex: none; width: 64px; color: var(--muted-text); font-size: 13px; }
+.ec-from { flex: 0 1 380px; min-width: 0; }
+.ec-note { color: var(--muted-text); font-size: 12px; }
+.ec-toggles { display: inline-flex; gap: 10px; margin-left: auto; }
+.ec-link { border: 0; background: none; padding: 0; color: var(--primary); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.ec-link:hover { text-decoration: underline; }
+.ec-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.ec-chips input { flex: 1 1 140px; min-width: 120px; border: 0; padding: 4px 0; background: none; box-shadow: none; }
+.ec-chips input:focus { outline: none; box-shadow: none; }
+.ec-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 4px 2px 9px;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ec-chip.bad { border-color: var(--danger, #c0392b); color: var(--danger, #c0392b); }
+.ec-chip.file { padding-left: 8px; }
+.ec-chip button {
+  display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: none;
+  border: 0; border-radius: 50%; background: transparent; color: var(--muted-text); cursor: pointer; padding: 0;
+}
+.ec-chip button:hover { background: var(--border); color: var(--text); }
+.ec-suggest {
+  position: absolute; z-index: 30; left: 86px; top: calc(100% - 2px); min-width: 260px; max-width: calc(100% - 100px);
+  padding: 4px; background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(24, 32, 43, 0.12);
+}
+.ec-suggest-item { display: flex; flex-direction: column; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
+.ec-suggest-item.active { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.ec-suggest-name { font-weight: 500; }
+.ec-suggest-email { color: var(--muted-text); font-size: 12px; }
+.ec-subject { flex: 1; min-width: 0; border: 0; padding: 6px 0; background: none; box-shadow: none; font-weight: 500; }
+.ec-subject:focus { outline: none; box-shadow: none; }
+.email-composer .select-face.ec-template, .email-composer .select-face.ec-attach-crm { flex: none; width: auto; }
+.ec-body { padding: 10px 14px; }
+.ec-body .rte { border-color: var(--hairline); }
+.ec-signature { padding: 0 14px 10px; display: flex; flex-direction: column; gap: 4px; }
+.ec-signature-frame { width: 100%; border: 0; border-left: 3px solid var(--hairline); padding-left: 10px; background: transparent; }
+.ec-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+.ec-later { border-top: 1px solid var(--hairline); }
+.ec-foot-left { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ec-switch { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-text); }
+.email-composer .composer-foot { padding: 10px 14px; border-top: 1px solid var(--hairline); }
+
+@media (max-width: 767px) {
+  .ec-label { width: 52px; }
+  .email-composer .select-face.ec-from { flex: 1 1 0; min-width: 0; width: auto; }
+  .ec-suggest { left: 14px; max-width: calc(100% - 28px); }
+  .ec-toggles { width: 100%; justify-content: flex-end; margin-left: 0; }
+  .email-composer .ec-row { flex-wrap: wrap; }
+}
