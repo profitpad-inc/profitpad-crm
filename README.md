@@ -17,7 +17,7 @@ An object-based CRM in the spirit of HubSpot, built so that almost every change 
 
 | Path | What it is |
 |---|---|
-| `db/migrations/` | Schema, in order. Applied by `db/migrate.sh`, tracked in `meta.migrations`. Applied files are never edited; fixes go in new files. |
+| `db/migrations/` | Schema, in order. `0000_baseline.sql` is the whole schema and built-in data as of 2026-11-04 (generated from the old 0001 to 0088, which are in git history up to commit 151c96c); new migrations start at `0089`. Applied by `db/migrate.sh`, tracked in `meta.migrations`. Applied files are never edited; fixes go in new files. |
 | `db/tests/` | SQL assertions, run by `db/test-local.sh` on a throwaway local Postgres |
 | `db/bootstrap/` | One-time superuser grants (already run on the server) |
 | `api/` | The API (`npm run dev`, `npm run typecheck`, `npm run create-key`) |

@@ -1,5 +1,7 @@
 # Architecture
 
+> Migration numbers below (0001 to 0088) name the files as they were before 2026-11-04, when they were consolidated into `db/migrations/0000_baseline.sql`. Read them in git history (last present in commit 151c96c), e.g. `git show 151c96c:db/migrations/0030_rls.sql`.
+
 ## Database layout (Postgres 15, database `profitpad_crm_db`)
 
 | Schema | Contents |

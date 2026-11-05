@@ -1,4 +1,4 @@
--- Run as a superuser (n8n) in profitpad_crm_db, once per server, before migration 0030:
+-- Run as a superuser (n8n) in profitpad_crm_db, once per server, before the migrations (0000_baseline.sql grants to this role):
 --   psql -U n8n -d profitpad_crm_db -v ON_ERROR_STOP=1 -f db/bootstrap/002_view_reader.sql
 --
 -- Custom view queries run as pc_view_reader: read-only, limited to the

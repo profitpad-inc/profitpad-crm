@@ -16,6 +16,11 @@ psql_q() { psql -X -q -v ON_ERROR_STOP=1 "$@"; }
 
 psql_q -c "create schema if not exists meta; create table if not exists meta.migrations (filename text primary key, applied_at timestamptz not null default now());"
 
+# 0000_baseline.sql replaced migrations 0001 to 0088. A database that already
+# ran those has everything the baseline would create, so record it as applied
+# instead of running it.
+psql_q -c "insert into meta.migrations (filename) select '0000_baseline.sql' where exists (select 1 from meta.migrations where filename = '0088_rename_roles.sql') on conflict do nothing;"
+
 # byte-order sort so 0004_x runs before 0004a_x regardless of locale
 for file in $(ls "$dir"/migrations/*.sql | LC_ALL=C sort); do
   name="$(basename "$file")"
