@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@types/google-libphonenumber": "7.4.31",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/nodemailer": "6.4.17",
     "@types/pg": "8.23.1",
     "@types/sanitize-html": "2.16.2",
