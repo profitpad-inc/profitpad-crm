@@ -4,7 +4,7 @@
 |---|---|---|
 | UI (static) | GitHub Pages, built by `.github/workflows/pages.yml` | `https://crm.profitpad.com` |
 | API | the server (34.130.249.246), Docker container behind nginx | `https://api.crm.profitpad.com` |
-| Database | the server, `pc-db` Docker container (`deploy/docker-compose.yml`) | `profitpad_crm_db` on 127.0.0.1:5434 (until the cutover in section 22: `test_crm` in n8n's `postgres` container on 127.0.0.1:5432) |
+| Database | the server, `pc-db` Docker container (`deploy/docker-compose.yml`) | `profitpad_crm_db` on 127.0.0.1:5434 |
 
 Hostnames use hyphens: underscores are not valid in hostnames for TLS certificates or GitHub Pages custom domains.
 
@@ -223,7 +223,13 @@ Locally: `brew install tesseract`.
 
 ## 22. Rename and database move (test_crm to profitpad_crm, migration 0088)
 
-Moves the database out of n8n's `postgres` container into this project's own `pc-db` container, renames it `test_crm` to `profitpad_crm_db`, renames the roles `test_crm_*` to `pc_*` (`pc_api`, `pc_view_reader`, `pc_reader`, `pc_api_login`, `pc_admin`), and moves the hosts to `crm.profitpad.com` and `api.crm.profitpad.com`. Short API downtime. Rehearsed locally (2026-11-04): a database built from the old code, roles renamed, then 0088: no old names left in functions or policies, SQL suite passes.
+Moves the database out of n8n's `postgres` container into this project's own `pc-db` container, renames it `test_crm` to `profitpad_crm_db`, renames the roles `test_crm_*` to `pc_*` (`pc_api`, `pc_view_reader`, `pc_reader`, `pc_api_login`, `pc_admin`), and moves the hosts to `crm.profitpad.com` and `api.crm.profitpad.com`. Done on the server 2026-11-04 (the notes below record what went wrong so a repeat goes smoothly). Short API downtime. Rehearsed locally (2026-11-04): a database built from the old code, roles renamed, then 0088: no old names left in functions or policies, SQL suite passes.
+
+Lessons from the real run (2026-11-04):
+- Make the dump on the server with the old container's own `pg_dump` (`docker exec postgres pg_dump -U n8n -d test_crm -Fc > file`). A dump from the Mac's libpq 18 `pg_dump` has a newer file format that Postgres 15's `pg_restore` refuses.
+- Before restoring, create every role the dump's grants mention, or `pg_restore --exit-on-error` stops at the very end and leaves every table, view and function without its grants (data, indexes and policies are fine). Recovery: pull the ACL entries out of the dump (`pg_restore -l | grep -E ' (ACL|DEFAULT ACL) '`, then `-L` and `-f`), rename `test_crm_*` to `pc_*` with sed, and run them without stopping on errors.
+- Copy only the role memberships whose grantee is one of the copied roles; the old server also had `super_admin` (member: the `snappeas` login) and `super_reader`. `snappeas` now gets `pc_admin` directly.
+- The files folder had to move at the same time as the switch: the compose file mounts `/srv/profitpad_crm_files`, and Docker creates a missing bind folder as root, so the API failed with EACCES. The nginx `alias` for `/_pcrm_files/` moved with it.
 
 Code on `main` after this change expects the new names, so do not `git pull` on the server until step 4.
 
@@ -231,7 +237,7 @@ Order matters: every migration before 0088 must already be applied while the rol
 
 1. **Before**: bring the old database to 0087 with migration files that still say `test_crm_*`: from a checkout of the last commit before the rename (`git worktree add ../pcrm_pre_rename <that commit>`), run its `./db/migrate.sh`. This checkout's 0001 to 0087 now say `pc_*` and would fail against the old roles. Take the usual backup (`pg_dump -Fc`, libpq 18 build). On the server, as the n8n superuser, save the roles with their password hashes:
    `docker exec postgres pg_dumpall -U n8n --roles-only > ~/pcrm_roles.sql`, then keep only the lines for `claude_admin`, `reporting_reader`, `test_crm_api`, `test_crm_api_login`, `test_crm_view_reader`, `test_crm_reader`, `test_crm_admin` and their `GRANT ... TO` membership lines.
-2. **New container**: copy the dump to the server. In `/srv/test_crm` (still the old path): `git pull`, add `POSTGRES_PASSWORD=<new superuser password>` to `deploy/.env`, `cd deploy && docker compose up -d db` (creates an empty `profitpad_crm_db`).
+2. **New container**: copy the dump to the server. In `/srv/test_crm` (still the old path): `git pull`, create `deploy/db.env` holding `POSTGRES_PASSWORD=<new superuser password>` (`chmod 600`; only the db container reads it, so keep it out of `deploy/.env`, which the API loads), `cd deploy && docker compose up -d db` (creates an empty `profitpad_crm_db`).
 3. **Restore with the old names, then rename** (as `postgres` in `pc-db`):
    1. `psql -f pcrm_roles.sql` (the filtered roles), then `create role pc_owner nologin;`
    2. `pg_restore -U postgres -d profitpad_crm_db --exit-on-error <dump>` (keeps owners, so `claude_admin` still owns the functions it must replace).

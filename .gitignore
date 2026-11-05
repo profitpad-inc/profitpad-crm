@@ -4,6 +4,7 @@ backups/
 dist/
 .DS_Store
 deploy/.env
+deploy/db.env
 # local scratch: test scripts hold a live API key
 scripts/test*
 output.json

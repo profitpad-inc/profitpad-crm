@@ -6,15 +6,18 @@ services:
   # The CRM's own Postgres (moved out of the n8n container). Data lives in the
   # pc_db_data volume, so rebuilding or restarting the API never touches it.
   # Published on 127.0.0.1:5434 only: the SSH tunnel reaches it from the Mac,
-  # nothing outside the server can. POSTGRES_PASSWORD (the superuser,
-  # "postgres") comes from .env in this folder through compose interpolation.
+  # nothing outside the server can. The superuser ("postgres") password lives
+  # in db.env in this folder (POSTGRES_PASSWORD=..., chmod 600, gitignored),
+  # which only this container reads, so the API never sees it. The image only
+  # uses it when it creates an empty data folder; changing it later does not
+  # change the password (use ALTER ROLE postgres PASSWORD for that).
   db:
     image: postgres:15
     container_name: pc-db
     restart: unless-stopped
+    env_file: db.env
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
       POSTGRES_DB: profitpad_crm_db
     volumes:
       - pc_db_data:/var/lib/postgresql/data
