@@ -1,16 +1,17 @@
-# The CRM's containers: Postgres, the API, and the headless renderer.
-# nginx on the host terminates TLS for api.crm.profitpad.com and forwards
-# to 127.0.0.1:3100.
+# The CRM's containers: Postgres, the API, and the headless renderer, plus a
+# one-off UI build. nginx on the host terminates TLS and forwards the API's
+# address to 127.0.0.1:3100. Setup: docs/self-hosting.md.
 # Run from this folder: docker compose up -d --build
 services:
-  # The CRM's own Postgres (moved out of the n8n container). Data lives in the
-  # pc_db_data volume, so rebuilding or restarting the API never touches it.
-  # Published on 127.0.0.1:5434 only: the SSH tunnel reaches it from the Mac,
-  # nothing outside the server can. The superuser ("postgres") password lives
-  # in db.env in this folder (POSTGRES_PASSWORD=..., chmod 600, gitignored),
-  # which only this container reads, so the API never sees it. The image only
-  # uses it when it creates an empty data folder; changing it later does not
-  # change the password (use ALTER ROLE postgres PASSWORD for that).
+  # The CRM's Postgres. Data lives in the pc_db_data volume, so rebuilding or
+  # restarting the API never touches it. Published on 127.0.0.1:5434 only, for
+  # an SSH tunnel; nothing outside the server can reach it. The superuser
+  # ("postgres") password lives in db.env in this folder (POSTGRES_PASSWORD=...,
+  # chmod 600, gitignored), which only this container reads, so the API never
+  # sees it. The image only uses it when it creates an empty data folder;
+  # changing it later does not change the password (ALTER ROLE postgres
+  # PASSWORD does). ../db is mounted read-only so deploy/db.sh can run the
+  # bootstrap and migrations inside this container.
   db:
     image: postgres:15
     container_name: pc-db
@@ -21,6 +22,7 @@ services:
       POSTGRES_DB: profitpad_crm_db
     volumes:
       - pc_db_data:/var/lib/postgresql/data
+      - ../db:/pcrm-db:ro
     ports:
       - "127.0.0.1:5434:5432"
     networks:
@@ -36,29 +38,26 @@ services:
     image: profitpad-crm-api
     container_name: pc-api
     restart: unless-stopped
-    # PGUSER, PGPASSWORD, PGDATABASE, CORS_ORIGINS, DOCS_PUBLIC, TRUST_PROXY, FILES_URL_KEY
+    # database login, addresses, sign-in and keys: see .env.example
     env_file: .env
     environment:
       PGHOST: db                # the db service above, reached over db_net
       PGPORT: "5432"
       HOST: 0.0.0.0
       PORT: "3100"
-      # stored files: written here by the API, read by nginx on the host
-      # from /srv/profitpad_crm_files (location /_pcrm_files/)
+      # stored files: written here by the API, read by nginx on the host from
+      # the same folder (location /_pcrm_files/)
       FILES_DIR: /data/files
       FILES_ACCEL_PREFIX: /_pcrm_files/
-      # the headless browser for render_view (the renderer service below)
+      # the headless browser for render_view and quote PDFs (renderer below)
       RENDERER_WS_URL: ws://pc-renderer:3000/
     volumes:
-      - /srv/profitpad_crm_files:/data/files
+      - ${PCRM_FILES_DIR:-/srv/profitpad_crm_files}:/data/files
     ports:
       - "127.0.0.1:3100:3100"
     networks:
       - db_net
       - renderer_net
-      # n8n's network: integrations may call n8n directly
-      # (INTEGRATION_PRIVATE_HOSTS=n8n). Not used for the database any more.
-      - n8n_net
     depends_on:
       db:
         condition: service_healthy
@@ -66,8 +65,9 @@ services:
         condition: service_started
 
   # Headless Chromium that renders custom view drafts for the MCP's
-  # render_view. Reachable only by the API on renderer_net, which has no way
-  # out to the internet; the API also blocks every request the page makes.
+  # render_view and prints quote PDFs. Reachable only by the API on
+  # renderer_net, which has no way out to the internet; the API also blocks
+  # every request the page makes.
   renderer:
     build: ./renderer
     image: profitpad-crm-renderer
@@ -80,12 +80,23 @@ services:
     networks:
       - renderer_net
 
+  # Builds the UI into ../web/dist for nginx to serve (docs/self-hosting.md).
+  # Not started by "up": run it with  docker compose run --rm web-build
+  # VITE_API_URL comes from .env.
+  web-build:
+    image: node:24
+    profiles: ["tools"]
+    working_dir: /web
+    volumes:
+      - ../web:/web
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-}
+    command: ["sh", "-c", "test -n \"$$VITE_API_URL\" || { echo 'set VITE_API_URL in deploy/.env' >&2; exit 1; }; npm ci && npm run build"]
+
 volumes:
   pc_db_data:
 
 networks:
   db_net:
-  n8n_net:
-    external: true
   renderer_net:
     internal: true

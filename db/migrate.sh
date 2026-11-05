@@ -3,12 +3,12 @@
 # them in meta.migrations. Safe to re-run: applied files are skipped.
 #
 # Connection comes from the usual libpq env vars, defaulting to the SSH tunnel:
-#   PGHOST=localhost PGPORT=5433 PGUSER=claude_admin PGDATABASE=profitpad_crm_db ./db/migrate.sh
+#   PGHOST=localhost PGPORT=5433 PGUSER=pc_migrator PGDATABASE=profitpad_crm_db ./db/migrate.sh
 set -euo pipefail
 
 export PGHOST="${PGHOST:-localhost}"
 export PGPORT="${PGPORT:-5433}"
-export PGUSER="${PGUSER:-claude_admin}"
+export PGUSER="${PGUSER:-pc_migrator}"
 export PGDATABASE="${PGDATABASE:-profitpad_crm_db}"
 
 dir="$(cd "$(dirname "$0")" && pwd)"

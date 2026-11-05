@@ -4,7 +4,7 @@
     {
       "name": "api-local-copy",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5499", "PGUSER=claude_admin", "PGDATABASE=profitpad_crm_db", "PORT=3001", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5499", "PGUSER=pc_migrator", "PGDATABASE=profitpad_crm_db", "PORT=3001", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
       "port": 3001
     },
     {
@@ -16,7 +16,7 @@
     {
       "name": "api-payments-sandbox",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5498", "PGUSER=claude_admin", "PGDATABASE=profitpad_crm_db", "PORT=3003", "UI_URL=http://localhost:5176", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5498", "PGUSER=pc_migrator", "PGDATABASE=profitpad_crm_db", "PORT=3003", "UI_URL=http://localhost:5176", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
       "port": 3003
     },
     {

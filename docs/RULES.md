@@ -81,7 +81,7 @@ Every call is logged in `meta.schema_changes` with the actor (`crm.actor`) and t
 
 ## 7. Before anything destructive
 
-- Take a backup: `pg_dump -h localhost -p 5433 -U claude_admin -d profitpad_crm_db -Fc -f backups/profitpad_crm_db_$(date +%Y%m%d_%H%M%S).dump`
+- Take a backup: `pg_dump -h localhost -p 5433 -U pc_migrator -d profitpad_crm_db -Fc -f backups/profitpad_crm_db_$(date +%Y%m%d_%H%M%S).dump`
 - Ask a human first. Destructive means: `delete_property`, `delete_option`, `delete_record`, dropping integration tables, anything that removes data.
 
 ## 8. Testing

@@ -5,12 +5,12 @@ import type { Principal } from './auth.js';
 pg.types.setTypeParser(1700, (v) => v);
 pg.types.setTypeParser(1082, (v) => v);
 
-// Connects as claude_admin (password from ~/.pgpass) and immediately drops
+// Connects as pc_migrator (password from ~/.pgpass) and immediately drops
 // into pc_api, so every query runs with the API's limited privileges.
 const config: pg.ClientConfig = {
   host: process.env.PGHOST ?? 'localhost',
   port: Number(process.env.PGPORT ?? 5433),
-  user: process.env.PGUSER ?? 'claude_admin',
+  user: process.env.PGUSER ?? 'pc_migrator',
   database: process.env.PGDATABASE ?? 'profitpad_crm_db',
   options: "-c role=pc_api -c statement_timeout=30000 -c timezone=UTC"
 };

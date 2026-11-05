@@ -27,11 +27,6 @@ const CALLS_PER_MINUTE = 30;
 // interactive integrations (0060) are called while the viewer types
 const INTERACTIVE_CALLS_PER_MINUTE = 120;
 
-// Hosts that may resolve to private addresses and be called over http, for
-// an n8n on the same Docker network (INTEGRATION_PRIVATE_HOSTS=n8n). Every
-// other host must be https on a public address.
-const privateHosts = new Set((process.env.INTEGRATION_PRIVATE_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean));
-
 interface IntegrationRow extends ApprovalRow {
   key: string;
   label: string;
@@ -175,11 +170,12 @@ export function checkUrl(raw: unknown): string {
   }
   if (url.username || url.password) throw badRequest('url cannot hold a user name or password; use the secret header');
   const host = url.hostname.toLowerCase();
-  if (url.protocol === 'http:' && !privateHosts.has(host)) throw badRequest('url must use https');
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw badRequest('url must use https');
+  // https on a public address only: integrations reach services such as n8n
+  // over the internet, never over the server's own network
+  if (url.protocol !== 'https:') throw badRequest('url must use https');
   const bare = host.replace(/^\[|\]$/g, '');
   const family = isIP(bare);
-  if (family && !privateHosts.has(host) && isBlockedAddress(bare, family)) throw badRequest('url points at a private address');
+  if (family && isBlockedAddress(bare, family)) throw badRequest('url points at a private address');
   if (url.href.length > 2000) throw badRequest('url is too long');
   return url.href;
 }
@@ -319,14 +315,12 @@ function rateLimit(p: Principal, key: string, limit = CALLS_PER_MINUTE): void {
   if (calls.size > 10_000) for (const [k, v] of calls) if (v.every((t) => now - t >= 60_000)) calls.delete(k);
 }
 
-// dns.lookup that refuses private addresses unless the host is listed in
-// INTEGRATION_PRIVATE_HOSTS; used for the connection itself, so a second DNS
-// answer cannot swap one in.
+// dns.lookup that refuses private addresses; used for the connection itself,
+// so a second DNS answer cannot swap one in.
 export function guardedLookup(hostname: string, options: { all?: boolean }, callback: (...args: any[]) => void) {
   lookup(hostname, { all: true }, (err, addresses: LookupAddress[]) => {
     if (err) return callback(err);
-    const allowPrivate = privateHosts.has(hostname.toLowerCase());
-    if (addresses.length === 0 || (!allowPrivate && addresses.some((a) => isBlockedAddress(a.address, a.family)))) {
+    if (addresses.length === 0 || addresses.some((a) => isBlockedAddress(a.address, a.family))) {
       return callback(new Error(`${hostname} resolves to an address that is not allowed`));
     }
     if (options?.all) return callback(null, addresses);

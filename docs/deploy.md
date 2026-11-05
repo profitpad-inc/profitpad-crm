@@ -1,5 +1,7 @@
 # Deploying
 
+> ProfitPad's own server, as a diary of what was done when. To set up a new server, follow [self-hosting.md](self-hosting.md). Since 2026-11-05 the bootstrap is `db/bootstrap/000_superuser.sql` plus `001_api_login.sql` (`002_view_reader.sql` folded into 000), run by `deploy/db.sh init`; the nginx template is `deploy/nginx-api.conf`.
+
 | Piece | Where | Address |
 |---|---|---|
 | UI (static) | GitHub Pages, built by `.github/workflows/pages.yml` | `https://crm.profitpad.com` |
@@ -94,7 +96,7 @@ Migration `0013_public_pages.sql` must be applied (`./db/migrate.sh`) before dep
 
   ```bash
   sudo cp /srv/profitpad_crm/deploy/nginx-pcrm-limits.conf /etc/nginx/conf.d/pcrm-limits.conf
-  # merge the location blocks and server_tokens off from deploy/nginx-api.crm.profitpad.com.conf
+  # merge the location blocks and server_tokens off from deploy/nginx-api.conf
   # into /etc/nginx/sites-available/api.crm.profitpad.com (keep certbot's ssl lines)
   sudo nginx -t && sudo systemctl reload nginx
   ```
@@ -113,7 +115,7 @@ Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019).
 
 - Deploy the API (it needs `npm ci` for the new `@modelcontextprotocol/server` and `zod` packages, which the Docker build does) and the UI.
 - `PUBLIC_API_URL=https://api.crm.profitpad.com` must be set: it is the OAuth issuer and the MCP resource (`https://api.crm.profitpad.com/mcp`). Do not set `OAUTH_INSECURE_METADATA_FETCH`.
-- nginx: add the `pcrm_oauth` zone (in `deploy/nginx-pcrm-limits.conf`) and the `/oauth/` and `= /mcp` locations from `deploy/nginx-api.crm.profitpad.com.conf` (the `/mcp` one turns off buffering for streamed replies), as in section 5.
+- nginx: add the `pcrm_oauth` zone (in `deploy/nginx-pcrm-limits.conf`) and the `/oauth/` and `= /mcp` locations from `deploy/nginx-api.conf` (the `/mcp` one turns off buffering for streamed replies), as in section 5.
 - Check: `curl -s https://api.crm.profitpad.com/.well-known/oauth-authorization-server` returns the metadata, and `curl -si -X POST https://api.crm.profitpad.com/mcp` answers 401 with a `WWW-Authenticate` header.
 - Connect an MCP client to `https://api.crm.profitpad.com/mcp` (the address is also on Settings → Connected apps).
 
@@ -121,7 +123,7 @@ Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019).
 
 Apply `0022_meeting_booker.sql` (`./db/migrate.sh`) before deploying the API that includes it. Then:
 
-- `deploy/.env`: `MASTER_ENCRYPTION_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). Keep it: losing or changing it means everyone connects their calendars again. Optional `CALENDAR_GOOGLE_DOMAINS` (default `profitpad.com`).
+- `deploy/.env`: `MASTER_ENCRYPTION_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). Keep it: losing or changing it means everyone connects their calendars again. Optional `CALENDAR_GOOGLE_DOMAINS` (until 2026-11-05 it defaulted to `profitpad.com`; now unset means any domain, so ProfitPad's `.env` sets `CALENDAR_GOOGLE_DOMAINS=profitpad.com`).
 - Google Cloud (same OAuth client as sign-in): Calendar API enabled (done 2026-11-01); consent screen stays **Internal**, with the scopes `.../auth/calendar.freebusy`, `.../auth/calendar.events`, `.../auth/calendar.calendarlist.readonly` added; authorized redirect URIs `https://api.crm.profitpad.com/v1/calendar/google/callback` and `http://localhost:5173/v1/calendar/google/callback`.
 - Microsoft Entra (same app registration): delegated Graph permissions `Calendars.ReadWrite` and `offline_access` (done 2026-11-01; grant admin consent if the tenant asks for it); Web redirect URIs `https://api.crm.profitpad.com/v1/calendar/microsoft/callback` and `http://localhost:5173/v1/calendar/microsoft/callback`.
 - Deploy the UI too (new page `/p/book/`).
@@ -134,7 +136,7 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
   `sudo mkdir -p /srv/profitpad_crm_files && sudo chown 1000:1000 /srv/profitpad_crm_files && sudo chmod 755 /srv/profitpad_crm_files`
 - `deploy/.env`: `FILES_URL_KEY=` 32 random bytes in base64 (`openssl rand -base64 32`). It signs file links; without it the API makes a random key at start and links stop working on every restart. Optional `FILES_MAX_BYTES` (default 5 GB per file).
 - `deploy/docker-compose.yml` already mounts the folder at `/data/files` and sets `FILES_DIR` and `FILES_ACCEL_PREFIX`; `docker compose up -d --build` picks it up.
-- nginx: add the `/_pcrm_files/` and upload-chunk locations from `deploy/nginx-api.crm.profitpad.com.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Without the `/_pcrm_files/` location every download returns an empty body.
+- nginx: add the `/_pcrm_files/` and upload-chunk locations from `deploy/nginx-api.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Without the `/_pcrm_files/` location every download returns an empty body.
 - Check after deploy: upload a small PNG to a file property, open it, then `curl -sI '<signed link>'` should show `content-type: image/png`, `content-disposition: inline`, `content-security-policy: default-src 'none'; img-src 'self' data:; ...` (exactly one CSP header, no `sandbox`), `x-content-type-options: nosniff` and `accept-ranges: bytes`; a non-media file (say a .zip) should show `attachment` and `content-security-policy: sandbox; default-src 'none'`. Also open a video's public link in Chrome and check it plays. Not yet checked: that nginx keeps the API's Content-Type, Content-Disposition and Cache-Control after X-Accel-Redirect and that `$upstream_http_content_security_policy` carries the API's CSP (only tested without nginx, where the API sends the bytes itself).
 - Disk: files are not in `pg_dump` backups. Back up `/srv/profitpad_crm_files` separately, and watch free space (`df -h /srv`).
 
@@ -217,7 +219,7 @@ Locally: `brew install tesseract`.
 ## 21. Live updates on record pages (migrations 0086 and 0087)
 
 1. Apply migrations `0086_record_change_notify.sql` and `0087_live_comment_targets.sql` (`./db/migrate.sh`). It adds a trigger on `meta.record_history` that sends `NOTIFY record_changes`; nothing listens until the new API runs, and an unheard notice costs next to nothing.
-2. nginx: add the `location /v1/live/` block from `deploy/nginx-api.crm.profitpad.com.conf` to the live site (keep the `listen 443 ssl` and certificate lines certbot added), then `sudo nginx -t && sudo systemctl reload nginx`. Without it the stream still works (the API sends `X-Accel-Buffering: no` and pings every 25 s, inside the 120 s read timeout), but the block makes it explicit.
+2. nginx: add the `location /v1/live/` block from `deploy/nginx-api.conf` to the live site (keep the `listen 443 ssl` and certificate lines certbot added), then `sudo nginx -t && sudo systemctl reload nginx`. Without it the stream still works (the API sends `X-Accel-Buffering: no` and pings every 25 s, inside the 120 s read timeout), but the block makes it explicit.
 3. Check that the 443 server has HTTP/2 (`listen 443 ssl http2;` on older nginx, or `http2 on;` on 1.25.1 and later; `curl -sI --http2 https://api.crm.profitpad.com/health | head -1` should say `HTTP/2`). Over HTTP/1.1 a browser opens at most 6 connections to the API, and each open record tab holds one. Hidden tabs close their stream, but HTTP/2 removes the limit.
 4. Rebuild and restart the API (`docker compose up -d --build`), then deploy the UI.
 
@@ -253,7 +255,7 @@ Order matters: every migration before 0088 must already be applied while the rol
    4. Run `db/bootstrap/000_superuser.sql`, `001_api_login.sql` and `002_view_reader.sql` (database-level grants and settings are not in a `pg_dump`), plus: `alter database profitpad_crm_db set timezone = 'UTC'; revoke create on schema public from public; grant create, usage on schema public to claude_admin; revoke temp on database profitpad_crm_db from public;`
 4. **Migrate and start**: point the Mac's SSH alias at the new port (rename it `profitpad_claude_profitpad_crm`, `LocalForward 5433 127.0.0.1:5434`; update `~/.pgpass` to `profitpad_crm_db`), then `./db/migrate.sh` (applies 0088). Check: `select count(*) from pg_proc where prosrc ~ 'test_crm'` and `select count(*) from pg_policies where qual ~ 'test_crm'` both 0. Update `deploy/.env`: `PGDATABASE=profitpad_crm_db`, `PGUSER=pc_api_login`, `CORS_ORIGINS` with `https://crm.profitpad.com`. Stop the old `test-crm-api` and `test-crm-renderer` containers (`docker rm -f`), then `docker compose up -d --build`.
 5. **Server paths**: stop the stack, `sudo mv /srv/test_crm /srv/profitpad_crm` and `sudo mv /srv/test_crm_files /srv/profitpad_crm_files`, start it from the new path. (The `pc_db_data` volume is named by the compose project, which is the folder name `deploy`, so moving the parent folder keeps it; check with `docker volume ls` before and after.)
-6. **Hosts**: DNS for `crm.profitpad.com` (CNAME to GitHub Pages) and `api.crm.profitpad.com` (A record); install `deploy/nginx-api.crm.profitpad.com.conf`, `certbot --nginx -d api.crm.profitpad.com`; turn the old `api.test-crm.profitpad.com` site into a 301 to the new host. GitHub: Pages custom domain `crm.profitpad.com`, repo variable `VITE_API_URL=https://api.crm.profitpad.com`, rerun the Pages workflow. Then update everything outside that points at the old hosts: Google and Microsoft OAuth redirect URIs (section 4), Google API key restrictions, the MCP connector URL in Claude, n8n flows and webhook senders calling `api.test-crm`, and embed snippets on client sites (`/p/embed.js`).
+6. **Hosts**: DNS for `crm.profitpad.com` (CNAME to GitHub Pages) and `api.crm.profitpad.com` (A record); install `deploy/nginx-api.conf`, `certbot --nginx -d api.crm.profitpad.com`; turn the old `api.test-crm.profitpad.com` site into a 301 to the new host. GitHub: Pages custom domain `crm.profitpad.com`, repo variable `VITE_API_URL=https://api.crm.profitpad.com`, rerun the Pages workflow. Then update everything outside that points at the old hosts: Google and Microsoft OAuth redirect URIs (section 4), Google API key restrictions, the MCP connector URL in Claude, n8n flows and webhook senders calling `api.test-crm`, and embed snippets on client sites (`/p/embed.js`).
 7. **After**: create and archive a test property; run a custom view as a non-admin and check row-level security still hides records; open a public quote link and a form embed on the new host. Leave the old `test_crm` database in n8n's container for a week, then drop it (ask first, back up first).
 
 ## Notes

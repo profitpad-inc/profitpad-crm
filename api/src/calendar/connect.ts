@@ -17,15 +17,15 @@ import {
 // the callback, which must find the same signed-in user (a connection is never
 // attached to someone else's account by a forged callback).
 //
-// Google accounts are limited to CALENDAR_GOOGLE_DOMAINS (default
-// profitpad.com): the OAuth consent screen is Internal, so Google's app
+// Google accounts can be limited to CALENDAR_GOOGLE_DOMAINS (comma-separated,
+// unset means any): with an Internal OAuth consent screen, Google's app
 // verification for calendar scopes is not needed. MICROSOFT_ALLOWED_DOMAINS
 // applies to Microsoft connections as it does to sign-in.
 
 const publicApiUrl = (process.env.PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const uiUrl = (process.env.UI_URL ?? '').replace(/\/$/, '');
 const domains = (v: string | undefined) => (v ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-const googleDomains = domains(process.env.CALENDAR_GOOGLE_DOMAINS ?? 'profitpad.com');
+const googleDomains = domains(process.env.CALENDAR_GOOGLE_DOMAINS);
 const msDomains = domains(process.env.MICROSOFT_ALLOWED_DOMAINS);
 
 const FLOW_COOKIE = 'pcrm_cal';

@@ -6,8 +6,8 @@
 -- then pg_dump (plain, schema and data, meta.migrations left out) wrote this
 -- file. Edits belong in new migrations numbered from 0089, never here.
 --
--- Run by db/migrate.sh as claude_admin after db/bootstrap/000 and 002 (the
--- pc_* roles must exist). A database that already ran 0001 to 0088 gets this
+-- Run by db/migrate.sh as pc_migrator after db/bootstrap/000_superuser.sql
+-- (the pc_* roles must exist); deploy/db.sh init does both. A database that already ran 0001 to 0088 gets this
 -- file recorded as applied instead (migrate.sh does that on its own).
 --
 -- The meta schema already exists here: migrate.sh creates it for its own
@@ -33,76 +33,76 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: auth; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: auth; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA auth;
 
 
-ALTER SCHEMA auth OWNER TO claude_admin;
+ALTER SCHEMA auth OWNER TO pc_migrator;
 
 --
--- Name: crm; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: crm; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA crm;
 
 
-ALTER SCHEMA crm OWNER TO claude_admin;
+ALTER SCHEMA crm OWNER TO pc_migrator;
 
 --
--- Name: integrations; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: integrations; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA integrations;
 
 
-ALTER SCHEMA integrations OWNER TO claude_admin;
+ALTER SCHEMA integrations OWNER TO pc_migrator;
 
 --
--- Name: meta; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: meta; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA IF NOT EXISTS meta;
 
 
-ALTER SCHEMA meta OWNER TO claude_admin;
+ALTER SCHEMA meta OWNER TO pc_migrator;
 
 --
--- Name: reporting; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: reporting; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA reporting;
 
 
-ALTER SCHEMA reporting OWNER TO claude_admin;
+ALTER SCHEMA reporting OWNER TO pc_migrator;
 
 --
--- Name: rls; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: rls; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA rls;
 
 
-ALTER SCHEMA rls OWNER TO claude_admin;
+ALTER SCHEMA rls OWNER TO pc_migrator;
 
 --
--- Name: ui; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: ui; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA ui;
 
 
-ALTER SCHEMA ui OWNER TO claude_admin;
+ALTER SCHEMA ui OWNER TO pc_migrator;
 
 --
--- Name: view_data; Type: SCHEMA; Schema: -; Owner: claude_admin
+-- Name: view_data; Type: SCHEMA; Schema: -; Owner: pc_migrator
 --
 
 CREATE SCHEMA view_data;
 
 
-ALTER SCHEMA view_data OWNER TO claude_admin;
+ALTER SCHEMA view_data OWNER TO pc_migrator;
 
 --
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
@@ -120,7 +120,7 @@ COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching
 --
 -- Schema grants, applied early (also repeated at the end, as pg_dump wrote them):
 -- objects below are handed to pc_view_reader, which needs CREATE on view_data
--- first when a non-superuser (claude_admin) runs this file.
+-- first when a non-superuser (pc_migrator) runs this file.
 --
 
 GRANT USAGE ON SCHEMA auth TO pc_api;
@@ -138,7 +138,7 @@ GRANT ALL ON SCHEMA view_data TO pc_view_reader;
 
 
 --
--- Name: _actor_description(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _actor_description(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._actor_description(p_api_name text) RETURNS text
@@ -149,10 +149,10 @@ CREATE FUNCTION meta._actor_description(p_api_name text) RETURNS text
 $$;
 
 
-ALTER FUNCTION meta._actor_description(p_api_name text) OWNER TO claude_admin;
+ALTER FUNCTION meta._actor_description(p_api_name text) OWNER TO pc_migrator;
 
 --
--- Name: _analyze_calc(text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _analyze_calc(text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._analyze_calc(p_object_type_id text, p_sql text, p_output_type text) RETURNS jsonb
@@ -289,10 +289,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._analyze_calc(p_object_type_id text, p_sql text, p_output_type text) OWNER TO claude_admin;
+ALTER FUNCTION meta._analyze_calc(p_object_type_id text, p_sql text, p_output_type text) OWNER TO pc_migrator;
 
 --
--- Name: _apply_property_rules(text, boolean); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _apply_property_rules(text, boolean); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._apply_property_rules(p_property_id text, p_validate boolean DEFAULT true) RETURNS text[]
@@ -402,10 +402,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._apply_property_rules(p_property_id text, p_validate boolean) OWNER TO claude_admin;
+ALTER FUNCTION meta._apply_property_rules(p_property_id text, p_validate boolean) OWNER TO pc_migrator;
 
 --
--- Name: _calc_has_cycle(text, text, jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _calc_has_cycle(text, text, jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._calc_has_cycle(p_object_type_id text, p_api_name text, p_deps jsonb) RETURNS boolean
@@ -425,10 +425,10 @@ CREATE FUNCTION meta._calc_has_cycle(p_object_type_id text, p_api_name text, p_d
 $$;
 
 
-ALTER FUNCTION meta._calc_has_cycle(p_object_type_id text, p_api_name text, p_deps jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta._calc_has_cycle(p_object_type_id text, p_api_name text, p_deps jsonb) OWNER TO pc_migrator;
 
 --
--- Name: _check_parent_property(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _check_parent_property(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._check_parent_property() RETURNS trigger
@@ -447,10 +447,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._check_parent_property() OWNER TO claude_admin;
+ALTER FUNCTION meta._check_parent_property() OWNER TO pc_migrator;
 
 --
--- Name: _check_sql_fragment(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _check_sql_fragment(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._check_sql_fragment(p_sql text) RETURNS void
@@ -512,10 +512,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._check_sql_fragment(p_sql text) OWNER TO claude_admin;
+ALTER FUNCTION meta._check_sql_fragment(p_sql text) OWNER TO pc_migrator;
 
 --
--- Name: _column_type(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _column_type(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._column_type(p_type text, p_calc_output_type text DEFAULT NULL::text) RETURNS text
@@ -532,10 +532,10 @@ CREATE FUNCTION meta._column_type(p_type text, p_calc_output_type text DEFAULT N
 $$;
 
 
-ALTER FUNCTION meta._column_type(p_type text, p_calc_output_type text) OWNER TO claude_admin;
+ALTER FUNCTION meta._column_type(p_type text, p_calc_output_type text) OWNER TO pc_migrator;
 
 --
--- Name: _compile_filter(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _compile_filter(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._compile_filter(p_object_type_id text, p_filter jsonb, p_alias text) RETURNS text
@@ -632,10 +632,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._compile_filter(p_object_type_id text, p_filter jsonb, p_alias text) OWNER TO claude_admin;
+ALTER FUNCTION meta._compile_filter(p_object_type_id text, p_filter jsonb, p_alias text) OWNER TO pc_migrator;
 
 --
--- Name: _create_object_table(text, text, text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _create_object_table(text, text, text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._create_object_table(p_code text, p_api_name text, p_label_singular text, p_label_plural text, p_kind text, p_description text) RETURNS void
@@ -711,10 +711,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._create_object_table(p_code text, p_api_name text, p_label_singular text, p_label_plural text, p_kind text, p_description text) OWNER TO claude_admin;
+ALTER FUNCTION meta._create_object_table(p_code text, p_api_name text, p_label_singular text, p_label_plural text, p_kind text, p_description text) OWNER TO pc_migrator;
 
 --
--- Name: _default_label(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _default_label(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._default_label(p_a text, p_b text) RETURNS text
@@ -739,10 +739,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._default_label(p_a text, p_b text) OWNER TO claude_admin;
+ALTER FUNCTION meta._default_label(p_a text, p_b text) OWNER TO pc_migrator;
 
 --
--- Name: _enqueue_calcs(text, text, text[]); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _enqueue_calcs(text, text, text[]); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._enqueue_calcs(p_object text, p_id text, p_changed text[]) RETURNS void
@@ -771,10 +771,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._enqueue_calcs(p_object text, p_id text, p_changed text[]) OWNER TO claude_admin;
+ALTER FUNCTION meta._enqueue_calcs(p_object text, p_id text, p_changed text[]) OWNER TO pc_migrator;
 
 --
--- Name: _enqueue_currency_calcs(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _enqueue_currency_calcs(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._enqueue_currency_calcs() RETURNS trigger
@@ -794,10 +794,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._enqueue_currency_calcs() OWNER TO claude_admin;
+ALTER FUNCTION meta._enqueue_currency_calcs() OWNER TO pc_migrator;
 
 --
--- Name: _fail(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _fail(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._fail(p_message text, p_errcode text DEFAULT '22023'::text) RETURNS void
@@ -808,10 +808,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._fail(p_message text, p_errcode text) OWNER TO claude_admin;
+ALTER FUNCTION meta._fail(p_message text, p_errcode text) OWNER TO pc_migrator;
 
 --
--- Name: _filter_literal(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _filter_literal(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._filter_literal(p_type text, p_value jsonb, p_cast text) RETURNS text
@@ -850,10 +850,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._filter_literal(p_type text, p_value jsonb, p_cast text) OWNER TO claude_admin;
+ALTER FUNCTION meta._filter_literal(p_type text, p_value jsonb, p_cast text) OWNER TO pc_migrator;
 
 --
--- Name: _insert_options(text, jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _insert_options(text, jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._insert_options(p_property_id text, p_options jsonb) RETURNS void
@@ -885,10 +885,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._insert_options(p_property_id text, p_options jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta._insert_options(p_property_id text, p_options jsonb) OWNER TO pc_migrator;
 
 --
--- Name: _line_accepted_quote(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _line_accepted_quote(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._line_accepted_quote(p_line text) RETURNS text
@@ -903,10 +903,10 @@ CREATE FUNCTION meta._line_accepted_quote(p_line text) RETURNS text
 $$;
 
 
-ALTER FUNCTION meta._line_accepted_quote(p_line text) OWNER TO claude_admin;
+ALTER FUNCTION meta._line_accepted_quote(p_line text) OWNER TO pc_migrator;
 
 --
--- Name: _line_other_link(text, boolean, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _line_other_link(text, boolean, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._line_other_link(p_line text, p_products boolean, p_other text) RETURNS text
@@ -931,10 +931,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._line_other_link(p_line text, p_products boolean, p_other text) OWNER TO claude_admin;
+ALTER FUNCTION meta._line_other_link(p_line text, p_products boolean, p_other text) OWNER TO pc_migrator;
 
 --
--- Name: _log_change(text, text, text, jsonb, text[]); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _log_change(text, text, text, jsonb, text[]); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._log_change(p_action text, p_object_type_id text, p_property_id text, p_details jsonb, p_statements text[] DEFAULT '{}'::text[]) RETURNS void
@@ -945,10 +945,10 @@ CREATE FUNCTION meta._log_change(p_action text, p_object_type_id text, p_propert
 $$;
 
 
-ALTER FUNCTION meta._log_change(p_action text, p_object_type_id text, p_property_id text, p_details jsonb, p_statements text[]) OWNER TO claude_admin;
+ALTER FUNCTION meta._log_change(p_action text, p_object_type_id text, p_property_id text, p_details jsonb, p_statements text[]) OWNER TO pc_migrator;
 
 --
--- Name: _refresh_views(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _refresh_views(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._refresh_views(p_object_type_id text) RETURNS void
@@ -1020,10 +1020,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._refresh_views(p_object_type_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta._refresh_views(p_object_type_id text) OWNER TO pc_migrator;
 
 --
--- Name: hex_id(regclass); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: hex_id(regclass); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.hex_id(p_seq regclass) RETURNS text
@@ -1033,10 +1033,10 @@ CREATE FUNCTION meta.hex_id(p_seq regclass) RETURNS text
 $$;
 
 
-ALTER FUNCTION meta.hex_id(p_seq regclass) OWNER TO claude_admin;
+ALTER FUNCTION meta.hex_id(p_seq regclass) OWNER TO pc_migrator;
 
 --
--- Name: pc_0001_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: pc_0001_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.pc_0001_seq
@@ -1047,14 +1047,14 @@ CREATE SEQUENCE meta.pc_0001_seq
     CACHE 1;
 
 
-ALTER TABLE meta.pc_0001_seq OWNER TO claude_admin;
+ALTER TABLE meta.pc_0001_seq OWNER TO pc_migrator;
 
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: pc_0001; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: pc_0001; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.pc_0001 (
@@ -1085,10 +1085,10 @@ CREATE TABLE meta.pc_0001 (
 );
 
 
-ALTER TABLE meta.pc_0001 OWNER TO claude_admin;
+ALTER TABLE meta.pc_0001 OWNER TO pc_migrator;
 
 --
--- Name: _resolve_object(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _resolve_object(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._resolve_object(p_object text) RETURNS meta.pc_0001
@@ -1105,10 +1105,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._resolve_object(p_object text) OWNER TO claude_admin;
+ALTER FUNCTION meta._resolve_object(p_object text) OWNER TO pc_migrator;
 
 --
--- Name: pc_0002_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: pc_0002_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.pc_0002_seq
@@ -1119,10 +1119,10 @@ CREATE SEQUENCE meta.pc_0002_seq
     CACHE 1;
 
 
-ALTER TABLE meta.pc_0002_seq OWNER TO claude_admin;
+ALTER TABLE meta.pc_0002_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0002; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: pc_0002; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.pc_0002 (
@@ -1157,10 +1157,10 @@ CREATE TABLE meta.pc_0002 (
 );
 
 
-ALTER TABLE meta.pc_0002 OWNER TO claude_admin;
+ALTER TABLE meta.pc_0002 OWNER TO pc_migrator;
 
 --
--- Name: _resolve_property(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _resolve_property(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._resolve_property(p_object_type_id text, p_api_name text) RETURNS meta.pc_0002
@@ -1178,10 +1178,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._resolve_property(p_object_type_id text, p_api_name text) OWNER TO claude_admin;
+ALTER FUNCTION meta._resolve_property(p_object_type_id text, p_api_name text) OWNER TO pc_migrator;
 
 --
--- Name: _resolve_record_object(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _resolve_record_object(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._resolve_record_object(p_object text) RETURNS meta.pc_0001
@@ -1197,10 +1197,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._resolve_record_object(p_object text) OWNER TO claude_admin;
+ALTER FUNCTION meta._resolve_record_object(p_object text) OWNER TO pc_migrator;
 
 --
--- Name: _store_calc_deps(text, jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _store_calc_deps(text, jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._store_calc_deps(p_property_id text, p_deps jsonb) RETURNS void
@@ -1212,10 +1212,10 @@ CREATE FUNCTION meta._store_calc_deps(p_property_id text, p_deps jsonb) RETURNS 
 $$;
 
 
-ALTER FUNCTION meta._store_calc_deps(p_property_id text, p_deps jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta._store_calc_deps(p_property_id text, p_deps jsonb) OWNER TO pc_migrator;
 
 --
--- Name: _sync_user_options_for_property(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _sync_user_options_for_property(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._sync_user_options_for_property(p_property_id text) RETURNS void
@@ -1259,10 +1259,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._sync_user_options_for_property(p_property_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta._sync_user_options_for_property(p_property_id text) OWNER TO pc_migrator;
 
 --
--- Name: _tg_base_currency_code(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _tg_base_currency_code(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._tg_base_currency_code() RETURNS trigger
@@ -1285,10 +1285,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._tg_base_currency_code() OWNER TO claude_admin;
+ALTER FUNCTION meta._tg_base_currency_code() OWNER TO pc_migrator;
 
 --
--- Name: _tg_currency_base(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _tg_currency_base(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._tg_currency_base() RETURNS trigger
@@ -1308,10 +1308,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta._tg_currency_base() OWNER TO claude_admin;
+ALTER FUNCTION meta._tg_currency_base() OWNER TO pc_migrator;
 
 --
--- Name: _user_has_admin_role(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _user_has_admin_role(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._user_has_admin_role(p_user_id text) RETURNS boolean
@@ -1328,10 +1328,10 @@ CREATE FUNCTION meta._user_has_admin_role(p_user_id text) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION meta._user_has_admin_role(p_user_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta._user_has_admin_role(p_user_id text) OWNER TO pc_migrator;
 
 --
--- Name: _validate_options(text, jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _validate_options(text, jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._validate_options(p_type text, p_options jsonb) RETURNS void
@@ -1398,10 +1398,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._validate_options(p_type text, p_options jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta._validate_options(p_type text, p_options jsonb) OWNER TO pc_migrator;
 
 --
--- Name: _validate_property_name(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _validate_property_name(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._validate_property_name(p_object_type_id text, p_api_name text, p_label text, p_exclude_id text) RETURNS void
@@ -1434,10 +1434,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta._validate_property_name(p_object_type_id text, p_api_name text, p_label text, p_exclude_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta._validate_property_name(p_object_type_id text, p_api_name text, p_label text, p_exclude_id text) OWNER TO pc_migrator;
 
 --
--- Name: _view_function_allowed(oid); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: _view_function_allowed(oid); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta._view_function_allowed(p_oid oid) RETURNS boolean
@@ -1458,10 +1458,10 @@ CREATE FUNCTION meta._view_function_allowed(p_oid oid) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION meta._view_function_allowed(p_oid oid) OWNER TO claude_admin;
+ALTER FUNCTION meta._view_function_allowed(p_oid oid) OWNER TO pc_migrator;
 
 --
--- Name: actor(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: actor(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.actor() RETURNS text
@@ -1471,10 +1471,10 @@ CREATE FUNCTION meta.actor() RETURNS text
 $$;
 
 
-ALTER FUNCTION meta.actor() OWNER TO claude_admin;
+ALTER FUNCTION meta.actor() OWNER TO pc_migrator;
 
 --
--- Name: add_option(text, text, text, text, integer, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: add_option(text, text, text, text, integer, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.add_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer DEFAULT NULL::integer, p_description text DEFAULT NULL::text) RETURNS text
@@ -1499,10 +1499,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.add_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text) OWNER TO claude_admin;
+ALTER FUNCTION meta.add_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text) OWNER TO pc_migrator;
 
 --
--- Name: analyze_view_query(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: analyze_view_query(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.analyze_view_query(p_sql text) RETURNS jsonb
@@ -1591,10 +1591,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.analyze_view_query(p_sql text) OWNER TO claude_admin;
+ALTER FUNCTION meta.analyze_view_query(p_sql text) OWNER TO pc_migrator;
 
 --
--- Name: archive_property(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: archive_property(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.archive_property(p_object text, p_api_name text) RETURNS void
@@ -1625,10 +1625,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.archive_property(p_object text, p_api_name text) OWNER TO claude_admin;
+ALTER FUNCTION meta.archive_property(p_object text, p_api_name text) OWNER TO pc_migrator;
 
 --
--- Name: associate(text, text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: associate(text, text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.associate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text DEFAULT NULL::text) RETURNS text
@@ -1676,10 +1676,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.associate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta.associate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text) OWNER TO pc_migrator;
 
 --
--- Name: association_allowed(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: association_allowed(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.association_allowed(p_a text, p_b text) RETURNS boolean
@@ -1708,10 +1708,10 @@ CREATE FUNCTION meta.association_allowed(p_a text, p_b text) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION meta.association_allowed(p_a text, p_b text) OWNER TO claude_admin;
+ALTER FUNCTION meta.association_allowed(p_a text, p_b text) OWNER TO pc_migrator;
 
 --
--- Name: association_system_only(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: association_system_only(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.association_system_only(p_a text, p_b text) RETURNS boolean
@@ -1723,10 +1723,10 @@ CREATE FUNCTION meta.association_system_only(p_a text, p_b text) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION meta.association_system_only(p_a text, p_b text) OWNER TO claude_admin;
+ALTER FUNCTION meta.association_system_only(p_a text, p_b text) OWNER TO pc_migrator;
 
 --
--- Name: compile_filter_groups(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: compile_filter_groups(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.compile_filter_groups(p_object_type_id text, p_groups jsonb, p_alias text) RETURNS text
@@ -1758,10 +1758,10 @@ exception when others then
 end $$;
 
 
-ALTER FUNCTION meta.compile_filter_groups(p_object_type_id text, p_groups jsonb, p_alias text) OWNER TO claude_admin;
+ALTER FUNCTION meta.compile_filter_groups(p_object_type_id text, p_groups jsonb, p_alias text) OWNER TO pc_migrator;
 
 --
--- Name: copy_lines(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: copy_lines(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.copy_lines(p_from_object text, p_from_id text, p_to_object text, p_to_id text) RETURNS text[]
@@ -1811,10 +1811,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.copy_lines(p_from_object text, p_from_id text, p_to_object text, p_to_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta.copy_lines(p_from_object text, p_from_id text, p_to_object text, p_to_id text) OWNER TO pc_migrator;
 
 --
--- Name: create_association_label(text, text, text, text, boolean, integer, integer, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: create_association_label(text, text, text, text, boolean, integer, integer, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.create_association_label(p_from_object text, p_to_object text, p_label text, p_inverse_label text DEFAULT NULL::text, p_is_symmetric boolean DEFAULT false, p_max_to_per_from integer DEFAULT NULL::integer, p_max_from_per_to integer DEFAULT NULL::integer, p_category text DEFAULT 'custom'::text) RETURNS text
@@ -1846,10 +1846,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.create_association_label(p_from_object text, p_to_object text, p_label text, p_inverse_label text, p_is_symmetric boolean, p_max_to_per_from integer, p_max_from_per_to integer, p_category text) OWNER TO claude_admin;
+ALTER FUNCTION meta.create_association_label(p_from_object text, p_to_object text, p_label text, p_inverse_label text, p_is_symmetric boolean, p_max_to_per_from integer, p_max_from_per_to integer, p_category text) OWNER TO pc_migrator;
 
 --
--- Name: create_integration_table(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: create_integration_table(text, jsonb, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.create_integration_table(p_name text, p_columns jsonb, p_primary_key text) RETURNS void
@@ -1897,10 +1897,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.create_integration_table(p_name text, p_columns jsonb, p_primary_key text) OWNER TO claude_admin;
+ALTER FUNCTION meta.create_integration_table(p_name text, p_columns jsonb, p_primary_key text) OWNER TO pc_migrator;
 
 --
--- Name: create_object(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: create_object(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.create_object(p_api_name text, p_label_singular text, p_label_plural text, p_description text DEFAULT NULL::text) RETURNS text
@@ -1921,10 +1921,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.create_object(p_api_name text, p_label_singular text, p_label_plural text, p_description text) OWNER TO claude_admin;
+ALTER FUNCTION meta.create_object(p_api_name text, p_label_singular text, p_label_plural text, p_description text) OWNER TO pc_migrator;
 
 --
--- Name: create_property(text, text, text, text, jsonb, text, jsonb, text, text, boolean); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: create_property(text, text, text, text, jsonb, text, jsonb, text, text, boolean); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.create_property(p_object text, p_api_name text, p_label text, p_type text, p_options jsonb DEFAULT '{}'::jsonb, p_description text DEFAULT NULL::text, p_dropdown_options jsonb DEFAULT '[]'::jsonb, p_calc_sql text DEFAULT NULL::text, p_calc_output_type text DEFAULT NULL::text, p_is_native boolean DEFAULT false) RETURNS text
@@ -2001,10 +2001,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.create_property(p_object text, p_api_name text, p_label text, p_type text, p_options jsonb, p_description text, p_dropdown_options jsonb, p_calc_sql text, p_calc_output_type text, p_is_native boolean) OWNER TO claude_admin;
+ALTER FUNCTION meta.create_property(p_object text, p_api_name text, p_label text, p_type text, p_options jsonb, p_description text, p_dropdown_options jsonb, p_calc_sql text, p_calc_output_type text, p_is_native boolean) OWNER TO pc_migrator;
 
 --
--- Name: delete_option(text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: delete_option(text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.delete_option(p_object text, p_api_name text, p_api_value text) RETURNS void
@@ -2031,10 +2031,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.delete_option(p_object text, p_api_name text, p_api_value text) OWNER TO claude_admin;
+ALTER FUNCTION meta.delete_option(p_object text, p_api_name text, p_api_value text) OWNER TO pc_migrator;
 
 --
--- Name: delete_property(text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: delete_property(text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.delete_property(p_object text, p_api_name text, p_confirm text) RETURNS void
@@ -2063,10 +2063,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.delete_property(p_object text, p_api_name text, p_confirm text) OWNER TO claude_admin;
+ALTER FUNCTION meta.delete_property(p_object text, p_api_name text, p_confirm text) OWNER TO pc_migrator;
 
 --
--- Name: delete_record(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: delete_record(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.delete_record(p_object text, p_id text) RETURNS void
@@ -2111,10 +2111,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.delete_record(p_object text, p_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta.delete_record(p_object text, p_id text) OWNER TO pc_migrator;
 
 --
--- Name: dissociate(text, text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: dissociate(text, text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.dissociate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text DEFAULT NULL::text) RETURNS integer
@@ -2135,10 +2135,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.dissociate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta.dissociate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text) OWNER TO pc_migrator;
 
 --
--- Name: enqueue_calcs(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: enqueue_calcs(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.enqueue_calcs(p_object text DEFAULT NULL::text) RETURNS integer
@@ -2164,10 +2164,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.enqueue_calcs(p_object text) OWNER TO claude_admin;
+ALTER FUNCTION meta.enqueue_calcs(p_object text) OWNER TO pc_migrator;
 
 --
--- Name: has_active_admin(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: has_active_admin(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.has_active_admin() RETURNS boolean
@@ -2185,10 +2185,10 @@ CREATE FUNCTION meta.has_active_admin() RETURNS boolean
 $$;
 
 
-ALTER FUNCTION meta.has_active_admin() OWNER TO claude_admin;
+ALTER FUNCTION meta.has_active_admin() OWNER TO pc_migrator;
 
 --
--- Name: has_no_duplicates(text[]); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: has_no_duplicates(text[]); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.has_no_duplicates(p text[]) RETURNS boolean
@@ -2198,10 +2198,10 @@ CREATE FUNCTION meta.has_no_duplicates(p text[]) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION meta.has_no_duplicates(p text[]) OWNER TO claude_admin;
+ALTER FUNCTION meta.has_no_duplicates(p text[]) OWNER TO pc_migrator;
 
 --
--- Name: is_hex_id_array(text[]); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: is_hex_id_array(text[]); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.is_hex_id_array(p text[]) RETURNS boolean
@@ -2211,10 +2211,10 @@ CREATE FUNCTION meta.is_hex_id_array(p text[]) RETURNS boolean
 $_$;
 
 
-ALTER FUNCTION meta.is_hex_id_array(p text[]) OWNER TO claude_admin;
+ALTER FUNCTION meta.is_hex_id_array(p text[]) OWNER TO pc_migrator;
 
 --
--- Name: is_json(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: is_json(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.is_json(p text) RETURNS boolean
@@ -2231,10 +2231,10 @@ exception when others then
 end $$;
 
 
-ALTER FUNCTION meta.is_json(p text) OWNER TO claude_admin;
+ALTER FUNCTION meta.is_json(p text) OWNER TO pc_migrator;
 
 --
--- Name: is_line_parent(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: is_line_parent(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.is_line_parent(p_code text) RETURNS boolean
@@ -2244,10 +2244,10 @@ CREATE FUNCTION meta.is_line_parent(p_code text) RETURNS boolean
 $_$;
 
 
-ALTER FUNCTION meta.is_line_parent(p_code text) OWNER TO claude_admin;
+ALTER FUNCTION meta.is_line_parent(p_code text) OWNER TO pc_migrator;
 
 --
--- Name: merge_records(text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: merge_records(text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.merge_records(p_object text, p_winner text, p_loser text) RETURNS void
@@ -2309,10 +2309,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.merge_records(p_object text, p_winner text, p_loser text) OWNER TO claude_admin;
+ALTER FUNCTION meta.merge_records(p_object text, p_winner text, p_loser text) OWNER TO pc_migrator;
 
 --
--- Name: normalize_phone(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: normalize_phone(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.normalize_phone(p text) RETURNS text
@@ -2323,10 +2323,10 @@ CREATE FUNCTION meta.normalize_phone(p text) RETURNS text
 $$;
 
 
-ALTER FUNCTION meta.normalize_phone(p text) OWNER TO claude_admin;
+ALTER FUNCTION meta.normalize_phone(p text) OWNER TO pc_migrator;
 
 --
--- Name: note_mentions(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: note_mentions(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.note_mentions(p_body text) RETURNS text[]
@@ -2343,10 +2343,10 @@ CREATE FUNCTION meta.note_mentions(p_body text) RETURNS text[]
 $$;
 
 
-ALTER FUNCTION meta.note_mentions(p_body text) OWNER TO claude_admin;
+ALTER FUNCTION meta.note_mentions(p_body text) OWNER TO pc_migrator;
 
 --
--- Name: process_calc_queue(integer); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: process_calc_queue(integer); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.process_calc_queue(p_limit integer DEFAULT 500) RETURNS integer
@@ -2404,10 +2404,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.process_calc_queue(p_limit integer) OWNER TO claude_admin;
+ALTER FUNCTION meta.process_calc_queue(p_limit integer) OWNER TO pc_migrator;
 
 --
--- Name: record_change_payloads(jsonb, integer, integer); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: record_change_payloads(jsonb, integer, integer); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.record_change_payloads(p_changes jsonb, p_max integer DEFAULT 500, p_chunk integer DEFAULT 7500) RETURNS SETOF text
@@ -2443,10 +2443,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.record_change_payloads(p_changes jsonb, p_max integer, p_chunk integer) OWNER TO claude_admin;
+ALTER FUNCTION meta.record_change_payloads(p_changes jsonb, p_max integer, p_chunk integer) OWNER TO pc_migrator;
 
 --
--- Name: record_change_targets(jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: record_change_targets(jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.record_change_targets(p_changes jsonb) RETURNS jsonb
@@ -2465,10 +2465,10 @@ CREATE FUNCTION meta.record_change_targets(p_changes jsonb) RETURNS jsonb
 $$;
 
 
-ALTER FUNCTION meta.record_change_targets(p_changes jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta.record_change_targets(p_changes jsonb) OWNER TO pc_migrator;
 
 --
--- Name: refresh_rls(text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: refresh_rls(text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.refresh_rls(p_code text) RETURNS void
@@ -2498,10 +2498,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.refresh_rls(p_code text) OWNER TO claude_admin;
+ALTER FUNCTION meta.refresh_rls(p_code text) OWNER TO pc_migrator;
 
 --
--- Name: set_name_calculation(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: set_name_calculation(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.set_name_calculation(p_object text, p_calc_sql text) RETURNS void
@@ -2549,10 +2549,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.set_name_calculation(p_object text, p_calc_sql text) OWNER TO claude_admin;
+ALTER FUNCTION meta.set_name_calculation(p_object text, p_calc_sql text) OWNER TO pc_migrator;
 
 --
--- Name: set_object_aliases(text, text[]); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: set_object_aliases(text, text[]); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.set_object_aliases(p_object text, p_aliases text[]) RETURNS void
@@ -2577,10 +2577,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.set_object_aliases(p_object text, p_aliases text[]) OWNER TO claude_admin;
+ALTER FUNCTION meta.set_object_aliases(p_object text, p_aliases text[]) OWNER TO pc_migrator;
 
 --
--- Name: set_option_details(text, text, text, jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: set_option_details(text, text, text, jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.set_option_details(p_object text, p_api_name text, p_api_value text, p_details jsonb) RETURNS void
@@ -2687,10 +2687,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.set_option_details(p_object text, p_api_name text, p_api_value text, p_details jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta.set_option_details(p_object text, p_api_name text, p_api_value text, p_details jsonb) OWNER TO pc_migrator;
 
 --
--- Name: set_record_status(text, text[], text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: set_record_status(text, text[], text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.set_record_status(p_object text, p_ids text[], p_status text) RETURNS integer
@@ -2737,10 +2737,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.set_record_status(p_object text, p_ids text[], p_status text) OWNER TO claude_admin;
+ALTER FUNCTION meta.set_record_status(p_object text, p_ids text[], p_status text) OWNER TO pc_migrator;
 
 --
--- Name: set_search_properties(text, text[]); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: set_search_properties(text, text[]); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.set_search_properties(p_object text, p_properties text[]) RETURNS void
@@ -2766,10 +2766,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.set_search_properties(p_object text, p_properties text[]) OWNER TO claude_admin;
+ALTER FUNCTION meta.set_search_properties(p_object text, p_properties text[]) OWNER TO pc_migrator;
 
 --
--- Name: source(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: source(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.source() RETURNS text
@@ -2779,10 +2779,10 @@ CREATE FUNCTION meta.source() RETURNS text
 $$;
 
 
-ALTER FUNCTION meta.source() OWNER TO claude_admin;
+ALTER FUNCTION meta.source() OWNER TO pc_migrator;
 
 --
--- Name: test_calculation(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: test_calculation(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.test_calculation(p_object text, p_calc_sql text, p_output_type text, p_record_id text) RETURNS jsonb
@@ -2824,10 +2824,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.test_calculation(p_object text, p_calc_sql text, p_output_type text, p_record_id text) OWNER TO claude_admin;
+ALTER FUNCTION meta.test_calculation(p_object text, p_calc_sql text, p_output_type text, p_record_id text) OWNER TO pc_migrator;
 
 --
--- Name: tg_association_accepted_lock(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_association_accepted_lock(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_association_accepted_lock() RETURNS trigger
@@ -2877,10 +2877,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_association_accepted_lock() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_association_accepted_lock() OWNER TO pc_migrator;
 
 --
--- Name: tg_association_after_write(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_association_after_write(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_association_after_write() RETURNS trigger
@@ -2917,10 +2917,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_association_after_write() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_association_after_write() OWNER TO pc_migrator;
 
 --
--- Name: tg_association_before_insert(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_association_before_insert(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_association_before_insert() RETURNS trigger
@@ -2970,10 +2970,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.tg_association_before_insert() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_association_before_insert() OWNER TO pc_migrator;
 
 --
--- Name: tg_association_label_allowed(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_association_label_allowed(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_association_label_allowed() RETURNS trigger
@@ -2989,10 +2989,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_association_label_allowed() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_association_label_allowed() OWNER TO pc_migrator;
 
 --
--- Name: tg_association_line_links(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_association_line_links(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_association_line_links() RETURNS trigger
@@ -3024,10 +3024,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_association_line_links() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_association_line_links() OWNER TO pc_migrator;
 
 --
--- Name: tg_association_no_update(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_association_no_update(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_association_no_update() RETURNS trigger
@@ -3038,10 +3038,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_association_no_update() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_association_no_update() OWNER TO pc_migrator;
 
 --
--- Name: tg_comment_edited_at(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_comment_edited_at(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_comment_edited_at() RETURNS trigger
@@ -3055,10 +3055,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_comment_edited_at() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_comment_edited_at() OWNER TO pc_migrator;
 
 --
--- Name: tg_comment_linked(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_comment_linked(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_comment_linked() RETURNS trigger
@@ -3083,10 +3083,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_comment_linked() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_comment_linked() OWNER TO pc_migrator;
 
 --
--- Name: tg_comment_mentions(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_comment_mentions(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_comment_mentions() RETURNS trigger
@@ -3109,10 +3109,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.tg_comment_mentions() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_comment_mentions() OWNER TO pc_migrator;
 
 --
--- Name: tg_comment_one_link(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_comment_one_link(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_comment_one_link() RETURNS trigger
@@ -3133,10 +3133,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_comment_one_link() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_comment_one_link() OWNER TO pc_migrator;
 
 --
--- Name: tg_document_template_guard(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_document_template_guard(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_document_template_guard() RETURNS trigger
@@ -3168,10 +3168,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_document_template_guard() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_document_template_guard() OWNER TO pc_migrator;
 
 --
--- Name: tg_line_accepted_lock(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_line_accepted_lock(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_line_accepted_lock() RETURNS trigger
@@ -3206,10 +3206,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_line_accepted_lock() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_line_accepted_lock() OWNER TO pc_migrator;
 
 --
--- Name: tg_note_mentions(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_note_mentions(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_note_mentions() RETURNS trigger
@@ -3232,10 +3232,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.tg_note_mentions() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_note_mentions() OWNER TO pc_migrator;
 
 --
--- Name: tg_object_after_write(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_object_after_write(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_object_after_write() RETURNS trigger
@@ -3284,10 +3284,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_object_after_write() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_object_after_write() OWNER TO pc_migrator;
 
 --
--- Name: tg_object_before_write(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_object_before_write(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_object_before_write() RETURNS trigger
@@ -3314,10 +3314,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_object_before_write() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_object_before_write() OWNER TO pc_migrator;
 
 --
--- Name: tg_quote_accepted_lock(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_quote_accepted_lock(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_quote_accepted_lock() RETURNS trigger
@@ -3347,10 +3347,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_quote_accepted_lock() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_quote_accepted_lock() OWNER TO pc_migrator;
 
 --
--- Name: tg_quote_signed_archive(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_quote_signed_archive(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_quote_signed_archive() RETURNS trigger
@@ -3368,10 +3368,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_quote_signed_archive() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_quote_signed_archive() OWNER TO pc_migrator;
 
 --
--- Name: tg_record_change_notify(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_record_change_notify(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_record_change_notify() RETURNS trigger
@@ -3399,10 +3399,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_record_change_notify() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_record_change_notify() OWNER TO pc_migrator;
 
 --
--- Name: tg_touch(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_touch(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_touch() RETURNS trigger
@@ -3418,10 +3418,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_touch() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_touch() OWNER TO pc_migrator;
 
 --
--- Name: tg_touch_row(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_touch_row(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_touch_row() RETURNS trigger
@@ -3433,10 +3433,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_touch_row() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_touch_row() OWNER TO pc_migrator;
 
 --
--- Name: tg_users_keep_an_admin(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_users_keep_an_admin(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_users_keep_an_admin() RETURNS trigger
@@ -3455,10 +3455,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_users_keep_an_admin() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_users_keep_an_admin() OWNER TO pc_migrator;
 
 --
--- Name: tg_users_sync_options(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_users_sync_options(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_users_sync_options() RETURNS trigger
@@ -3478,10 +3478,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_users_sync_options() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_users_sync_options() OWNER TO pc_migrator;
 
 --
--- Name: tg_webhook_capture(); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: tg_webhook_capture(); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.tg_webhook_capture() RETURNS trigger
@@ -3507,10 +3507,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.tg_webhook_capture() OWNER TO claude_admin;
+ALTER FUNCTION meta.tg_webhook_capture() OWNER TO pc_migrator;
 
 --
--- Name: unarchive_property(text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: unarchive_property(text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.unarchive_property(p_object text, p_api_name text) RETURNS void
@@ -3532,10 +3532,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION meta.unarchive_property(p_object text, p_api_name text) OWNER TO claude_admin;
+ALTER FUNCTION meta.unarchive_property(p_object text, p_api_name text) OWNER TO pc_migrator;
 
 --
--- Name: update_calculation(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: update_calculation(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.update_calculation(p_object text, p_api_name text, p_calc_sql text, p_calc_output_type text DEFAULT NULL::text) RETURNS void
@@ -3581,10 +3581,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.update_calculation(p_object text, p_api_name text, p_calc_sql text, p_calc_output_type text) OWNER TO claude_admin;
+ALTER FUNCTION meta.update_calculation(p_object text, p_api_name text, p_calc_sql text, p_calc_output_type text) OWNER TO pc_migrator;
 
 --
--- Name: update_object(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: update_object(text, text, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.update_object(p_object text, p_label_singular text DEFAULT NULL::text, p_label_plural text DEFAULT NULL::text, p_description text DEFAULT NULL::text) RETURNS void
@@ -3604,10 +3604,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.update_object(p_object text, p_label_singular text, p_label_plural text, p_description text) OWNER TO claude_admin;
+ALTER FUNCTION meta.update_object(p_object text, p_label_singular text, p_label_plural text, p_description text) OWNER TO pc_migrator;
 
 --
--- Name: update_option(text, text, text, text, integer, text, text); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: update_option(text, text, text, text, integer, text, text); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.update_option(p_object text, p_api_name text, p_api_value text, p_label text DEFAULT NULL::text, p_display_order integer DEFAULT NULL::integer, p_description text DEFAULT NULL::text, p_record_status text DEFAULT NULL::text) RETURNS void
@@ -3639,10 +3639,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.update_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text, p_record_status text) OWNER TO claude_admin;
+ALTER FUNCTION meta.update_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text, p_record_status text) OWNER TO pc_migrator;
 
 --
--- Name: update_property(text, text, text, text, jsonb); Type: FUNCTION; Schema: meta; Owner: claude_admin
+-- Name: update_property(text, text, text, text, jsonb); Type: FUNCTION; Schema: meta; Owner: pc_migrator
 --
 
 CREATE FUNCTION meta.update_property(p_object text, p_api_name text, p_label text DEFAULT NULL::text, p_description text DEFAULT NULL::text, p_options jsonb DEFAULT NULL::jsonb) RETURNS void
@@ -3688,10 +3688,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION meta.update_property(p_object text, p_api_name text, p_label text, p_description text, p_options jsonb) OWNER TO claude_admin;
+ALTER FUNCTION meta.update_property(p_object text, p_api_name text, p_label text, p_description text, p_options jsonb) OWNER TO pc_migrator;
 
 --
--- Name: currency_to_base(numeric, text, date); Type: FUNCTION; Schema: public; Owner: claude_admin
+-- Name: currency_to_base(numeric, text, date); Type: FUNCTION; Schema: public; Owner: pc_migrator
 --
 
 CREATE FUNCTION public.currency_to_base(p_amount numeric, p_currency text, p_on date DEFAULT NULL::date) RETURNS numeric
@@ -3734,10 +3734,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION public.currency_to_base(p_amount numeric, p_currency text, p_on date) OWNER TO claude_admin;
+ALTER FUNCTION public.currency_to_base(p_amount numeric, p_currency text, p_on date) OWNER TO pc_migrator;
 
 --
--- Name: convert_currency(numeric, text, text, date); Type: FUNCTION; Schema: reporting; Owner: claude_admin
+-- Name: convert_currency(numeric, text, text, date); Type: FUNCTION; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE FUNCTION reporting.convert_currency(p_amount numeric, p_from text, p_to text DEFAULT NULL::text, p_on date DEFAULT NULL::date) RETURNS numeric
@@ -3748,10 +3748,10 @@ CREATE FUNCTION reporting.convert_currency(p_amount numeric, p_from text, p_to t
       $$;
 
 
-ALTER FUNCTION reporting.convert_currency(p_amount numeric, p_from text, p_to text, p_on date) OWNER TO claude_admin;
+ALTER FUNCTION reporting.convert_currency(p_amount numeric, p_from text, p_to text, p_on date) OWNER TO pc_migrator;
 
 --
--- Name: currency_rate(text, text, date); Type: FUNCTION; Schema: reporting; Owner: claude_admin
+-- Name: currency_rate(text, text, date); Type: FUNCTION; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE FUNCTION reporting.currency_rate(p_from text, p_to text DEFAULT NULL::text, p_on date DEFAULT NULL::date) RETURNS numeric
@@ -3795,10 +3795,10 @@ CREATE FUNCTION reporting.currency_rate(p_from text, p_to text DEFAULT NULL::tex
       end $$;
 
 
-ALTER FUNCTION reporting.currency_rate(p_from text, p_to text, p_on date) OWNER TO claude_admin;
+ALTER FUNCTION reporting.currency_rate(p_from text, p_to text, p_on date) OWNER TO pc_migrator;
 
 --
--- Name: access(); Type: FUNCTION; Schema: rls; Owner: claude_admin
+-- Name: access(); Type: FUNCTION; Schema: rls; Owner: pc_migrator
 --
 
 CREATE FUNCTION rls.access() RETURNS text
@@ -3806,10 +3806,10 @@ CREATE FUNCTION rls.access() RETURNS text
     AS $$ select coalesce(current_setting('pcrm.access', true), '') $$;
 
 
-ALTER FUNCTION rls.access() OWNER TO claude_admin;
+ALTER FUNCTION rls.access() OWNER TO pc_migrator;
 
 --
--- Name: creator_ids(); Type: FUNCTION; Schema: rls; Owner: claude_admin
+-- Name: creator_ids(); Type: FUNCTION; Schema: rls; Owner: pc_migrator
 --
 
 CREATE FUNCTION rls.creator_ids() RETURNS text[]
@@ -3817,10 +3817,10 @@ CREATE FUNCTION rls.creator_ids() RETURNS text[]
     AS $$ select array(select 'user:' || u from unnest(rls.owner_ids()) u) $$;
 
 
-ALTER FUNCTION rls.creator_ids() OWNER TO claude_admin;
+ALTER FUNCTION rls.creator_ids() OWNER TO pc_migrator;
 
 --
--- Name: owner_ids(); Type: FUNCTION; Schema: rls; Owner: claude_admin
+-- Name: owner_ids(); Type: FUNCTION; Schema: rls; Owner: pc_migrator
 --
 
 CREATE FUNCTION rls.owner_ids() RETURNS text[]
@@ -3828,10 +3828,10 @@ CREATE FUNCTION rls.owner_ids() RETURNS text[]
     AS $$ select coalesce(nullif(current_setting('pcrm.owner_ids', true), '')::text[], '{}') $$;
 
 
-ALTER FUNCTION rls.owner_ids() OWNER TO claude_admin;
+ALTER FUNCTION rls.owner_ids() OWNER TO pc_migrator;
 
 --
--- Name: rule_ids(); Type: FUNCTION; Schema: rls; Owner: claude_admin
+-- Name: rule_ids(); Type: FUNCTION; Schema: rls; Owner: pc_migrator
 --
 
 CREATE FUNCTION rls.rule_ids() RETURNS bigint[]
@@ -3839,10 +3839,10 @@ CREATE FUNCTION rls.rule_ids() RETURNS bigint[]
     AS $$ select coalesce(nullif(current_setting('pcrm.rule_ids', true), '')::bigint[], '{}') $$;
 
 
-ALTER FUNCTION rls.rule_ids() OWNER TO claude_admin;
+ALTER FUNCTION rls.rule_ids() OWNER TO pc_migrator;
 
 --
--- Name: shared_ids(text); Type: FUNCTION; Schema: rls; Owner: claude_admin
+-- Name: shared_ids(text); Type: FUNCTION; Schema: rls; Owner: pc_migrator
 --
 
 CREATE FUNCTION rls.shared_ids(p_code text) RETURNS text[]
@@ -3884,10 +3884,10 @@ begin
 end $_$;
 
 
-ALTER FUNCTION rls.shared_ids(p_code text) OWNER TO claude_admin;
+ALTER FUNCTION rls.shared_ids(p_code text) OWNER TO pc_migrator;
 
 --
--- Name: _nav_drop_view(); Type: FUNCTION; Schema: ui; Owner: claude_admin
+-- Name: _nav_drop_view(); Type: FUNCTION; Schema: ui; Owner: pc_migrator
 --
 
 CREATE FUNCTION ui._nav_drop_view() RETURNS trigger
@@ -3908,10 +3908,10 @@ begin
 end $$;
 
 
-ALTER FUNCTION ui._nav_drop_view() OWNER TO claude_admin;
+ALTER FUNCTION ui._nav_drop_view() OWNER TO pc_migrator;
 
 --
--- Name: _nav_without_view(jsonb, text); Type: FUNCTION; Schema: ui; Owner: claude_admin
+-- Name: _nav_without_view(jsonb, text); Type: FUNCTION; Schema: ui; Owner: pc_migrator
 --
 
 CREATE FUNCTION ui._nav_without_view(p_items jsonb, p_slug text) RETURNS jsonb
@@ -3928,10 +3928,10 @@ CREATE FUNCTION ui._nav_without_view(p_items jsonb, p_slug text) RETURNS jsonb
 $$;
 
 
-ALTER FUNCTION ui._nav_without_view(p_items jsonb, p_slug text) OWNER TO claude_admin;
+ALTER FUNCTION ui._nav_without_view(p_items jsonb, p_slug text) OWNER TO pc_migrator;
 
 --
--- Name: convert_currency(numeric, text, text, date); Type: FUNCTION; Schema: view_data; Owner: claude_admin
+-- Name: convert_currency(numeric, text, text, date); Type: FUNCTION; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE FUNCTION view_data.convert_currency(p_amount numeric, p_from text, p_to text DEFAULT NULL::text, p_on date DEFAULT NULL::date) RETURNS numeric
@@ -3942,10 +3942,10 @@ CREATE FUNCTION view_data.convert_currency(p_amount numeric, p_from text, p_to t
       $$;
 
 
-ALTER FUNCTION view_data.convert_currency(p_amount numeric, p_from text, p_to text, p_on date) OWNER TO claude_admin;
+ALTER FUNCTION view_data.convert_currency(p_amount numeric, p_from text, p_to text, p_on date) OWNER TO pc_migrator;
 
 --
--- Name: currency_rate(text, text, date); Type: FUNCTION; Schema: view_data; Owner: claude_admin
+-- Name: currency_rate(text, text, date); Type: FUNCTION; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE FUNCTION view_data.currency_rate(p_from text, p_to text DEFAULT NULL::text, p_on date DEFAULT NULL::date) RETURNS numeric
@@ -3989,10 +3989,10 @@ CREATE FUNCTION view_data.currency_rate(p_from text, p_to text DEFAULT NULL::tex
       end $$;
 
 
-ALTER FUNCTION view_data.currency_rate(p_from text, p_to text, p_on date) OWNER TO claude_admin;
+ALTER FUNCTION view_data.currency_rate(p_from text, p_to text, p_on date) OWNER TO pc_migrator;
 
 --
--- Name: address_settings; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: address_settings; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.address_settings (
@@ -4011,10 +4011,10 @@ CREATE TABLE auth.address_settings (
 );
 
 
-ALTER TABLE auth.address_settings OWNER TO claude_admin;
+ALTER TABLE auth.address_settings OWNER TO pc_migrator;
 
 --
--- Name: api_keys; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: api_keys; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.api_keys (
@@ -4037,10 +4037,10 @@ CREATE TABLE auth.api_keys (
 );
 
 
-ALTER TABLE auth.api_keys OWNER TO claude_admin;
+ALTER TABLE auth.api_keys OWNER TO pc_migrator;
 
 --
--- Name: api_keys_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: api_keys_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.api_keys_id_seq
@@ -4051,17 +4051,17 @@ CREATE SEQUENCE auth.api_keys_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.api_keys_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.api_keys_id_seq OWNER TO pc_migrator;
 
 --
--- Name: api_keys_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: api_keys_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.api_keys_id_seq OWNED BY auth.api_keys.id;
 
 
 --
--- Name: calendar_connections; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.calendar_connections (
@@ -4086,10 +4086,10 @@ CREATE TABLE auth.calendar_connections (
 );
 
 
-ALTER TABLE auth.calendar_connections OWNER TO claude_admin;
+ALTER TABLE auth.calendar_connections OWNER TO pc_migrator;
 
 --
--- Name: calendar_connections_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.calendar_connections_id_seq
@@ -4100,17 +4100,17 @@ CREATE SEQUENCE auth.calendar_connections_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.calendar_connections_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.calendar_connections_id_seq OWNER TO pc_migrator;
 
 --
--- Name: calendar_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.calendar_connections_id_seq OWNED BY auth.calendar_connections.id;
 
 
 --
--- Name: card_scan_settings; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: card_scan_settings; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.card_scan_settings (
@@ -4129,10 +4129,10 @@ CREATE TABLE auth.card_scan_settings (
 );
 
 
-ALTER TABLE auth.card_scan_settings OWNER TO claude_admin;
+ALTER TABLE auth.card_scan_settings OWNER TO pc_migrator;
 
 --
--- Name: identities; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: identities; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.identities (
@@ -4148,10 +4148,10 @@ CREATE TABLE auth.identities (
 );
 
 
-ALTER TABLE auth.identities OWNER TO claude_admin;
+ALTER TABLE auth.identities OWNER TO pc_migrator;
 
 --
--- Name: identities_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: identities_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.identities_id_seq
@@ -4162,17 +4162,17 @@ CREATE SEQUENCE auth.identities_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.identities_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.identities_id_seq OWNER TO pc_migrator;
 
 --
--- Name: identities_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: identities_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.identities_id_seq OWNED BY auth.identities.id;
 
 
 --
--- Name: magic_links; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: magic_links; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.magic_links (
@@ -4185,10 +4185,10 @@ CREATE TABLE auth.magic_links (
 );
 
 
-ALTER TABLE auth.magic_links OWNER TO claude_admin;
+ALTER TABLE auth.magic_links OWNER TO pc_migrator;
 
 --
--- Name: magic_links_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: magic_links_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.magic_links_id_seq
@@ -4199,17 +4199,17 @@ CREATE SEQUENCE auth.magic_links_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.magic_links_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.magic_links_id_seq OWNER TO pc_migrator;
 
 --
--- Name: magic_links_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: magic_links_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.magic_links_id_seq OWNED BY auth.magic_links.id;
 
 
 --
--- Name: oauth_clients; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.oauth_clients (
@@ -4234,10 +4234,10 @@ CREATE TABLE auth.oauth_clients (
 );
 
 
-ALTER TABLE auth.oauth_clients OWNER TO claude_admin;
+ALTER TABLE auth.oauth_clients OWNER TO pc_migrator;
 
 --
--- Name: oauth_clients_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.oauth_clients_id_seq
@@ -4248,17 +4248,17 @@ CREATE SEQUENCE auth.oauth_clients_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.oauth_clients_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.oauth_clients_id_seq OWNER TO pc_migrator;
 
 --
--- Name: oauth_clients_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.oauth_clients_id_seq OWNED BY auth.oauth_clients.id;
 
 
 --
--- Name: oauth_codes; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: oauth_codes; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.oauth_codes (
@@ -4275,10 +4275,10 @@ CREATE TABLE auth.oauth_codes (
 );
 
 
-ALTER TABLE auth.oauth_codes OWNER TO claude_admin;
+ALTER TABLE auth.oauth_codes OWNER TO pc_migrator;
 
 --
--- Name: oauth_grants; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.oauth_grants (
@@ -4296,10 +4296,10 @@ CREATE TABLE auth.oauth_grants (
 );
 
 
-ALTER TABLE auth.oauth_grants OWNER TO claude_admin;
+ALTER TABLE auth.oauth_grants OWNER TO pc_migrator;
 
 --
--- Name: oauth_grants_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.oauth_grants_id_seq
@@ -4310,17 +4310,17 @@ CREATE SEQUENCE auth.oauth_grants_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.oauth_grants_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.oauth_grants_id_seq OWNER TO pc_migrator;
 
 --
--- Name: oauth_grants_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.oauth_grants_id_seq OWNED BY auth.oauth_grants.id;
 
 
 --
--- Name: oauth_tokens; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.oauth_tokens (
@@ -4341,10 +4341,10 @@ CREATE TABLE auth.oauth_tokens (
 );
 
 
-ALTER TABLE auth.oauth_tokens OWNER TO claude_admin;
+ALTER TABLE auth.oauth_tokens OWNER TO pc_migrator;
 
 --
--- Name: oauth_tokens_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.oauth_tokens_id_seq
@@ -4355,17 +4355,17 @@ CREATE SEQUENCE auth.oauth_tokens_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.oauth_tokens_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.oauth_tokens_id_seq OWNER TO pc_migrator;
 
 --
--- Name: oauth_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.oauth_tokens_id_seq OWNED BY auth.oauth_tokens.id;
 
 
 --
--- Name: passkeys; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: passkeys; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.passkeys (
@@ -4382,10 +4382,10 @@ CREATE TABLE auth.passkeys (
 );
 
 
-ALTER TABLE auth.passkeys OWNER TO claude_admin;
+ALTER TABLE auth.passkeys OWNER TO pc_migrator;
 
 --
--- Name: passkeys_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: passkeys_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.passkeys_id_seq
@@ -4396,17 +4396,17 @@ CREATE SEQUENCE auth.passkeys_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.passkeys_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.passkeys_id_seq OWNER TO pc_migrator;
 
 --
--- Name: passkeys_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: passkeys_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.passkeys_id_seq OWNED BY auth.passkeys.id;
 
 
 --
--- Name: payment_connections; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: payment_connections; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.payment_connections (
@@ -4428,10 +4428,10 @@ CREATE TABLE auth.payment_connections (
 );
 
 
-ALTER TABLE auth.payment_connections OWNER TO claude_admin;
+ALTER TABLE auth.payment_connections OWNER TO pc_migrator;
 
 --
--- Name: payment_connections_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: payment_connections_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.payment_connections_id_seq
@@ -4442,17 +4442,17 @@ CREATE SEQUENCE auth.payment_connections_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.payment_connections_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.payment_connections_id_seq OWNER TO pc_migrator;
 
 --
--- Name: payment_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: payment_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.payment_connections_id_seq OWNED BY auth.payment_connections.id;
 
 
 --
--- Name: role_assignments; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: role_assignments; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.role_assignments (
@@ -4467,10 +4467,10 @@ CREATE TABLE auth.role_assignments (
 );
 
 
-ALTER TABLE auth.role_assignments OWNER TO claude_admin;
+ALTER TABLE auth.role_assignments OWNER TO pc_migrator;
 
 --
--- Name: role_assignments_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: role_assignments_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.role_assignments_id_seq
@@ -4481,17 +4481,17 @@ CREATE SEQUENCE auth.role_assignments_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.role_assignments_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.role_assignments_id_seq OWNER TO pc_migrator;
 
 --
--- Name: role_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: role_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.role_assignments_id_seq OWNED BY auth.role_assignments.id;
 
 
 --
--- Name: role_object_permissions; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: role_object_permissions; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.role_object_permissions (
@@ -4504,10 +4504,10 @@ CREATE TABLE auth.role_object_permissions (
 );
 
 
-ALTER TABLE auth.role_object_permissions OWNER TO claude_admin;
+ALTER TABLE auth.role_object_permissions OWNER TO pc_migrator;
 
 --
--- Name: role_property_permissions; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: role_property_permissions; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.role_property_permissions (
@@ -4518,10 +4518,10 @@ CREATE TABLE auth.role_property_permissions (
 );
 
 
-ALTER TABLE auth.role_property_permissions OWNER TO claude_admin;
+ALTER TABLE auth.role_property_permissions OWNER TO pc_migrator;
 
 --
--- Name: role_sharing_rule_associations; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.role_sharing_rule_associations (
@@ -4534,10 +4534,10 @@ CREATE TABLE auth.role_sharing_rule_associations (
 );
 
 
-ALTER TABLE auth.role_sharing_rule_associations OWNER TO claude_admin;
+ALTER TABLE auth.role_sharing_rule_associations OWNER TO pc_migrator;
 
 --
--- Name: role_sharing_rule_associations_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.role_sharing_rule_associations_id_seq
@@ -4548,17 +4548,17 @@ CREATE SEQUENCE auth.role_sharing_rule_associations_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.role_sharing_rule_associations_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.role_sharing_rule_associations_id_seq OWNER TO pc_migrator;
 
 --
--- Name: role_sharing_rule_associations_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.role_sharing_rule_associations_id_seq OWNED BY auth.role_sharing_rule_associations.id;
 
 
 --
--- Name: role_sharing_rules; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.role_sharing_rules (
@@ -4577,10 +4577,10 @@ CREATE TABLE auth.role_sharing_rules (
 );
 
 
-ALTER TABLE auth.role_sharing_rules OWNER TO claude_admin;
+ALTER TABLE auth.role_sharing_rules OWNER TO pc_migrator;
 
 --
--- Name: role_sharing_rules_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.role_sharing_rules_id_seq
@@ -4591,17 +4591,17 @@ CREATE SEQUENCE auth.role_sharing_rules_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.role_sharing_rules_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.role_sharing_rules_id_seq OWNER TO pc_migrator;
 
 --
--- Name: role_sharing_rules_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.role_sharing_rules_id_seq OWNED BY auth.role_sharing_rules.id;
 
 
 --
--- Name: roles; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: roles; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.roles (
@@ -4617,10 +4617,10 @@ CREATE TABLE auth.roles (
 );
 
 
-ALTER TABLE auth.roles OWNER TO claude_admin;
+ALTER TABLE auth.roles OWNER TO pc_migrator;
 
 --
--- Name: roles_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: roles_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.roles_id_seq
@@ -4631,17 +4631,17 @@ CREATE SEQUENCE auth.roles_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.roles_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.roles_id_seq OWNER TO pc_migrator;
 
 --
--- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.roles_id_seq OWNED BY auth.roles.id;
 
 
 --
--- Name: security_events; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: security_events; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.security_events (
@@ -4660,10 +4660,10 @@ CREATE TABLE auth.security_events (
 );
 
 
-ALTER TABLE auth.security_events OWNER TO claude_admin;
+ALTER TABLE auth.security_events OWNER TO pc_migrator;
 
 --
--- Name: security_events_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: security_events_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.security_events_id_seq
@@ -4674,17 +4674,17 @@ CREATE SEQUENCE auth.security_events_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.security_events_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.security_events_id_seq OWNER TO pc_migrator;
 
 --
--- Name: security_events_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: security_events_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.security_events_id_seq OWNED BY auth.security_events.id;
 
 
 --
--- Name: sessions; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: sessions; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.sessions (
@@ -4705,10 +4705,10 @@ CREATE TABLE auth.sessions (
 );
 
 
-ALTER TABLE auth.sessions OWNER TO claude_admin;
+ALTER TABLE auth.sessions OWNER TO pc_migrator;
 
 --
--- Name: sessions_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: sessions_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE SEQUENCE auth.sessions_id_seq
@@ -4719,17 +4719,17 @@ CREATE SEQUENCE auth.sessions_id_seq
     CACHE 1;
 
 
-ALTER TABLE auth.sessions_id_seq OWNER TO claude_admin;
+ALTER TABLE auth.sessions_id_seq OWNER TO pc_migrator;
 
 --
--- Name: sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: claude_admin
+-- Name: sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: auth; Owner: pc_migrator
 --
 
 ALTER SEQUENCE auth.sessions_id_seq OWNED BY auth.sessions.id;
 
 
 --
--- Name: stripe_checkout_sessions; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: stripe_checkout_sessions; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.stripe_checkout_sessions (
@@ -4752,10 +4752,10 @@ CREATE TABLE auth.stripe_checkout_sessions (
 );
 
 
-ALTER TABLE auth.stripe_checkout_sessions OWNER TO claude_admin;
+ALTER TABLE auth.stripe_checkout_sessions OWNER TO pc_migrator;
 
 --
--- Name: stripe_events; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: stripe_events; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.stripe_events (
@@ -4766,10 +4766,10 @@ CREATE TABLE auth.stripe_events (
 );
 
 
-ALTER TABLE auth.stripe_events OWNER TO claude_admin;
+ALTER TABLE auth.stripe_events OWNER TO pc_migrator;
 
 --
--- Name: view_integrations; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: view_integrations; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.view_integrations (
@@ -4809,10 +4809,10 @@ CREATE TABLE auth.view_integrations (
 );
 
 
-ALTER TABLE auth.view_integrations OWNER TO claude_admin;
+ALTER TABLE auth.view_integrations OWNER TO pc_migrator;
 
 --
--- Name: webhook_deliveries; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.webhook_deliveries (
@@ -4838,10 +4838,10 @@ CREATE TABLE auth.webhook_deliveries (
 );
 
 
-ALTER TABLE auth.webhook_deliveries OWNER TO claude_admin;
+ALTER TABLE auth.webhook_deliveries OWNER TO pc_migrator;
 
 --
--- Name: webhook_deliveries_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE auth.webhook_deliveries ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -4855,7 +4855,7 @@ ALTER TABLE auth.webhook_deliveries ALTER COLUMN id ADD GENERATED ALWAYS AS IDEN
 
 
 --
--- Name: webhook_endpoints; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: webhook_endpoints; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.webhook_endpoints (
@@ -4894,10 +4894,10 @@ CREATE TABLE auth.webhook_endpoints (
 );
 
 
-ALTER TABLE auth.webhook_endpoints OWNER TO claude_admin;
+ALTER TABLE auth.webhook_endpoints OWNER TO pc_migrator;
 
 --
--- Name: webhook_endpoints_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: webhook_endpoints_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE auth.webhook_endpoints ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -4911,7 +4911,7 @@ ALTER TABLE auth.webhook_endpoints ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
 
 
 --
--- Name: webhook_subscriptions; Type: TABLE; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions; Type: TABLE; Schema: auth; Owner: pc_migrator
 --
 
 CREATE TABLE auth.webhook_subscriptions (
@@ -4949,10 +4949,10 @@ CREATE TABLE auth.webhook_subscriptions (
 );
 
 
-ALTER TABLE auth.webhook_subscriptions OWNER TO claude_admin;
+ALTER TABLE auth.webhook_subscriptions OWNER TO pc_migrator;
 
 --
--- Name: webhook_subscriptions_id_seq; Type: SEQUENCE; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions_id_seq; Type: SEQUENCE; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE auth.webhook_subscriptions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -4966,7 +4966,7 @@ ALTER TABLE auth.webhook_subscriptions ALTER COLUMN id ADD GENERATED ALWAYS AS I
 
 
 --
--- Name: pc_0005; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0005; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0005 (
@@ -4986,10 +4986,10 @@ CREATE TABLE crm.pc_0005 (
 );
 
 
-ALTER TABLE crm.pc_0005 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0005 OWNER TO pc_migrator;
 
 --
--- Name: associations; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: associations; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.associations AS
@@ -5005,10 +5005,10 @@ CREATE VIEW crm.associations AS
    FROM crm.pc_0005;
 
 
-ALTER TABLE crm.associations OWNER TO claude_admin;
+ALTER TABLE crm.associations OWNER TO pc_migrator;
 
 --
--- Name: pc_0004_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: pc_0004_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.pc_0004_seq
@@ -5019,10 +5019,10 @@ CREATE SEQUENCE meta.pc_0004_seq
     CACHE 1;
 
 
-ALTER TABLE meta.pc_0004_seq OWNER TO claude_admin;
+ALTER TABLE meta.pc_0004_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0004; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: pc_0004; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.pc_0004 (
@@ -5055,10 +5055,10 @@ CREATE TABLE meta.pc_0004 (
 );
 
 
-ALTER TABLE meta.pc_0004 OWNER TO claude_admin;
+ALTER TABLE meta.pc_0004 OWNER TO pc_migrator;
 
 --
--- Name: associations_both; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: associations_both; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.associations_both AS
@@ -5087,10 +5087,10 @@ UNION ALL
      JOIN meta.pc_0004 l ON ((l.pc_0004_id = a.label_id)));
 
 
-ALTER TABLE crm.associations_both OWNER TO claude_admin;
+ALTER TABLE crm.associations_both OWNER TO pc_migrator;
 
 --
--- Name: pc_0054; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0054; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0054 (
@@ -5173,10 +5173,10 @@ CREATE TABLE crm.pc_0054 (
 );
 
 
-ALTER TABLE crm.pc_0054 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0054 OWNER TO pc_migrator;
 
 --
--- Name: pc_0003_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: pc_0003_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.pc_0003_seq
@@ -5187,10 +5187,10 @@ CREATE SEQUENCE meta.pc_0003_seq
     CACHE 1;
 
 
-ALTER TABLE meta.pc_0003_seq OWNER TO claude_admin;
+ALTER TABLE meta.pc_0003_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0003; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: pc_0003; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.pc_0003 (
@@ -5225,10 +5225,10 @@ END)::numeric))),
 );
 
 
-ALTER TABLE meta.pc_0003 OWNER TO claude_admin;
+ALTER TABLE meta.pc_0003 OWNER TO pc_migrator;
 
 --
--- Name: booking_pages; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: booking_pages; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.booking_pages AS
@@ -5270,10 +5270,10 @@ CREATE VIEW crm.booking_pages AS
      LEFT JOIN meta.pc_0003 o3 ON (((o3.property_id = '0000000145'::text) AND (o3.api_value = t.location_type[1]))));
 
 
-ALTER TABLE crm.booking_pages OWNER TO claude_admin;
+ALTER TABLE crm.booking_pages OWNER TO pc_migrator;
 
 --
--- Name: pc_0030; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0030; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0030 (
@@ -5339,10 +5339,10 @@ CREATE TABLE crm.pc_0030 (
 );
 
 
-ALTER TABLE crm.pc_0030 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0030 OWNER TO pc_migrator;
 
 --
--- Name: calls; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: calls; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.calls AS
@@ -5385,10 +5385,10 @@ CREATE VIEW crm.calls AS
      LEFT JOIN meta.pc_0003 o4 ON (((o4.property_id = '00000000ed'::text) AND (o4.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.calls OWNER TO claude_admin;
+ALTER TABLE crm.calls OWNER TO pc_migrator;
 
 --
--- Name: pc_0056; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0056; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0056 (
@@ -5447,10 +5447,10 @@ CREATE TABLE crm.pc_0056 (
 );
 
 
-ALTER TABLE crm.pc_0056 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0056 OWNER TO pc_migrator;
 
 --
--- Name: card_scans; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: card_scans; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.card_scans AS
@@ -5484,10 +5484,10 @@ CREATE VIEW crm.card_scans AS
      LEFT JOIN meta.pc_0003 o3 ON (((o3.property_id = '00000001cc'::text) AND (o3.api_value = t.saved_as[1]))));
 
 
-ALTER TABLE crm.card_scans OWNER TO claude_admin;
+ALTER TABLE crm.card_scans OWNER TO pc_migrator;
 
 --
--- Name: pc_0025; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0025; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0025 (
@@ -5517,10 +5517,10 @@ CREATE TABLE crm.pc_0025 (
 );
 
 
-ALTER TABLE crm.pc_0025 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0025 OWNER TO pc_migrator;
 
 --
--- Name: carts; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: carts; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.carts AS
@@ -5544,10 +5544,10 @@ CREATE VIEW crm.carts AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '00000000e0'::text) AND (o2.api_value = t.currency[1]))));
 
 
-ALTER TABLE crm.carts OWNER TO claude_admin;
+ALTER TABLE crm.carts OWNER TO pc_migrator;
 
 --
--- Name: pc_0034; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0034; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0034 (
@@ -5572,10 +5572,10 @@ CREATE TABLE crm.pc_0034 (
 );
 
 
-ALTER TABLE crm.pc_0034 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0034 OWNER TO pc_migrator;
 
 --
--- Name: comments; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: comments; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.comments AS
@@ -5593,10 +5593,10 @@ CREATE VIEW crm.comments AS
    FROM crm.pc_0034 t;
 
 
-ALTER TABLE crm.comments OWNER TO claude_admin;
+ALTER TABLE crm.comments OWNER TO pc_migrator;
 
 --
--- Name: pc_0011; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0011; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0011 (
@@ -5649,10 +5649,10 @@ CREATE TABLE crm.pc_0011 (
 );
 
 
-ALTER TABLE crm.pc_0011 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0011 OWNER TO pc_migrator;
 
 --
--- Name: companies; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: companies; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.companies AS
@@ -5686,10 +5686,10 @@ CREATE VIEW crm.companies AS
      LEFT JOIN meta.pc_0003 o3 ON (((o3.property_id = '00000000b6'::text) AND (o3.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.companies OWNER TO claude_admin;
+ALTER TABLE crm.companies OWNER TO pc_migrator;
 
 --
--- Name: pc_0010; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0010; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0010 (
@@ -5755,10 +5755,10 @@ CREATE TABLE crm.pc_0010 (
 );
 
 
-ALTER TABLE crm.pc_0010 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0010 OWNER TO pc_migrator;
 
 --
--- Name: contacts; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: contacts; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.contacts AS
@@ -5800,10 +5800,10 @@ CREATE VIEW crm.contacts AS
      LEFT JOIN meta.pc_0003 o5 ON (((o5.property_id = '00000001bb'::text) AND (o5.api_value = t.contact_source[1]))));
 
 
-ALTER TABLE crm.contacts OWNER TO claude_admin;
+ALTER TABLE crm.contacts OWNER TO pc_migrator;
 
 --
--- Name: pc_0012; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0012; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0012 (
@@ -5842,10 +5842,10 @@ CREATE TABLE crm.pc_0012 (
 );
 
 
-ALTER TABLE crm.pc_0012 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0012 OWNER TO pc_migrator;
 
 --
--- Name: deals; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: deals; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.deals AS
@@ -5876,10 +5876,10 @@ CREATE VIEW crm.deals AS
      LEFT JOIN meta.pc_0003 o4 ON (((o4.property_id = '00000000bc'::text) AND (o4.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.deals OWNER TO claude_admin;
+ALTER TABLE crm.deals OWNER TO pc_migrator;
 
 --
--- Name: pc_0057; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0057; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0057 (
@@ -5948,10 +5948,10 @@ CREATE TABLE crm.pc_0057 (
 );
 
 
-ALTER TABLE crm.pc_0057 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0057 OWNER TO pc_migrator;
 
 --
--- Name: document_templates; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: document_templates; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.document_templates AS
@@ -5992,10 +5992,10 @@ CREATE VIEW crm.document_templates AS
      LEFT JOIN meta.pc_0003 o6 ON (((o6.property_id = '00000001f0'::text) AND (o6.api_value = t.is_builtin[1]))));
 
 
-ALTER TABLE crm.document_templates OWNER TO claude_admin;
+ALTER TABLE crm.document_templates OWNER TO pc_migrator;
 
 --
--- Name: pc_0051; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0051; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0051 (
@@ -6021,10 +6021,10 @@ CREATE TABLE crm.pc_0051 (
 );
 
 
-ALTER TABLE crm.pc_0051 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0051 OWNER TO pc_migrator;
 
 --
--- Name: email_templates; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: email_templates; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.email_templates AS
@@ -6042,10 +6042,10 @@ CREATE VIEW crm.email_templates AS
    FROM crm.pc_0051 t;
 
 
-ALTER TABLE crm.email_templates OWNER TO claude_admin;
+ALTER TABLE crm.email_templates OWNER TO pc_migrator;
 
 --
--- Name: pc_0031; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0031; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0031 (
@@ -6092,10 +6092,10 @@ CREATE TABLE crm.pc_0031 (
 );
 
 
-ALTER TABLE crm.pc_0031 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0031 OWNER TO pc_migrator;
 
 --
--- Name: emails; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: emails; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.emails AS
@@ -6127,10 +6127,10 @@ CREATE VIEW crm.emails AS
      LEFT JOIN meta.pc_0003 o3 ON (((o3.property_id = '00000000f7'::text) AND (o3.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.emails OWNER TO claude_admin;
+ALTER TABLE crm.emails OWNER TO pc_migrator;
 
 --
--- Name: pc_0050; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0050; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0050 (
@@ -6168,10 +6168,10 @@ CREATE TABLE crm.pc_0050 (
 );
 
 
-ALTER TABLE crm.pc_0050 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0050 OWNER TO pc_migrator;
 
 --
--- Name: files; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: files; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.files AS
@@ -6195,10 +6195,10 @@ CREATE VIEW crm.files AS
      LEFT JOIN meta.pc_0003 o1 ON (((o1.property_id = '0000000151'::text) AND (o1.api_value = t.status[1]))));
 
 
-ALTER TABLE crm.files OWNER TO claude_admin;
+ALTER TABLE crm.files OWNER TO pc_migrator;
 
 --
--- Name: pc_0053; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0053; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0053 (
@@ -6236,10 +6236,10 @@ CREATE TABLE crm.pc_0053 (
 );
 
 
-ALTER TABLE crm.pc_0053 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0053 OWNER TO pc_migrator;
 
 --
--- Name: form_submissions; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: form_submissions; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.form_submissions AS
@@ -6263,10 +6263,10 @@ CREATE VIEW crm.form_submissions AS
    FROM crm.pc_0053 t;
 
 
-ALTER TABLE crm.form_submissions OWNER TO claude_admin;
+ALTER TABLE crm.form_submissions OWNER TO pc_migrator;
 
 --
--- Name: pc_0052; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0052; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0052 (
@@ -6304,10 +6304,10 @@ CREATE TABLE crm.pc_0052 (
 );
 
 
-ALTER TABLE crm.pc_0052 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0052 OWNER TO pc_migrator;
 
 --
--- Name: forms; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: forms; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.forms AS
@@ -6331,10 +6331,10 @@ CREATE VIEW crm.forms AS
      LEFT JOIN meta.pc_0003 o1 ON (((o1.property_id = '0000000107'::text) AND (o1.api_value = t.status[1]))));
 
 
-ALTER TABLE crm.forms OWNER TO claude_admin;
+ALTER TABLE crm.forms OWNER TO pc_migrator;
 
 --
--- Name: pc_0023; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0023; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0023 (
@@ -6374,10 +6374,10 @@ CREATE TABLE crm.pc_0023 (
 );
 
 
-ALTER TABLE crm.pc_0023 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0023 OWNER TO pc_migrator;
 
 --
--- Name: invoices; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: invoices; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.invoices AS
@@ -6405,10 +6405,10 @@ CREATE VIEW crm.invoices AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '00000000d8'::text) AND (o2.api_value = t.currency[1]))));
 
 
-ALTER TABLE crm.invoices OWNER TO claude_admin;
+ALTER TABLE crm.invoices OWNER TO pc_migrator;
 
 --
--- Name: pc_0020; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0020; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0020 (
@@ -6450,10 +6450,10 @@ CREATE TABLE crm.pc_0020 (
 );
 
 
-ALTER TABLE crm.pc_0020 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0020 OWNER TO pc_migrator;
 
 --
--- Name: lines; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: lines; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.lines AS
@@ -6482,10 +6482,10 @@ CREATE VIEW crm.lines AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '00000001b1'::text) AND (o2.api_value = t.line_type[1]))));
 
 
-ALTER TABLE crm.lines OWNER TO claude_admin;
+ALTER TABLE crm.lines OWNER TO pc_migrator;
 
 --
--- Name: pc_0061; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0061; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0061 (
@@ -6527,10 +6527,10 @@ CREATE TABLE crm.pc_0061 (
 );
 
 
-ALTER TABLE crm.pc_0061 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0061 OWNER TO pc_migrator;
 
 --
--- Name: marketing_event_participations; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: marketing_event_participations; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.marketing_event_participations AS
@@ -6560,10 +6560,10 @@ CREATE VIEW crm.marketing_event_participations AS
      LEFT JOIN meta.pc_0003 o3 ON (((o3.property_id = '00000001bd'::text) AND (o3.api_value = t.follow_up_status[1]))));
 
 
-ALTER TABLE crm.marketing_event_participations OWNER TO claude_admin;
+ALTER TABLE crm.marketing_event_participations OWNER TO pc_migrator;
 
 --
--- Name: pc_0060; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0060; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0060 (
@@ -6598,10 +6598,10 @@ CREATE TABLE crm.pc_0060 (
 );
 
 
-ALTER TABLE crm.pc_0060 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0060 OWNER TO pc_migrator;
 
 --
--- Name: marketing_events; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: marketing_events; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.marketing_events AS
@@ -6628,10 +6628,10 @@ CREATE VIEW crm.marketing_events AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '000000010e'::text) AND (o2.api_value = t.status[1]))));
 
 
-ALTER TABLE crm.marketing_events OWNER TO claude_admin;
+ALTER TABLE crm.marketing_events OWNER TO pc_migrator;
 
 --
--- Name: pc_0032; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0032; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0032 (
@@ -6659,10 +6659,10 @@ CREATE TABLE crm.pc_0032 (
 );
 
 
-ALTER TABLE crm.pc_0032 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0032 OWNER TO pc_migrator;
 
 --
--- Name: notes; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: notes; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.notes AS
@@ -6682,10 +6682,10 @@ CREATE VIEW crm.notes AS
      LEFT JOIN meta.pc_0003 o1 ON (((o1.property_id = '00000000f9'::text) AND (o1.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.notes OWNER TO claude_admin;
+ALTER TABLE crm.notes OWNER TO pc_migrator;
 
 --
--- Name: pc_0063; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0063; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0063 (
@@ -6715,10 +6715,10 @@ CREATE TABLE crm.pc_0063 (
 );
 
 
-ALTER TABLE crm.pc_0063 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0063 OWNER TO pc_migrator;
 
 --
--- Name: object_event_occurrences; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: object_event_occurrences; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.object_event_occurrences AS
@@ -6738,10 +6738,10 @@ CREATE VIEW crm.object_event_occurrences AS
    FROM crm.pc_0063 t;
 
 
-ALTER TABLE crm.object_event_occurrences OWNER TO claude_admin;
+ALTER TABLE crm.object_event_occurrences OWNER TO pc_migrator;
 
 --
--- Name: pc_0062; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0062; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0062 (
@@ -6768,10 +6768,10 @@ CREATE TABLE crm.pc_0062 (
 );
 
 
-ALTER TABLE crm.pc_0062 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0062 OWNER TO pc_migrator;
 
 --
--- Name: object_events; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: object_events; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.object_events AS
@@ -6789,10 +6789,10 @@ CREATE VIEW crm.object_events AS
    FROM crm.pc_0062 t;
 
 
-ALTER TABLE crm.object_events OWNER TO claude_admin;
+ALTER TABLE crm.object_events OWNER TO pc_migrator;
 
 --
--- Name: pc_0026; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0026; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0026 (
@@ -6824,10 +6824,10 @@ CREATE TABLE crm.pc_0026 (
 );
 
 
-ALTER TABLE crm.pc_0026 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0026 OWNER TO pc_migrator;
 
 --
--- Name: orders; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: orders; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.orders AS
@@ -6852,10 +6852,10 @@ CREATE VIEW crm.orders AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '00000000e4'::text) AND (o2.api_value = t.currency[1]))));
 
 
-ALTER TABLE crm.orders OWNER TO claude_admin;
+ALTER TABLE crm.orders OWNER TO pc_migrator;
 
 --
--- Name: pc_0024; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0024; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0024 (
@@ -6897,10 +6897,10 @@ CREATE TABLE crm.pc_0024 (
 );
 
 
-ALTER TABLE crm.pc_0024 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0024 OWNER TO pc_migrator;
 
 --
--- Name: payments; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: payments; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.payments AS
@@ -6935,10 +6935,10 @@ CREATE VIEW crm.payments AS
      LEFT JOIN meta.pc_0003 o4 ON (((o4.property_id = '0000000161'::text) AND (o4.api_value = t.purpose[1]))));
 
 
-ALTER TABLE crm.payments OWNER TO claude_admin;
+ALTER TABLE crm.payments OWNER TO pc_migrator;
 
 --
--- Name: pc_0000; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0000; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0000 (
@@ -6977,10 +6977,10 @@ CREATE TABLE crm.pc_0000 (
 );
 
 
-ALTER TABLE crm.pc_0000 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0000 OWNER TO pc_migrator;
 
 --
--- Name: pc_0000_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0000_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0000_seq
@@ -6991,17 +6991,17 @@ CREATE SEQUENCE crm.pc_0000_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0000_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0000_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0000_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0000_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0000_seq OWNED BY crm.pc_0000.pc_0000_id;
 
 
 --
--- Name: pc_0005_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0005_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0005_seq
@@ -7012,17 +7012,17 @@ CREATE SEQUENCE crm.pc_0005_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0005_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0005_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0005_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0005_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0005_seq OWNED BY crm.pc_0005.pc_0005_id;
 
 
 --
--- Name: pc_0006; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0006; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0006 (
@@ -7046,10 +7046,10 @@ CREATE TABLE crm.pc_0006 (
 );
 
 
-ALTER TABLE crm.pc_0006 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0006 OWNER TO pc_migrator;
 
 --
--- Name: pc_0006_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0006_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0006_seq
@@ -7060,17 +7060,17 @@ CREATE SEQUENCE crm.pc_0006_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0006_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0006_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0006_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0006_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0006_seq OWNED BY crm.pc_0006.pc_0006_id;
 
 
 --
--- Name: pc_0010_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0010_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0010_seq
@@ -7081,17 +7081,17 @@ CREATE SEQUENCE crm.pc_0010_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0010_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0010_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0010_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0010_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0010_seq OWNED BY crm.pc_0010.pc_0010_id;
 
 
 --
--- Name: pc_0011_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0011_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0011_seq
@@ -7102,17 +7102,17 @@ CREATE SEQUENCE crm.pc_0011_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0011_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0011_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0011_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0011_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0011_seq OWNED BY crm.pc_0011.pc_0011_id;
 
 
 --
--- Name: pc_0012_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0012_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0012_seq
@@ -7123,17 +7123,17 @@ CREATE SEQUENCE crm.pc_0012_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0012_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0012_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0012_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0012_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0012_seq OWNED BY crm.pc_0012.pc_0012_id;
 
 
 --
--- Name: pc_0013; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0013; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0013 (
@@ -7173,10 +7173,10 @@ CREATE TABLE crm.pc_0013 (
 );
 
 
-ALTER TABLE crm.pc_0013 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0013 OWNER TO pc_migrator;
 
 --
--- Name: pc_0013_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0013_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0013_seq
@@ -7187,17 +7187,17 @@ CREATE SEQUENCE crm.pc_0013_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0013_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0013_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0013_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0013_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0013_seq OWNED BY crm.pc_0013.pc_0013_id;
 
 
 --
--- Name: pc_0014; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0014; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0014 (
@@ -7231,10 +7231,10 @@ CREATE TABLE crm.pc_0014 (
 );
 
 
-ALTER TABLE crm.pc_0014 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0014 OWNER TO pc_migrator;
 
 --
--- Name: pc_0014_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0014_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0014_seq
@@ -7245,17 +7245,17 @@ CREATE SEQUENCE crm.pc_0014_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0014_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0014_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0014_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0014_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0014_seq OWNED BY crm.pc_0014.pc_0014_id;
 
 
 --
--- Name: pc_0020_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0020_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0020_seq
@@ -7266,17 +7266,17 @@ CREATE SEQUENCE crm.pc_0020_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0020_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0020_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0020_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0020_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0020_seq OWNED BY crm.pc_0020.pc_0020_id;
 
 
 --
--- Name: pc_0021; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0021; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0021 (
@@ -7313,10 +7313,10 @@ CREATE TABLE crm.pc_0021 (
 );
 
 
-ALTER TABLE crm.pc_0021 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0021 OWNER TO pc_migrator;
 
 --
--- Name: pc_0021_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0021_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0021_seq
@@ -7327,17 +7327,17 @@ CREATE SEQUENCE crm.pc_0021_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0021_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0021_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0021_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0021_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0021_seq OWNED BY crm.pc_0021.pc_0021_id;
 
 
 --
--- Name: pc_0022; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0022; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0022 (
@@ -7407,10 +7407,10 @@ CREATE TABLE crm.pc_0022 (
 );
 
 
-ALTER TABLE crm.pc_0022 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0022 OWNER TO pc_migrator;
 
 --
--- Name: pc_0022_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0022_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0022_seq
@@ -7421,17 +7421,17 @@ CREATE SEQUENCE crm.pc_0022_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0022_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0022_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0022_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0022_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0022_seq OWNED BY crm.pc_0022.pc_0022_id;
 
 
 --
--- Name: pc_0023_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0023_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0023_seq
@@ -7442,17 +7442,17 @@ CREATE SEQUENCE crm.pc_0023_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0023_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0023_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0023_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0023_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0023_seq OWNED BY crm.pc_0023.pc_0023_id;
 
 
 --
--- Name: pc_0024_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0024_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0024_seq
@@ -7463,17 +7463,17 @@ CREATE SEQUENCE crm.pc_0024_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0024_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0024_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0024_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0024_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0024_seq OWNED BY crm.pc_0024.pc_0024_id;
 
 
 --
--- Name: pc_0025_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0025_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0025_seq
@@ -7484,17 +7484,17 @@ CREATE SEQUENCE crm.pc_0025_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0025_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0025_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0025_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0025_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0025_seq OWNED BY crm.pc_0025.pc_0025_id;
 
 
 --
--- Name: pc_0026_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0026_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0026_seq
@@ -7505,17 +7505,17 @@ CREATE SEQUENCE crm.pc_0026_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0026_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0026_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0026_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0026_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0026_seq OWNED BY crm.pc_0026.pc_0026_id;
 
 
 --
--- Name: pc_0030_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0030_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0030_seq
@@ -7526,17 +7526,17 @@ CREATE SEQUENCE crm.pc_0030_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0030_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0030_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0030_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0030_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0030_seq OWNED BY crm.pc_0030.pc_0030_id;
 
 
 --
--- Name: pc_0031_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0031_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0031_seq
@@ -7547,17 +7547,17 @@ CREATE SEQUENCE crm.pc_0031_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0031_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0031_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0031_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0031_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0031_seq OWNED BY crm.pc_0031.pc_0031_id;
 
 
 --
--- Name: pc_0032_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0032_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0032_seq
@@ -7568,17 +7568,17 @@ CREATE SEQUENCE crm.pc_0032_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0032_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0032_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0032_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0032_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0032_seq OWNED BY crm.pc_0032.pc_0032_id;
 
 
 --
--- Name: pc_0033; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0033; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0033 (
@@ -7619,10 +7619,10 @@ CREATE TABLE crm.pc_0033 (
 );
 
 
-ALTER TABLE crm.pc_0033 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0033 OWNER TO pc_migrator;
 
 --
--- Name: pc_0033_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0033_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0033_seq
@@ -7633,17 +7633,17 @@ CREATE SEQUENCE crm.pc_0033_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0033_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0033_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0033_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0033_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0033_seq OWNED BY crm.pc_0033.pc_0033_id;
 
 
 --
--- Name: pc_0034_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0034_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0034_seq
@@ -7654,17 +7654,17 @@ CREATE SEQUENCE crm.pc_0034_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0034_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0034_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0034_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0034_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0034_seq OWNED BY crm.pc_0034.pc_0034_id;
 
 
 --
--- Name: pc_0050_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0050_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0050_seq
@@ -7675,17 +7675,17 @@ CREATE SEQUENCE crm.pc_0050_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0050_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0050_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0050_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0050_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0050_seq OWNED BY crm.pc_0050.pc_0050_id;
 
 
 --
--- Name: pc_0051_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0051_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0051_seq
@@ -7696,17 +7696,17 @@ CREATE SEQUENCE crm.pc_0051_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0051_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0051_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0051_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0051_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0051_seq OWNED BY crm.pc_0051.pc_0051_id;
 
 
 --
--- Name: pc_0052_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0052_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0052_seq
@@ -7717,17 +7717,17 @@ CREATE SEQUENCE crm.pc_0052_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0052_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0052_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0052_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0052_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0052_seq OWNED BY crm.pc_0052.pc_0052_id;
 
 
 --
--- Name: pc_0053_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0053_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0053_seq
@@ -7738,17 +7738,17 @@ CREATE SEQUENCE crm.pc_0053_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0053_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0053_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0053_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0053_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0053_seq OWNED BY crm.pc_0053.pc_0053_id;
 
 
 --
--- Name: pc_0054_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0054_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0054_seq
@@ -7759,17 +7759,17 @@ CREATE SEQUENCE crm.pc_0054_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0054_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0054_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0054_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0054_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0054_seq OWNED BY crm.pc_0054.pc_0054_id;
 
 
 --
--- Name: pc_0055; Type: TABLE; Schema: crm; Owner: claude_admin
+-- Name: pc_0055; Type: TABLE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TABLE crm.pc_0055 (
@@ -7820,10 +7820,10 @@ CREATE TABLE crm.pc_0055 (
 );
 
 
-ALTER TABLE crm.pc_0055 OWNER TO claude_admin;
+ALTER TABLE crm.pc_0055 OWNER TO pc_migrator;
 
 --
--- Name: pc_0055_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0055_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0055_seq
@@ -7834,17 +7834,17 @@ CREATE SEQUENCE crm.pc_0055_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0055_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0055_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0055_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0055_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0055_seq OWNED BY crm.pc_0055.pc_0055_id;
 
 
 --
--- Name: pc_0056_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0056_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0056_seq
@@ -7855,17 +7855,17 @@ CREATE SEQUENCE crm.pc_0056_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0056_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0056_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0056_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0056_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0056_seq OWNED BY crm.pc_0056.pc_0056_id;
 
 
 --
--- Name: pc_0057_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0057_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0057_seq
@@ -7876,17 +7876,17 @@ CREATE SEQUENCE crm.pc_0057_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0057_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0057_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0057_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0057_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0057_seq OWNED BY crm.pc_0057.pc_0057_id;
 
 
 --
--- Name: pc_0060_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0060_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0060_seq
@@ -7897,17 +7897,17 @@ CREATE SEQUENCE crm.pc_0060_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0060_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0060_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0060_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0060_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0060_seq OWNED BY crm.pc_0060.pc_0060_id;
 
 
 --
--- Name: pc_0061_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0061_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0061_seq
@@ -7918,17 +7918,17 @@ CREATE SEQUENCE crm.pc_0061_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0061_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0061_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0061_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0061_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0061_seq OWNED BY crm.pc_0061.pc_0061_id;
 
 
 --
--- Name: pc_0062_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0062_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0062_seq
@@ -7939,17 +7939,17 @@ CREATE SEQUENCE crm.pc_0062_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0062_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0062_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0062_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0062_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0062_seq OWNED BY crm.pc_0062.pc_0062_id;
 
 
 --
--- Name: pc_0063_seq; Type: SEQUENCE; Schema: crm; Owner: claude_admin
+-- Name: pc_0063_seq; Type: SEQUENCE; Schema: crm; Owner: pc_migrator
 --
 
 CREATE SEQUENCE crm.pc_0063_seq
@@ -7960,17 +7960,17 @@ CREATE SEQUENCE crm.pc_0063_seq
     CACHE 1;
 
 
-ALTER TABLE crm.pc_0063_seq OWNER TO claude_admin;
+ALTER TABLE crm.pc_0063_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0063_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: claude_admin
+-- Name: pc_0063_seq; Type: SEQUENCE OWNED BY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER SEQUENCE crm.pc_0063_seq OWNED BY crm.pc_0063.pc_0063_id;
 
 
 --
--- Name: products; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: products; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.products AS
@@ -7996,10 +7996,10 @@ CREATE VIEW crm.products AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '00000001ae'::text) AND (o2.api_value = t.uom[1]))));
 
 
-ALTER TABLE crm.products OWNER TO claude_admin;
+ALTER TABLE crm.products OWNER TO pc_migrator;
 
 --
--- Name: quotes; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: quotes; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.quotes AS
@@ -8048,10 +8048,10 @@ CREATE VIEW crm.quotes AS
      LEFT JOIN meta.pc_0003 o5 ON (((o5.property_id = '000000015a'::text) AND (o5.api_value = t.deposit_type[1]))));
 
 
-ALTER TABLE crm.quotes OWNER TO claude_admin;
+ALTER TABLE crm.quotes OWNER TO pc_migrator;
 
 --
--- Name: services; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: services; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.services AS
@@ -8076,10 +8076,10 @@ CREATE VIEW crm.services AS
      LEFT JOIN meta.pc_0003 o2 ON (((o2.property_id = '00000000c6'::text) AND (o2.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.services OWNER TO claude_admin;
+ALTER TABLE crm.services OWNER TO pc_migrator;
 
 --
--- Name: tasks; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: tasks; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.tasks AS
@@ -8109,10 +8109,10 @@ CREATE VIEW crm.tasks AS
      LEFT JOIN meta.pc_0003 o4 ON (((o4.property_id = '00000000ff'::text) AND (o4.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.tasks OWNER TO claude_admin;
+ALTER TABLE crm.tasks OWNER TO pc_migrator;
 
 --
--- Name: teams; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: teams; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.teams AS
@@ -8129,10 +8129,10 @@ CREATE VIEW crm.teams AS
    FROM crm.pc_0006 t;
 
 
-ALTER TABLE crm.teams OWNER TO claude_admin;
+ALTER TABLE crm.teams OWNER TO pc_migrator;
 
 --
--- Name: tickets; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: tickets; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.tickets AS
@@ -8161,10 +8161,10 @@ CREATE VIEW crm.tickets AS
      LEFT JOIN meta.pc_0003 o4 ON (((o4.property_id = '00000000c1'::text) AND (o4.api_value = t.owner[1]))));
 
 
-ALTER TABLE crm.tickets OWNER TO claude_admin;
+ALTER TABLE crm.tickets OWNER TO pc_migrator;
 
 --
--- Name: users; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: users; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.users AS
@@ -8189,10 +8189,10 @@ CREATE VIEW crm.users AS
      LEFT JOIN meta.pc_0003 o1 ON (((o1.property_id = '00000000a2'::text) AND (o1.api_value = t.status[1]))));
 
 
-ALTER TABLE crm.users OWNER TO claude_admin;
+ALTER TABLE crm.users OWNER TO pc_migrator;
 
 --
--- Name: views; Type: VIEW; Schema: crm; Owner: claude_admin
+-- Name: views; Type: VIEW; Schema: crm; Owner: pc_migrator
 --
 
 CREATE VIEW crm.views AS
@@ -8225,10 +8225,10 @@ CREATE VIEW crm.views AS
      LEFT JOIN meta.pc_0003 o3 ON (((o3.property_id = '00000001ef'::text) AND (o3.api_value = t.allow_snippets[1]))));
 
 
-ALTER TABLE crm.views OWNER TO claude_admin;
+ALTER TABLE crm.views OWNER TO pc_migrator;
 
 --
--- Name: association_labels; Type: VIEW; Schema: meta; Owner: claude_admin
+-- Name: association_labels; Type: VIEW; Schema: meta; Owner: pc_migrator
 --
 
 CREATE VIEW meta.association_labels AS
@@ -8250,10 +8250,10 @@ CREATE VIEW meta.association_labels AS
    FROM meta.pc_0004;
 
 
-ALTER TABLE meta.association_labels OWNER TO claude_admin;
+ALTER TABLE meta.association_labels OWNER TO pc_migrator;
 
 --
--- Name: calc_dependencies; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: calc_dependencies; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.calc_dependencies (
@@ -8263,10 +8263,10 @@ CREATE TABLE meta.calc_dependencies (
 );
 
 
-ALTER TABLE meta.calc_dependencies OWNER TO claude_admin;
+ALTER TABLE meta.calc_dependencies OWNER TO pc_migrator;
 
 --
--- Name: calc_queue; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: calc_queue; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.calc_queue (
@@ -8276,10 +8276,10 @@ CREATE TABLE meta.calc_queue (
 );
 
 
-ALTER TABLE meta.calc_queue OWNER TO claude_admin;
+ALTER TABLE meta.calc_queue OWNER TO pc_migrator;
 
 --
--- Name: pc_0007_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: pc_0007_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.pc_0007_seq
@@ -8290,10 +8290,10 @@ CREATE SEQUENCE meta.pc_0007_seq
     CACHE 1;
 
 
-ALTER TABLE meta.pc_0007_seq OWNER TO claude_admin;
+ALTER TABLE meta.pc_0007_seq OWNER TO pc_migrator;
 
 --
--- Name: pc_0007; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: pc_0007; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.pc_0007 (
@@ -8322,10 +8322,10 @@ CREATE TABLE meta.pc_0007 (
 );
 
 
-ALTER TABLE meta.pc_0007 OWNER TO claude_admin;
+ALTER TABLE meta.pc_0007 OWNER TO pc_migrator;
 
 --
--- Name: currencies; Type: VIEW; Schema: meta; Owner: claude_admin
+-- Name: currencies; Type: VIEW; Schema: meta; Owner: pc_migrator
 --
 
 CREATE VIEW meta.currencies AS
@@ -8344,10 +8344,10 @@ CREATE VIEW meta.currencies AS
    FROM meta.pc_0007;
 
 
-ALTER TABLE meta.currencies OWNER TO claude_admin;
+ALTER TABLE meta.currencies OWNER TO pc_migrator;
 
 --
--- Name: currency_rates; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: currency_rates; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.currency_rates (
@@ -8367,10 +8367,10 @@ CREATE TABLE meta.currency_rates (
 );
 
 
-ALTER TABLE meta.currency_rates OWNER TO claude_admin;
+ALTER TABLE meta.currency_rates OWNER TO pc_migrator;
 
 --
--- Name: currency_rates_id_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: currency_rates_id_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE meta.currency_rates ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -8384,7 +8384,7 @@ ALTER TABLE meta.currency_rates ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY
 
 
 --
--- Name: currency_settings; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: currency_settings; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.currency_settings (
@@ -8406,10 +8406,10 @@ CREATE TABLE meta.currency_settings (
 );
 
 
-ALTER TABLE meta.currency_settings OWNER TO claude_admin;
+ALTER TABLE meta.currency_settings OWNER TO pc_migrator;
 
 --
--- Name: import_jobs; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: import_jobs; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.import_jobs (
@@ -8431,10 +8431,10 @@ CREATE TABLE meta.import_jobs (
 );
 
 
-ALTER TABLE meta.import_jobs OWNER TO claude_admin;
+ALTER TABLE meta.import_jobs OWNER TO pc_migrator;
 
 --
--- Name: import_jobs_id_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: import_jobs_id_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.import_jobs_id_seq
@@ -8445,17 +8445,17 @@ CREATE SEQUENCE meta.import_jobs_id_seq
     CACHE 1;
 
 
-ALTER TABLE meta.import_jobs_id_seq OWNER TO claude_admin;
+ALTER TABLE meta.import_jobs_id_seq OWNER TO pc_migrator;
 
 --
--- Name: import_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: meta; Owner: claude_admin
+-- Name: import_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: meta; Owner: pc_migrator
 --
 
 ALTER SEQUENCE meta.import_jobs_id_seq OWNED BY meta.import_jobs.id;
 
 
 --
--- Name: objects; Type: VIEW; Schema: meta; Owner: claude_admin
+-- Name: objects; Type: VIEW; Schema: meta; Owner: pc_migrator
 --
 
 CREATE VIEW meta.objects AS
@@ -8475,10 +8475,10 @@ CREATE VIEW meta.objects AS
    FROM meta.pc_0001;
 
 
-ALTER TABLE meta.objects OWNER TO claude_admin;
+ALTER TABLE meta.objects OWNER TO pc_migrator;
 
 --
--- Name: properties; Type: VIEW; Schema: meta; Owner: claude_admin
+-- Name: properties; Type: VIEW; Schema: meta; Owner: pc_migrator
 --
 
 CREATE VIEW meta.properties AS
@@ -8504,10 +8504,10 @@ CREATE VIEW meta.properties AS
    FROM meta.pc_0002;
 
 
-ALTER TABLE meta.properties OWNER TO claude_admin;
+ALTER TABLE meta.properties OWNER TO pc_migrator;
 
 --
--- Name: property_options; Type: VIEW; Schema: meta; Owner: claude_admin
+-- Name: property_options; Type: VIEW; Schema: meta; Owner: pc_migrator
 --
 
 CREATE VIEW meta.property_options AS
@@ -8525,10 +8525,10 @@ CREATE VIEW meta.property_options AS
    FROM meta.pc_0003;
 
 
-ALTER TABLE meta.property_options OWNER TO claude_admin;
+ALTER TABLE meta.property_options OWNER TO pc_migrator;
 
 --
--- Name: record_history; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: record_history; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.record_history (
@@ -8546,10 +8546,10 @@ CREATE TABLE meta.record_history (
 );
 
 
-ALTER TABLE meta.record_history OWNER TO claude_admin;
+ALTER TABLE meta.record_history OWNER TO pc_migrator;
 
 --
--- Name: record_history_id_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: record_history_id_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.record_history_id_seq
@@ -8560,17 +8560,17 @@ CREATE SEQUENCE meta.record_history_id_seq
     CACHE 1;
 
 
-ALTER TABLE meta.record_history_id_seq OWNER TO claude_admin;
+ALTER TABLE meta.record_history_id_seq OWNER TO pc_migrator;
 
 --
--- Name: record_history_id_seq; Type: SEQUENCE OWNED BY; Schema: meta; Owner: claude_admin
+-- Name: record_history_id_seq; Type: SEQUENCE OWNED BY; Schema: meta; Owner: pc_migrator
 --
 
 ALTER SEQUENCE meta.record_history_id_seq OWNED BY meta.record_history.id;
 
 
 --
--- Name: schema_changes; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: schema_changes; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.schema_changes (
@@ -8585,10 +8585,10 @@ CREATE TABLE meta.schema_changes (
 );
 
 
-ALTER TABLE meta.schema_changes OWNER TO claude_admin;
+ALTER TABLE meta.schema_changes OWNER TO pc_migrator;
 
 --
--- Name: schema_changes_id_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: schema_changes_id_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE SEQUENCE meta.schema_changes_id_seq
@@ -8599,17 +8599,17 @@ CREATE SEQUENCE meta.schema_changes_id_seq
     CACHE 1;
 
 
-ALTER TABLE meta.schema_changes_id_seq OWNER TO claude_admin;
+ALTER TABLE meta.schema_changes_id_seq OWNER TO pc_migrator;
 
 --
--- Name: schema_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: meta; Owner: claude_admin
+-- Name: schema_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: meta; Owner: pc_migrator
 --
 
 ALTER SEQUENCE meta.schema_changes_id_seq OWNED BY meta.schema_changes.id;
 
 
 --
--- Name: webhook_outbox; Type: TABLE; Schema: meta; Owner: claude_admin
+-- Name: webhook_outbox; Type: TABLE; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TABLE meta.webhook_outbox (
@@ -8627,10 +8627,10 @@ CREATE TABLE meta.webhook_outbox (
 );
 
 
-ALTER TABLE meta.webhook_outbox OWNER TO claude_admin;
+ALTER TABLE meta.webhook_outbox OWNER TO pc_migrator;
 
 --
--- Name: webhook_outbox_id_seq; Type: SEQUENCE; Schema: meta; Owner: claude_admin
+-- Name: webhook_outbox_id_seq; Type: SEQUENCE; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE meta.webhook_outbox ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -8644,7 +8644,7 @@ ALTER TABLE meta.webhook_outbox ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY
 
 
 --
--- Name: association_labels; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: association_labels; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.association_labels AS
@@ -8659,10 +8659,10 @@ CREATE VIEW reporting.association_labels AS
   WHERE (pc_0004.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.association_labels OWNER TO claude_admin;
+ALTER TABLE reporting.association_labels OWNER TO pc_migrator;
 
 --
--- Name: associations; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: associations; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.associations AS
@@ -8678,10 +8678,10 @@ CREATE VIEW reporting.associations AS
    FROM crm.associations_both;
 
 
-ALTER TABLE reporting.associations OWNER TO claude_admin;
+ALTER TABLE reporting.associations OWNER TO pc_migrator;
 
 --
--- Name: booking_pages; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: booking_pages; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.booking_pages AS
@@ -8721,10 +8721,10 @@ CREATE VIEW reporting.booking_pages AS
   WHERE (booking_pages.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.booking_pages OWNER TO claude_admin;
+ALTER TABLE reporting.booking_pages OWNER TO pc_migrator;
 
 --
--- Name: calls; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: calls; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.calls AS
@@ -8764,10 +8764,10 @@ CREATE VIEW reporting.calls AS
   WHERE (calls.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.calls OWNER TO claude_admin;
+ALTER TABLE reporting.calls OWNER TO pc_migrator;
 
 --
--- Name: card_scans; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: card_scans; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.card_scans AS
@@ -8799,10 +8799,10 @@ CREATE VIEW reporting.card_scans AS
   WHERE (card_scans.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.card_scans OWNER TO claude_admin;
+ALTER TABLE reporting.card_scans OWNER TO pc_migrator;
 
 --
--- Name: carts; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: carts; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.carts AS
@@ -8825,10 +8825,10 @@ CREATE VIEW reporting.carts AS
   WHERE (carts.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.carts OWNER TO claude_admin;
+ALTER TABLE reporting.carts OWNER TO pc_migrator;
 
 --
--- Name: comments; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: comments; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.comments AS
@@ -8847,10 +8847,10 @@ CREATE VIEW reporting.comments AS
   WHERE (comments.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.comments OWNER TO claude_admin;
+ALTER TABLE reporting.comments OWNER TO pc_migrator;
 
 --
--- Name: companies; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: companies; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.companies AS
@@ -8882,10 +8882,10 @@ CREATE VIEW reporting.companies AS
   WHERE (companies.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.companies OWNER TO claude_admin;
+ALTER TABLE reporting.companies OWNER TO pc_migrator;
 
 --
--- Name: contacts; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: contacts; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.contacts AS
@@ -8923,10 +8923,10 @@ CREATE VIEW reporting.contacts AS
   WHERE (contacts.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.contacts OWNER TO claude_admin;
+ALTER TABLE reporting.contacts OWNER TO pc_migrator;
 
 --
--- Name: currencies; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: currencies; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.currencies AS
@@ -8943,10 +8943,10 @@ CREATE VIEW reporting.currencies AS
   WHERE (pc_0007.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.currencies OWNER TO claude_admin;
+ALTER TABLE reporting.currencies OWNER TO pc_migrator;
 
 --
--- Name: currency_rates; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: currency_rates; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.currency_rates AS
@@ -8960,10 +8960,10 @@ CREATE VIEW reporting.currency_rates AS
    FROM meta.currency_rates;
 
 
-ALTER TABLE reporting.currency_rates OWNER TO claude_admin;
+ALTER TABLE reporting.currency_rates OWNER TO pc_migrator;
 
 --
--- Name: deals; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: deals; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.deals AS
@@ -8991,10 +8991,10 @@ CREATE VIEW reporting.deals AS
   WHERE (deals.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.deals OWNER TO claude_admin;
+ALTER TABLE reporting.deals OWNER TO pc_migrator;
 
 --
--- Name: document_templates; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: document_templates; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.document_templates AS
@@ -9030,10 +9030,10 @@ CREATE VIEW reporting.document_templates AS
   WHERE (document_templates.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.document_templates OWNER TO claude_admin;
+ALTER TABLE reporting.document_templates OWNER TO pc_migrator;
 
 --
--- Name: email_templates; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: email_templates; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.email_templates AS
@@ -9052,10 +9052,10 @@ CREATE VIEW reporting.email_templates AS
   WHERE (email_templates.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.email_templates OWNER TO claude_admin;
+ALTER TABLE reporting.email_templates OWNER TO pc_migrator;
 
 --
--- Name: emails; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: emails; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.emails AS
@@ -9085,10 +9085,10 @@ CREATE VIEW reporting.emails AS
   WHERE (emails.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.emails OWNER TO claude_admin;
+ALTER TABLE reporting.emails OWNER TO pc_migrator;
 
 --
--- Name: files; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: files; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.files AS
@@ -9112,10 +9112,10 @@ CREATE VIEW reporting.files AS
   WHERE (files.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.files OWNER TO claude_admin;
+ALTER TABLE reporting.files OWNER TO pc_migrator;
 
 --
--- Name: form_submissions; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: form_submissions; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.form_submissions AS
@@ -9140,10 +9140,10 @@ CREATE VIEW reporting.form_submissions AS
   WHERE (form_submissions.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.form_submissions OWNER TO claude_admin;
+ALTER TABLE reporting.form_submissions OWNER TO pc_migrator;
 
 --
--- Name: forms; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: forms; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.forms AS
@@ -9167,10 +9167,10 @@ CREATE VIEW reporting.forms AS
   WHERE (forms.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.forms OWNER TO claude_admin;
+ALTER TABLE reporting.forms OWNER TO pc_migrator;
 
 --
--- Name: invoices; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: invoices; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.invoices AS
@@ -9197,10 +9197,10 @@ CREATE VIEW reporting.invoices AS
   WHERE (invoices.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.invoices OWNER TO claude_admin;
+ALTER TABLE reporting.invoices OWNER TO pc_migrator;
 
 --
--- Name: lines; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: lines; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.lines AS
@@ -9228,10 +9228,10 @@ CREATE VIEW reporting.lines AS
   WHERE (lines.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.lines OWNER TO claude_admin;
+ALTER TABLE reporting.lines OWNER TO pc_migrator;
 
 --
--- Name: marketing_event_participations; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: marketing_event_participations; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.marketing_event_participations AS
@@ -9259,10 +9259,10 @@ CREATE VIEW reporting.marketing_event_participations AS
   WHERE (marketing_event_participations.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.marketing_event_participations OWNER TO claude_admin;
+ALTER TABLE reporting.marketing_event_participations OWNER TO pc_migrator;
 
 --
--- Name: marketing_events; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: marketing_events; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.marketing_events AS
@@ -9288,10 +9288,10 @@ CREATE VIEW reporting.marketing_events AS
   WHERE (marketing_events.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.marketing_events OWNER TO claude_admin;
+ALTER TABLE reporting.marketing_events OWNER TO pc_migrator;
 
 --
--- Name: notes; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: notes; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.notes AS
@@ -9311,10 +9311,10 @@ CREATE VIEW reporting.notes AS
   WHERE (notes.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.notes OWNER TO claude_admin;
+ALTER TABLE reporting.notes OWNER TO pc_migrator;
 
 --
--- Name: object_event_occurrences; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: object_event_occurrences; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.object_event_occurrences AS
@@ -9335,10 +9335,10 @@ CREATE VIEW reporting.object_event_occurrences AS
   WHERE (object_event_occurrences.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.object_event_occurrences OWNER TO claude_admin;
+ALTER TABLE reporting.object_event_occurrences OWNER TO pc_migrator;
 
 --
--- Name: object_events; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: object_events; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.object_events AS
@@ -9357,10 +9357,10 @@ CREATE VIEW reporting.object_events AS
   WHERE (object_events.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.object_events OWNER TO claude_admin;
+ALTER TABLE reporting.object_events OWNER TO pc_migrator;
 
 --
--- Name: objects; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: objects; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.objects AS
@@ -9374,10 +9374,10 @@ CREATE VIEW reporting.objects AS
   WHERE ((pc_0001.record_status = 'active'::text) AND (pc_0001.schema_name = 'crm'::text));
 
 
-ALTER TABLE reporting.objects OWNER TO claude_admin;
+ALTER TABLE reporting.objects OWNER TO pc_migrator;
 
 --
--- Name: orders; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: orders; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.orders AS
@@ -9401,10 +9401,10 @@ CREATE VIEW reporting.orders AS
   WHERE (orders.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.orders OWNER TO claude_admin;
+ALTER TABLE reporting.orders OWNER TO pc_migrator;
 
 --
--- Name: payments; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: payments; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.payments AS
@@ -9436,10 +9436,10 @@ CREATE VIEW reporting.payments AS
   WHERE (payments.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.payments OWNER TO claude_admin;
+ALTER TABLE reporting.payments OWNER TO pc_migrator;
 
 --
--- Name: products; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: products; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.products AS
@@ -9464,10 +9464,10 @@ CREATE VIEW reporting.products AS
   WHERE (products.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.products OWNER TO claude_admin;
+ALTER TABLE reporting.products OWNER TO pc_migrator;
 
 --
--- Name: properties; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: properties; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.properties AS
@@ -9484,10 +9484,10 @@ CREATE VIEW reporting.properties AS
   WHERE (pc_0002.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.properties OWNER TO claude_admin;
+ALTER TABLE reporting.properties OWNER TO pc_migrator;
 
 --
--- Name: property_options; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: property_options; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.property_options AS
@@ -9507,10 +9507,10 @@ CREATE VIEW reporting.property_options AS
      JOIN meta.pc_0002 p ON ((p.pc_0002_id = o.property_id)));
 
 
-ALTER TABLE reporting.property_options OWNER TO claude_admin;
+ALTER TABLE reporting.property_options OWNER TO pc_migrator;
 
 --
--- Name: quotes; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: quotes; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.quotes AS
@@ -9555,10 +9555,10 @@ CREATE VIEW reporting.quotes AS
   WHERE (quotes.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.quotes OWNER TO claude_admin;
+ALTER TABLE reporting.quotes OWNER TO pc_migrator;
 
 --
--- Name: services; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: services; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.services AS
@@ -9582,10 +9582,10 @@ CREATE VIEW reporting.services AS
   WHERE (services.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.services OWNER TO claude_admin;
+ALTER TABLE reporting.services OWNER TO pc_migrator;
 
 --
--- Name: tasks; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: tasks; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.tasks AS
@@ -9612,10 +9612,10 @@ CREATE VIEW reporting.tasks AS
   WHERE (tasks.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.tasks OWNER TO claude_admin;
+ALTER TABLE reporting.tasks OWNER TO pc_migrator;
 
 --
--- Name: teams; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: teams; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.teams AS
@@ -9633,10 +9633,10 @@ CREATE VIEW reporting.teams AS
   WHERE (teams.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.teams OWNER TO claude_admin;
+ALTER TABLE reporting.teams OWNER TO pc_migrator;
 
 --
--- Name: tickets; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: tickets; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.tickets AS
@@ -9662,10 +9662,10 @@ CREATE VIEW reporting.tickets AS
   WHERE (tickets.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.tickets OWNER TO claude_admin;
+ALTER TABLE reporting.tickets OWNER TO pc_migrator;
 
 --
--- Name: users; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: users; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.users AS
@@ -9690,10 +9690,10 @@ CREATE VIEW reporting.users AS
   WHERE (users.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.users OWNER TO claude_admin;
+ALTER TABLE reporting.users OWNER TO pc_migrator;
 
 --
--- Name: views; Type: VIEW; Schema: reporting; Owner: claude_admin
+-- Name: views; Type: VIEW; Schema: reporting; Owner: pc_migrator
 --
 
 CREATE VIEW reporting.views AS
@@ -9724,10 +9724,10 @@ CREATE VIEW reporting.views AS
   WHERE (views.record_status = 'active'::text);
 
 
-ALTER TABLE reporting.views OWNER TO claude_admin;
+ALTER TABLE reporting.views OWNER TO pc_migrator;
 
 --
--- Name: option_labels; Type: VIEW; Schema: rls; Owner: claude_admin
+-- Name: option_labels; Type: VIEW; Schema: rls; Owner: pc_migrator
 --
 
 CREATE VIEW rls.option_labels AS
@@ -9737,10 +9737,10 @@ CREATE VIEW rls.option_labels AS
    FROM meta.pc_0003;
 
 
-ALTER TABLE rls.option_labels OWNER TO claude_admin;
+ALTER TABLE rls.option_labels OWNER TO pc_migrator;
 
 --
--- Name: comment_mentions; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: comment_mentions; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.comment_mentions (
@@ -9753,10 +9753,10 @@ CREATE TABLE ui.comment_mentions (
 );
 
 
-ALTER TABLE ui.comment_mentions OWNER TO claude_admin;
+ALTER TABLE ui.comment_mentions OWNER TO pc_migrator;
 
 --
--- Name: mentions; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: mentions; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.mentions (
@@ -9769,10 +9769,10 @@ CREATE TABLE ui.mentions (
 );
 
 
-ALTER TABLE ui.mentions OWNER TO claude_admin;
+ALTER TABLE ui.mentions OWNER TO pc_migrator;
 
 --
--- Name: nav_group_members; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: nav_group_members; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.nav_group_members (
@@ -9784,10 +9784,10 @@ CREATE TABLE ui.nav_group_members (
 );
 
 
-ALTER TABLE ui.nav_group_members OWNER TO claude_admin;
+ALTER TABLE ui.nav_group_members OWNER TO pc_migrator;
 
 --
--- Name: nav_groups; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: nav_groups; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.nav_groups (
@@ -9802,10 +9802,10 @@ CREATE TABLE ui.nav_groups (
 );
 
 
-ALTER TABLE ui.nav_groups OWNER TO claude_admin;
+ALTER TABLE ui.nav_groups OWNER TO pc_migrator;
 
 --
--- Name: nav_groups_id_seq; Type: SEQUENCE; Schema: ui; Owner: claude_admin
+-- Name: nav_groups_id_seq; Type: SEQUENCE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE SEQUENCE ui.nav_groups_id_seq
@@ -9816,17 +9816,17 @@ CREATE SEQUENCE ui.nav_groups_id_seq
     CACHE 1;
 
 
-ALTER TABLE ui.nav_groups_id_seq OWNER TO claude_admin;
+ALTER TABLE ui.nav_groups_id_seq OWNER TO pc_migrator;
 
 --
--- Name: nav_groups_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: claude_admin
+-- Name: nav_groups_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: pc_migrator
 --
 
 ALTER SEQUENCE ui.nav_groups_id_seq OWNED BY ui.nav_groups.id;
 
 
 --
--- Name: nav_menus; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: nav_menus; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.nav_menus (
@@ -9849,10 +9849,10 @@ CREATE TABLE ui.nav_menus (
 );
 
 
-ALTER TABLE ui.nav_menus OWNER TO claude_admin;
+ALTER TABLE ui.nav_menus OWNER TO pc_migrator;
 
 --
--- Name: nav_menus_id_seq; Type: SEQUENCE; Schema: ui; Owner: claude_admin
+-- Name: nav_menus_id_seq; Type: SEQUENCE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE SEQUENCE ui.nav_menus_id_seq
@@ -9863,17 +9863,17 @@ CREATE SEQUENCE ui.nav_menus_id_seq
     CACHE 1;
 
 
-ALTER TABLE ui.nav_menus_id_seq OWNER TO claude_admin;
+ALTER TABLE ui.nav_menus_id_seq OWNER TO pc_migrator;
 
 --
--- Name: nav_menus_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: claude_admin
+-- Name: nav_menus_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: pc_migrator
 --
 
 ALTER SEQUENCE ui.nav_menus_id_seq OWNED BY ui.nav_menus.id;
 
 
 --
--- Name: settings; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: settings; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.settings (
@@ -9885,10 +9885,10 @@ CREATE TABLE ui.settings (
 );
 
 
-ALTER TABLE ui.settings OWNER TO claude_admin;
+ALTER TABLE ui.settings OWNER TO pc_migrator;
 
 --
--- Name: snippets; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: snippets; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.snippets (
@@ -9908,10 +9908,10 @@ CREATE TABLE ui.snippets (
 );
 
 
-ALTER TABLE ui.snippets OWNER TO claude_admin;
+ALTER TABLE ui.snippets OWNER TO pc_migrator;
 
 --
--- Name: snippets_id_seq; Type: SEQUENCE; Schema: ui; Owner: claude_admin
+-- Name: snippets_id_seq; Type: SEQUENCE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE SEQUENCE ui.snippets_id_seq
@@ -9922,17 +9922,17 @@ CREATE SEQUENCE ui.snippets_id_seq
     CACHE 1;
 
 
-ALTER TABLE ui.snippets_id_seq OWNER TO claude_admin;
+ALTER TABLE ui.snippets_id_seq OWNER TO pc_migrator;
 
 --
--- Name: snippets_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: claude_admin
+-- Name: snippets_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: pc_migrator
 --
 
 ALTER SEQUENCE ui.snippets_id_seq OWNED BY ui.snippets.id;
 
 
 --
--- Name: view_errors; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: view_errors; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.view_errors (
@@ -9953,10 +9953,10 @@ CREATE TABLE ui.view_errors (
 );
 
 
-ALTER TABLE ui.view_errors OWNER TO claude_admin;
+ALTER TABLE ui.view_errors OWNER TO pc_migrator;
 
 --
--- Name: view_errors_id_seq; Type: SEQUENCE; Schema: ui; Owner: claude_admin
+-- Name: view_errors_id_seq; Type: SEQUENCE; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ui.view_errors ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
@@ -9970,7 +9970,7 @@ ALTER TABLE ui.view_errors ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
--- Name: view_write_approvals; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: view_write_approvals; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.view_write_approvals (
@@ -9980,10 +9980,10 @@ CREATE TABLE ui.view_write_approvals (
 );
 
 
-ALTER TABLE ui.view_write_approvals OWNER TO claude_admin;
+ALTER TABLE ui.view_write_approvals OWNER TO pc_migrator;
 
 --
--- Name: views; Type: TABLE; Schema: ui; Owner: claude_admin
+-- Name: views; Type: TABLE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE TABLE ui.views (
@@ -10005,10 +10005,10 @@ CREATE TABLE ui.views (
 );
 
 
-ALTER TABLE ui.views OWNER TO claude_admin;
+ALTER TABLE ui.views OWNER TO pc_migrator;
 
 --
--- Name: views_id_seq; Type: SEQUENCE; Schema: ui; Owner: claude_admin
+-- Name: views_id_seq; Type: SEQUENCE; Schema: ui; Owner: pc_migrator
 --
 
 CREATE SEQUENCE ui.views_id_seq
@@ -10019,17 +10019,17 @@ CREATE SEQUENCE ui.views_id_seq
     CACHE 1;
 
 
-ALTER TABLE ui.views_id_seq OWNER TO claude_admin;
+ALTER TABLE ui.views_id_seq OWNER TO pc_migrator;
 
 --
--- Name: views_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: claude_admin
+-- Name: views_id_seq; Type: SEQUENCE OWNED BY; Schema: ui; Owner: pc_migrator
 --
 
 ALTER SEQUENCE ui.views_id_seq OWNED BY ui.views.id;
 
 
 --
--- Name: association_labels; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: association_labels; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.association_labels AS
@@ -10043,10 +10043,10 @@ CREATE VIEW view_data.association_labels AS
    FROM reporting.association_labels;
 
 
-ALTER TABLE view_data.association_labels OWNER TO claude_admin;
+ALTER TABLE view_data.association_labels OWNER TO pc_migrator;
 
 --
--- Name: associations; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: associations; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.associations AS
@@ -10066,7 +10066,7 @@ CREATE VIEW view_data.associations AS
      JOIN meta.pc_0001 oo ON ((oo.object_type_id = a.other_object_type_id)));
 
 
-ALTER TABLE view_data.associations OWNER TO claude_admin;
+ALTER TABLE view_data.associations OWNER TO pc_migrator;
 
 --
 -- Name: booking_pages; Type: VIEW; Schema: view_data; Owner: pc_view_reader
@@ -10334,7 +10334,7 @@ CREATE VIEW view_data.contacts AS
 ALTER TABLE view_data.contacts OWNER TO pc_view_reader;
 
 --
--- Name: currencies; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: currencies; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.currencies AS
@@ -10350,10 +10350,10 @@ CREATE VIEW view_data.currencies AS
    FROM reporting.currencies;
 
 
-ALTER TABLE view_data.currencies OWNER TO claude_admin;
+ALTER TABLE view_data.currencies OWNER TO pc_migrator;
 
 --
--- Name: currency_rates; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: currency_rates; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.currency_rates AS
@@ -10367,7 +10367,7 @@ CREATE VIEW view_data.currency_rates AS
    FROM reporting.currency_rates;
 
 
-ALTER TABLE view_data.currency_rates OWNER TO claude_admin;
+ALTER TABLE view_data.currency_rates OWNER TO pc_migrator;
 
 --
 -- Name: deals; Type: VIEW; Schema: view_data; Owner: pc_view_reader
@@ -10792,7 +10792,7 @@ CREATE VIEW view_data.object_events AS
 ALTER TABLE view_data.object_events OWNER TO pc_view_reader;
 
 --
--- Name: objects; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: objects; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.objects AS
@@ -10805,7 +10805,7 @@ CREATE VIEW view_data.objects AS
    FROM reporting.objects;
 
 
-ALTER TABLE view_data.objects OWNER TO claude_admin;
+ALTER TABLE view_data.objects OWNER TO pc_migrator;
 
 --
 -- Name: orders; Type: VIEW; Schema: view_data; Owner: pc_view_reader
@@ -10906,7 +10906,7 @@ CREATE VIEW view_data.products AS
 ALTER TABLE view_data.products OWNER TO pc_view_reader;
 
 --
--- Name: properties; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: properties; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.properties AS
@@ -10922,10 +10922,10 @@ CREATE VIEW view_data.properties AS
    FROM reporting.properties;
 
 
-ALTER TABLE view_data.properties OWNER TO claude_admin;
+ALTER TABLE view_data.properties OWNER TO pc_migrator;
 
 --
--- Name: property_options; Type: VIEW; Schema: view_data; Owner: claude_admin
+-- Name: property_options; Type: VIEW; Schema: view_data; Owner: pc_migrator
 --
 
 CREATE VIEW view_data.property_options AS
@@ -10944,7 +10944,7 @@ CREATE VIEW view_data.property_options AS
    FROM reporting.property_options;
 
 
-ALTER TABLE view_data.property_options OWNER TO claude_admin;
+ALTER TABLE view_data.property_options OWNER TO pc_migrator;
 
 --
 -- Name: quotes; Type: VIEW; Schema: view_data; Owner: pc_view_reader
@@ -11183,385 +11183,385 @@ CREATE VIEW view_data.views AS
 ALTER TABLE view_data.views OWNER TO pc_view_reader;
 
 --
--- Name: api_keys id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: api_keys id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.api_keys ALTER COLUMN id SET DEFAULT nextval('auth.api_keys_id_seq'::regclass);
 
 
 --
--- Name: calendar_connections id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.calendar_connections ALTER COLUMN id SET DEFAULT nextval('auth.calendar_connections_id_seq'::regclass);
 
 
 --
--- Name: identities id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: identities id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.identities ALTER COLUMN id SET DEFAULT nextval('auth.identities_id_seq'::regclass);
 
 
 --
--- Name: magic_links id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: magic_links id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.magic_links ALTER COLUMN id SET DEFAULT nextval('auth.magic_links_id_seq'::regclass);
 
 
 --
--- Name: oauth_clients id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_clients ALTER COLUMN id SET DEFAULT nextval('auth.oauth_clients_id_seq'::regclass);
 
 
 --
--- Name: oauth_grants id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_grants ALTER COLUMN id SET DEFAULT nextval('auth.oauth_grants_id_seq'::regclass);
 
 
 --
--- Name: oauth_tokens id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_tokens ALTER COLUMN id SET DEFAULT nextval('auth.oauth_tokens_id_seq'::regclass);
 
 
 --
--- Name: passkeys id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: passkeys id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.passkeys ALTER COLUMN id SET DEFAULT nextval('auth.passkeys_id_seq'::regclass);
 
 
 --
--- Name: payment_connections id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: payment_connections id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.payment_connections ALTER COLUMN id SET DEFAULT nextval('auth.payment_connections_id_seq'::regclass);
 
 
 --
--- Name: role_assignments id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: role_assignments id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_assignments ALTER COLUMN id SET DEFAULT nextval('auth.role_assignments_id_seq'::regclass);
 
 
 --
--- Name: role_sharing_rule_associations id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rule_associations ALTER COLUMN id SET DEFAULT nextval('auth.role_sharing_rule_associations_id_seq'::regclass);
 
 
 --
--- Name: role_sharing_rules id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rules ALTER COLUMN id SET DEFAULT nextval('auth.role_sharing_rules_id_seq'::regclass);
 
 
 --
--- Name: roles id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: roles id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.roles ALTER COLUMN id SET DEFAULT nextval('auth.roles_id_seq'::regclass);
 
 
 --
--- Name: security_events id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: security_events id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.security_events ALTER COLUMN id SET DEFAULT nextval('auth.security_events_id_seq'::regclass);
 
 
 --
--- Name: sessions id; Type: DEFAULT; Schema: auth; Owner: claude_admin
+-- Name: sessions id; Type: DEFAULT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.sessions ALTER COLUMN id SET DEFAULT nextval('auth.sessions_id_seq'::regclass);
 
 
 --
--- Name: pc_0000 pc_0000_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 pc_0000_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0000 ALTER COLUMN pc_0000_id SET DEFAULT meta.hex_id('crm.pc_0000_seq'::regclass);
 
 
 --
--- Name: pc_0005 pc_0005_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 pc_0005_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0005 ALTER COLUMN pc_0005_id SET DEFAULT meta.hex_id('crm.pc_0005_seq'::regclass);
 
 
 --
--- Name: pc_0006 pc_0006_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0006 pc_0006_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0006 ALTER COLUMN pc_0006_id SET DEFAULT meta.hex_id('crm.pc_0006_seq'::regclass);
 
 
 --
--- Name: pc_0010 pc_0010_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0010 pc_0010_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0010 ALTER COLUMN pc_0010_id SET DEFAULT meta.hex_id('crm.pc_0010_seq'::regclass);
 
 
 --
--- Name: pc_0011 pc_0011_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0011 pc_0011_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0011 ALTER COLUMN pc_0011_id SET DEFAULT meta.hex_id('crm.pc_0011_seq'::regclass);
 
 
 --
--- Name: pc_0012 pc_0012_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 pc_0012_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0012 ALTER COLUMN pc_0012_id SET DEFAULT meta.hex_id('crm.pc_0012_seq'::regclass);
 
 
 --
--- Name: pc_0013 pc_0013_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0013 pc_0013_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0013 ALTER COLUMN pc_0013_id SET DEFAULT meta.hex_id('crm.pc_0013_seq'::regclass);
 
 
 --
--- Name: pc_0014 pc_0014_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0014 pc_0014_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0014 ALTER COLUMN pc_0014_id SET DEFAULT meta.hex_id('crm.pc_0014_seq'::regclass);
 
 
 --
--- Name: pc_0020 pc_0020_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 pc_0020_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0020 ALTER COLUMN pc_0020_id SET DEFAULT meta.hex_id('crm.pc_0020_seq'::regclass);
 
 
 --
--- Name: pc_0021 pc_0021_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0021 pc_0021_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0021 ALTER COLUMN pc_0021_id SET DEFAULT meta.hex_id('crm.pc_0021_seq'::regclass);
 
 
 --
--- Name: pc_0022 pc_0022_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 pc_0022_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0022 ALTER COLUMN pc_0022_id SET DEFAULT meta.hex_id('crm.pc_0022_seq'::regclass);
 
 
 --
--- Name: pc_0023 pc_0023_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 pc_0023_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0023 ALTER COLUMN pc_0023_id SET DEFAULT meta.hex_id('crm.pc_0023_seq'::regclass);
 
 
 --
--- Name: pc_0024 pc_0024_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pc_0024_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0024 ALTER COLUMN pc_0024_id SET DEFAULT meta.hex_id('crm.pc_0024_seq'::regclass);
 
 
 --
--- Name: pc_0025 pc_0025_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 pc_0025_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0025 ALTER COLUMN pc_0025_id SET DEFAULT meta.hex_id('crm.pc_0025_seq'::regclass);
 
 
 --
--- Name: pc_0026 pc_0026_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 pc_0026_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0026 ALTER COLUMN pc_0026_id SET DEFAULT meta.hex_id('crm.pc_0026_seq'::regclass);
 
 
 --
--- Name: pc_0030 pc_0030_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0030 pc_0030_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0030 ALTER COLUMN pc_0030_id SET DEFAULT meta.hex_id('crm.pc_0030_seq'::regclass);
 
 
 --
--- Name: pc_0031 pc_0031_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0031 pc_0031_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0031 ALTER COLUMN pc_0031_id SET DEFAULT meta.hex_id('crm.pc_0031_seq'::regclass);
 
 
 --
--- Name: pc_0032 pc_0032_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 pc_0032_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0032 ALTER COLUMN pc_0032_id SET DEFAULT meta.hex_id('crm.pc_0032_seq'::regclass);
 
 
 --
--- Name: pc_0033 pc_0033_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0033 pc_0033_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0033 ALTER COLUMN pc_0033_id SET DEFAULT meta.hex_id('crm.pc_0033_seq'::regclass);
 
 
 --
--- Name: pc_0034 pc_0034_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 pc_0034_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0034 ALTER COLUMN pc_0034_id SET DEFAULT meta.hex_id('crm.pc_0034_seq'::regclass);
 
 
 --
--- Name: pc_0050 pc_0050_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0050 pc_0050_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0050 ALTER COLUMN pc_0050_id SET DEFAULT meta.hex_id('crm.pc_0050_seq'::regclass);
 
 
 --
--- Name: pc_0051 pc_0051_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0051 pc_0051_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0051 ALTER COLUMN pc_0051_id SET DEFAULT meta.hex_id('crm.pc_0051_seq'::regclass);
 
 
 --
--- Name: pc_0052 pc_0052_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0052 pc_0052_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0052 ALTER COLUMN pc_0052_id SET DEFAULT meta.hex_id('crm.pc_0052_seq'::regclass);
 
 
 --
--- Name: pc_0053 pc_0053_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0053 pc_0053_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0053 ALTER COLUMN pc_0053_id SET DEFAULT meta.hex_id('crm.pc_0053_seq'::regclass);
 
 
 --
--- Name: pc_0054 pc_0054_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0054 pc_0054_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0054 ALTER COLUMN pc_0054_id SET DEFAULT meta.hex_id('crm.pc_0054_seq'::regclass);
 
 
 --
--- Name: pc_0055 pc_0055_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 pc_0055_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0055 ALTER COLUMN pc_0055_id SET DEFAULT meta.hex_id('crm.pc_0055_seq'::regclass);
 
 
 --
--- Name: pc_0056 pc_0056_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0056 pc_0056_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0056 ALTER COLUMN pc_0056_id SET DEFAULT meta.hex_id('crm.pc_0056_seq'::regclass);
 
 
 --
--- Name: pc_0057 pc_0057_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 pc_0057_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0057 ALTER COLUMN pc_0057_id SET DEFAULT meta.hex_id('crm.pc_0057_seq'::regclass);
 
 
 --
--- Name: pc_0060 pc_0060_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 pc_0060_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0060 ALTER COLUMN pc_0060_id SET DEFAULT meta.hex_id('crm.pc_0060_seq'::regclass);
 
 
 --
--- Name: pc_0061 pc_0061_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0061 pc_0061_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0061 ALTER COLUMN pc_0061_id SET DEFAULT meta.hex_id('crm.pc_0061_seq'::regclass);
 
 
 --
--- Name: pc_0062 pc_0062_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0062 pc_0062_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0062 ALTER COLUMN pc_0062_id SET DEFAULT meta.hex_id('crm.pc_0062_seq'::regclass);
 
 
 --
--- Name: pc_0063 pc_0063_id; Type: DEFAULT; Schema: crm; Owner: claude_admin
+-- Name: pc_0063 pc_0063_id; Type: DEFAULT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0063 ALTER COLUMN pc_0063_id SET DEFAULT meta.hex_id('crm.pc_0063_seq'::regclass);
 
 
 --
--- Name: import_jobs id; Type: DEFAULT; Schema: meta; Owner: claude_admin
+-- Name: import_jobs id; Type: DEFAULT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.import_jobs ALTER COLUMN id SET DEFAULT nextval('meta.import_jobs_id_seq'::regclass);
 
 
 --
--- Name: record_history id; Type: DEFAULT; Schema: meta; Owner: claude_admin
+-- Name: record_history id; Type: DEFAULT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.record_history ALTER COLUMN id SET DEFAULT nextval('meta.record_history_id_seq'::regclass);
 
 
 --
--- Name: schema_changes id; Type: DEFAULT; Schema: meta; Owner: claude_admin
+-- Name: schema_changes id; Type: DEFAULT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.schema_changes ALTER COLUMN id SET DEFAULT nextval('meta.schema_changes_id_seq'::regclass);
 
 
 --
--- Name: nav_groups id; Type: DEFAULT; Schema: ui; Owner: claude_admin
+-- Name: nav_groups id; Type: DEFAULT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_groups ALTER COLUMN id SET DEFAULT nextval('ui.nav_groups_id_seq'::regclass);
 
 
 --
--- Name: nav_menus id; Type: DEFAULT; Schema: ui; Owner: claude_admin
+-- Name: nav_menus id; Type: DEFAULT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_menus ALTER COLUMN id SET DEFAULT nextval('ui.nav_menus_id_seq'::regclass);
 
 
 --
--- Name: snippets id; Type: DEFAULT; Schema: ui; Owner: claude_admin
+-- Name: snippets id; Type: DEFAULT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.snippets ALTER COLUMN id SET DEFAULT nextval('ui.snippets_id_seq'::regclass);
 
 
 --
--- Name: views id; Type: DEFAULT; Schema: ui; Owner: claude_admin
+-- Name: views id; Type: DEFAULT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.views ALTER COLUMN id SET DEFAULT nextval('ui.views_id_seq'::regclass);
 
 
 --
--- Data for Name: address_settings; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: address_settings; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.address_settings (id, enabled, google_key, key_hint, countries, groups, updated_by, updated_at) FROM stdin;
@@ -11570,7 +11570,7 @@ t	t	\N	\N	{CA,US}	\N	\N	2026-11-05 01:53:15.456631+00
 
 
 --
--- Data for Name: api_keys; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: api_keys; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.api_keys (id, name, key_prefix, key_hash, user_id, scopes, created_at, created_by, last_used_at, expires_at, revoked_at, last_used_ip, replaced_by) FROM stdin;
@@ -11578,7 +11578,7 @@ COPY auth.api_keys (id, name, key_prefix, key_hash, user_id, scopes, created_at,
 
 
 --
--- Data for Name: calendar_connections; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: calendar_connections; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.calendar_connections (id, user_id, provider, provider_subject, email, refresh_token_enc, scopes, busy_calendar_ids, write_calendar_id, use_for_new_events, status, last_error, created_at, updated_at, last_used_at) FROM stdin;
@@ -11586,7 +11586,7 @@ COPY auth.calendar_connections (id, user_id, provider, provider_subject, email, 
 
 
 --
--- Data for Name: card_scan_settings; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: card_scan_settings; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.card_scan_settings (id, reader, claude_model, anthropic_key, key_hint, updated_by, updated_at) FROM stdin;
@@ -11595,7 +11595,7 @@ t	tesseract	claude-haiku-5-5	\N	\N	\N	2026-11-05 01:53:15.078678+00
 
 
 --
--- Data for Name: identities; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: identities; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.identities (id, user_id, provider, provider_subject, email, created_at, last_login_at) FROM stdin;
@@ -11603,7 +11603,7 @@ COPY auth.identities (id, user_id, provider, provider_subject, email, created_at
 
 
 --
--- Data for Name: magic_links; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: magic_links; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.magic_links (id, email, token_hash, created_at, expires_at, used_at) FROM stdin;
@@ -11611,7 +11611,7 @@ COPY auth.magic_links (id, email, token_hash, created_at, expires_at, used_at) F
 
 
 --
--- Data for Name: oauth_clients; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: oauth_clients; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.oauth_clients (id, client_id, kind, name, client_uri, logo_uri, redirect_uris, metadata, fetched_at, cache_until, created_at, last_used_at, blocked_at, blocked_by) FROM stdin;
@@ -11619,7 +11619,7 @@ COPY auth.oauth_clients (id, client_id, kind, name, client_uri, logo_uri, redire
 
 
 --
--- Data for Name: oauth_codes; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: oauth_codes; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.oauth_codes (code_hash, grant_id, redirect_uri, code_challenge, scopes, resource, expires_at, used_at, family_id, created_at) FROM stdin;
@@ -11627,7 +11627,7 @@ COPY auth.oauth_codes (code_hash, grant_id, redirect_uri, code_challenge, scopes
 
 
 --
--- Data for Name: oauth_grants; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: oauth_grants; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.oauth_grants (id, user_id, client_id, scopes, created_at, updated_at, last_used_at, revoked_at, revoked_by) FROM stdin;
@@ -11635,7 +11635,7 @@ COPY auth.oauth_grants (id, user_id, client_id, scopes, created_at, updated_at, 
 
 
 --
--- Data for Name: oauth_tokens; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: oauth_tokens; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.oauth_tokens (id, grant_id, family_id, kind, token_hash, scopes, resource, expires_at, created_at, last_used_at, last_used_ip, revoked_at, replaced_by) FROM stdin;
@@ -11643,7 +11643,7 @@ COPY auth.oauth_tokens (id, grant_id, family_id, kind, token_hash, scopes, resou
 
 
 --
--- Data for Name: passkeys; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: passkeys; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.passkeys (id, user_id, credential_id, public_key, sign_count, transports, name, created_at, last_used_at) FROM stdin;
@@ -11651,7 +11651,7 @@ COPY auth.passkeys (id, user_id, credential_id, public_key, sign_count, transpor
 
 
 --
--- Data for Name: payment_connections; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: payment_connections; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.payment_connections (id, provider, account_id, link_method, livemode, country, status, requirements, connected_by, created_at, updated_at) FROM stdin;
@@ -11659,7 +11659,7 @@ COPY auth.payment_connections (id, provider, account_id, link_method, livemode, 
 
 
 --
--- Data for Name: role_assignments; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: role_assignments; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.role_assignments (id, role_id, user_id, team_id, created_at) FROM stdin;
@@ -11667,7 +11667,7 @@ COPY auth.role_assignments (id, role_id, user_id, team_id, created_at) FROM stdi
 
 
 --
--- Data for Name: role_object_permissions; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: role_object_permissions; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.role_object_permissions (role_id, object_type_id, can_read, can_create, can_edit, can_delete) FROM stdin;
@@ -11675,7 +11675,7 @@ COPY auth.role_object_permissions (role_id, object_type_id, can_read, can_create
 
 
 --
--- Data for Name: role_property_permissions; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: role_property_permissions; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.role_property_permissions (role_id, property_id, access) FROM stdin;
@@ -11683,7 +11683,7 @@ COPY auth.role_property_permissions (role_id, property_id, access) FROM stdin;
 
 
 --
--- Data for Name: role_sharing_rule_associations; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: role_sharing_rule_associations; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.role_sharing_rule_associations (id, rule_id, object_type_id, label_id, access) FROM stdin;
@@ -11691,7 +11691,7 @@ COPY auth.role_sharing_rule_associations (id, rule_id, object_type_id, label_id,
 
 
 --
--- Data for Name: role_sharing_rules; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: role_sharing_rules; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.role_sharing_rules (id, role_id, name, object_type_id, filter_groups, access, created_at, created_by, updated_at) FROM stdin;
@@ -11699,7 +11699,7 @@ COPY auth.role_sharing_rules (id, role_id, name, object_type_id, filter_groups, 
 
 
 --
--- Data for Name: roles; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: roles; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.roles (id, name, description, is_admin, record_access, created_at, created_by) FROM stdin;
@@ -11708,7 +11708,7 @@ COPY auth.roles (id, name, description, is_admin, record_access, created_at, cre
 
 
 --
--- Data for Name: security_events; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: security_events; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.security_events (id, occurred_at, event, actor, user_id, ip, user_agent, target_type, target_id, details) FROM stdin;
@@ -11716,7 +11716,7 @@ COPY auth.security_events (id, occurred_at, event, actor, user_id, ip, user_agen
 
 
 --
--- Data for Name: sessions; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: sessions; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.sessions (id, user_id, token_hash, created_at, expires_at, revoked_at, ip, user_agent, last_seen_at, acting_as_user_id, acting_since) FROM stdin;
@@ -11724,7 +11724,7 @@ COPY auth.sessions (id, user_id, token_hash, created_at, expires_at, revoked_at,
 
 
 --
--- Data for Name: stripe_checkout_sessions; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: stripe_checkout_sessions; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.stripe_checkout_sessions (session_id, account_id, object, record_id, purpose, amount_minor, currency, url, status, payment_record_id, expires_at, created_at) FROM stdin;
@@ -11732,7 +11732,7 @@ COPY auth.stripe_checkout_sessions (session_id, account_id, object, record_id, p
 
 
 --
--- Data for Name: stripe_events; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: stripe_events; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.stripe_events (event_id, type, account, received_at) FROM stdin;
@@ -11740,7 +11740,7 @@ COPY auth.stripe_events (event_id, type, account, received_at) FROM stdin;
 
 
 --
--- Data for Name: view_integrations; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: view_integrations; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.view_integrations (key, label, description, url, secret_header, secret_value, audience, enabled, created_by, created_at, updated_at, last_called_at, last_status, last_error, data_example, interactive, awaiting_approval, requested_by, requested_via, requested_at, approved_by, approved_at) FROM stdin;
@@ -11748,7 +11748,7 @@ COPY auth.view_integrations (key, label, description, url, secret_header, secret
 
 
 --
--- Data for Name: webhook_deliveries; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: webhook_deliveries; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.webhook_deliveries (id, event_id, endpoint_id, subscription_id, event, object_type_id, record_id, payload, status, attempts, next_attempt_at, last_attempt_at, last_status, last_error, response_ms, created_at, batch_id) FROM stdin;
@@ -11756,7 +11756,7 @@ COPY auth.webhook_deliveries (id, event_id, endpoint_id, subscription_id, event,
 
 
 --
--- Data for Name: webhook_endpoints; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: webhook_endpoints; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.webhook_endpoints (id, name, description, url, signing_secret, secret_header, secret_value, enabled, created_by, created_at, updated_by, updated_at, last_success_at, last_failure_at, last_error, consecutive_failures, batch_max, awaiting_approval, requested_by, requested_via, requested_at, approved_by, approved_at) FROM stdin;
@@ -11764,7 +11764,7 @@ COPY auth.webhook_endpoints (id, name, description, url, signing_secret, secret_
 
 
 --
--- Data for Name: webhook_subscriptions; Type: TABLE DATA; Schema: auth; Owner: claude_admin
+-- Data for Name: webhook_subscriptions; Type: TABLE DATA; Schema: auth; Owner: pc_migrator
 --
 
 COPY auth.webhook_subscriptions (id, endpoint_id, object_type_id, event, properties, target_object_type_id, label_id, filter_groups, description, enabled, created_by, created_at, updated_by, updated_at, send_properties, awaiting_approval, requested_by, requested_via, requested_at, approved_by, approved_at) FROM stdin;
@@ -11772,7 +11772,7 @@ COPY auth.webhook_subscriptions (id, endpoint_id, object_type_id, event, propert
 
 
 --
--- Data for Name: pc_0000; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0000; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0000 (object_type_id, pc_0000_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, first_name, last_name, email, phone, timezone, status, email_signature) FROM stdin;
@@ -11780,7 +11780,7 @@ COPY crm.pc_0000 (object_type_id, pc_0000_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0005; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0005; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0005 (pc_0005_id, label_id, from_object_type, from_id, to_object_type, to_id, created_at, created_by, row_created_at) FROM stdin;
@@ -11788,7 +11788,7 @@ COPY crm.pc_0005 (pc_0005_id, label_id, from_object_type, from_id, to_object_typ
 
 
 --
--- Data for Name: pc_0006; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0006; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0006 (object_type_id, pc_0006_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description) FROM stdin;
@@ -11796,7 +11796,7 @@ COPY crm.pc_0006 (object_type_id, pc_0006_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0010; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0010; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0010 (object_type_id, pc_0010_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, first_name, last_name, email, phone, job_title, address_city, address_province, address_country, lifecycle_stage, owner, preferred_name, address_street_1, address_street_2, address_postalcode, business_card, contact_source) FROM stdin;
@@ -11804,7 +11804,7 @@ COPY crm.pc_0010 (object_type_id, pc_0010_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0011; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0011; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0011 (object_type_id, pc_0011_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, domain, phone, industry, address_city, address_province, address_country, employee_count, annual_revenue, owner, address_street_1, address_street_2, address_postalcode) FROM stdin;
@@ -11812,7 +11812,7 @@ COPY crm.pc_0011 (object_type_id, pc_0011_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0012; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0012; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0012 (object_type_id, pc_0012_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, amount, currency, pipeline, stage, close_date, owner, amount_base) FROM stdin;
@@ -11820,7 +11820,7 @@ COPY crm.pc_0012 (object_type_id, pc_0012_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0013; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0013; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0013 (object_type_id, pc_0013_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description, pipeline, stage, priority, owner) FROM stdin;
@@ -11828,7 +11828,7 @@ COPY crm.pc_0013 (object_type_id, pc_0013_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0014; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0014; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0014 (object_type_id, pc_0014_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description, status, start_date, end_date, owner) FROM stdin;
@@ -11836,7 +11836,7 @@ COPY crm.pc_0014 (object_type_id, pc_0014_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0020; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0020; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0020 (object_type_id, pc_0020_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, sku, quantity, unit_price, discount, amount, unit_cost, uom, line_type, customizations) FROM stdin;
@@ -11844,7 +11844,7 @@ COPY crm.pc_0020 (object_type_id, pc_0020_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0021; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0021; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0021 (object_type_id, pc_0021_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, sku, description, unit_price, active, unit_cost, uom) FROM stdin;
@@ -11852,7 +11852,7 @@ COPY crm.pc_0021 (object_type_id, pc_0021_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0022; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0022; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0022 (object_type_id, pc_0022_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, status, expiration_date, amount, currency, public_key, responded_at, responder_name, responder_email, decline_reason, signing_fields, signed_fields, customer_signature, customer_signed_at, customer_ip, requires_countersign, countersigner_name, countersigner_signature, countersigned_at, online_payment, deposit_type, deposit_value, slug, amount_base) FROM stdin;
@@ -11860,7 +11860,7 @@ COPY crm.pc_0022 (object_type_id, pc_0022_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0023; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0023; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0023 (object_type_id, pc_0023_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, invoice_number, status, due_date, amount, currency, public_key, slug, amount_base) FROM stdin;
@@ -11868,7 +11868,7 @@ COPY crm.pc_0023 (object_type_id, pc_0023_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0024; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0024; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0024 (object_type_id, pc_0024_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, amount, currency, status, method, paid_at, stripe_checkout_session_id, stripe_payment_intent_id, payer_name, payer_email, reference, purpose) FROM stdin;
@@ -11876,7 +11876,7 @@ COPY crm.pc_0024 (object_type_id, pc_0024_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0025; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0025; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0025 (object_type_id, pc_0025_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, status, amount, currency, amount_base) FROM stdin;
@@ -11884,7 +11884,7 @@ COPY crm.pc_0025 (object_type_id, pc_0025_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0026; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0026; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0026 (object_type_id, pc_0026_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, order_number, status, amount, currency, amount_base) FROM stdin;
@@ -11892,7 +11892,7 @@ COPY crm.pc_0026 (object_type_id, pc_0026_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0030; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0030; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0030 (object_type_id, pc_0030_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, call_type, direction, status, started_at, ended_at, duration_seconds, body, recording_url, owner, attendee_name, attendee_email, meeting_url, calendar_provider, calendar_event_id, manage_key, calendar_id, calendar_connection_id, cancel_reason, cancelled_at) FROM stdin;
@@ -11900,7 +11900,7 @@ COPY crm.pc_0030 (object_type_id, pc_0030_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0031; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0031; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0031 (object_type_id, pc_0031_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, direction, status, subject, body, from_address, to_addresses, cc_addresses, sent_at, thread_id, owner) FROM stdin;
@@ -11908,7 +11908,7 @@ COPY crm.pc_0031 (object_type_id, pc_0031_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0032; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0032; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0032 (object_type_id, pc_0032_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, body, owner) FROM stdin;
@@ -11916,7 +11916,7 @@ COPY crm.pc_0032 (object_type_id, pc_0032_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0033; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0033; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0033 (object_type_id, pc_0033_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, task_type, status, priority, due_at, body, owner) FROM stdin;
@@ -11924,7 +11924,7 @@ COPY crm.pc_0033 (object_type_id, pc_0033_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0034; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0034; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0034 (object_type_id, pc_0034_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, body, edited_at) FROM stdin;
@@ -11932,7 +11932,7 @@ COPY crm.pc_0034 (object_type_id, pc_0034_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0050; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0050; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0050 (object_type_id, pc_0050_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, mime_type, size_bytes, storage_key, checksum, status, public_token) FROM stdin;
@@ -11940,7 +11940,7 @@ COPY crm.pc_0050 (object_type_id, pc_0050_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0051; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0051; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0051 (object_type_id, pc_0051_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, subject, body) FROM stdin;
@@ -11948,7 +11948,7 @@ COPY crm.pc_0051 (object_type_id, pc_0051_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0052; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0052; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0052 (object_type_id, pc_0052_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description, status, definition, public_key, html, slug) FROM stdin;
@@ -11956,7 +11956,7 @@ COPY crm.pc_0052 (object_type_id, pc_0052_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0053; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0053; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0053 (object_type_id, pc_0053_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, form_id, submitted_at, page_url, submission_values, origin, ip_address, user_agent, summary) FROM stdin;
@@ -11964,7 +11964,7 @@ COPY crm.pc_0053 (object_type_id, pc_0053_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0054; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0054; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0054 (object_type_id, pc_0054_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description, status, public_key, host, duration_minutes, slot_step_minutes, buffer_before_minutes, buffer_after_minutes, min_notice_minutes, max_days_ahead, daily_limit, timezone, availability, location_type, location_details, form_before_id, form_after_id, confirmation_message, slug, duration_options) FROM stdin;
@@ -11972,7 +11972,7 @@ COPY crm.pc_0054 (object_type_id, pc_0054_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0055; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0055; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0055 (object_type_id, pc_0055_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description, slug, icon, status, audience, draft_source, draft_queries, source, queries, published_at, allow_snippets) FROM stdin;
@@ -11982,7 +11982,7 @@ pc_0055	0000000002	Contacts and companies	2026-11-05 01:53:12.890765+00	{}	\N	ac
 
 
 --
--- Data for Name: pc_0056; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0056; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0056 (object_type_id, pc_0056_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, reader, model, outcome, error, saved_as, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, estimated_cost, seconds, card_image) FROM stdin;
@@ -11990,7 +11990,7 @@ COPY crm.pc_0056 (object_type_id, pc_0056_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0057; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0057; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0057 (object_type_id, pc_0057_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, description, object, kind, status, is_default, page_size, orientation, page_margin, draft_source, draft_queries, source, queries, published_at, is_builtin) FROM stdin;
@@ -11999,7 +11999,7 @@ pc_0057	0000000001	Standard quote	2026-11-05 01:53:16.262694+00	{}	\N	active	202
 
 
 --
--- Data for Name: pc_0060; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0060; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0060 (object_type_id, pc_0060_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, event_type, status, start_at, end_at, location, description, external_id) FROM stdin;
@@ -12007,7 +12007,7 @@ COPY crm.pc_0060 (object_type_id, pc_0060_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0061; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0061; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0061 (object_type_id, pc_0061_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, status, registered_at, attended_at, attendance_seconds, priority, follow_up_status, follow_up_date, notes) FROM stdin;
@@ -12015,7 +12015,7 @@ COPY crm.pc_0061 (object_type_id, pc_0061_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0062; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0062; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0062 (object_type_id, pc_0062_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, event_key, description) FROM stdin;
@@ -12023,7 +12023,7 @@ COPY crm.pc_0062 (object_type_id, pc_0062_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: pc_0063; Type: TABLE DATA; Schema: crm; Owner: claude_admin
+-- Data for Name: pc_0063; Type: TABLE DATA; Schema: crm; Owner: pc_migrator
 --
 
 COPY crm.pc_0063 (object_type_id, pc_0063_id, name, created_at, merged_ids, merged_into_id, record_status, row_created_at, row_updated_at, created_by, updated_by, event_key, occurred_at, event_properties, source) FROM stdin;
@@ -12031,7 +12031,7 @@ COPY crm.pc_0063 (object_type_id, pc_0063_id, name, created_at, merged_ids, merg
 
 
 --
--- Data for Name: calc_dependencies; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: calc_dependencies; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.calc_dependencies (property_id, rel_object, column_name) FROM stdin;
@@ -12062,7 +12062,7 @@ COPY meta.calc_dependencies (property_id, rel_object, column_name) FROM stdin;
 
 
 --
--- Data for Name: calc_queue; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: calc_queue; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.calc_queue (object_type_id, record_id, enqueued_at) FROM stdin;
@@ -12070,7 +12070,7 @@ COPY meta.calc_queue (object_type_id, record_id, enqueued_at) FROM stdin;
 
 
 --
--- Data for Name: currency_rates; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: currency_rates; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.currency_rates (id, rate_date, from_code, to_code, rate, source, provider, created_at, created_by) FROM stdin;
@@ -12078,7 +12078,7 @@ COPY meta.currency_rates (id, rate_date, from_code, to_code, rate, source, provi
 
 
 --
--- Data for Name: currency_settings; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: currency_settings; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.currency_settings (id, mode, schedule, provider, last_attempt_at, last_success_at, last_status, last_error, updated_by, updated_at) FROM stdin;
@@ -12087,7 +12087,7 @@ t	manual	daily	frankfurter	\N	\N	\N	\N	\N	2026-11-05 01:53:15.367904+00
 
 
 --
--- Data for Name: import_jobs; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: import_jobs; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.import_jobs (id, object_type_id, status, format, match_property, total_rows, created_rows, updated_rows, error_rows, errors, created_by, created_at, finished_at) FROM stdin;
@@ -12095,7 +12095,7 @@ COPY meta.import_jobs (id, object_type_id, status, format, match_property, total
 
 
 --
--- Data for Name: pc_0001; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: pc_0001; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.pc_0001 (pc_0001_id, object_type_id, api_name, label_singular, label_plural, kind, schema_name, description, record_status, created_at, created_by, row_created_at, row_updated_at, search_properties, aliases) FROM stdin;
@@ -12140,7 +12140,7 @@ COPY meta.pc_0001 (pc_0001_id, object_type_id, api_name, label_singular, label_p
 
 
 --
--- Data for Name: pc_0002; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: pc_0002; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.pc_0002 (pc_0002_id, object_type_id, api_name, label, description, type, options, calc_sql, calc_output_type, calc_last_error, calc_last_error_at, is_base, is_native, read_only, record_status, created_at, created_by, row_created_at, row_updated_at) FROM stdin;
@@ -12654,7 +12654,7 @@ COPY meta.pc_0002 (pc_0002_id, object_type_id, api_name, label, description, typ
 
 
 --
--- Data for Name: pc_0003; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: pc_0003; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.pc_0003 (pc_0003_id, property_id, api_value, label, description, display_order, record_status, created_at, created_by, row_created_at, row_updated_at, parent_values, is_closed, is_won, probability, color) FROM stdin;
@@ -13415,7 +13415,7 @@ COPY meta.pc_0003 (pc_0003_id, property_id, api_value, label, description, displ
 
 
 --
--- Data for Name: pc_0004; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: pc_0004; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.pc_0004 (pc_0004_id, from_object_type, to_object_type, label, inverse_label, is_default, is_symmetric, category, max_to_per_from, max_from_per_to, record_status, created_at, created_by, row_created_at, row_updated_at) FROM stdin;
@@ -13435,7 +13435,7 @@ COPY meta.pc_0004 (pc_0004_id, from_object_type, to_object_type, label, inverse_
 
 
 --
--- Data for Name: pc_0007; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: pc_0007; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.pc_0007 (pc_0007_id, code, name, symbol, decimals, rate_to_base, is_base, record_status, created_at, created_by, row_created_at, row_updated_at, rate_date, rate_source, rate_manual) FROM stdin;
@@ -13445,7 +13445,7 @@ COPY meta.pc_0007 (pc_0007_id, code, name, symbol, decimals, rate_to_base, is_ba
 
 
 --
--- Data for Name: record_history; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: record_history; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.record_history (id, object_type_id, record_id, property, old_value, new_value, changed_at, changed_by, source, channel, api_key_id) FROM stdin;
@@ -13493,7 +13493,7 @@ COPY meta.record_history (id, object_type_id, record_id, property, old_value, ne
 
 
 --
--- Data for Name: schema_changes; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: schema_changes; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.schema_changes (id, changed_at, changed_by, action, object_type_id, property_id, details, statements) FROM stdin;
@@ -13859,7 +13859,7 @@ COPY meta.schema_changes (id, changed_at, changed_by, action, object_type_id, pr
 
 
 --
--- Data for Name: webhook_outbox; Type: TABLE DATA; Schema: meta; Owner: claude_admin
+-- Data for Name: webhook_outbox; Type: TABLE DATA; Schema: meta; Owner: pc_migrator
 --
 
 COPY meta.webhook_outbox (id, txid, history_id, object_type_id, record_id, property, old_value, new_value, changed_at, changed_by, source) FROM stdin;
@@ -13867,7 +13867,7 @@ COPY meta.webhook_outbox (id, txid, history_id, object_type_id, record_id, prope
 
 
 --
--- Data for Name: comment_mentions; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: comment_mentions; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.comment_mentions (comment_id, user_id, mentioned_by, created_at, seen_at) FROM stdin;
@@ -13875,7 +13875,7 @@ COPY ui.comment_mentions (comment_id, user_id, mentioned_by, created_at, seen_at
 
 
 --
--- Data for Name: mentions; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: mentions; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.mentions (note_id, user_id, mentioned_by, created_at, seen_at) FROM stdin;
@@ -13883,7 +13883,7 @@ COPY ui.mentions (note_id, user_id, mentioned_by, created_at, seen_at) FROM stdi
 
 
 --
--- Data for Name: nav_group_members; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: nav_group_members; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.nav_group_members (user_id, group_id, added_at, added_by) FROM stdin;
@@ -13891,7 +13891,7 @@ COPY ui.nav_group_members (user_id, group_id, added_at, added_by) FROM stdin;
 
 
 --
--- Data for Name: nav_groups; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: nav_groups; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.nav_groups (id, name, members_can_customize, created_at, created_by, updated_at, updated_by) FROM stdin;
@@ -13899,7 +13899,7 @@ COPY ui.nav_groups (id, name, members_can_customize, created_at, created_by, upd
 
 
 --
--- Data for Name: nav_menus; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: nav_menus; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.nav_menus (id, scope, user_id, items, updated_at, updated_by, bottom_left, bottom_items, group_id) FROM stdin;
@@ -13908,7 +13908,7 @@ COPY ui.nav_menus (id, scope, user_id, items, updated_at, updated_by, bottom_lef
 
 
 --
--- Data for Name: settings; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: settings; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.settings (key, value, updated_at, updated_by) FROM stdin;
@@ -13918,7 +13918,7 @@ forms	{"allowed_origins": [], "pending_origins": []}	2026-11-05 01:53:11.590781+
 
 
 --
--- Data for Name: snippets; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: snippets; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.snippets (id, shortcut, name, body, owner_user_id, created_at, created_by, updated_at, updated_by) FROM stdin;
@@ -13926,7 +13926,7 @@ COPY ui.snippets (id, shortcut, name, body, owner_user_id, created_at, created_b
 
 
 --
--- Data for Name: view_errors; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: view_errors; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.view_errors (id, view_id, draft, kind, message, detail, width, user_id, count, first_seen_at, last_seen_at) FROM stdin;
@@ -13934,7 +13934,7 @@ COPY ui.view_errors (id, view_id, draft, kind, message, detail, width, user_id, 
 
 
 --
--- Data for Name: view_write_approvals; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: view_write_approvals; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.view_write_approvals (view_id, approved_by, approved_at) FROM stdin;
@@ -13942,7 +13942,7 @@ COPY ui.view_write_approvals (view_id, approved_by, approved_at) FROM stdin;
 
 
 --
--- Data for Name: views; Type: TABLE DATA; Schema: ui; Owner: claude_admin
+-- Data for Name: views; Type: TABLE DATA; Schema: ui; Owner: pc_migrator
 --
 
 COPY ui.views (id, object_type_id, name, owner, columns, sorts, filters, "position", created_at, created_by, updated_at) FROM stdin;
@@ -13950,462 +13950,462 @@ COPY ui.views (id, object_type_id, name, owner, columns, sorts, filters, "positi
 
 
 --
--- Name: api_keys_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: api_keys_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.api_keys_id_seq', 1, false);
 
 
 --
--- Name: calendar_connections_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.calendar_connections_id_seq', 1, false);
 
 
 --
--- Name: identities_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: identities_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.identities_id_seq', 1, false);
 
 
 --
--- Name: magic_links_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: magic_links_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.magic_links_id_seq', 1, false);
 
 
 --
--- Name: oauth_clients_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.oauth_clients_id_seq', 1, false);
 
 
 --
--- Name: oauth_grants_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.oauth_grants_id_seq', 1, false);
 
 
 --
--- Name: oauth_tokens_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.oauth_tokens_id_seq', 1, false);
 
 
 --
--- Name: passkeys_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: passkeys_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.passkeys_id_seq', 1, false);
 
 
 --
--- Name: payment_connections_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: payment_connections_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.payment_connections_id_seq', 1, false);
 
 
 --
--- Name: role_assignments_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: role_assignments_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.role_assignments_id_seq', 1, false);
 
 
 --
--- Name: role_sharing_rule_associations_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.role_sharing_rule_associations_id_seq', 1, false);
 
 
 --
--- Name: role_sharing_rules_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.role_sharing_rules_id_seq', 1, false);
 
 
 --
--- Name: roles_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: roles_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.roles_id_seq', 1, true);
 
 
 --
--- Name: security_events_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: security_events_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.security_events_id_seq', 1, false);
 
 
 --
--- Name: sessions_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: sessions_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.sessions_id_seq', 1, false);
 
 
 --
--- Name: webhook_deliveries_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.webhook_deliveries_id_seq', 1, false);
 
 
 --
--- Name: webhook_endpoints_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: webhook_endpoints_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.webhook_endpoints_id_seq', 1, false);
 
 
 --
--- Name: webhook_subscriptions_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('auth.webhook_subscriptions_id_seq', 1, false);
 
 
 --
--- Name: pc_0000_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0000_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0000_seq', 1, false);
 
 
 --
--- Name: pc_0005_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0005_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0005_seq', 1, false);
 
 
 --
--- Name: pc_0006_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0006_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0006_seq', 1, false);
 
 
 --
--- Name: pc_0010_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0010_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0010_seq', 1, false);
 
 
 --
--- Name: pc_0011_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0011_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0011_seq', 1, false);
 
 
 --
--- Name: pc_0012_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0012_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0012_seq', 1, false);
 
 
 --
--- Name: pc_0013_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0013_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0013_seq', 1, false);
 
 
 --
--- Name: pc_0014_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0014_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0014_seq', 1, false);
 
 
 --
--- Name: pc_0020_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0020_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0020_seq', 1, false);
 
 
 --
--- Name: pc_0021_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0021_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0021_seq', 1, false);
 
 
 --
--- Name: pc_0022_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0022_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0022_seq', 1, false);
 
 
 --
--- Name: pc_0023_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0023_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0023_seq', 1, false);
 
 
 --
--- Name: pc_0024_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0024_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0024_seq', 1, false);
 
 
 --
--- Name: pc_0025_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0025_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0025_seq', 1, false);
 
 
 --
--- Name: pc_0026_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0026_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0026_seq', 1, false);
 
 
 --
--- Name: pc_0030_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0030_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0030_seq', 1, false);
 
 
 --
--- Name: pc_0031_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0031_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0031_seq', 1, false);
 
 
 --
--- Name: pc_0032_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0032_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0032_seq', 1, false);
 
 
 --
--- Name: pc_0033_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0033_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0033_seq', 1, false);
 
 
 --
--- Name: pc_0034_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0034_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0034_seq', 1, false);
 
 
 --
--- Name: pc_0050_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0050_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0050_seq', 1, false);
 
 
 --
--- Name: pc_0051_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0051_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0051_seq', 1, false);
 
 
 --
--- Name: pc_0052_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0052_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0052_seq', 1, false);
 
 
 --
--- Name: pc_0053_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0053_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0053_seq', 1, false);
 
 
 --
--- Name: pc_0054_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0054_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0054_seq', 1, false);
 
 
 --
--- Name: pc_0055_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0055_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0055_seq', 2, true);
 
 
 --
--- Name: pc_0056_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0056_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0056_seq', 1, false);
 
 
 --
--- Name: pc_0057_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0057_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0057_seq', 1, true);
 
 
 --
--- Name: pc_0060_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0060_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0060_seq', 1, false);
 
 
 --
--- Name: pc_0061_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0061_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0061_seq', 1, false);
 
 
 --
--- Name: pc_0062_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0062_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0062_seq', 1, false);
 
 
 --
--- Name: pc_0063_seq; Type: SEQUENCE SET; Schema: crm; Owner: claude_admin
+-- Name: pc_0063_seq; Type: SEQUENCE SET; Schema: crm; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('crm.pc_0063_seq', 1, false);
 
 
 --
--- Name: currency_rates_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: currency_rates_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.currency_rates_id_seq', 1, false);
 
 
 --
--- Name: import_jobs_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: import_jobs_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.import_jobs_id_seq', 1, false);
 
 
 --
--- Name: pc_0001_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: pc_0001_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.pc_0001_seq', 37, true);
 
 
 --
--- Name: pc_0002_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: pc_0002_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.pc_0002_seq', 506, true);
 
 
 --
--- Name: pc_0003_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: pc_0003_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.pc_0003_seq', 753, true);
 
 
 --
--- Name: pc_0004_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: pc_0004_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.pc_0004_seq', 14, true);
 
 
 --
--- Name: pc_0007_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: pc_0007_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.pc_0007_seq', 2, true);
 
 
 --
--- Name: record_history_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: record_history_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.record_history_id_seq', 40, true);
 
 
 --
--- Name: schema_changes_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: schema_changes_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.schema_changes_id_seq', 358, true);
 
 
 --
--- Name: webhook_outbox_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: claude_admin
+-- Name: webhook_outbox_id_seq; Type: SEQUENCE SET; Schema: meta; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('meta.webhook_outbox_id_seq', 1, false);
 
 
 --
--- Name: nav_groups_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: claude_admin
+-- Name: nav_groups_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('ui.nav_groups_id_seq', 1, false);
 
 
 --
--- Name: nav_menus_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: claude_admin
+-- Name: nav_menus_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('ui.nav_menus_id_seq', 1, true);
 
 
 --
--- Name: snippets_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: claude_admin
+-- Name: snippets_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('ui.snippets_id_seq', 1, false);
 
 
 --
--- Name: view_errors_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: claude_admin
+-- Name: view_errors_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('ui.view_errors_id_seq', 1, false);
 
 
 --
--- Name: views_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: claude_admin
+-- Name: views_id_seq; Type: SEQUENCE SET; Schema: ui; Owner: pc_migrator
 --
 
 SELECT pg_catalog.setval('ui.views_id_seq', 1, false);
 
 
 --
--- Name: address_settings address_settings_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: address_settings address_settings_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.address_settings
@@ -14413,7 +14413,7 @@ ALTER TABLE ONLY auth.address_settings
 
 
 --
--- Name: api_keys api_keys_key_hash_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: api_keys api_keys_key_hash_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.api_keys
@@ -14421,7 +14421,7 @@ ALTER TABLE ONLY auth.api_keys
 
 
 --
--- Name: api_keys api_keys_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: api_keys api_keys_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.api_keys
@@ -14429,7 +14429,7 @@ ALTER TABLE ONLY auth.api_keys
 
 
 --
--- Name: calendar_connections calendar_connections_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections calendar_connections_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.calendar_connections
@@ -14437,7 +14437,7 @@ ALTER TABLE ONLY auth.calendar_connections
 
 
 --
--- Name: calendar_connections calendar_connections_user_id_provider_provider_subject_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections calendar_connections_user_id_provider_provider_subject_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.calendar_connections
@@ -14445,7 +14445,7 @@ ALTER TABLE ONLY auth.calendar_connections
 
 
 --
--- Name: card_scan_settings card_scan_settings_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: card_scan_settings card_scan_settings_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.card_scan_settings
@@ -14453,7 +14453,7 @@ ALTER TABLE ONLY auth.card_scan_settings
 
 
 --
--- Name: identities identities_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: identities identities_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.identities
@@ -14461,7 +14461,7 @@ ALTER TABLE ONLY auth.identities
 
 
 --
--- Name: identities identities_provider_provider_subject_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: identities identities_provider_provider_subject_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.identities
@@ -14469,7 +14469,7 @@ ALTER TABLE ONLY auth.identities
 
 
 --
--- Name: magic_links magic_links_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: magic_links magic_links_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.magic_links
@@ -14477,7 +14477,7 @@ ALTER TABLE ONLY auth.magic_links
 
 
 --
--- Name: magic_links magic_links_token_hash_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: magic_links magic_links_token_hash_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.magic_links
@@ -14485,7 +14485,7 @@ ALTER TABLE ONLY auth.magic_links
 
 
 --
--- Name: oauth_clients oauth_clients_client_id_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients oauth_clients_client_id_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_clients
@@ -14493,7 +14493,7 @@ ALTER TABLE ONLY auth.oauth_clients
 
 
 --
--- Name: oauth_clients oauth_clients_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_clients oauth_clients_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_clients
@@ -14501,7 +14501,7 @@ ALTER TABLE ONLY auth.oauth_clients
 
 
 --
--- Name: oauth_codes oauth_codes_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_codes oauth_codes_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_codes
@@ -14509,7 +14509,7 @@ ALTER TABLE ONLY auth.oauth_codes
 
 
 --
--- Name: oauth_grants oauth_grants_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants oauth_grants_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_grants
@@ -14517,7 +14517,7 @@ ALTER TABLE ONLY auth.oauth_grants
 
 
 --
--- Name: oauth_tokens oauth_tokens_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens oauth_tokens_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_tokens
@@ -14525,7 +14525,7 @@ ALTER TABLE ONLY auth.oauth_tokens
 
 
 --
--- Name: oauth_tokens oauth_tokens_token_hash_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens oauth_tokens_token_hash_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_tokens
@@ -14533,7 +14533,7 @@ ALTER TABLE ONLY auth.oauth_tokens
 
 
 --
--- Name: passkeys passkeys_credential_id_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: passkeys passkeys_credential_id_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.passkeys
@@ -14541,7 +14541,7 @@ ALTER TABLE ONLY auth.passkeys
 
 
 --
--- Name: passkeys passkeys_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: passkeys passkeys_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.passkeys
@@ -14549,7 +14549,7 @@ ALTER TABLE ONLY auth.passkeys
 
 
 --
--- Name: payment_connections payment_connections_account_id_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: payment_connections payment_connections_account_id_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.payment_connections
@@ -14557,7 +14557,7 @@ ALTER TABLE ONLY auth.payment_connections
 
 
 --
--- Name: payment_connections payment_connections_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: payment_connections payment_connections_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.payment_connections
@@ -14565,7 +14565,7 @@ ALTER TABLE ONLY auth.payment_connections
 
 
 --
--- Name: role_assignments role_assignments_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_assignments role_assignments_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_assignments
@@ -14573,7 +14573,7 @@ ALTER TABLE ONLY auth.role_assignments
 
 
 --
--- Name: role_assignments role_assignments_role_id_team_id_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_assignments role_assignments_role_id_team_id_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_assignments
@@ -14581,7 +14581,7 @@ ALTER TABLE ONLY auth.role_assignments
 
 
 --
--- Name: role_assignments role_assignments_role_id_user_id_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_assignments role_assignments_role_id_user_id_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_assignments
@@ -14589,7 +14589,7 @@ ALTER TABLE ONLY auth.role_assignments
 
 
 --
--- Name: role_object_permissions role_object_permissions_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_object_permissions role_object_permissions_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_object_permissions
@@ -14597,7 +14597,7 @@ ALTER TABLE ONLY auth.role_object_permissions
 
 
 --
--- Name: role_property_permissions role_property_permissions_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_property_permissions role_property_permissions_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_property_permissions
@@ -14605,7 +14605,7 @@ ALTER TABLE ONLY auth.role_property_permissions
 
 
 --
--- Name: role_sharing_rule_associations role_sharing_rule_associations_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations role_sharing_rule_associations_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rule_associations
@@ -14613,7 +14613,7 @@ ALTER TABLE ONLY auth.role_sharing_rule_associations
 
 
 --
--- Name: role_sharing_rules role_sharing_rules_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules role_sharing_rules_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rules
@@ -14621,7 +14621,7 @@ ALTER TABLE ONLY auth.role_sharing_rules
 
 
 --
--- Name: roles roles_name_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: roles roles_name_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.roles
@@ -14629,7 +14629,7 @@ ALTER TABLE ONLY auth.roles
 
 
 --
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.roles
@@ -14637,7 +14637,7 @@ ALTER TABLE ONLY auth.roles
 
 
 --
--- Name: security_events security_events_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: security_events security_events_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.security_events
@@ -14645,7 +14645,7 @@ ALTER TABLE ONLY auth.security_events
 
 
 --
--- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.sessions
@@ -14653,7 +14653,7 @@ ALTER TABLE ONLY auth.sessions
 
 
 --
--- Name: sessions sessions_token_hash_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: sessions sessions_token_hash_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.sessions
@@ -14661,7 +14661,7 @@ ALTER TABLE ONLY auth.sessions
 
 
 --
--- Name: stripe_checkout_sessions stripe_checkout_sessions_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: stripe_checkout_sessions stripe_checkout_sessions_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.stripe_checkout_sessions
@@ -14669,7 +14669,7 @@ ALTER TABLE ONLY auth.stripe_checkout_sessions
 
 
 --
--- Name: stripe_events stripe_events_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: stripe_events stripe_events_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.stripe_events
@@ -14677,7 +14677,7 @@ ALTER TABLE ONLY auth.stripe_events
 
 
 --
--- Name: view_integrations view_integrations_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: view_integrations view_integrations_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.view_integrations
@@ -14685,7 +14685,7 @@ ALTER TABLE ONLY auth.view_integrations
 
 
 --
--- Name: webhook_deliveries webhook_deliveries_event_id_key; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries webhook_deliveries_event_id_key; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_deliveries
@@ -14693,7 +14693,7 @@ ALTER TABLE ONLY auth.webhook_deliveries
 
 
 --
--- Name: webhook_deliveries webhook_deliveries_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries webhook_deliveries_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_deliveries
@@ -14701,7 +14701,7 @@ ALTER TABLE ONLY auth.webhook_deliveries
 
 
 --
--- Name: webhook_endpoints webhook_endpoints_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_endpoints webhook_endpoints_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_endpoints
@@ -14709,7 +14709,7 @@ ALTER TABLE ONLY auth.webhook_endpoints
 
 
 --
--- Name: webhook_subscriptions webhook_subscriptions_pkey; Type: CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions webhook_subscriptions_pkey; Type: CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_subscriptions
@@ -14717,7 +14717,7 @@ ALTER TABLE ONLY auth.webhook_subscriptions
 
 
 --
--- Name: pc_0000 pc_0000_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 pc_0000_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0000
@@ -14725,7 +14725,7 @@ ALTER TABLE ONLY crm.pc_0000
 
 
 --
--- Name: pc_0005 pc_0005_label_id_from_id_to_id_key; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 pc_0005_label_id_from_id_to_id_key; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0005
@@ -14733,7 +14733,7 @@ ALTER TABLE ONLY crm.pc_0005
 
 
 --
--- Name: pc_0005 pc_0005_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 pc_0005_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0005
@@ -14741,7 +14741,7 @@ ALTER TABLE ONLY crm.pc_0005
 
 
 --
--- Name: pc_0006 pc_0006_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0006 pc_0006_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0006
@@ -14749,7 +14749,7 @@ ALTER TABLE ONLY crm.pc_0006
 
 
 --
--- Name: pc_0010 pc_0010_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0010 pc_0010_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0010
@@ -14757,7 +14757,7 @@ ALTER TABLE ONLY crm.pc_0010
 
 
 --
--- Name: pc_0011 pc_0011_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0011 pc_0011_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0011
@@ -14765,7 +14765,7 @@ ALTER TABLE ONLY crm.pc_0011
 
 
 --
--- Name: pc_0012 pc_0012_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 pc_0012_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0012
@@ -14773,7 +14773,7 @@ ALTER TABLE ONLY crm.pc_0012
 
 
 --
--- Name: pc_0013 pc_0013_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0013 pc_0013_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0013
@@ -14781,7 +14781,7 @@ ALTER TABLE ONLY crm.pc_0013
 
 
 --
--- Name: pc_0014 pc_0014_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0014 pc_0014_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0014
@@ -14789,7 +14789,7 @@ ALTER TABLE ONLY crm.pc_0014
 
 
 --
--- Name: pc_0020 pc_0020_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 pc_0020_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0020
@@ -14797,7 +14797,7 @@ ALTER TABLE ONLY crm.pc_0020
 
 
 --
--- Name: pc_0021 pc_0021_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0021 pc_0021_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0021
@@ -14805,7 +14805,7 @@ ALTER TABLE ONLY crm.pc_0021
 
 
 --
--- Name: pc_0022 pc_0022_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 pc_0022_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0022
@@ -14813,7 +14813,7 @@ ALTER TABLE ONLY crm.pc_0022
 
 
 --
--- Name: pc_0023 pc_0023_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 pc_0023_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0023
@@ -14821,7 +14821,7 @@ ALTER TABLE ONLY crm.pc_0023
 
 
 --
--- Name: pc_0024 pc_0024_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pc_0024_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0024
@@ -14829,7 +14829,7 @@ ALTER TABLE ONLY crm.pc_0024
 
 
 --
--- Name: pc_0025 pc_0025_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 pc_0025_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0025
@@ -14837,7 +14837,7 @@ ALTER TABLE ONLY crm.pc_0025
 
 
 --
--- Name: pc_0026 pc_0026_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 pc_0026_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0026
@@ -14845,7 +14845,7 @@ ALTER TABLE ONLY crm.pc_0026
 
 
 --
--- Name: pc_0030 pc_0030_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0030 pc_0030_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0030
@@ -14853,7 +14853,7 @@ ALTER TABLE ONLY crm.pc_0030
 
 
 --
--- Name: pc_0031 pc_0031_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0031 pc_0031_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0031
@@ -14861,7 +14861,7 @@ ALTER TABLE ONLY crm.pc_0031
 
 
 --
--- Name: pc_0032 pc_0032_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 pc_0032_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0032
@@ -14869,7 +14869,7 @@ ALTER TABLE ONLY crm.pc_0032
 
 
 --
--- Name: pc_0033 pc_0033_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0033 pc_0033_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0033
@@ -14877,7 +14877,7 @@ ALTER TABLE ONLY crm.pc_0033
 
 
 --
--- Name: pc_0034 pc_0034_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 pc_0034_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0034
@@ -14885,7 +14885,7 @@ ALTER TABLE ONLY crm.pc_0034
 
 
 --
--- Name: pc_0050 pc_0050_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0050 pc_0050_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0050
@@ -14893,7 +14893,7 @@ ALTER TABLE ONLY crm.pc_0050
 
 
 --
--- Name: pc_0051 pc_0051_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0051 pc_0051_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0051
@@ -14901,7 +14901,7 @@ ALTER TABLE ONLY crm.pc_0051
 
 
 --
--- Name: pc_0052 pc_0052_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0052 pc_0052_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0052
@@ -14909,7 +14909,7 @@ ALTER TABLE ONLY crm.pc_0052
 
 
 --
--- Name: pc_0053 pc_0053_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0053 pc_0053_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0053
@@ -14917,7 +14917,7 @@ ALTER TABLE ONLY crm.pc_0053
 
 
 --
--- Name: pc_0054 pc_0054_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0054 pc_0054_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0054
@@ -14925,7 +14925,7 @@ ALTER TABLE ONLY crm.pc_0054
 
 
 --
--- Name: pc_0055 pc_0055_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 pc_0055_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0055
@@ -14933,7 +14933,7 @@ ALTER TABLE ONLY crm.pc_0055
 
 
 --
--- Name: pc_0056 pc_0056_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0056 pc_0056_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0056
@@ -14941,7 +14941,7 @@ ALTER TABLE ONLY crm.pc_0056
 
 
 --
--- Name: pc_0057 pc_0057_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 pc_0057_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0057
@@ -14949,7 +14949,7 @@ ALTER TABLE ONLY crm.pc_0057
 
 
 --
--- Name: pc_0060 pc_0060_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 pc_0060_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0060
@@ -14957,7 +14957,7 @@ ALTER TABLE ONLY crm.pc_0060
 
 
 --
--- Name: pc_0061 pc_0061_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0061 pc_0061_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0061
@@ -14965,7 +14965,7 @@ ALTER TABLE ONLY crm.pc_0061
 
 
 --
--- Name: pc_0062 pc_0062_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0062 pc_0062_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0062
@@ -14973,7 +14973,7 @@ ALTER TABLE ONLY crm.pc_0062
 
 
 --
--- Name: pc_0063 pc_0063_pkey; Type: CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0063 pc_0063_pkey; Type: CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0063
@@ -14981,7 +14981,7 @@ ALTER TABLE ONLY crm.pc_0063
 
 
 --
--- Name: pc_0012 pcc_00000000b8_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 pcc_00000000b8_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0012
@@ -14989,7 +14989,7 @@ ALTER TABLE crm.pc_0012
 
 
 --
--- Name: pc_0012 pcc_00000000b8_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 pcc_00000000b8_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0012
@@ -14997,7 +14997,7 @@ ALTER TABLE crm.pc_0012
 
 
 --
--- Name: pc_0012 pcc_00000000b8_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 pcc_00000000b8_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0012
@@ -15005,7 +15005,7 @@ ALTER TABLE crm.pc_0012
 
 
 --
--- Name: pc_0022 pcc_00000000d3_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 pcc_00000000d3_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0022
@@ -15013,7 +15013,7 @@ ALTER TABLE crm.pc_0022
 
 
 --
--- Name: pc_0022 pcc_00000000d3_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 pcc_00000000d3_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0022
@@ -15021,7 +15021,7 @@ ALTER TABLE crm.pc_0022
 
 
 --
--- Name: pc_0022 pcc_00000000d3_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 pcc_00000000d3_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0022
@@ -15029,7 +15029,7 @@ ALTER TABLE crm.pc_0022
 
 
 --
--- Name: pc_0023 pcc_00000000d8_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 pcc_00000000d8_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0023
@@ -15037,7 +15037,7 @@ ALTER TABLE crm.pc_0023
 
 
 --
--- Name: pc_0023 pcc_00000000d8_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 pcc_00000000d8_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0023
@@ -15045,7 +15045,7 @@ ALTER TABLE crm.pc_0023
 
 
 --
--- Name: pc_0023 pcc_00000000d8_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 pcc_00000000d8_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0023
@@ -15053,7 +15053,7 @@ ALTER TABLE crm.pc_0023
 
 
 --
--- Name: pc_0024 pcc_00000000da_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000da_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15061,7 +15061,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000da_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000da_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15069,7 +15069,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000da_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000da_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15077,7 +15077,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000db_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000db_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15085,7 +15085,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000db_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000db_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15093,7 +15093,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000db_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000db_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15101,7 +15101,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000dc_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000dc_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15109,7 +15109,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000dc_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000dc_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15117,7 +15117,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0024 pcc_00000000dc_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 pcc_00000000dc_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024
@@ -15125,7 +15125,7 @@ ALTER TABLE crm.pc_0024
 
 
 --
--- Name: pc_0025 pcc_00000000e0_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 pcc_00000000e0_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0025
@@ -15133,7 +15133,7 @@ ALTER TABLE crm.pc_0025
 
 
 --
--- Name: pc_0025 pcc_00000000e0_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 pcc_00000000e0_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0025
@@ -15141,7 +15141,7 @@ ALTER TABLE crm.pc_0025
 
 
 --
--- Name: pc_0025 pcc_00000000e0_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 pcc_00000000e0_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0025
@@ -15149,7 +15149,7 @@ ALTER TABLE crm.pc_0025
 
 
 --
--- Name: pc_0026 pcc_00000000e4_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 pcc_00000000e4_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0026
@@ -15157,7 +15157,7 @@ ALTER TABLE crm.pc_0026
 
 
 --
--- Name: pc_0026 pcc_00000000e4_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 pcc_00000000e4_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0026
@@ -15165,7 +15165,7 @@ ALTER TABLE crm.pc_0026
 
 
 --
--- Name: pc_0026 pcc_00000000e4_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 pcc_00000000e4_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0026
@@ -15173,7 +15173,7 @@ ALTER TABLE crm.pc_0026
 
 
 --
--- Name: pc_0060 pcc_000000010d_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 pcc_000000010d_shape; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0060
@@ -15181,7 +15181,7 @@ ALTER TABLE crm.pc_0060
 
 
 --
--- Name: pc_0060 pcc_000000010d_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 pcc_000000010d_single; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0060
@@ -15189,7 +15189,7 @@ ALTER TABLE crm.pc_0060
 
 
 --
--- Name: pc_0060 pcc_000000010d_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 pcc_000000010d_values; Type: CHECK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0060
@@ -15197,7 +15197,7 @@ ALTER TABLE crm.pc_0060
 
 
 --
--- Name: calc_dependencies calc_dependencies_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: calc_dependencies calc_dependencies_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.calc_dependencies
@@ -15205,7 +15205,7 @@ ALTER TABLE ONLY meta.calc_dependencies
 
 
 --
--- Name: calc_queue calc_queue_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: calc_queue calc_queue_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.calc_queue
@@ -15213,7 +15213,7 @@ ALTER TABLE ONLY meta.calc_queue
 
 
 --
--- Name: currency_rates currency_rates_from_code_to_code_rate_date_key; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: currency_rates currency_rates_from_code_to_code_rate_date_key; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.currency_rates
@@ -15221,7 +15221,7 @@ ALTER TABLE ONLY meta.currency_rates
 
 
 --
--- Name: currency_rates currency_rates_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: currency_rates currency_rates_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.currency_rates
@@ -15229,7 +15229,7 @@ ALTER TABLE ONLY meta.currency_rates
 
 
 --
--- Name: currency_settings currency_settings_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: currency_settings currency_settings_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.currency_settings
@@ -15237,7 +15237,7 @@ ALTER TABLE ONLY meta.currency_settings
 
 
 --
--- Name: import_jobs import_jobs_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: import_jobs import_jobs_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.import_jobs
@@ -15245,7 +15245,7 @@ ALTER TABLE ONLY meta.import_jobs
 
 
 --
--- Name: pc_0001 pc_0001_api_name_key; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0001 pc_0001_api_name_key; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0001
@@ -15253,7 +15253,7 @@ ALTER TABLE ONLY meta.pc_0001
 
 
 --
--- Name: pc_0001 pc_0001_object_type_id_key; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0001 pc_0001_object_type_id_key; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0001
@@ -15261,7 +15261,7 @@ ALTER TABLE ONLY meta.pc_0001
 
 
 --
--- Name: pc_0001 pc_0001_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0001 pc_0001_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0001
@@ -15269,7 +15269,7 @@ ALTER TABLE ONLY meta.pc_0001
 
 
 --
--- Name: pc_0002 pc_0002_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0002 pc_0002_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0002
@@ -15277,7 +15277,7 @@ ALTER TABLE ONLY meta.pc_0002
 
 
 --
--- Name: pc_0003 pc_0003_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0003 pc_0003_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0003
@@ -15285,7 +15285,7 @@ ALTER TABLE ONLY meta.pc_0003
 
 
 --
--- Name: pc_0003 pc_0003_property_id_api_value_key; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0003 pc_0003_property_id_api_value_key; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0003
@@ -15293,7 +15293,7 @@ ALTER TABLE ONLY meta.pc_0003
 
 
 --
--- Name: pc_0004 pc_0004_pc_0004_id_from_object_type_to_object_type_key; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0004 pc_0004_pc_0004_id_from_object_type_to_object_type_key; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0004
@@ -15301,7 +15301,7 @@ ALTER TABLE ONLY meta.pc_0004
 
 
 --
--- Name: pc_0004 pc_0004_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0004 pc_0004_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0004
@@ -15309,7 +15309,7 @@ ALTER TABLE ONLY meta.pc_0004
 
 
 --
--- Name: pc_0007 pc_0007_code_key; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0007 pc_0007_code_key; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0007
@@ -15317,7 +15317,7 @@ ALTER TABLE ONLY meta.pc_0007
 
 
 --
--- Name: pc_0007 pc_0007_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0007 pc_0007_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0007
@@ -15325,7 +15325,7 @@ ALTER TABLE ONLY meta.pc_0007
 
 
 --
--- Name: record_history record_history_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: record_history record_history_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.record_history
@@ -15333,7 +15333,7 @@ ALTER TABLE ONLY meta.record_history
 
 
 --
--- Name: schema_changes schema_changes_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: schema_changes schema_changes_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.schema_changes
@@ -15341,7 +15341,7 @@ ALTER TABLE ONLY meta.schema_changes
 
 
 --
--- Name: webhook_outbox webhook_outbox_pkey; Type: CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: webhook_outbox webhook_outbox_pkey; Type: CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.webhook_outbox
@@ -15349,7 +15349,7 @@ ALTER TABLE ONLY meta.webhook_outbox
 
 
 --
--- Name: comment_mentions comment_mentions_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: comment_mentions comment_mentions_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.comment_mentions
@@ -15357,7 +15357,7 @@ ALTER TABLE ONLY ui.comment_mentions
 
 
 --
--- Name: mentions mentions_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: mentions mentions_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.mentions
@@ -15365,7 +15365,7 @@ ALTER TABLE ONLY ui.mentions
 
 
 --
--- Name: nav_group_members nav_group_members_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: nav_group_members nav_group_members_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_group_members
@@ -15373,7 +15373,7 @@ ALTER TABLE ONLY ui.nav_group_members
 
 
 --
--- Name: nav_groups nav_groups_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: nav_groups nav_groups_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_groups
@@ -15381,7 +15381,7 @@ ALTER TABLE ONLY ui.nav_groups
 
 
 --
--- Name: nav_menus nav_menus_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: nav_menus nav_menus_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_menus
@@ -15389,7 +15389,7 @@ ALTER TABLE ONLY ui.nav_menus
 
 
 --
--- Name: settings settings_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: settings settings_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.settings
@@ -15397,7 +15397,7 @@ ALTER TABLE ONLY ui.settings
 
 
 --
--- Name: snippets snippets_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: snippets snippets_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.snippets
@@ -15405,7 +15405,7 @@ ALTER TABLE ONLY ui.snippets
 
 
 --
--- Name: view_errors view_errors_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: view_errors view_errors_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.view_errors
@@ -15413,7 +15413,7 @@ ALTER TABLE ONLY ui.view_errors
 
 
 --
--- Name: view_write_approvals view_write_approvals_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: view_write_approvals view_write_approvals_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.view_write_approvals
@@ -15421,7 +15421,7 @@ ALTER TABLE ONLY ui.view_write_approvals
 
 
 --
--- Name: views views_pkey; Type: CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: views views_pkey; Type: CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.views
@@ -15429,2338 +15429,2338 @@ ALTER TABLE ONLY ui.views
 
 
 --
--- Name: calendar_connections_one_writer; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections_one_writer; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX calendar_connections_one_writer ON auth.calendar_connections USING btree (user_id) WHERE (use_for_new_events AND (status <> 'disconnected'::text));
 
 
 --
--- Name: calendar_connections_user_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: calendar_connections_user_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX calendar_connections_user_idx ON auth.calendar_connections USING btree (user_id);
 
 
 --
--- Name: identities_user_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: identities_user_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX identities_user_idx ON auth.identities USING btree (user_id);
 
 
 --
--- Name: oauth_grants_client_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants_client_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX oauth_grants_client_idx ON auth.oauth_grants USING btree (client_id);
 
 
 --
--- Name: oauth_grants_live_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants_live_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX oauth_grants_live_idx ON auth.oauth_grants USING btree (user_id, client_id) WHERE (revoked_at IS NULL);
 
 
 --
--- Name: oauth_tokens_family_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens_family_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX oauth_tokens_family_idx ON auth.oauth_tokens USING btree (family_id);
 
 
 --
--- Name: oauth_tokens_grant_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens_grant_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX oauth_tokens_grant_idx ON auth.oauth_tokens USING btree (grant_id);
 
 
 --
--- Name: payment_connections_one_live; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: payment_connections_one_live; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX payment_connections_one_live ON auth.payment_connections USING btree (provider) WHERE (status <> 'removed'::text);
 
 
 --
--- Name: role_sharing_rule_associations_uniq; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations_uniq; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX role_sharing_rule_associations_uniq ON auth.role_sharing_rule_associations USING btree (rule_id, object_type_id, COALESCE(label_id, ''::text));
 
 
 --
--- Name: role_sharing_rules_role_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules_role_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX role_sharing_rules_role_idx ON auth.role_sharing_rules USING btree (role_id);
 
 
 --
--- Name: security_events_time_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: security_events_time_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX security_events_time_idx ON auth.security_events USING btree (occurred_at DESC);
 
 
 --
--- Name: security_events_user_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: security_events_user_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX security_events_user_idx ON auth.security_events USING btree (user_id, occurred_at DESC) WHERE (user_id IS NOT NULL);
 
 
 --
--- Name: sessions_user_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: sessions_user_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX sessions_user_idx ON auth.sessions USING btree (user_id);
 
 
 --
--- Name: stripe_checkout_sessions_record_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: stripe_checkout_sessions_record_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX stripe_checkout_sessions_record_idx ON auth.stripe_checkout_sessions USING btree (object, record_id);
 
 
 --
--- Name: webhook_deliveries_batch_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_batch_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_deliveries_batch_idx ON auth.webhook_deliveries USING btree (batch_id) WHERE (batch_id IS NOT NULL);
 
 
 --
--- Name: webhook_deliveries_created_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_created_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_deliveries_created_idx ON auth.webhook_deliveries USING btree (created_at);
 
 
 --
--- Name: webhook_deliveries_due_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_due_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_deliveries_due_idx ON auth.webhook_deliveries USING btree (next_attempt_at) WHERE (status = 'pending'::text);
 
 
 --
--- Name: webhook_deliveries_endpoint_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_endpoint_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_deliveries_endpoint_idx ON auth.webhook_deliveries USING btree (endpoint_id, id DESC);
 
 
 --
--- Name: webhook_deliveries_record_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_record_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_deliveries_record_idx ON auth.webhook_deliveries USING btree (object_type_id, record_id, id DESC);
 
 
 --
--- Name: webhook_deliveries_unbatched_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries_unbatched_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_deliveries_unbatched_idx ON auth.webhook_deliveries USING btree (endpoint_id, id) WHERE ((status = 'pending'::text) AND (batch_id IS NULL));
 
 
 --
--- Name: webhook_subscriptions_endpoint_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions_endpoint_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_subscriptions_endpoint_idx ON auth.webhook_subscriptions USING btree (endpoint_id);
 
 
 --
--- Name: webhook_subscriptions_object_idx; Type: INDEX; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions_object_idx; Type: INDEX; Schema: auth; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_subscriptions_object_idx ON auth.webhook_subscriptions USING btree (object_type_id) WHERE enabled;
 
 
 --
--- Name: pc_0000_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0000_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0000_created_at_idx ON crm.pc_0000 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0000_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0000_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0000_name_trgm_idx ON crm.pc_0000 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0000_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0000_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0000_row_updated_at_idx ON crm.pc_0000 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0005_from_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0005_from_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0005_from_idx ON crm.pc_0005 USING btree (from_object_type, from_id, to_object_type) INCLUDE (to_id, label_id);
 
 
 --
--- Name: pc_0005_to_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0005_to_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0005_to_idx ON crm.pc_0005 USING btree (to_object_type, to_id, from_object_type) INCLUDE (from_id, label_id);
 
 
 --
--- Name: pc_0006_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0006_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0006_created_at_idx ON crm.pc_0006 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0006_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0006_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0006_name_trgm_idx ON crm.pc_0006 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0006_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0006_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0006_row_updated_at_idx ON crm.pc_0006 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0010_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0010_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0010_created_at_idx ON crm.pc_0010 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0010_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0010_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0010_name_trgm_idx ON crm.pc_0010 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0010_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0010_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0010_row_updated_at_idx ON crm.pc_0010 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0011_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0011_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0011_created_at_idx ON crm.pc_0011 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0011_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0011_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0011_name_trgm_idx ON crm.pc_0011 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0011_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0011_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0011_row_updated_at_idx ON crm.pc_0011 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0012_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0012_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0012_created_at_idx ON crm.pc_0012 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0012_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0012_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0012_name_trgm_idx ON crm.pc_0012 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0012_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0012_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0012_row_updated_at_idx ON crm.pc_0012 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0013_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0013_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0013_created_at_idx ON crm.pc_0013 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0013_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0013_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0013_name_trgm_idx ON crm.pc_0013 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0013_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0013_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0013_row_updated_at_idx ON crm.pc_0013 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0014_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0014_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0014_created_at_idx ON crm.pc_0014 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0014_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0014_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0014_name_trgm_idx ON crm.pc_0014 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0014_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0014_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0014_row_updated_at_idx ON crm.pc_0014 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0020_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0020_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0020_created_at_idx ON crm.pc_0020 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0020_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0020_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0020_name_trgm_idx ON crm.pc_0020 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0020_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0020_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0020_row_updated_at_idx ON crm.pc_0020 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0021_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0021_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0021_created_at_idx ON crm.pc_0021 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0021_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0021_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0021_name_trgm_idx ON crm.pc_0021 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0021_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0021_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0021_row_updated_at_idx ON crm.pc_0021 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0022_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0022_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0022_created_at_idx ON crm.pc_0022 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0022_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0022_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0022_name_trgm_idx ON crm.pc_0022 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0022_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0022_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0022_row_updated_at_idx ON crm.pc_0022 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0023_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0023_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0023_created_at_idx ON crm.pc_0023 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0023_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0023_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0023_name_trgm_idx ON crm.pc_0023 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0023_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0023_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0023_row_updated_at_idx ON crm.pc_0023 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0024_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0024_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0024_created_at_idx ON crm.pc_0024 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0024_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0024_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0024_name_trgm_idx ON crm.pc_0024 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0024_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0024_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0024_row_updated_at_idx ON crm.pc_0024 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0025_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0025_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0025_created_at_idx ON crm.pc_0025 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0025_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0025_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0025_name_trgm_idx ON crm.pc_0025 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0025_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0025_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0025_row_updated_at_idx ON crm.pc_0025 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0026_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0026_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0026_created_at_idx ON crm.pc_0026 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0026_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0026_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0026_name_trgm_idx ON crm.pc_0026 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0026_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0026_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0026_row_updated_at_idx ON crm.pc_0026 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0030_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0030_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0030_created_at_idx ON crm.pc_0030 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0030_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0030_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0030_name_trgm_idx ON crm.pc_0030 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0030_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0030_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0030_row_updated_at_idx ON crm.pc_0030 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0031_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0031_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0031_created_at_idx ON crm.pc_0031 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0031_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0031_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0031_name_trgm_idx ON crm.pc_0031 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0031_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0031_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0031_row_updated_at_idx ON crm.pc_0031 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0032_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0032_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0032_created_at_idx ON crm.pc_0032 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0032_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0032_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0032_name_trgm_idx ON crm.pc_0032 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0032_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0032_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0032_row_updated_at_idx ON crm.pc_0032 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0033_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0033_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0033_created_at_idx ON crm.pc_0033 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0033_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0033_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0033_name_trgm_idx ON crm.pc_0033 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0033_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0033_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0033_row_updated_at_idx ON crm.pc_0033 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0034_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0034_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0034_created_at_idx ON crm.pc_0034 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0034_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0034_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0034_name_trgm_idx ON crm.pc_0034 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0034_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0034_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0034_row_updated_at_idx ON crm.pc_0034 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0050_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0050_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0050_created_at_idx ON crm.pc_0050 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0050_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0050_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0050_name_trgm_idx ON crm.pc_0050 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0050_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0050_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0050_row_updated_at_idx ON crm.pc_0050 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0051_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0051_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0051_created_at_idx ON crm.pc_0051 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0051_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0051_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0051_name_trgm_idx ON crm.pc_0051 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0051_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0051_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0051_row_updated_at_idx ON crm.pc_0051 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0052_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0052_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0052_created_at_idx ON crm.pc_0052 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0052_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0052_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0052_name_trgm_idx ON crm.pc_0052 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0052_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0052_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0052_row_updated_at_idx ON crm.pc_0052 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0053_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0053_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0053_created_at_idx ON crm.pc_0053 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0053_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0053_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0053_name_trgm_idx ON crm.pc_0053 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0053_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0053_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0053_row_updated_at_idx ON crm.pc_0053 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0054_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0054_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0054_created_at_idx ON crm.pc_0054 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0054_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0054_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0054_name_trgm_idx ON crm.pc_0054 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0054_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0054_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0054_row_updated_at_idx ON crm.pc_0054 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0055_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0055_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0055_created_at_idx ON crm.pc_0055 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0055_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0055_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0055_name_trgm_idx ON crm.pc_0055 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0055_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0055_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0055_row_updated_at_idx ON crm.pc_0055 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0056_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0056_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0056_created_at_idx ON crm.pc_0056 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0056_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0056_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0056_name_trgm_idx ON crm.pc_0056 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0056_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0056_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0056_row_updated_at_idx ON crm.pc_0056 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0057_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0057_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0057_created_at_idx ON crm.pc_0057 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0057_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0057_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0057_name_trgm_idx ON crm.pc_0057 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0057_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0057_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0057_row_updated_at_idx ON crm.pc_0057 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0060_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0060_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0060_created_at_idx ON crm.pc_0060 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0060_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0060_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0060_name_trgm_idx ON crm.pc_0060 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0060_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0060_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0060_row_updated_at_idx ON crm.pc_0060 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0061_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0061_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0061_created_at_idx ON crm.pc_0061 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0061_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0061_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0061_name_trgm_idx ON crm.pc_0061 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0061_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0061_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0061_row_updated_at_idx ON crm.pc_0061 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0062_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0062_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0062_created_at_idx ON crm.pc_0062 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0062_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0062_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0062_name_trgm_idx ON crm.pc_0062 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0062_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0062_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0062_row_updated_at_idx ON crm.pc_0062 USING btree (row_updated_at);
 
 
 --
--- Name: pc_0063_created_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0063_created_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0063_created_at_idx ON crm.pc_0063 USING btree (created_at) WHERE (record_status = 'active'::text);
 
 
 --
--- Name: pc_0063_name_trgm_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0063_name_trgm_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0063_name_trgm_idx ON crm.pc_0063 USING gin (name public.gin_trgm_ops);
 
 
 --
--- Name: pc_0063_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pc_0063_row_updated_at_idx; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pc_0063_row_updated_at_idx ON crm.pc_0063 USING btree (row_updated_at);
 
 
 --
--- Name: pci_000000009f_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000009f_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_000000009f_uq ON crm.pc_0000 USING btree (lower(email)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_00000000a2_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000a2_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000a2_gin ON crm.pc_0000 USING gin (status);
 
 
 --
--- Name: pci_00000000a6_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000a6_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_00000000a6_uq ON crm.pc_0010 USING btree (lower(email)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_00000000aa_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000aa_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000aa_gin ON crm.pc_0010 USING gin (address_province);
 
 
 --
--- Name: pci_00000000ab_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ab_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ab_gin ON crm.pc_0010 USING gin (address_country);
 
 
 --
--- Name: pci_00000000ac_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ac_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ac_gin ON crm.pc_0010 USING gin (lifecycle_stage);
 
 
 --
--- Name: pci_00000000ad_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ad_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ad_gin ON crm.pc_0010 USING gin (owner);
 
 
 --
--- Name: pci_00000000ae_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ae_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_00000000ae_uq ON crm.pc_0011 USING btree (lower(domain)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_00000000b2_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000b2_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000b2_gin ON crm.pc_0011 USING gin (address_province);
 
 
 --
--- Name: pci_00000000b3_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000b3_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000b3_gin ON crm.pc_0011 USING gin (address_country);
 
 
 --
--- Name: pci_00000000b6_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000b6_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000b6_gin ON crm.pc_0011 USING gin (owner);
 
 
 --
--- Name: pci_00000000b8_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000b8_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000b8_gin ON crm.pc_0012 USING gin (currency);
 
 
 --
--- Name: pci_00000000b9_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000b9_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000b9_gin ON crm.pc_0012 USING gin (pipeline);
 
 
 --
--- Name: pci_00000000ba_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ba_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ba_gin ON crm.pc_0012 USING gin (stage);
 
 
 --
--- Name: pci_00000000bc_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000bc_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000bc_gin ON crm.pc_0012 USING gin (owner);
 
 
 --
--- Name: pci_00000000be_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000be_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000be_gin ON crm.pc_0013 USING gin (pipeline);
 
 
 --
--- Name: pci_00000000bf_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000bf_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000bf_gin ON crm.pc_0013 USING gin (stage);
 
 
 --
--- Name: pci_00000000c0_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000c0_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000c0_gin ON crm.pc_0013 USING gin (priority);
 
 
 --
--- Name: pci_00000000c1_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000c1_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000c1_gin ON crm.pc_0013 USING gin (owner);
 
 
 --
--- Name: pci_00000000c3_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000c3_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000c3_gin ON crm.pc_0014 USING gin (status);
 
 
 --
--- Name: pci_00000000c6_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000c6_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000c6_gin ON crm.pc_0014 USING gin (owner);
 
 
 --
--- Name: pci_00000000c7_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000c7_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_00000000c7_uq ON crm.pc_0021 USING btree (sku) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_00000000ca_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ca_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ca_gin ON crm.pc_0021 USING gin (active);
 
 
 --
--- Name: pci_00000000d0_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000d0_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000d0_gin ON crm.pc_0022 USING gin (status);
 
 
 --
--- Name: pci_00000000d3_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000d3_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000d3_gin ON crm.pc_0022 USING gin (currency);
 
 
 --
--- Name: pci_00000000d4_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000d4_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_00000000d4_uq ON crm.pc_0023 USING btree (invoice_number) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_00000000d5_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000d5_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000d5_gin ON crm.pc_0023 USING gin (status);
 
 
 --
--- Name: pci_00000000d8_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000d8_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000d8_gin ON crm.pc_0023 USING gin (currency);
 
 
 --
--- Name: pci_00000000da_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000da_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000da_gin ON crm.pc_0024 USING gin (currency);
 
 
 --
--- Name: pci_00000000db_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000db_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000db_gin ON crm.pc_0024 USING gin (status);
 
 
 --
--- Name: pci_00000000dc_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000dc_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000dc_gin ON crm.pc_0024 USING gin (method);
 
 
 --
--- Name: pci_00000000de_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000de_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000de_gin ON crm.pc_0025 USING gin (status);
 
 
 --
--- Name: pci_00000000e0_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e0_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000e0_gin ON crm.pc_0025 USING gin (currency);
 
 
 --
--- Name: pci_00000000e1_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e1_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_00000000e1_uq ON crm.pc_0026 USING btree (order_number) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_00000000e2_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e2_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000e2_gin ON crm.pc_0026 USING gin (status);
 
 
 --
--- Name: pci_00000000e4_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e4_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000e4_gin ON crm.pc_0026 USING gin (currency);
 
 
 --
--- Name: pci_00000000e5_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e5_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000e5_gin ON crm.pc_0030 USING gin (call_type);
 
 
 --
--- Name: pci_00000000e6_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e6_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000e6_gin ON crm.pc_0030 USING gin (direction);
 
 
 --
--- Name: pci_00000000e7_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000e7_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000e7_gin ON crm.pc_0030 USING gin (status);
 
 
 --
--- Name: pci_00000000ed_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ed_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ed_gin ON crm.pc_0030 USING gin (owner);
 
 
 --
--- Name: pci_00000000ee_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ee_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ee_gin ON crm.pc_0031 USING gin (direction);
 
 
 --
--- Name: pci_00000000ef_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ef_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ef_gin ON crm.pc_0031 USING gin (status);
 
 
 --
--- Name: pci_00000000f7_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000f7_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000f7_gin ON crm.pc_0031 USING gin (owner);
 
 
 --
--- Name: pci_00000000f9_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000f9_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000f9_gin ON crm.pc_0032 USING gin (owner);
 
 
 --
--- Name: pci_00000000fa_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000fa_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000fa_gin ON crm.pc_0033 USING gin (task_type);
 
 
 --
--- Name: pci_00000000fb_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000fb_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000fb_gin ON crm.pc_0033 USING gin (status);
 
 
 --
--- Name: pci_00000000fc_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000fc_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000fc_gin ON crm.pc_0033 USING gin (priority);
 
 
 --
--- Name: pci_00000000ff_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000000ff_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000000ff_gin ON crm.pc_0033 USING gin (owner);
 
 
 --
--- Name: pci_0000000102_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000102_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000102_uq ON crm.pc_0050 USING btree (storage_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000107_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000107_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000107_gin ON crm.pc_0052 USING gin (status);
 
 
 --
--- Name: pci_000000010d_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000010d_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000010d_gin ON crm.pc_0060 USING gin (event_type);
 
 
 --
--- Name: pci_000000010e_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000010e_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000010e_gin ON crm.pc_0060 USING gin (status);
 
 
 --
--- Name: pci_0000000114_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000114_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000114_gin ON crm.pc_0061 USING gin (status);
 
 
 --
--- Name: pci_0000000118_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000118_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000118_uq ON crm.pc_0062 USING btree (event_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_000000011e_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000011e_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_000000011e_uq ON crm.pc_0022 USING btree (public_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000123_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000123_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000123_uq ON crm.pc_0052 USING btree (public_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_000000012e_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000012e_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000012e_gin ON crm.pc_0022 USING gin (requires_countersign);
 
 
 --
--- Name: pci_0000000139_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000139_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000139_gin ON crm.pc_0054 USING gin (status);
 
 
 --
--- Name: pci_000000013a_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000013a_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_000000013a_uq ON crm.pc_0054 USING btree (public_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_000000013b_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000013b_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000013b_gin ON crm.pc_0054 USING gin (host);
 
 
 --
--- Name: pci_0000000145_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000145_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000145_gin ON crm.pc_0054 USING gin (location_type);
 
 
 --
--- Name: pci_000000014f_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000014f_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_000000014f_uq ON crm.pc_0054 USING btree (lower(slug)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000151_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000151_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000151_gin ON crm.pc_0050 USING gin (status);
 
 
 --
--- Name: pci_0000000152_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000152_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000152_uq ON crm.pc_0050 USING btree (public_token) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000153_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000153_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000153_uq ON crm.pc_0030 USING btree (manage_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000158_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000158_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000158_uq ON crm.pc_0023 USING btree (public_key) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000159_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000159_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000159_gin ON crm.pc_0022 USING gin (online_payment);
 
 
 --
--- Name: pci_000000015a_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000015a_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000015a_gin ON crm.pc_0022 USING gin (deposit_type);
 
 
 --
--- Name: pci_000000015c_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000015c_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_000000015c_uq ON crm.pc_0024 USING btree (stripe_checkout_session_id) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000161_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000161_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_0000000161_gin ON crm.pc_0024 USING gin (purpose);
 
 
 --
--- Name: pci_0000000162_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000162_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000162_uq ON crm.pc_0022 USING btree (lower(slug)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000163_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000163_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000163_uq ON crm.pc_0023 USING btree (lower(slug)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_0000000164_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_0000000164_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_0000000164_uq ON crm.pc_0052 USING btree (lower(slug)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_000000016c_uq; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000016c_uq; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pci_000000016c_uq ON crm.pc_0055 USING btree (lower(slug)) WHERE (record_status = ANY (ARRAY['active'::text, 'archived'::text]));
 
 
 --
--- Name: pci_000000016e_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000016e_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000016e_gin ON crm.pc_0055 USING gin (status);
 
 
 --
--- Name: pci_000000016f_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_000000016f_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_000000016f_gin ON crm.pc_0055 USING gin (audience);
 
 
 --
--- Name: pci_00000001ae_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001ae_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001ae_gin ON crm.pc_0021 USING gin (uom);
 
 
 --
--- Name: pci_00000001b0_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001b0_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001b0_gin ON crm.pc_0020 USING gin (uom);
 
 
 --
--- Name: pci_00000001b1_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001b1_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001b1_gin ON crm.pc_0020 USING gin (line_type);
 
 
 --
--- Name: pci_00000001bb_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001bb_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001bb_gin ON crm.pc_0010 USING gin (contact_source);
 
 
 --
--- Name: pci_00000001bc_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001bc_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001bc_gin ON crm.pc_0061 USING gin (priority);
 
 
 --
--- Name: pci_00000001bd_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001bd_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001bd_gin ON crm.pc_0061 USING gin (follow_up_status);
 
 
 --
--- Name: pci_00000001c8_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001c8_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001c8_gin ON crm.pc_0056 USING gin (reader);
 
 
 --
--- Name: pci_00000001ca_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001ca_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001ca_gin ON crm.pc_0056 USING gin (outcome);
 
 
 --
--- Name: pci_00000001cc_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001cc_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001cc_gin ON crm.pc_0056 USING gin (saved_as);
 
 
 --
--- Name: pci_00000001e2_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001e2_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001e2_gin ON crm.pc_0057 USING gin (object);
 
 
 --
--- Name: pci_00000001e3_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001e3_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001e3_gin ON crm.pc_0057 USING gin (kind);
 
 
 --
--- Name: pci_00000001e4_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001e4_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001e4_gin ON crm.pc_0057 USING gin (status);
 
 
 --
--- Name: pci_00000001e5_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001e5_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001e5_gin ON crm.pc_0057 USING gin (is_default);
 
 
 --
--- Name: pci_00000001e6_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001e6_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001e6_gin ON crm.pc_0057 USING gin (page_size);
 
 
 --
--- Name: pci_00000001e7_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001e7_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001e7_gin ON crm.pc_0057 USING gin (orientation);
 
 
 --
--- Name: pci_00000001ef_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001ef_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001ef_gin ON crm.pc_0055 USING gin (allow_snippets);
 
 
 --
--- Name: pci_00000001f0_gin; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_00000001f0_gin; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_00000001f0_gin ON crm.pc_0057 USING gin (is_builtin);
 
 
 --
--- Name: pci_native_calls_started_at; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_native_calls_started_at; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_native_calls_started_at ON crm.pc_0030 USING btree (started_at);
 
 
 --
--- Name: pci_native_contacts_phone; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_native_contacts_phone; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_native_contacts_phone ON crm.pc_0010 USING btree (meta.normalize_phone(phone));
 
 
 --
--- Name: pci_native_emails_sent_at; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_native_emails_sent_at; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_native_emails_sent_at ON crm.pc_0031 USING btree (sent_at);
 
 
 --
--- Name: pci_native_form_submissions_values; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_native_form_submissions_values; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_native_form_submissions_values ON crm.pc_0053 USING gin (((submission_values)::jsonb)) WHERE meta.is_json(submission_values);
 
 
 --
--- Name: pci_native_tasks_due_at; Type: INDEX; Schema: crm; Owner: claude_admin
+-- Name: pci_native_tasks_due_at; Type: INDEX; Schema: crm; Owner: pc_migrator
 --
 
 CREATE INDEX pci_native_tasks_due_at ON crm.pc_0033 USING btree (due_at);
 
 
 --
--- Name: calc_dependencies_rel_idx; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: calc_dependencies_rel_idx; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE INDEX calc_dependencies_rel_idx ON meta.calc_dependencies USING btree (rel_object, column_name);
 
 
 --
--- Name: currency_rates_date; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: currency_rates_date; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE INDEX currency_rates_date ON meta.currency_rates USING btree (rate_date);
 
 
 --
--- Name: pc_0001_label_plural_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0001_label_plural_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0001_label_plural_uq ON meta.pc_0001 USING btree (lower(label_plural));
 
 
 --
--- Name: pc_0001_label_singular_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0001_label_singular_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0001_label_singular_uq ON meta.pc_0001 USING btree (lower(label_singular));
 
 
 --
--- Name: pc_0002_api_name_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0002_api_name_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0002_api_name_uq ON meta.pc_0002 USING btree (object_type_id, lower(api_name));
 
 
 --
--- Name: pc_0002_label_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0002_label_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0002_label_uq ON meta.pc_0002 USING btree (object_type_id, lower(label));
 
 
 --
--- Name: pc_0003_label_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0003_label_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0003_label_uq ON meta.pc_0003 USING btree (property_id, lower(label));
 
 
 --
--- Name: pc_0004_default_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0004_default_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0004_default_uq ON meta.pc_0004 USING btree (from_object_type, to_object_type) WHERE is_default;
 
 
 --
--- Name: pc_0004_label_uq; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0004_label_uq; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0004_label_uq ON meta.pc_0004 USING btree (from_object_type, to_object_type, lower(label)) WHERE (label IS NOT NULL);
 
 
 --
--- Name: pc_0007_one_base; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: pc_0007_one_base; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX pc_0007_one_base ON meta.pc_0007 USING btree (is_base) WHERE is_base;
 
 
 --
--- Name: record_history_changed_at_idx; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: record_history_changed_at_idx; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE INDEX record_history_changed_at_idx ON meta.record_history USING btree (changed_at);
 
 
 --
--- Name: record_history_record_idx; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: record_history_record_idx; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE INDEX record_history_record_idx ON meta.record_history USING btree (object_type_id, record_id, changed_at DESC);
 
 
 --
--- Name: schema_changes_object_idx; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: schema_changes_object_idx; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE INDEX schema_changes_object_idx ON meta.schema_changes USING btree (object_type_id, changed_at DESC);
 
 
 --
--- Name: webhook_outbox_txid_idx; Type: INDEX; Schema: meta; Owner: claude_admin
+-- Name: webhook_outbox_txid_idx; Type: INDEX; Schema: meta; Owner: pc_migrator
 --
 
 CREATE INDEX webhook_outbox_txid_idx ON meta.webhook_outbox USING btree (txid);
 
 
 --
--- Name: comment_mentions_user_idx; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: comment_mentions_user_idx; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE INDEX comment_mentions_user_idx ON ui.comment_mentions USING btree (user_id, created_at DESC);
 
 
 --
--- Name: mentions_user_idx; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: mentions_user_idx; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE INDEX mentions_user_idx ON ui.mentions USING btree (user_id, created_at DESC);
 
 
 --
--- Name: nav_group_members_group_idx; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: nav_group_members_group_idx; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE INDEX nav_group_members_group_idx ON ui.nav_group_members USING btree (group_id);
 
 
 --
--- Name: nav_groups_name_uq; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: nav_groups_name_uq; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX nav_groups_name_uq ON ui.nav_groups USING btree (lower(btrim(name)));
 
 
 --
--- Name: nav_menus_default_uq; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: nav_menus_default_uq; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX nav_menus_default_uq ON ui.nav_menus USING btree (scope) WHERE (scope = 'default'::text);
 
 
 --
--- Name: nav_menus_group_uq; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: nav_menus_group_uq; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX nav_menus_group_uq ON ui.nav_menus USING btree (group_id) WHERE (scope = 'group'::text);
 
 
 --
--- Name: nav_menus_user_uq; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: nav_menus_user_uq; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX nav_menus_user_uq ON ui.nav_menus USING btree (user_id) WHERE (scope = 'user'::text);
 
 
 --
--- Name: snippets_own_shortcut_uq; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: snippets_own_shortcut_uq; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX snippets_own_shortcut_uq ON ui.snippets USING btree (owner_user_id, shortcut) WHERE (owner_user_id IS NOT NULL);
 
 
 --
--- Name: snippets_shared_shortcut_uq; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: snippets_shared_shortcut_uq; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE UNIQUE INDEX snippets_shared_shortcut_uq ON ui.snippets USING btree (shortcut) WHERE (owner_user_id IS NULL);
 
 
 --
--- Name: view_errors_recent; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: view_errors_recent; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE INDEX view_errors_recent ON ui.view_errors USING btree (view_id, last_seen_at DESC);
 
 
 --
--- Name: views_object_idx; Type: INDEX; Schema: ui; Owner: claude_admin
+-- Name: views_object_idx; Type: INDEX; Schema: ui; Owner: pc_migrator
 --
 
 CREATE INDEX views_object_idx ON ui.views USING btree (object_type_id, "position", id);
 
 
 --
--- Name: pc_0005 accepted_lock; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 accepted_lock; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER accepted_lock BEFORE INSERT OR DELETE ON crm.pc_0005 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_accepted_lock();
 
 
 --
--- Name: pc_0020 accepted_lock; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 accepted_lock; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER accepted_lock BEFORE UPDATE ON crm.pc_0020 FOR EACH ROW EXECUTE FUNCTION meta.tg_line_accepted_lock();
 
 
 --
--- Name: pc_0022 accepted_lock; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 accepted_lock; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER accepted_lock BEFORE UPDATE ON crm.pc_0022 FOR EACH ROW EXECUTE FUNCTION meta.tg_quote_accepted_lock();
 
 
 --
--- Name: pc_0000 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0000 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0005 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR DELETE ON crm.pc_0005 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_after_write();
 
 
 --
--- Name: pc_0006 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0006 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0006 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0010 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0010 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0010 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0011 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0011 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0011 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0012 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0012 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0013 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0013 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0013 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0014 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0014 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0014 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0020 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0020 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0021 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0021 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0021 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0022 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0022 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0023 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0023 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0024 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0024 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0025 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0025 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0026 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0026 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0030 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0030 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0030 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0031 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0031 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0031 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0032 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0032 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0033 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0033 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0033 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0034 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0034 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0050 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0050 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0050 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0051 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0051 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0051 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0052 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0052 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0052 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0053 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0053 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0053 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0054 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0054 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0054 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0055 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0055 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0056 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0056 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0056 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0057 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0057 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0060 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0060 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0061 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0061 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0061 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0062 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0062 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0062 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0063 after_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0063 after_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER after_write AFTER INSERT OR UPDATE ON crm.pc_0063 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_after_write();
 
 
 --
--- Name: pc_0005 before_insert; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 before_insert; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_insert BEFORE INSERT ON crm.pc_0005 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_before_insert();
 
 
 --
--- Name: pc_0000 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0000 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0006 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0006 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0006 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0010 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0010 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0010 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0011 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0011 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0011 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0012 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0012 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0013 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0013 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0013 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0014 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0014 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0014 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0020 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0020 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0021 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0021 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0021 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0022 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0022 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0023 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0023 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0024 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0024 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0025 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0025 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0026 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0026 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0030 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0030 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0030 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0031 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0031 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0031 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0032 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0032 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0033 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0033 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0033 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0034 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0034 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0050 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0050 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0050 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0051 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0051 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0051 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0052 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0052 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0052 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0053 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0053 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0053 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0054 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0054 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0054 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0055 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0055 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0056 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0056 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0056 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0057 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0057 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0060 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0060 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0061 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0061 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0061 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0062 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0062 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0062 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0063 before_write; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0063 before_write; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER before_write BEFORE INSERT OR UPDATE ON crm.pc_0063 FOR EACH ROW EXECUTE FUNCTION meta.tg_object_before_write();
 
 
 --
--- Name: pc_0005 check_allowed; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 check_allowed; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER check_allowed BEFORE INSERT ON crm.pc_0005 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_label_allowed();
 
 
 --
--- Name: pc_0034 comment_edited_at; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 comment_edited_at; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER comment_edited_at BEFORE UPDATE OF body ON crm.pc_0034 FOR EACH ROW EXECUTE FUNCTION meta.tg_comment_edited_at();
 
 
 --
--- Name: pc_0034 comment_linked; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 comment_linked; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE CONSTRAINT TRIGGER comment_linked AFTER INSERT ON crm.pc_0034 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION meta.tg_comment_linked();
 
 
 --
--- Name: pc_0034 comment_mentions; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 comment_mentions; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER comment_mentions AFTER INSERT OR UPDATE OF body ON crm.pc_0034 FOR EACH ROW EXECUTE FUNCTION meta.tg_comment_mentions();
 
 
 --
--- Name: pc_0005 comment_one_link; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 comment_one_link; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE CONSTRAINT TRIGGER comment_one_link AFTER INSERT ON crm.pc_0005 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION meta.tg_comment_one_link();
 
 
 --
--- Name: pc_0000 keep_an_admin; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 keep_an_admin; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER keep_an_admin AFTER DELETE OR UPDATE OF status, record_status ON crm.pc_0000 FOR EACH ROW EXECUTE FUNCTION meta.tg_users_keep_an_admin();
 
 
 --
--- Name: pc_0005 line_links; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 line_links; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER line_links BEFORE INSERT ON crm.pc_0005 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_line_links();
 
 
 --
--- Name: pc_0055 nav_drop_view; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 nav_drop_view; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER nav_drop_view AFTER UPDATE OF record_status ON crm.pc_0055 FOR EACH ROW WHEN (((old.record_status = 'active'::text) AND (new.record_status <> 'active'::text))) EXECUTE FUNCTION ui._nav_drop_view();
 
 
 --
--- Name: pc_0005 no_update; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 no_update; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER no_update BEFORE UPDATE ON crm.pc_0005 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_no_update();
 
 
 --
--- Name: pc_0032 note_mentions; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 note_mentions; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER note_mentions AFTER INSERT OR UPDATE OF body ON crm.pc_0032 FOR EACH ROW EXECUTE FUNCTION meta.tg_note_mentions();
 
 
 --
--- Name: pc_0022 signed_archive_lock; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 signed_archive_lock; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER signed_archive_lock BEFORE UPDATE ON crm.pc_0022 FOR EACH ROW EXECUTE FUNCTION meta.tg_quote_signed_archive();
 
 
 --
--- Name: pc_0000 sync_user_options; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 sync_user_options; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER sync_user_options AFTER INSERT OR DELETE OR UPDATE OF name, status, record_status ON crm.pc_0000 FOR EACH STATEMENT EXECUTE FUNCTION meta.tg_users_sync_options();
 
 
 --
--- Name: pc_0057 template_guard; Type: TRIGGER; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 template_guard; Type: TRIGGER; Schema: crm; Owner: pc_migrator
 --
 
 CREATE TRIGGER template_guard BEFORE UPDATE ON crm.pc_0057 FOR EACH ROW EXECUTE FUNCTION meta.tg_document_template_guard();
 
 
 --
--- Name: pc_0007 base_currency_code; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0007 base_currency_code; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER base_currency_code AFTER UPDATE OF is_base ON meta.pc_0007 FOR EACH ROW WHEN ((new.is_base AND (NOT old.is_base))) EXECUTE FUNCTION meta._tg_base_currency_code();
 
 
 --
--- Name: pc_0007 base_rules; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0007 base_rules; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER base_rules BEFORE INSERT OR UPDATE ON meta.pc_0007 FOR EACH ROW EXECUTE FUNCTION meta._tg_currency_base();
 
 
 --
--- Name: pc_0004 check_allowed; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0004 check_allowed; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER check_allowed BEFORE INSERT ON meta.pc_0004 FOR EACH ROW EXECUTE FUNCTION meta.tg_association_label_allowed();
 
 
 --
--- Name: pc_0002 check_parent_property; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0002 check_parent_property; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER check_parent_property BEFORE INSERT OR UPDATE OF options, type ON meta.pc_0002 FOR EACH ROW EXECUTE FUNCTION meta._check_parent_property();
 
 
 --
--- Name: currency_rates recalc_money; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: currency_rates recalc_money; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER recalc_money AFTER INSERT OR UPDATE ON meta.currency_rates FOR EACH STATEMENT EXECUTE FUNCTION meta._enqueue_currency_calcs();
 
 
 --
--- Name: pc_0007 recalc_money; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0007 recalc_money; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER recalc_money AFTER UPDATE OF rate_to_base, rate_date, is_base, record_status ON meta.pc_0007 FOR EACH STATEMENT EXECUTE FUNCTION meta._enqueue_currency_calcs();
 
 
 --
--- Name: record_history record_change_notify; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: record_history record_change_notify; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER record_change_notify AFTER INSERT ON meta.record_history REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION meta.tg_record_change_notify();
 
 
 --
--- Name: pc_0001 touch; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0001 touch; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER touch BEFORE INSERT OR UPDATE ON meta.pc_0001 FOR EACH ROW EXECUTE FUNCTION meta.tg_touch();
 
 
 --
--- Name: pc_0002 touch; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0002 touch; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER touch BEFORE INSERT OR UPDATE ON meta.pc_0002 FOR EACH ROW EXECUTE FUNCTION meta.tg_touch();
 
 
 --
--- Name: pc_0003 touch; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0003 touch; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER touch BEFORE INSERT OR UPDATE ON meta.pc_0003 FOR EACH ROW EXECUTE FUNCTION meta.tg_touch();
 
 
 --
--- Name: pc_0004 touch; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0004 touch; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER touch BEFORE INSERT OR UPDATE ON meta.pc_0004 FOR EACH ROW EXECUTE FUNCTION meta.tg_touch();
 
 
 --
--- Name: pc_0007 touch; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: pc_0007 touch; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER touch BEFORE INSERT OR UPDATE ON meta.pc_0007 FOR EACH ROW EXECUTE FUNCTION meta.tg_touch();
 
 
 --
--- Name: record_history webhook_capture; Type: TRIGGER; Schema: meta; Owner: claude_admin
+-- Name: record_history webhook_capture; Type: TRIGGER; Schema: meta; Owner: pc_migrator
 --
 
 CREATE TRIGGER webhook_capture AFTER INSERT ON meta.record_history REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION meta.tg_webhook_capture();
 
 
 --
--- Name: api_keys api_keys_replaced_by_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: api_keys api_keys_replaced_by_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.api_keys
@@ -17768,7 +17768,7 @@ ALTER TABLE ONLY auth.api_keys
 
 
 --
--- Name: oauth_codes oauth_codes_grant_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_codes oauth_codes_grant_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_codes
@@ -17776,7 +17776,7 @@ ALTER TABLE ONLY auth.oauth_codes
 
 
 --
--- Name: oauth_grants oauth_grants_client_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_grants oauth_grants_client_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_grants
@@ -17784,7 +17784,7 @@ ALTER TABLE ONLY auth.oauth_grants
 
 
 --
--- Name: oauth_tokens oauth_tokens_grant_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens oauth_tokens_grant_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_tokens
@@ -17792,7 +17792,7 @@ ALTER TABLE ONLY auth.oauth_tokens
 
 
 --
--- Name: oauth_tokens oauth_tokens_replaced_by_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: oauth_tokens oauth_tokens_replaced_by_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.oauth_tokens
@@ -17800,7 +17800,7 @@ ALTER TABLE ONLY auth.oauth_tokens
 
 
 --
--- Name: role_assignments role_assignments_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_assignments role_assignments_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_assignments
@@ -17808,7 +17808,7 @@ ALTER TABLE ONLY auth.role_assignments
 
 
 --
--- Name: role_object_permissions role_object_permissions_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_object_permissions role_object_permissions_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_object_permissions
@@ -17816,7 +17816,7 @@ ALTER TABLE ONLY auth.role_object_permissions
 
 
 --
--- Name: role_object_permissions role_object_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_object_permissions role_object_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_object_permissions
@@ -17824,7 +17824,7 @@ ALTER TABLE ONLY auth.role_object_permissions
 
 
 --
--- Name: role_property_permissions role_property_permissions_property_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_property_permissions role_property_permissions_property_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_property_permissions
@@ -17832,7 +17832,7 @@ ALTER TABLE ONLY auth.role_property_permissions
 
 
 --
--- Name: role_property_permissions role_property_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_property_permissions role_property_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_property_permissions
@@ -17840,7 +17840,7 @@ ALTER TABLE ONLY auth.role_property_permissions
 
 
 --
--- Name: role_sharing_rule_associations role_sharing_rule_associations_label_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations role_sharing_rule_associations_label_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rule_associations
@@ -17848,7 +17848,7 @@ ALTER TABLE ONLY auth.role_sharing_rule_associations
 
 
 --
--- Name: role_sharing_rule_associations role_sharing_rule_associations_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations role_sharing_rule_associations_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rule_associations
@@ -17856,7 +17856,7 @@ ALTER TABLE ONLY auth.role_sharing_rule_associations
 
 
 --
--- Name: role_sharing_rule_associations role_sharing_rule_associations_rule_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rule_associations role_sharing_rule_associations_rule_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rule_associations
@@ -17864,7 +17864,7 @@ ALTER TABLE ONLY auth.role_sharing_rule_associations
 
 
 --
--- Name: role_sharing_rules role_sharing_rules_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules role_sharing_rules_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rules
@@ -17872,7 +17872,7 @@ ALTER TABLE ONLY auth.role_sharing_rules
 
 
 --
--- Name: role_sharing_rules role_sharing_rules_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: role_sharing_rules role_sharing_rules_role_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.role_sharing_rules
@@ -17880,7 +17880,7 @@ ALTER TABLE ONLY auth.role_sharing_rules
 
 
 --
--- Name: webhook_deliveries webhook_deliveries_endpoint_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries webhook_deliveries_endpoint_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_deliveries
@@ -17888,7 +17888,7 @@ ALTER TABLE ONLY auth.webhook_deliveries
 
 
 --
--- Name: webhook_deliveries webhook_deliveries_subscription_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_deliveries webhook_deliveries_subscription_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_deliveries
@@ -17896,7 +17896,7 @@ ALTER TABLE ONLY auth.webhook_deliveries
 
 
 --
--- Name: webhook_subscriptions webhook_subscriptions_endpoint_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions webhook_subscriptions_endpoint_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_subscriptions
@@ -17904,7 +17904,7 @@ ALTER TABLE ONLY auth.webhook_subscriptions
 
 
 --
--- Name: webhook_subscriptions webhook_subscriptions_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions webhook_subscriptions_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_subscriptions
@@ -17912,7 +17912,7 @@ ALTER TABLE ONLY auth.webhook_subscriptions
 
 
 --
--- Name: webhook_subscriptions webhook_subscriptions_target_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: claude_admin
+-- Name: webhook_subscriptions webhook_subscriptions_target_object_type_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY auth.webhook_subscriptions
@@ -17920,7 +17920,7 @@ ALTER TABLE ONLY auth.webhook_subscriptions
 
 
 --
--- Name: pc_0005 pc_0005_label_id_from_object_type_to_object_type_fkey; Type: FK CONSTRAINT; Schema: crm; Owner: claude_admin
+-- Name: pc_0005 pc_0005_label_id_from_object_type_to_object_type_fkey; Type: FK CONSTRAINT; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY crm.pc_0005
@@ -17928,7 +17928,7 @@ ALTER TABLE ONLY crm.pc_0005
 
 
 --
--- Name: calc_dependencies calc_dependencies_property_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: calc_dependencies calc_dependencies_property_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.calc_dependencies
@@ -17936,7 +17936,7 @@ ALTER TABLE ONLY meta.calc_dependencies
 
 
 --
--- Name: currency_rates currency_rates_from_code_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: currency_rates currency_rates_from_code_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.currency_rates
@@ -17944,7 +17944,7 @@ ALTER TABLE ONLY meta.currency_rates
 
 
 --
--- Name: currency_rates currency_rates_to_code_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: currency_rates currency_rates_to_code_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.currency_rates
@@ -17952,7 +17952,7 @@ ALTER TABLE ONLY meta.currency_rates
 
 
 --
--- Name: import_jobs import_jobs_object_type_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: import_jobs import_jobs_object_type_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.import_jobs
@@ -17960,7 +17960,7 @@ ALTER TABLE ONLY meta.import_jobs
 
 
 --
--- Name: pc_0002 pc_0002_object_type_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0002 pc_0002_object_type_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0002
@@ -17968,7 +17968,7 @@ ALTER TABLE ONLY meta.pc_0002
 
 
 --
--- Name: pc_0003 pc_0003_property_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0003 pc_0003_property_id_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0003
@@ -17976,7 +17976,7 @@ ALTER TABLE ONLY meta.pc_0003
 
 
 --
--- Name: pc_0004 pc_0004_from_object_type_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0004 pc_0004_from_object_type_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0004
@@ -17984,7 +17984,7 @@ ALTER TABLE ONLY meta.pc_0004
 
 
 --
--- Name: pc_0004 pc_0004_to_object_type_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: claude_admin
+-- Name: pc_0004 pc_0004_to_object_type_fkey; Type: FK CONSTRAINT; Schema: meta; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY meta.pc_0004
@@ -17992,7 +17992,7 @@ ALTER TABLE ONLY meta.pc_0004
 
 
 --
--- Name: nav_group_members nav_group_members_group_id_fkey; Type: FK CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: nav_group_members nav_group_members_group_id_fkey; Type: FK CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_group_members
@@ -18000,7 +18000,7 @@ ALTER TABLE ONLY ui.nav_group_members
 
 
 --
--- Name: nav_menus nav_menus_group_id_fkey; Type: FK CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: nav_menus nav_menus_group_id_fkey; Type: FK CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.nav_menus
@@ -18008,7 +18008,7 @@ ALTER TABLE ONLY ui.nav_menus
 
 
 --
--- Name: views views_object_type_id_fkey; Type: FK CONSTRAINT; Schema: ui; Owner: claude_admin
+-- Name: views views_object_type_id_fkey; Type: FK CONSTRAINT; Schema: ui; Owner: pc_migrator
 --
 
 ALTER TABLE ONLY ui.views
@@ -18016,634 +18016,634 @@ ALTER TABLE ONLY ui.views
 
 
 --
--- Name: pc_0000 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0000 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0006 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0006 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0006 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0010 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0010 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0010 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0011 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0011 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0011 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0012 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0012 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0013 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0013 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0013 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0014 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0014 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0014 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0020 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0020 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0021 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0021 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0021 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0022 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0022 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0023 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0023 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0024 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0024 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0025 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0025 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0026 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0026 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0030 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0030 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0030 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0031 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0031 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0031 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0032 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0032 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0033 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0033 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0033 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0034 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0034 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0050 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0050 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0050 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0051 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0051 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0051 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0052 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0052 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0052 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0053 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0053 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0053 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0054 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0054 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0054 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0055 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0055 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0056 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0056 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0056 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0057 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0057 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0060 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0060 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0061 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0061 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0061 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0062 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0062 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0062 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0063 everyone_else; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0063 everyone_else; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY everyone_else ON crm.pc_0063 USING ((CURRENT_USER <> 'pc_view_reader'::name)) WITH CHECK (true);
 
 
 --
--- Name: pc_0000; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0000; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0000 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0006; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0006; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0006 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0010; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0010; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0010 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0011; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0011; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0011 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0012; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0012; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0012 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0013; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0013; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0013 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0014; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0014; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0014 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0020; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0020; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0020 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0021; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0021; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0021 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0022; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0022; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0022 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0023; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0023; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0023 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0024; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0024; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0024 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0025; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0025; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0025 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0026; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0026; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0026 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0030; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0030; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0030 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0031; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0031; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0031 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0032; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0032; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0032 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0033; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0033; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0033 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0034; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0034; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0034 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0050; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0050; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0050 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0051; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0051; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0051 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0052; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0052; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0052 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0053; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0053; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0053 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0054; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0054; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0054 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0055; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0055; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0055 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0056; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0056; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0056 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0057; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0057; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0057 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0060; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0060; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0060 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0061; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0061; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0061 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0062; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0062; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0062 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0063; Type: ROW SECURITY; Schema: crm; Owner: claude_admin
+-- Name: pc_0063; Type: ROW SECURITY; Schema: crm; Owner: pc_migrator
 --
 
 ALTER TABLE crm.pc_0063 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: pc_0000 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0000 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0000 FOR SELECT TO pc_view_reader USING ((rls.access() = ANY (ARRAY['all'::text, 'restricted'::text])));
 
 
 --
--- Name: pc_0006 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0006 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0006 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0006_id = ANY (( SELECT rls.shared_ids('pc_0006'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0010 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0010 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0010 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0010_id = ANY (( SELECT rls.shared_ids('pc_0010'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0011 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0011 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0011 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0011_id = ANY (( SELECT rls.shared_ids('pc_0011'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0012 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0012 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0012 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0012_id = ANY (( SELECT rls.shared_ids('pc_0012'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0013 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0013 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0013 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0013_id = ANY (( SELECT rls.shared_ids('pc_0013'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0014 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0014 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0014 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0014_id = ANY (( SELECT rls.shared_ids('pc_0014'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0020 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0020 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0020 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0020_id = ANY (( SELECT rls.shared_ids('pc_0020'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0021 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0021 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0021 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0021_id = ANY (( SELECT rls.shared_ids('pc_0021'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0022 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0022 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0022 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0022_id = ANY (( SELECT rls.shared_ids('pc_0022'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0023 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0023 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0023 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0023_id = ANY (( SELECT rls.shared_ids('pc_0023'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0024 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0024 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0024 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0024_id = ANY (( SELECT rls.shared_ids('pc_0024'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0025 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0025 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0025 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0025_id = ANY (( SELECT rls.shared_ids('pc_0025'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0026 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0026 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0026 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0026_id = ANY (( SELECT rls.shared_ids('pc_0026'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0030 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0030 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0030 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0030_id = ANY (( SELECT rls.shared_ids('pc_0030'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0031 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0031 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0031 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0031_id = ANY (( SELECT rls.shared_ids('pc_0031'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0032 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0032 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0032 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0032_id = ANY (( SELECT rls.shared_ids('pc_0032'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0033 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0033 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0033 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((owner && ( SELECT rls.owner_ids() AS owner_ids)) OR (pc_0033_id = ANY (( SELECT rls.shared_ids('pc_0033'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0034 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0034 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0034 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0034_id = ANY (( SELECT rls.shared_ids('pc_0034'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0050 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0050 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0050 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0050_id = ANY (( SELECT rls.shared_ids('pc_0050'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0051 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0051 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0051 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0051_id = ANY (( SELECT rls.shared_ids('pc_0051'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0052 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0052 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0052 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0052_id = ANY (( SELECT rls.shared_ids('pc_0052'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0053 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0053 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0053 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0053_id = ANY (( SELECT rls.shared_ids('pc_0053'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0054 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0054 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0054 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0054_id = ANY (( SELECT rls.shared_ids('pc_0054'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0055 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0055 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0055 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0055_id = ANY (( SELECT rls.shared_ids('pc_0055'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0056 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0056 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0056 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0056_id = ANY (( SELECT rls.shared_ids('pc_0056'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0057 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0057 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0057 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0057_id = ANY (( SELECT rls.shared_ids('pc_0057'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0060 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0060 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0060 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0060_id = ANY (( SELECT rls.shared_ids('pc_0060'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0061 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0061 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0061 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0061_id = ANY (( SELECT rls.shared_ids('pc_0061'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0062 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0062 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0062 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0062_id = ANY (( SELECT rls.shared_ids('pc_0062'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: pc_0063 view_reader_read; Type: POLICY; Schema: crm; Owner: claude_admin
+-- Name: pc_0063 view_reader_read; Type: POLICY; Schema: crm; Owner: pc_migrator
 --
 
 CREATE POLICY view_reader_read ON crm.pc_0063 FOR SELECT TO pc_view_reader USING (((rls.access() = 'all'::text) OR ((rls.access() = 'restricted'::text) AND ((created_by = ANY (( SELECT rls.creator_ids() AS creator_ids)::text[])) OR (pc_0063_id = ANY (( SELECT rls.shared_ids('pc_0063'::text) AS shared_ids)::text[]))))));
 
 
 --
--- Name: SCHEMA auth; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA auth; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA auth TO pc_api;
 
 
 --
--- Name: SCHEMA crm; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA crm; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA crm TO pc_api;
@@ -18651,7 +18651,7 @@ GRANT USAGE ON SCHEMA crm TO pc_view_reader;
 
 
 --
--- Name: SCHEMA integrations; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA integrations; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA integrations TO pc_api;
@@ -18659,7 +18659,7 @@ GRANT USAGE ON SCHEMA integrations TO pc_reader;
 
 
 --
--- Name: SCHEMA meta; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA meta; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA meta TO pc_api;
@@ -18673,14 +18673,14 @@ GRANT USAGE ON SCHEMA meta TO pc_reader;
 
 
 --
--- Name: SCHEMA reporting; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA reporting; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA reporting TO pc_reader;
 
 
 --
--- Name: SCHEMA rls; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA rls; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA rls TO pc_view_reader;
@@ -18688,133 +18688,133 @@ GRANT USAGE ON SCHEMA rls TO pc_api;
 
 
 --
--- Name: SCHEMA ui; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA ui; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT USAGE ON SCHEMA ui TO pc_api;
 
 
 --
--- Name: SCHEMA view_data; Type: ACL; Schema: -; Owner: claude_admin
+-- Name: SCHEMA view_data; Type: ACL; Schema: -; Owner: pc_migrator
 --
 
 GRANT ALL ON SCHEMA view_data TO pc_view_reader;
 
 
 --
--- Name: FUNCTION _analyze_calc(p_object_type_id text, p_sql text, p_output_type text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _analyze_calc(p_object_type_id text, p_sql text, p_output_type text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._analyze_calc(p_object_type_id text, p_sql text, p_output_type text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _apply_property_rules(p_property_id text, p_validate boolean); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _apply_property_rules(p_property_id text, p_validate boolean); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._apply_property_rules(p_property_id text, p_validate boolean) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _calc_has_cycle(p_object_type_id text, p_api_name text, p_deps jsonb); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _calc_has_cycle(p_object_type_id text, p_api_name text, p_deps jsonb); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._calc_has_cycle(p_object_type_id text, p_api_name text, p_deps jsonb) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _check_sql_fragment(p_sql text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _check_sql_fragment(p_sql text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._check_sql_fragment(p_sql text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _column_type(p_type text, p_calc_output_type text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _column_type(p_type text, p_calc_output_type text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._column_type(p_type text, p_calc_output_type text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _compile_filter(p_object_type_id text, p_filter jsonb, p_alias text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _compile_filter(p_object_type_id text, p_filter jsonb, p_alias text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._compile_filter(p_object_type_id text, p_filter jsonb, p_alias text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _create_object_table(p_code text, p_api_name text, p_label_singular text, p_label_plural text, p_kind text, p_description text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _create_object_table(p_code text, p_api_name text, p_label_singular text, p_label_plural text, p_kind text, p_description text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._create_object_table(p_code text, p_api_name text, p_label_singular text, p_label_plural text, p_kind text, p_description text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _default_label(p_a text, p_b text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _default_label(p_a text, p_b text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._default_label(p_a text, p_b text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _enqueue_calcs(p_object text, p_id text, p_changed text[]); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _enqueue_calcs(p_object text, p_id text, p_changed text[]); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._enqueue_calcs(p_object text, p_id text, p_changed text[]) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _fail(p_message text, p_errcode text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _fail(p_message text, p_errcode text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._fail(p_message text, p_errcode text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _filter_literal(p_type text, p_value jsonb, p_cast text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _filter_literal(p_type text, p_value jsonb, p_cast text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._filter_literal(p_type text, p_value jsonb, p_cast text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _insert_options(p_property_id text, p_options jsonb); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _insert_options(p_property_id text, p_options jsonb); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._insert_options(p_property_id text, p_options jsonb) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _line_accepted_quote(p_line text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _line_accepted_quote(p_line text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._line_accepted_quote(p_line text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _line_other_link(p_line text, p_products boolean, p_other text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _line_other_link(p_line text, p_products boolean, p_other text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._line_other_link(p_line text, p_products boolean, p_other text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _log_change(p_action text, p_object_type_id text, p_property_id text, p_details jsonb, p_statements text[]); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _log_change(p_action text, p_object_type_id text, p_property_id text, p_details jsonb, p_statements text[]); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._log_change(p_action text, p_object_type_id text, p_property_id text, p_details jsonb, p_statements text[]) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _refresh_views(p_object_type_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _refresh_views(p_object_type_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._refresh_views(p_object_type_id text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION hex_id(p_seq regclass); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION hex_id(p_seq regclass); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.hex_id(p_seq regclass) FROM PUBLIC;
@@ -18823,84 +18823,84 @@ GRANT ALL ON FUNCTION meta.hex_id(p_seq regclass) TO pc_reader;
 
 
 --
--- Name: TABLE pc_0001; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE pc_0001; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.pc_0001 TO pc_api;
 
 
 --
--- Name: FUNCTION _resolve_object(p_object text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _resolve_object(p_object text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._resolve_object(p_object text) FROM PUBLIC;
 
 
 --
--- Name: TABLE pc_0002; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE pc_0002; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.pc_0002 TO pc_api;
 
 
 --
--- Name: FUNCTION _resolve_property(p_object_type_id text, p_api_name text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _resolve_property(p_object_type_id text, p_api_name text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._resolve_property(p_object_type_id text, p_api_name text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _resolve_record_object(p_object text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _resolve_record_object(p_object text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._resolve_record_object(p_object text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _store_calc_deps(p_property_id text, p_deps jsonb); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _store_calc_deps(p_property_id text, p_deps jsonb); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._store_calc_deps(p_property_id text, p_deps jsonb) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _sync_user_options_for_property(p_property_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _sync_user_options_for_property(p_property_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._sync_user_options_for_property(p_property_id text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _user_has_admin_role(p_user_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _user_has_admin_role(p_user_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._user_has_admin_role(p_user_id text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _validate_options(p_type text, p_options jsonb); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _validate_options(p_type text, p_options jsonb); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._validate_options(p_type text, p_options jsonb) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _validate_property_name(p_object_type_id text, p_api_name text, p_label text, p_exclude_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _validate_property_name(p_object_type_id text, p_api_name text, p_label text, p_exclude_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._validate_property_name(p_object_type_id text, p_api_name text, p_label text, p_exclude_id text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION _view_function_allowed(p_oid oid); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION _view_function_allowed(p_oid oid); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta._view_function_allowed(p_oid oid) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION actor(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION actor(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.actor() FROM PUBLIC;
@@ -18909,7 +18909,7 @@ GRANT ALL ON FUNCTION meta.actor() TO pc_reader;
 
 
 --
--- Name: FUNCTION add_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION add_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.add_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text) FROM PUBLIC;
@@ -18917,7 +18917,7 @@ GRANT ALL ON FUNCTION meta.add_option(p_object text, p_api_name text, p_api_valu
 
 
 --
--- Name: FUNCTION analyze_view_query(p_sql text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION analyze_view_query(p_sql text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.analyze_view_query(p_sql text) FROM PUBLIC;
@@ -18925,7 +18925,7 @@ GRANT ALL ON FUNCTION meta.analyze_view_query(p_sql text) TO pc_api;
 
 
 --
--- Name: FUNCTION archive_property(p_object text, p_api_name text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION archive_property(p_object text, p_api_name text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.archive_property(p_object text, p_api_name text) FROM PUBLIC;
@@ -18933,7 +18933,7 @@ GRANT ALL ON FUNCTION meta.archive_property(p_object text, p_api_name text) TO p
 
 
 --
--- Name: FUNCTION associate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION associate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.associate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text) FROM PUBLIC;
@@ -18941,7 +18941,7 @@ GRANT ALL ON FUNCTION meta.associate(p_from_object text, p_from_id text, p_to_ob
 
 
 --
--- Name: FUNCTION association_allowed(p_a text, p_b text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION association_allowed(p_a text, p_b text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.association_allowed(p_a text, p_b text) FROM PUBLIC;
@@ -18949,7 +18949,7 @@ GRANT ALL ON FUNCTION meta.association_allowed(p_a text, p_b text) TO pc_api;
 
 
 --
--- Name: FUNCTION association_system_only(p_a text, p_b text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION association_system_only(p_a text, p_b text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.association_system_only(p_a text, p_b text) FROM PUBLIC;
@@ -18957,14 +18957,14 @@ GRANT ALL ON FUNCTION meta.association_system_only(p_a text, p_b text) TO pc_api
 
 
 --
--- Name: FUNCTION compile_filter_groups(p_object_type_id text, p_groups jsonb, p_alias text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION compile_filter_groups(p_object_type_id text, p_groups jsonb, p_alias text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.compile_filter_groups(p_object_type_id text, p_groups jsonb, p_alias text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION copy_lines(p_from_object text, p_from_id text, p_to_object text, p_to_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION copy_lines(p_from_object text, p_from_id text, p_to_object text, p_to_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.copy_lines(p_from_object text, p_from_id text, p_to_object text, p_to_id text) FROM PUBLIC;
@@ -18972,7 +18972,7 @@ GRANT ALL ON FUNCTION meta.copy_lines(p_from_object text, p_from_id text, p_to_o
 
 
 --
--- Name: FUNCTION create_association_label(p_from_object text, p_to_object text, p_label text, p_inverse_label text, p_is_symmetric boolean, p_max_to_per_from integer, p_max_from_per_to integer, p_category text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION create_association_label(p_from_object text, p_to_object text, p_label text, p_inverse_label text, p_is_symmetric boolean, p_max_to_per_from integer, p_max_from_per_to integer, p_category text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.create_association_label(p_from_object text, p_to_object text, p_label text, p_inverse_label text, p_is_symmetric boolean, p_max_to_per_from integer, p_max_from_per_to integer, p_category text) FROM PUBLIC;
@@ -18980,7 +18980,7 @@ GRANT ALL ON FUNCTION meta.create_association_label(p_from_object text, p_to_obj
 
 
 --
--- Name: FUNCTION create_integration_table(p_name text, p_columns jsonb, p_primary_key text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION create_integration_table(p_name text, p_columns jsonb, p_primary_key text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.create_integration_table(p_name text, p_columns jsonb, p_primary_key text) FROM PUBLIC;
@@ -18988,7 +18988,7 @@ GRANT ALL ON FUNCTION meta.create_integration_table(p_name text, p_columns jsonb
 
 
 --
--- Name: FUNCTION create_object(p_api_name text, p_label_singular text, p_label_plural text, p_description text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION create_object(p_api_name text, p_label_singular text, p_label_plural text, p_description text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.create_object(p_api_name text, p_label_singular text, p_label_plural text, p_description text) FROM PUBLIC;
@@ -18996,7 +18996,7 @@ GRANT ALL ON FUNCTION meta.create_object(p_api_name text, p_label_singular text,
 
 
 --
--- Name: FUNCTION create_property(p_object text, p_api_name text, p_label text, p_type text, p_options jsonb, p_description text, p_dropdown_options jsonb, p_calc_sql text, p_calc_output_type text, p_is_native boolean); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION create_property(p_object text, p_api_name text, p_label text, p_type text, p_options jsonb, p_description text, p_dropdown_options jsonb, p_calc_sql text, p_calc_output_type text, p_is_native boolean); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.create_property(p_object text, p_api_name text, p_label text, p_type text, p_options jsonb, p_description text, p_dropdown_options jsonb, p_calc_sql text, p_calc_output_type text, p_is_native boolean) FROM PUBLIC;
@@ -19004,7 +19004,7 @@ GRANT ALL ON FUNCTION meta.create_property(p_object text, p_api_name text, p_lab
 
 
 --
--- Name: FUNCTION delete_option(p_object text, p_api_name text, p_api_value text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION delete_option(p_object text, p_api_name text, p_api_value text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.delete_option(p_object text, p_api_name text, p_api_value text) FROM PUBLIC;
@@ -19012,7 +19012,7 @@ GRANT ALL ON FUNCTION meta.delete_option(p_object text, p_api_name text, p_api_v
 
 
 --
--- Name: FUNCTION delete_property(p_object text, p_api_name text, p_confirm text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION delete_property(p_object text, p_api_name text, p_confirm text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.delete_property(p_object text, p_api_name text, p_confirm text) FROM PUBLIC;
@@ -19020,7 +19020,7 @@ GRANT ALL ON FUNCTION meta.delete_property(p_object text, p_api_name text, p_con
 
 
 --
--- Name: FUNCTION delete_record(p_object text, p_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION delete_record(p_object text, p_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.delete_record(p_object text, p_id text) FROM PUBLIC;
@@ -19028,7 +19028,7 @@ GRANT ALL ON FUNCTION meta.delete_record(p_object text, p_id text) TO pc_api;
 
 
 --
--- Name: FUNCTION dissociate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION dissociate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.dissociate(p_from_object text, p_from_id text, p_to_object text, p_to_id text, p_label_id text) FROM PUBLIC;
@@ -19036,7 +19036,7 @@ GRANT ALL ON FUNCTION meta.dissociate(p_from_object text, p_from_id text, p_to_o
 
 
 --
--- Name: FUNCTION enqueue_calcs(p_object text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION enqueue_calcs(p_object text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.enqueue_calcs(p_object text) FROM PUBLIC;
@@ -19044,7 +19044,7 @@ GRANT ALL ON FUNCTION meta.enqueue_calcs(p_object text) TO pc_api;
 
 
 --
--- Name: FUNCTION has_active_admin(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION has_active_admin(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.has_active_admin() FROM PUBLIC;
@@ -19052,7 +19052,7 @@ GRANT ALL ON FUNCTION meta.has_active_admin() TO pc_api;
 
 
 --
--- Name: FUNCTION has_no_duplicates(p text[]); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION has_no_duplicates(p text[]); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.has_no_duplicates(p text[]) FROM PUBLIC;
@@ -19061,7 +19061,7 @@ GRANT ALL ON FUNCTION meta.has_no_duplicates(p text[]) TO pc_reader;
 
 
 --
--- Name: FUNCTION is_hex_id_array(p text[]); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION is_hex_id_array(p text[]); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.is_hex_id_array(p text[]) FROM PUBLIC;
@@ -19070,7 +19070,7 @@ GRANT ALL ON FUNCTION meta.is_hex_id_array(p text[]) TO pc_reader;
 
 
 --
--- Name: FUNCTION is_json(p text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION is_json(p text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.is_json(p text) FROM PUBLIC;
@@ -19079,7 +19079,7 @@ GRANT ALL ON FUNCTION meta.is_json(p text) TO pc_reader;
 
 
 --
--- Name: FUNCTION is_line_parent(p_code text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION is_line_parent(p_code text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.is_line_parent(p_code text) FROM PUBLIC;
@@ -19087,7 +19087,7 @@ GRANT ALL ON FUNCTION meta.is_line_parent(p_code text) TO pc_api;
 
 
 --
--- Name: FUNCTION merge_records(p_object text, p_winner text, p_loser text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION merge_records(p_object text, p_winner text, p_loser text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.merge_records(p_object text, p_winner text, p_loser text) FROM PUBLIC;
@@ -19095,7 +19095,7 @@ GRANT ALL ON FUNCTION meta.merge_records(p_object text, p_winner text, p_loser t
 
 
 --
--- Name: FUNCTION normalize_phone(p text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION normalize_phone(p text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.normalize_phone(p text) FROM PUBLIC;
@@ -19104,7 +19104,7 @@ GRANT ALL ON FUNCTION meta.normalize_phone(p text) TO pc_reader;
 
 
 --
--- Name: FUNCTION process_calc_queue(p_limit integer); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION process_calc_queue(p_limit integer); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.process_calc_queue(p_limit integer) FROM PUBLIC;
@@ -19112,14 +19112,14 @@ GRANT ALL ON FUNCTION meta.process_calc_queue(p_limit integer) TO pc_api;
 
 
 --
--- Name: FUNCTION refresh_rls(p_code text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION refresh_rls(p_code text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.refresh_rls(p_code text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION set_object_aliases(p_object text, p_aliases text[]); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION set_object_aliases(p_object text, p_aliases text[]); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.set_object_aliases(p_object text, p_aliases text[]) FROM PUBLIC;
@@ -19127,7 +19127,7 @@ GRANT ALL ON FUNCTION meta.set_object_aliases(p_object text, p_aliases text[]) T
 
 
 --
--- Name: FUNCTION set_record_status(p_object text, p_ids text[], p_status text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION set_record_status(p_object text, p_ids text[], p_status text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.set_record_status(p_object text, p_ids text[], p_status text) FROM PUBLIC;
@@ -19135,14 +19135,14 @@ GRANT ALL ON FUNCTION meta.set_record_status(p_object text, p_ids text[], p_stat
 
 
 --
--- Name: FUNCTION set_search_properties(p_object text, p_properties text[]); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION set_search_properties(p_object text, p_properties text[]); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT ALL ON FUNCTION meta.set_search_properties(p_object text, p_properties text[]) TO pc_api;
 
 
 --
--- Name: FUNCTION source(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION source(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.source() FROM PUBLIC;
@@ -19151,7 +19151,7 @@ GRANT ALL ON FUNCTION meta.source() TO pc_reader;
 
 
 --
--- Name: FUNCTION test_calculation(p_object text, p_calc_sql text, p_output_type text, p_record_id text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION test_calculation(p_object text, p_calc_sql text, p_output_type text, p_record_id text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.test_calculation(p_object text, p_calc_sql text, p_output_type text, p_record_id text) FROM PUBLIC;
@@ -19159,105 +19159,105 @@ GRANT ALL ON FUNCTION meta.test_calculation(p_object text, p_calc_sql text, p_ou
 
 
 --
--- Name: FUNCTION tg_association_accepted_lock(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_association_accepted_lock(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_association_accepted_lock() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_association_after_write(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_association_after_write(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_association_after_write() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_association_before_insert(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_association_before_insert(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_association_before_insert() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_association_label_allowed(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_association_label_allowed(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_association_label_allowed() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_association_line_links(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_association_line_links(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_association_line_links() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_association_no_update(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_association_no_update(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_association_no_update() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_line_accepted_lock(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_line_accepted_lock(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_line_accepted_lock() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_object_after_write(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_object_after_write(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_object_after_write() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_object_before_write(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_object_before_write(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_object_before_write() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_quote_accepted_lock(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_quote_accepted_lock(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_quote_accepted_lock() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_touch(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_touch(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_touch() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_touch_row(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_touch_row(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_touch_row() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_users_keep_an_admin(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_users_keep_an_admin(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_users_keep_an_admin() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION tg_users_sync_options(); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION tg_users_sync_options(); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.tg_users_sync_options() FROM PUBLIC;
 
 
 --
--- Name: FUNCTION unarchive_property(p_object text, p_api_name text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION unarchive_property(p_object text, p_api_name text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.unarchive_property(p_object text, p_api_name text) FROM PUBLIC;
@@ -19265,7 +19265,7 @@ GRANT ALL ON FUNCTION meta.unarchive_property(p_object text, p_api_name text) TO
 
 
 --
--- Name: FUNCTION update_calculation(p_object text, p_api_name text, p_calc_sql text, p_calc_output_type text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION update_calculation(p_object text, p_api_name text, p_calc_sql text, p_calc_output_type text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.update_calculation(p_object text, p_api_name text, p_calc_sql text, p_calc_output_type text) FROM PUBLIC;
@@ -19273,7 +19273,7 @@ GRANT ALL ON FUNCTION meta.update_calculation(p_object text, p_api_name text, p_
 
 
 --
--- Name: FUNCTION update_object(p_object text, p_label_singular text, p_label_plural text, p_description text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION update_object(p_object text, p_label_singular text, p_label_plural text, p_description text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.update_object(p_object text, p_label_singular text, p_label_plural text, p_description text) FROM PUBLIC;
@@ -19281,7 +19281,7 @@ GRANT ALL ON FUNCTION meta.update_object(p_object text, p_label_singular text, p
 
 
 --
--- Name: FUNCTION update_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text, p_record_status text); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION update_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text, p_record_status text); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.update_option(p_object text, p_api_name text, p_api_value text, p_label text, p_display_order integer, p_description text, p_record_status text) FROM PUBLIC;
@@ -19289,7 +19289,7 @@ GRANT ALL ON FUNCTION meta.update_option(p_object text, p_api_name text, p_api_v
 
 
 --
--- Name: FUNCTION update_property(p_object text, p_api_name text, p_label text, p_description text, p_options jsonb); Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: FUNCTION update_property(p_object text, p_api_name text, p_label text, p_description text, p_options jsonb); Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION meta.update_property(p_object text, p_api_name text, p_label text, p_description text, p_options jsonb) FROM PUBLIC;
@@ -19297,7 +19297,7 @@ GRANT ALL ON FUNCTION meta.update_property(p_object text, p_api_name text, p_lab
 
 
 --
--- Name: FUNCTION currency_to_base(p_amount numeric, p_currency text, p_on date); Type: ACL; Schema: public; Owner: claude_admin
+-- Name: FUNCTION currency_to_base(p_amount numeric, p_currency text, p_on date); Type: ACL; Schema: public; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION public.currency_to_base(p_amount numeric, p_currency text, p_on date) FROM PUBLIC;
@@ -19306,7 +19306,7 @@ GRANT ALL ON FUNCTION public.currency_to_base(p_amount numeric, p_currency text,
 
 
 --
--- Name: FUNCTION convert_currency(p_amount numeric, p_from text, p_to text, p_on date); Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: FUNCTION convert_currency(p_amount numeric, p_from text, p_to text, p_on date); Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION reporting.convert_currency(p_amount numeric, p_from text, p_to text, p_on date) FROM PUBLIC;
@@ -19314,7 +19314,7 @@ GRANT ALL ON FUNCTION reporting.convert_currency(p_amount numeric, p_from text, 
 
 
 --
--- Name: FUNCTION currency_rate(p_from text, p_to text, p_on date); Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: FUNCTION currency_rate(p_from text, p_to text, p_on date); Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION reporting.currency_rate(p_from text, p_to text, p_on date) FROM PUBLIC;
@@ -19322,7 +19322,7 @@ GRANT ALL ON FUNCTION reporting.currency_rate(p_from text, p_to text, p_on date)
 
 
 --
--- Name: FUNCTION access(); Type: ACL; Schema: rls; Owner: claude_admin
+-- Name: FUNCTION access(); Type: ACL; Schema: rls; Owner: pc_migrator
 --
 
 GRANT ALL ON FUNCTION rls.access() TO pc_view_reader;
@@ -19330,7 +19330,7 @@ GRANT ALL ON FUNCTION rls.access() TO pc_api;
 
 
 --
--- Name: FUNCTION creator_ids(); Type: ACL; Schema: rls; Owner: claude_admin
+-- Name: FUNCTION creator_ids(); Type: ACL; Schema: rls; Owner: pc_migrator
 --
 
 GRANT ALL ON FUNCTION rls.creator_ids() TO pc_view_reader;
@@ -19338,7 +19338,7 @@ GRANT ALL ON FUNCTION rls.creator_ids() TO pc_api;
 
 
 --
--- Name: FUNCTION owner_ids(); Type: ACL; Schema: rls; Owner: claude_admin
+-- Name: FUNCTION owner_ids(); Type: ACL; Schema: rls; Owner: pc_migrator
 --
 
 GRANT ALL ON FUNCTION rls.owner_ids() TO pc_view_reader;
@@ -19346,7 +19346,7 @@ GRANT ALL ON FUNCTION rls.owner_ids() TO pc_api;
 
 
 --
--- Name: FUNCTION rule_ids(); Type: ACL; Schema: rls; Owner: claude_admin
+-- Name: FUNCTION rule_ids(); Type: ACL; Schema: rls; Owner: pc_migrator
 --
 
 GRANT ALL ON FUNCTION rls.rule_ids() TO pc_view_reader;
@@ -19354,7 +19354,7 @@ GRANT ALL ON FUNCTION rls.rule_ids() TO pc_api;
 
 
 --
--- Name: FUNCTION shared_ids(p_code text); Type: ACL; Schema: rls; Owner: claude_admin
+-- Name: FUNCTION shared_ids(p_code text); Type: ACL; Schema: rls; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION rls.shared_ids(p_code text) FROM PUBLIC;
@@ -19363,7 +19363,7 @@ GRANT ALL ON FUNCTION rls.shared_ids(p_code text) TO pc_api;
 
 
 --
--- Name: FUNCTION convert_currency(p_amount numeric, p_from text, p_to text, p_on date); Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: FUNCTION convert_currency(p_amount numeric, p_from text, p_to text, p_on date); Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION view_data.convert_currency(p_amount numeric, p_from text, p_to text, p_on date) FROM PUBLIC;
@@ -19372,7 +19372,7 @@ GRANT ALL ON FUNCTION view_data.convert_currency(p_amount numeric, p_from text, 
 
 
 --
--- Name: FUNCTION currency_rate(p_from text, p_to text, p_on date); Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: FUNCTION currency_rate(p_from text, p_to text, p_on date); Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 REVOKE ALL ON FUNCTION view_data.currency_rate(p_from text, p_to text, p_on date) FROM PUBLIC;
@@ -19381,343 +19381,343 @@ GRANT ALL ON FUNCTION view_data.currency_rate(p_from text, p_to text, p_on date)
 
 
 --
--- Name: TABLE address_settings; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE address_settings; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE auth.address_settings TO pc_api;
 
 
 --
--- Name: TABLE api_keys; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE api_keys; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.api_keys TO pc_api;
 
 
 --
--- Name: SEQUENCE api_keys_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE api_keys_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.api_keys_id_seq TO pc_api;
 
 
 --
--- Name: TABLE calendar_connections; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE calendar_connections; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.calendar_connections TO pc_api;
 
 
 --
--- Name: SEQUENCE calendar_connections_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE calendar_connections_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.calendar_connections_id_seq TO pc_api;
 
 
 --
--- Name: TABLE card_scan_settings; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE card_scan_settings; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE auth.card_scan_settings TO pc_api;
 
 
 --
--- Name: TABLE identities; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE identities; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.identities TO pc_api;
 
 
 --
--- Name: SEQUENCE identities_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE identities_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.identities_id_seq TO pc_api;
 
 
 --
--- Name: TABLE magic_links; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE magic_links; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.magic_links TO pc_api;
 
 
 --
--- Name: SEQUENCE magic_links_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE magic_links_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.magic_links_id_seq TO pc_api;
 
 
 --
--- Name: TABLE oauth_clients; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE oauth_clients; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.oauth_clients TO pc_api;
 
 
 --
--- Name: SEQUENCE oauth_clients_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE oauth_clients_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.oauth_clients_id_seq TO pc_api;
 
 
 --
--- Name: TABLE oauth_codes; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE oauth_codes; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.oauth_codes TO pc_api;
 
 
 --
--- Name: TABLE oauth_grants; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE oauth_grants; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.oauth_grants TO pc_api;
 
 
 --
--- Name: SEQUENCE oauth_grants_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE oauth_grants_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.oauth_grants_id_seq TO pc_api;
 
 
 --
--- Name: TABLE oauth_tokens; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE oauth_tokens; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.oauth_tokens TO pc_api;
 
 
 --
--- Name: SEQUENCE oauth_tokens_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE oauth_tokens_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.oauth_tokens_id_seq TO pc_api;
 
 
 --
--- Name: TABLE passkeys; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE passkeys; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.passkeys TO pc_api;
 
 
 --
--- Name: SEQUENCE passkeys_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE passkeys_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.passkeys_id_seq TO pc_api;
 
 
 --
--- Name: TABLE payment_connections; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE payment_connections; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.payment_connections TO pc_api;
 
 
 --
--- Name: SEQUENCE payment_connections_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE payment_connections_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.payment_connections_id_seq TO pc_api;
 
 
 --
--- Name: TABLE role_assignments; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE role_assignments; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.role_assignments TO pc_api;
 
 
 --
--- Name: SEQUENCE role_assignments_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE role_assignments_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.role_assignments_id_seq TO pc_api;
 
 
 --
--- Name: TABLE role_object_permissions; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE role_object_permissions; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.role_object_permissions TO pc_api;
 
 
 --
--- Name: TABLE role_property_permissions; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE role_property_permissions; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.role_property_permissions TO pc_api;
 
 
 --
--- Name: TABLE role_sharing_rule_associations; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE role_sharing_rule_associations; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.role_sharing_rule_associations TO pc_api;
 
 
 --
--- Name: SEQUENCE role_sharing_rule_associations_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE role_sharing_rule_associations_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.role_sharing_rule_associations_id_seq TO pc_api;
 
 
 --
--- Name: TABLE role_sharing_rules; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE role_sharing_rules; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.role_sharing_rules TO pc_api;
 
 
 --
--- Name: SEQUENCE role_sharing_rules_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE role_sharing_rules_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.role_sharing_rules_id_seq TO pc_api;
 
 
 --
--- Name: TABLE roles; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE roles; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.roles TO pc_api;
 
 
 --
--- Name: SEQUENCE roles_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE roles_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.roles_id_seq TO pc_api;
 
 
 --
--- Name: TABLE security_events; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE security_events; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT ON TABLE auth.security_events TO pc_api;
 
 
 --
--- Name: SEQUENCE security_events_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE security_events_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.security_events_id_seq TO pc_api;
 
 
 --
--- Name: TABLE sessions; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE sessions; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.sessions TO pc_api;
 
 
 --
--- Name: SEQUENCE sessions_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE sessions_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.sessions_id_seq TO pc_api;
 
 
 --
--- Name: TABLE stripe_checkout_sessions; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE stripe_checkout_sessions; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.stripe_checkout_sessions TO pc_api;
 
 
 --
--- Name: TABLE stripe_events; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE stripe_events; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE ON TABLE auth.stripe_events TO pc_api;
 
 
 --
--- Name: TABLE view_integrations; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE view_integrations; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.view_integrations TO pc_api;
 
 
 --
--- Name: TABLE webhook_deliveries; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE webhook_deliveries; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.webhook_deliveries TO pc_api;
 
 
 --
--- Name: SEQUENCE webhook_deliveries_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE webhook_deliveries_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.webhook_deliveries_id_seq TO pc_api;
 
 
 --
--- Name: TABLE webhook_endpoints; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE webhook_endpoints; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.webhook_endpoints TO pc_api;
 
 
 --
--- Name: SEQUENCE webhook_endpoints_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE webhook_endpoints_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.webhook_endpoints_id_seq TO pc_api;
 
 
 --
--- Name: TABLE webhook_subscriptions; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: TABLE webhook_subscriptions; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE auth.webhook_subscriptions TO pc_api;
 
 
 --
--- Name: SEQUENCE webhook_subscriptions_id_seq; Type: ACL; Schema: auth; Owner: claude_admin
+-- Name: SEQUENCE webhook_subscriptions_id_seq; Type: ACL; Schema: auth; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE auth.webhook_subscriptions_id_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0005; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0005; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0005 TO pc_api;
 
 
 --
--- Name: TABLE associations; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE associations; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.associations TO pc_api;
 
 
 --
--- Name: TABLE pc_0004; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE pc_0004; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.pc_0004 TO pc_api;
 
 
 --
--- Name: TABLE associations_both; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE associations_both; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.associations_both TO pc_api;
 
 
 --
--- Name: TABLE pc_0054; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0054; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0054 TO pc_api;
@@ -19725,175 +19725,175 @@ GRANT SELECT ON TABLE crm.pc_0054 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0054.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.public_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.public_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(public_key),UPDATE(public_key) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.host; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.host; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(host),UPDATE(host) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.duration_minutes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.duration_minutes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(duration_minutes),UPDATE(duration_minutes) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.slot_step_minutes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.slot_step_minutes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(slot_step_minutes),UPDATE(slot_step_minutes) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.buffer_before_minutes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.buffer_before_minutes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(buffer_before_minutes),UPDATE(buffer_before_minutes) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.buffer_after_minutes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.buffer_after_minutes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(buffer_after_minutes),UPDATE(buffer_after_minutes) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.min_notice_minutes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.min_notice_minutes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(min_notice_minutes),UPDATE(min_notice_minutes) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.max_days_ahead; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.max_days_ahead; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(max_days_ahead),UPDATE(max_days_ahead) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.daily_limit; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.daily_limit; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(daily_limit),UPDATE(daily_limit) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.timezone; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.timezone; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(timezone),UPDATE(timezone) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.availability; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.availability; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(availability),UPDATE(availability) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.location_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.location_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(location_type),UPDATE(location_type) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.location_details; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.location_details; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(location_details),UPDATE(location_details) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.form_before_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.form_before_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(form_before_id),UPDATE(form_before_id) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.form_after_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.form_after_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(form_after_id),UPDATE(form_after_id) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.confirmation_message; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.confirmation_message; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(confirmation_message),UPDATE(confirmation_message) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.slug; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.slug; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(slug),UPDATE(slug) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0054.duration_options; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0054.duration_options; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(duration_options),UPDATE(duration_options) ON TABLE crm.pc_0054 TO pc_api;
 
 
 --
--- Name: TABLE pc_0003; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE pc_0003; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.pc_0003 TO pc_api;
 
 
 --
--- Name: TABLE booking_pages; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE booking_pages; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.booking_pages TO pc_api;
 
 
 --
--- Name: TABLE pc_0030; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0030; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0030 TO pc_api;
@@ -19901,161 +19901,161 @@ GRANT SELECT ON TABLE crm.pc_0030 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0030.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.call_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.call_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(call_type),UPDATE(call_type) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.direction; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.direction; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(direction),UPDATE(direction) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.started_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.started_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(started_at),UPDATE(started_at) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.ended_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.ended_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(ended_at),UPDATE(ended_at) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.duration_seconds; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.duration_seconds; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(duration_seconds),UPDATE(duration_seconds) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.body; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.body; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(body),UPDATE(body) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.recording_url; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.recording_url; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(recording_url),UPDATE(recording_url) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.attendee_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.attendee_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(attendee_name),UPDATE(attendee_name) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.attendee_email; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.attendee_email; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(attendee_email),UPDATE(attendee_email) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.meeting_url; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.meeting_url; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(meeting_url),UPDATE(meeting_url) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.calendar_provider; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.calendar_provider; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(calendar_provider),UPDATE(calendar_provider) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.calendar_event_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.calendar_event_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(calendar_event_id),UPDATE(calendar_event_id) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.manage_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.manage_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(manage_key),UPDATE(manage_key) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.calendar_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.calendar_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(calendar_id),UPDATE(calendar_id) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.calendar_connection_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.calendar_connection_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(calendar_connection_id),UPDATE(calendar_connection_id) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.cancel_reason; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.cancel_reason; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(cancel_reason),UPDATE(cancel_reason) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0030.cancelled_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0030.cancelled_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(cancelled_at),UPDATE(cancelled_at) ON TABLE crm.pc_0030 TO pc_api;
 
 
 --
--- Name: TABLE calls; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE calls; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.calls TO pc_api;
 
 
 --
--- Name: TABLE pc_0056; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0056; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0056 TO pc_api;
@@ -20063,112 +20063,112 @@ GRANT SELECT ON TABLE crm.pc_0056 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0056.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.reader; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.reader; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(reader),UPDATE(reader) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.model; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.model; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(model),UPDATE(model) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.outcome; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.outcome; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(outcome),UPDATE(outcome) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.error; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.error; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(error),UPDATE(error) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.saved_as; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.saved_as; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(saved_as),UPDATE(saved_as) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.input_tokens; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.input_tokens; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(input_tokens),UPDATE(input_tokens) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.output_tokens; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.output_tokens; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(output_tokens),UPDATE(output_tokens) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.cache_read_tokens; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.cache_read_tokens; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(cache_read_tokens),UPDATE(cache_read_tokens) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.cache_write_tokens; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.cache_write_tokens; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(cache_write_tokens),UPDATE(cache_write_tokens) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.estimated_cost; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.estimated_cost; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(estimated_cost),UPDATE(estimated_cost) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.seconds; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.seconds; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(seconds),UPDATE(seconds) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0056.card_image; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0056.card_image; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(card_image),UPDATE(card_image) ON TABLE crm.pc_0056 TO pc_api;
 
 
 --
--- Name: TABLE card_scans; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE card_scans; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.card_scans TO pc_api;
 
 
 --
--- Name: TABLE pc_0025; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0025; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0025 TO pc_api;
@@ -20176,49 +20176,49 @@ GRANT SELECT ON TABLE crm.pc_0025 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0025.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0025.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0025 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0025.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0025.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0025 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0025.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0025.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0025 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0025.amount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0025.amount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(amount),UPDATE(amount) ON TABLE crm.pc_0025 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0025.currency; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0025.currency; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(currency),UPDATE(currency) ON TABLE crm.pc_0025 TO pc_api;
 
 
 --
--- Name: TABLE carts; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE carts; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.carts TO pc_api;
 
 
 --
--- Name: TABLE pc_0034; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0034; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0034 TO pc_api;
@@ -20226,42 +20226,42 @@ GRANT SELECT ON TABLE crm.pc_0034 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0034.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0034.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0034 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0034.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0034.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0034 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0034.body; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0034.body; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(body),UPDATE(body) ON TABLE crm.pc_0034 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0034.edited_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0034.edited_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(edited_at),UPDATE(edited_at) ON TABLE crm.pc_0034 TO pc_api;
 
 
 --
--- Name: TABLE comments; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE comments; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.comments TO pc_api;
 
 
 --
--- Name: TABLE pc_0011; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0011; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0011 TO pc_api;
@@ -20269,112 +20269,112 @@ GRANT SELECT ON TABLE crm.pc_0011 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0011.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.domain; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.domain; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(domain),UPDATE(domain) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.phone; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.phone; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(phone),UPDATE(phone) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.industry; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.industry; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(industry),UPDATE(industry) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.address_city; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.address_city; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_city),UPDATE(address_city) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.address_province; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.address_province; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_province),UPDATE(address_province) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.address_country; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.address_country; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_country),UPDATE(address_country) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.employee_count; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.employee_count; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(employee_count),UPDATE(employee_count) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.annual_revenue; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.annual_revenue; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(annual_revenue),UPDATE(annual_revenue) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.address_street_1; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.address_street_1; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_street_1),UPDATE(address_street_1) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.address_street_2; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.address_street_2; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_street_2),UPDATE(address_street_2) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0011.address_postalcode; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0011.address_postalcode; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_postalcode),UPDATE(address_postalcode) ON TABLE crm.pc_0011 TO pc_api;
 
 
 --
--- Name: TABLE companies; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE companies; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.companies TO pc_api;
 
 
 --
--- Name: TABLE pc_0010; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0010; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0010 TO pc_api;
@@ -20382,133 +20382,133 @@ GRANT SELECT ON TABLE crm.pc_0010 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0010.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.first_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.first_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(first_name),UPDATE(first_name) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.last_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.last_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(last_name),UPDATE(last_name) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.email; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.email; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(email),UPDATE(email) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.phone; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.phone; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(phone),UPDATE(phone) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.job_title; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.job_title; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(job_title),UPDATE(job_title) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.address_city; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.address_city; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_city),UPDATE(address_city) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.address_province; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.address_province; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_province),UPDATE(address_province) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.address_country; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.address_country; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_country),UPDATE(address_country) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.lifecycle_stage; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.lifecycle_stage; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(lifecycle_stage),UPDATE(lifecycle_stage) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.preferred_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.preferred_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(preferred_name),UPDATE(preferred_name) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.address_street_1; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.address_street_1; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_street_1),UPDATE(address_street_1) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.address_street_2; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.address_street_2; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_street_2),UPDATE(address_street_2) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.address_postalcode; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.address_postalcode; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(address_postalcode),UPDATE(address_postalcode) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.business_card; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.business_card; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(business_card),UPDATE(business_card) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0010.contact_source; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0010.contact_source; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(contact_source),UPDATE(contact_source) ON TABLE crm.pc_0010 TO pc_api;
 
 
 --
--- Name: TABLE contacts; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE contacts; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.contacts TO pc_api;
 
 
 --
--- Name: TABLE pc_0012; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0012; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0012 TO pc_api;
@@ -20516,70 +20516,70 @@ GRANT SELECT ON TABLE crm.pc_0012 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0012.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.amount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.amount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(amount),UPDATE(amount) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.currency; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.currency; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(currency),UPDATE(currency) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.pipeline; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.pipeline; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(pipeline),UPDATE(pipeline) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.stage; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.stage; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(stage),UPDATE(stage) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.close_date; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.close_date; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(close_date),UPDATE(close_date) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0012.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0012.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0012 TO pc_api;
 
 
 --
--- Name: TABLE deals; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE deals; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.deals TO pc_api;
 
 
 --
--- Name: TABLE pc_0057; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0057; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0057 TO pc_api;
@@ -20587,119 +20587,119 @@ GRANT SELECT ON TABLE crm.pc_0057 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0057.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.object; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.object; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(object),UPDATE(object) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.is_default; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.is_default; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(is_default),UPDATE(is_default) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.page_size; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.page_size; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(page_size),UPDATE(page_size) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.orientation; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.orientation; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(orientation),UPDATE(orientation) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.page_margin; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.page_margin; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(page_margin),UPDATE(page_margin) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.draft_source; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.draft_source; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(draft_source),UPDATE(draft_source) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.draft_queries; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.draft_queries; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(draft_queries),UPDATE(draft_queries) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.source; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.source; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(source),UPDATE(source) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.queries; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.queries; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(queries),UPDATE(queries) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.published_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.published_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(published_at),UPDATE(published_at) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0057.is_builtin; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0057.is_builtin; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(is_builtin),UPDATE(is_builtin) ON TABLE crm.pc_0057 TO pc_api;
 
 
 --
--- Name: TABLE document_templates; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE document_templates; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.document_templates TO pc_api;
 
 
 --
--- Name: TABLE pc_0051; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0051; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0051 TO pc_api;
@@ -20707,42 +20707,42 @@ GRANT SELECT ON TABLE crm.pc_0051 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0051.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0051.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0051 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0051.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0051.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0051 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0051.subject; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0051.subject; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(subject),UPDATE(subject) ON TABLE crm.pc_0051 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0051.body; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0051.body; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(body),UPDATE(body) ON TABLE crm.pc_0051 TO pc_api;
 
 
 --
--- Name: TABLE email_templates; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE email_templates; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.email_templates TO pc_api;
 
 
 --
--- Name: TABLE pc_0031; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0031; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0031 TO pc_api;
@@ -20750,98 +20750,98 @@ GRANT SELECT ON TABLE crm.pc_0031 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0031.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.direction; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.direction; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(direction),UPDATE(direction) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.subject; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.subject; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(subject),UPDATE(subject) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.body; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.body; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(body),UPDATE(body) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.from_address; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.from_address; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(from_address),UPDATE(from_address) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.to_addresses; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.to_addresses; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(to_addresses),UPDATE(to_addresses) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.cc_addresses; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.cc_addresses; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(cc_addresses),UPDATE(cc_addresses) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.sent_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.sent_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(sent_at),UPDATE(sent_at) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.thread_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.thread_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(thread_id),UPDATE(thread_id) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0031.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0031.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0031 TO pc_api;
 
 
 --
--- Name: TABLE emails; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE emails; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.emails TO pc_api;
 
 
 --
--- Name: TABLE pc_0050; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0050; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0050 TO pc_api;
@@ -20849,70 +20849,70 @@ GRANT SELECT ON TABLE crm.pc_0050 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0050.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.mime_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.mime_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(mime_type),UPDATE(mime_type) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.size_bytes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.size_bytes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(size_bytes),UPDATE(size_bytes) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.storage_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.storage_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(storage_key),UPDATE(storage_key) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.checksum; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.checksum; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(checksum),UPDATE(checksum) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0050.public_token; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0050.public_token; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(public_token),UPDATE(public_token) ON TABLE crm.pc_0050 TO pc_api;
 
 
 --
--- Name: TABLE files; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE files; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.files TO pc_api;
 
 
 --
--- Name: TABLE pc_0053; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0053; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0053 TO pc_api;
@@ -20920,84 +20920,84 @@ GRANT SELECT ON TABLE crm.pc_0053 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0053.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.form_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.form_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(form_id),UPDATE(form_id) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.submitted_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.submitted_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(submitted_at),UPDATE(submitted_at) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.page_url; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.page_url; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(page_url),UPDATE(page_url) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.submission_values; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.submission_values; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(submission_values),UPDATE(submission_values) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.origin; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.origin; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(origin),UPDATE(origin) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.ip_address; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.ip_address; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(ip_address),UPDATE(ip_address) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.user_agent; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.user_agent; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(user_agent),UPDATE(user_agent) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0053.summary; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0053.summary; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(summary),UPDATE(summary) ON TABLE crm.pc_0053 TO pc_api;
 
 
 --
--- Name: TABLE form_submissions; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE form_submissions; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.form_submissions TO pc_api;
 
 
 --
--- Name: TABLE pc_0052; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0052; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0052 TO pc_api;
@@ -21005,70 +21005,70 @@ GRANT SELECT ON TABLE crm.pc_0052 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0052.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.definition; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.definition; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(definition),UPDATE(definition) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.public_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.public_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(public_key),UPDATE(public_key) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.html; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.html; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(html),UPDATE(html) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0052.slug; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0052.slug; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(slug),UPDATE(slug) ON TABLE crm.pc_0052 TO pc_api;
 
 
 --
--- Name: TABLE forms; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE forms; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.forms TO pc_api;
 
 
 --
--- Name: TABLE pc_0023; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0023; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0023 TO pc_api;
@@ -21076,77 +21076,77 @@ GRANT SELECT ON TABLE crm.pc_0023 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0023.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.invoice_number; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.invoice_number; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(invoice_number),UPDATE(invoice_number) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.due_date; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.due_date; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(due_date),UPDATE(due_date) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.amount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.amount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(amount),UPDATE(amount) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.currency; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.currency; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(currency),UPDATE(currency) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.public_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.public_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(public_key),UPDATE(public_key) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0023.slug; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0023.slug; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(slug),UPDATE(slug) ON TABLE crm.pc_0023 TO pc_api;
 
 
 --
--- Name: TABLE invoices; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE invoices; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.invoices TO pc_api;
 
 
 --
--- Name: TABLE pc_0020; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0020; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0020 TO pc_api;
@@ -21154,84 +21154,84 @@ GRANT SELECT ON TABLE crm.pc_0020 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0020.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.sku; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.sku; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(sku),UPDATE(sku) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.quantity; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.quantity; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(quantity),UPDATE(quantity) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.unit_price; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.unit_price; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(unit_price),UPDATE(unit_price) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.discount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.discount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(discount),UPDATE(discount) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.unit_cost; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.unit_cost; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(unit_cost),UPDATE(unit_cost) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.uom; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.uom; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(uom),UPDATE(uom) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.line_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.line_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(line_type),UPDATE(line_type) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0020.customizations; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0020.customizations; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(customizations),UPDATE(customizations) ON TABLE crm.pc_0020 TO pc_api;
 
 
 --
--- Name: TABLE lines; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE lines; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.lines TO pc_api;
 
 
 --
--- Name: TABLE pc_0061; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0061; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0061 TO pc_api;
@@ -21239,84 +21239,84 @@ GRANT SELECT ON TABLE crm.pc_0061 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0061.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.registered_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.registered_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(registered_at),UPDATE(registered_at) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.attended_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.attended_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(attended_at),UPDATE(attended_at) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.attendance_seconds; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.attendance_seconds; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(attendance_seconds),UPDATE(attendance_seconds) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.priority; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.priority; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(priority),UPDATE(priority) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.follow_up_status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.follow_up_status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(follow_up_status),UPDATE(follow_up_status) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.follow_up_date; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.follow_up_date; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(follow_up_date),UPDATE(follow_up_date) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0061.notes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0061.notes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(notes),UPDATE(notes) ON TABLE crm.pc_0061 TO pc_api;
 
 
 --
--- Name: TABLE marketing_event_participations; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE marketing_event_participations; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.marketing_event_participations TO pc_api;
 
 
 --
--- Name: TABLE pc_0060; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0060; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0060 TO pc_api;
@@ -21324,77 +21324,77 @@ GRANT SELECT ON TABLE crm.pc_0060 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0060.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.event_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.event_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(event_type),UPDATE(event_type) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.start_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.start_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(start_at),UPDATE(start_at) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.end_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.end_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(end_at),UPDATE(end_at) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.location; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.location; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(location),UPDATE(location) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0060.external_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0060.external_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(external_id),UPDATE(external_id) ON TABLE crm.pc_0060 TO pc_api;
 
 
 --
--- Name: TABLE marketing_events; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE marketing_events; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.marketing_events TO pc_api;
 
 
 --
--- Name: TABLE pc_0032; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0032; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0032 TO pc_api;
@@ -21402,42 +21402,42 @@ GRANT SELECT ON TABLE crm.pc_0032 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0032.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0032.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0032 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0032.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0032.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0032 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0032.body; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0032.body; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(body),UPDATE(body) ON TABLE crm.pc_0032 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0032.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0032.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0032 TO pc_api;
 
 
 --
--- Name: TABLE notes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE notes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.notes TO pc_api;
 
 
 --
--- Name: TABLE pc_0063; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0063; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0063 TO pc_api;
@@ -21445,56 +21445,56 @@ GRANT SELECT ON TABLE crm.pc_0063 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0063.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0063.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0063 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0063.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0063.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0063 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0063.event_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0063.event_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(event_key),UPDATE(event_key) ON TABLE crm.pc_0063 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0063.occurred_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0063.occurred_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(occurred_at),UPDATE(occurred_at) ON TABLE crm.pc_0063 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0063.event_properties; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0063.event_properties; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(event_properties),UPDATE(event_properties) ON TABLE crm.pc_0063 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0063.source; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0063.source; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(source),UPDATE(source) ON TABLE crm.pc_0063 TO pc_api;
 
 
 --
--- Name: TABLE object_event_occurrences; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE object_event_occurrences; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.object_event_occurrences TO pc_api;
 
 
 --
--- Name: TABLE pc_0062; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0062; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0062 TO pc_api;
@@ -21502,42 +21502,42 @@ GRANT SELECT ON TABLE crm.pc_0062 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0062.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0062.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0062 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0062.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0062.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0062 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0062.event_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0062.event_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(event_key),UPDATE(event_key) ON TABLE crm.pc_0062 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0062.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0062.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0062 TO pc_api;
 
 
 --
--- Name: TABLE object_events; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE object_events; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.object_events TO pc_api;
 
 
 --
--- Name: TABLE pc_0026; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0026; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0026 TO pc_api;
@@ -21545,56 +21545,56 @@ GRANT SELECT ON TABLE crm.pc_0026 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0026.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0026.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0026 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0026.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0026.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0026 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0026.order_number; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0026.order_number; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(order_number),UPDATE(order_number) ON TABLE crm.pc_0026 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0026.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0026.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0026 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0026.amount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0026.amount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(amount),UPDATE(amount) ON TABLE crm.pc_0026 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0026.currency; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0026.currency; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(currency),UPDATE(currency) ON TABLE crm.pc_0026 TO pc_api;
 
 
 --
--- Name: TABLE orders; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE orders; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.orders TO pc_api;
 
 
 --
--- Name: TABLE pc_0024; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0024; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0024 TO pc_api;
@@ -21602,105 +21602,105 @@ GRANT SELECT ON TABLE crm.pc_0024 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0024.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.amount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.amount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(amount),UPDATE(amount) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.currency; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.currency; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(currency),UPDATE(currency) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.method; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.method; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(method),UPDATE(method) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.paid_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.paid_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(paid_at),UPDATE(paid_at) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.stripe_checkout_session_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.stripe_checkout_session_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(stripe_checkout_session_id),UPDATE(stripe_checkout_session_id) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.stripe_payment_intent_id; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.stripe_payment_intent_id; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(stripe_payment_intent_id),UPDATE(stripe_payment_intent_id) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.payer_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.payer_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(payer_name),UPDATE(payer_name) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.payer_email; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.payer_email; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(payer_email),UPDATE(payer_email) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.reference; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.reference; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(reference),UPDATE(reference) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0024.purpose; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0024.purpose; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(purpose),UPDATE(purpose) ON TABLE crm.pc_0024 TO pc_api;
 
 
 --
--- Name: TABLE payments; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE payments; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.payments TO pc_api;
 
 
 --
--- Name: TABLE pc_0000; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0000; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0000 TO pc_api;
@@ -21708,77 +21708,77 @@ GRANT SELECT ON TABLE crm.pc_0000 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0000.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.first_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.first_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(first_name),UPDATE(first_name) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.last_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.last_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(last_name),UPDATE(last_name) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.email; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.email; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(email),UPDATE(email) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.phone; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.phone; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(phone),UPDATE(phone) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.timezone; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.timezone; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(timezone),UPDATE(timezone) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0000.email_signature; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0000.email_signature; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(email_signature),UPDATE(email_signature) ON TABLE crm.pc_0000 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0000_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0000_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0000_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0006; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0006; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0006 TO pc_api;
@@ -21786,56 +21786,56 @@ GRANT SELECT ON TABLE crm.pc_0006 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0006.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0006.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0006 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0006.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0006.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0006 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0006.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0006.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0006 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0006_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0006_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0006_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0010_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0010_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0010_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0011_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0011_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0011_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0012_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0012_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0012_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0013; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0013; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0013 TO pc_api;
@@ -21843,63 +21843,63 @@ GRANT SELECT ON TABLE crm.pc_0013 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0013.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0013.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0013.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0013.pipeline; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.pipeline; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(pipeline),UPDATE(pipeline) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0013.stage; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.stage; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(stage),UPDATE(stage) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0013.priority; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.priority; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(priority),UPDATE(priority) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0013.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0013.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0013 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0013_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0013_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0013_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0014; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0014; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0014 TO pc_api;
@@ -21907,70 +21907,70 @@ GRANT SELECT ON TABLE crm.pc_0014 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0014.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0014.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0014.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0014.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0014.start_date; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.start_date; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(start_date),UPDATE(start_date) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0014.end_date; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.end_date; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(end_date),UPDATE(end_date) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0014.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0014.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0014 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0014_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0014_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0014_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0020_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0020_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0020_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0021; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0021; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0021 TO pc_api;
@@ -21978,70 +21978,70 @@ GRANT SELECT ON TABLE crm.pc_0021 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0021.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.sku; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.sku; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(sku),UPDATE(sku) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.unit_price; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.unit_price; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(unit_price),UPDATE(unit_price) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.active; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.active; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(active),UPDATE(active) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.unit_cost; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.unit_cost; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(unit_cost),UPDATE(unit_cost) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0021.uom; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0021.uom; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(uom),UPDATE(uom) ON TABLE crm.pc_0021 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0021_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0021_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0021_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0022; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0022; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0022 TO pc_api;
@@ -22049,231 +22049,231 @@ GRANT SELECT ON TABLE crm.pc_0022 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0022.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.expiration_date; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.expiration_date; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(expiration_date),UPDATE(expiration_date) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.amount; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.amount; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(amount),UPDATE(amount) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.currency; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.currency; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(currency),UPDATE(currency) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.public_key; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.public_key; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(public_key),UPDATE(public_key) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.responded_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.responded_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(responded_at),UPDATE(responded_at) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.responder_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.responder_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(responder_name),UPDATE(responder_name) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.responder_email; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.responder_email; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(responder_email),UPDATE(responder_email) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.decline_reason; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.decline_reason; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(decline_reason),UPDATE(decline_reason) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.signing_fields; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.signing_fields; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(signing_fields),UPDATE(signing_fields) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.signed_fields; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.signed_fields; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(signed_fields),UPDATE(signed_fields) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.customer_signature; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.customer_signature; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(customer_signature),UPDATE(customer_signature) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.customer_signed_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.customer_signed_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(customer_signed_at),UPDATE(customer_signed_at) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.customer_ip; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.customer_ip; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(customer_ip),UPDATE(customer_ip) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.requires_countersign; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.requires_countersign; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(requires_countersign),UPDATE(requires_countersign) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.countersigner_name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.countersigner_name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(countersigner_name),UPDATE(countersigner_name) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.countersigner_signature; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.countersigner_signature; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(countersigner_signature),UPDATE(countersigner_signature) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.countersigned_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.countersigned_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(countersigned_at),UPDATE(countersigned_at) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.online_payment; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.online_payment; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(online_payment),UPDATE(online_payment) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.deposit_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.deposit_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(deposit_type),UPDATE(deposit_type) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.deposit_value; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.deposit_value; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(deposit_value),UPDATE(deposit_value) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0022.slug; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0022.slug; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(slug),UPDATE(slug) ON TABLE crm.pc_0022 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0022_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0022_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0022_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0023_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0023_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0023_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0024_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0024_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0024_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0025_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0025_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0025_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0026_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0026_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0026_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0030_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0030_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0030_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0031_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0031_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0031_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0032_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0032_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0032_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0033; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0033; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0033 TO pc_api;
@@ -22281,112 +22281,112 @@ GRANT SELECT ON TABLE crm.pc_0033 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0033.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.task_type; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.task_type; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(task_type),UPDATE(task_type) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.priority; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.priority; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(priority),UPDATE(priority) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.due_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.due_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(due_at),UPDATE(due_at) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.body; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.body; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(body),UPDATE(body) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0033.owner; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0033.owner; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(owner),UPDATE(owner) ON TABLE crm.pc_0033 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0033_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0033_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0033_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0034_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0034_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0034_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0050_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0050_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0050_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0051_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0051_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0051_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0052_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0052_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0052_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0053_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0053_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0053_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0054_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0054_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0054_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0055; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE pc_0055; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.pc_0055 TO pc_api;
@@ -22394,245 +22394,245 @@ GRANT SELECT ON TABLE crm.pc_0055 TO pc_view_reader;
 
 
 --
--- Name: COLUMN pc_0055.name; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.name; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(name),UPDATE(name) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.created_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.created_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(created_at),UPDATE(created_at) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.description; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.description; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.slug; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.slug; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(slug),UPDATE(slug) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.icon; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.icon; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(icon),UPDATE(icon) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.status; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.status; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(status),UPDATE(status) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.audience; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.audience; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(audience),UPDATE(audience) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.draft_source; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.draft_source; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(draft_source),UPDATE(draft_source) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.draft_queries; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.draft_queries; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(draft_queries),UPDATE(draft_queries) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.source; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.source; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(source),UPDATE(source) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.queries; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.queries; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(queries),UPDATE(queries) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.published_at; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.published_at; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(published_at),UPDATE(published_at) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: COLUMN pc_0055.allow_snippets; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: COLUMN pc_0055.allow_snippets; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT INSERT(allow_snippets),UPDATE(allow_snippets) ON TABLE crm.pc_0055 TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0055_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0055_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0055_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0056_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0056_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0056_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0057_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0057_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0057_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0060_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0060_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0060_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0061_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0061_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0061_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0062_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0062_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0062_seq TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0063_seq; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: SEQUENCE pc_0063_seq; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE crm.pc_0063_seq TO pc_api;
 
 
 --
--- Name: TABLE products; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE products; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.products TO pc_api;
 
 
 --
--- Name: TABLE quotes; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE quotes; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.quotes TO pc_api;
 
 
 --
--- Name: TABLE services; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE services; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.services TO pc_api;
 
 
 --
--- Name: TABLE tasks; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE tasks; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.tasks TO pc_api;
 
 
 --
--- Name: TABLE teams; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE teams; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.teams TO pc_api;
 
 
 --
--- Name: TABLE tickets; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE tickets; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.tickets TO pc_api;
 
 
 --
--- Name: TABLE users; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE users; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.users TO pc_api;
 
 
 --
--- Name: TABLE views; Type: ACL; Schema: crm; Owner: claude_admin
+-- Name: TABLE views; Type: ACL; Schema: crm; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE crm.views TO pc_api;
 
 
 --
--- Name: TABLE association_labels; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE association_labels; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.association_labels TO pc_api;
 
 
 --
--- Name: TABLE calc_dependencies; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE calc_dependencies; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.calc_dependencies TO pc_api;
 
 
 --
--- Name: TABLE calc_queue; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE calc_queue; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.calc_queue TO pc_api;
 
 
 --
--- Name: SEQUENCE pc_0007_seq; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: SEQUENCE pc_0007_seq; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE meta.pc_0007_seq TO pc_api;
 
 
 --
--- Name: TABLE pc_0007; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE pc_0007; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE meta.pc_0007 TO pc_api;
 
 
 --
--- Name: TABLE currencies; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE currencies; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.currencies TO pc_api;
 
 
 --
--- Name: TABLE currency_rates; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE currency_rates; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE meta.currency_rates TO pc_api;
@@ -22640,455 +22640,455 @@ GRANT SELECT ON TABLE meta.currency_rates TO pc_reader;
 
 
 --
--- Name: TABLE currency_settings; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE currency_settings; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT,UPDATE ON TABLE meta.currency_settings TO pc_api;
 
 
 --
--- Name: TABLE import_jobs; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE import_jobs; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE meta.import_jobs TO pc_api;
 
 
 --
--- Name: SEQUENCE import_jobs_id_seq; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: SEQUENCE import_jobs_id_seq; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE meta.import_jobs_id_seq TO pc_api;
 
 
 --
--- Name: TABLE objects; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE objects; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.objects TO pc_api;
 
 
 --
--- Name: TABLE properties; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE properties; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.properties TO pc_api;
 
 
 --
--- Name: TABLE property_options; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE property_options; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.property_options TO pc_api;
 
 
 --
--- Name: TABLE record_history; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE record_history; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.record_history TO pc_api;
 
 
 --
--- Name: TABLE schema_changes; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE schema_changes; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE meta.schema_changes TO pc_api;
 
 
 --
--- Name: TABLE webhook_outbox; Type: ACL; Schema: meta; Owner: claude_admin
+-- Name: TABLE webhook_outbox; Type: ACL; Schema: meta; Owner: pc_migrator
 --
 
 GRANT SELECT,DELETE,UPDATE ON TABLE meta.webhook_outbox TO pc_api;
 
 
 --
--- Name: TABLE association_labels; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE association_labels; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.association_labels TO pc_reader;
 
 
 --
--- Name: TABLE associations; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE associations; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.associations TO pc_reader;
 
 
 --
--- Name: TABLE booking_pages; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE booking_pages; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.booking_pages TO pc_reader;
 
 
 --
--- Name: TABLE calls; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE calls; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.calls TO pc_reader;
 
 
 --
--- Name: TABLE card_scans; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE card_scans; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.card_scans TO pc_reader;
 
 
 --
--- Name: TABLE carts; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE carts; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.carts TO pc_reader;
 
 
 --
--- Name: TABLE comments; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE comments; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.comments TO pc_reader;
 
 
 --
--- Name: TABLE companies; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE companies; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.companies TO pc_reader;
 
 
 --
--- Name: TABLE contacts; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE contacts; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.contacts TO pc_reader;
 
 
 --
--- Name: TABLE currencies; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE currencies; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.currencies TO pc_reader;
 
 
 --
--- Name: TABLE currency_rates; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE currency_rates; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.currency_rates TO pc_reader;
 
 
 --
--- Name: TABLE deals; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE deals; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.deals TO pc_reader;
 
 
 --
--- Name: TABLE document_templates; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE document_templates; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.document_templates TO pc_reader;
 
 
 --
--- Name: TABLE email_templates; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE email_templates; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.email_templates TO pc_reader;
 
 
 --
--- Name: TABLE emails; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE emails; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.emails TO pc_reader;
 
 
 --
--- Name: TABLE files; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE files; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.files TO pc_reader;
 
 
 --
--- Name: TABLE form_submissions; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE form_submissions; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.form_submissions TO pc_reader;
 
 
 --
--- Name: TABLE forms; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE forms; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.forms TO pc_reader;
 
 
 --
--- Name: TABLE invoices; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE invoices; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.invoices TO pc_reader;
 
 
 --
--- Name: TABLE lines; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE lines; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.lines TO pc_reader;
 
 
 --
--- Name: TABLE marketing_event_participations; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE marketing_event_participations; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.marketing_event_participations TO pc_reader;
 
 
 --
--- Name: TABLE marketing_events; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE marketing_events; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.marketing_events TO pc_reader;
 
 
 --
--- Name: TABLE notes; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE notes; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.notes TO pc_reader;
 
 
 --
--- Name: TABLE object_event_occurrences; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE object_event_occurrences; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.object_event_occurrences TO pc_reader;
 
 
 --
--- Name: TABLE object_events; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE object_events; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.object_events TO pc_reader;
 
 
 --
--- Name: TABLE objects; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE objects; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.objects TO pc_reader;
 
 
 --
--- Name: TABLE orders; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE orders; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.orders TO pc_reader;
 
 
 --
--- Name: TABLE payments; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE payments; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.payments TO pc_reader;
 
 
 --
--- Name: TABLE products; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE products; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.products TO pc_reader;
 
 
 --
--- Name: TABLE properties; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE properties; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.properties TO pc_reader;
 
 
 --
--- Name: TABLE property_options; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE property_options; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.property_options TO pc_reader;
 
 
 --
--- Name: TABLE quotes; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE quotes; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.quotes TO pc_reader;
 
 
 --
--- Name: TABLE services; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE services; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.services TO pc_reader;
 
 
 --
--- Name: TABLE tasks; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE tasks; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.tasks TO pc_reader;
 
 
 --
--- Name: TABLE teams; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE teams; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.teams TO pc_reader;
 
 
 --
--- Name: TABLE tickets; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE tickets; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.tickets TO pc_reader;
 
 
 --
--- Name: TABLE users; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE users; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.users TO pc_reader;
 
 
 --
--- Name: TABLE views; Type: ACL; Schema: reporting; Owner: claude_admin
+-- Name: TABLE views; Type: ACL; Schema: reporting; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE reporting.views TO pc_reader;
 
 
 --
--- Name: TABLE option_labels; Type: ACL; Schema: rls; Owner: claude_admin
+-- Name: TABLE option_labels; Type: ACL; Schema: rls; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE rls.option_labels TO pc_view_reader;
 
 
 --
--- Name: TABLE comment_mentions; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE comment_mentions; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.comment_mentions TO pc_api;
 
 
 --
--- Name: TABLE mentions; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE mentions; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.mentions TO pc_api;
 
 
 --
--- Name: TABLE nav_group_members; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE nav_group_members; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.nav_group_members TO pc_api;
 
 
 --
--- Name: TABLE nav_groups; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE nav_groups; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.nav_groups TO pc_api;
 
 
 --
--- Name: SEQUENCE nav_groups_id_seq; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: SEQUENCE nav_groups_id_seq; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE ui.nav_groups_id_seq TO pc_api;
 
 
 --
--- Name: TABLE nav_menus; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE nav_menus; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.nav_menus TO pc_api;
 
 
 --
--- Name: SEQUENCE nav_menus_id_seq; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: SEQUENCE nav_menus_id_seq; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE ui.nav_menus_id_seq TO pc_api;
 
 
 --
--- Name: TABLE settings; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE settings; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.settings TO pc_api;
 
 
 --
--- Name: TABLE snippets; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE snippets; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.snippets TO pc_api;
 
 
 --
--- Name: SEQUENCE snippets_id_seq; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: SEQUENCE snippets_id_seq; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE ui.snippets_id_seq TO pc_api;
 
 
 --
--- Name: TABLE view_errors; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE view_errors; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.view_errors TO pc_api;
 
 
 --
--- Name: TABLE view_write_approvals; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE view_write_approvals; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE ON TABLE ui.view_write_approvals TO pc_api;
 
 
 --
--- Name: TABLE views; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: TABLE views; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ui.views TO pc_api;
 
 
 --
--- Name: SEQUENCE views_id_seq; Type: ACL; Schema: ui; Owner: claude_admin
+-- Name: SEQUENCE views_id_seq; Type: ACL; Schema: ui; Owner: pc_migrator
 --
 
 GRANT USAGE ON SEQUENCE ui.views_id_seq TO pc_api;
 
 
 --
--- Name: TABLE association_labels; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE association_labels; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.association_labels TO pc_view_reader;
 
 
 --
--- Name: TABLE associations; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE associations; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.associations TO pc_view_reader;
 
 
 --
--- Name: TABLE currencies; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE currencies; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.currencies TO pc_view_reader;
@@ -23096,7 +23096,7 @@ GRANT SELECT ON TABLE view_data.currencies TO pc_api;
 
 
 --
--- Name: TABLE currency_rates; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE currency_rates; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.currency_rates TO pc_view_reader;
@@ -23104,21 +23104,21 @@ GRANT SELECT ON TABLE view_data.currency_rates TO pc_api;
 
 
 --
--- Name: TABLE objects; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE objects; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.objects TO pc_view_reader;
 
 
 --
--- Name: TABLE properties; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE properties; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.properties TO pc_view_reader;
 
 
 --
--- Name: TABLE property_options; Type: ACL; Schema: view_data; Owner: claude_admin
+-- Name: TABLE property_options; Type: ACL; Schema: view_data; Owner: pc_migrator
 --
 
 GRANT SELECT ON TABLE view_data.property_options TO pc_view_reader;

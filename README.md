@@ -66,10 +66,12 @@ For a playground that never touches real data, `./db/test-local.sh` builds a thr
 Take a backup before any change to existing data (the server runs Postgres 15, so use the libpq `pg_dump`):
 
 ```bash
-/opt/homebrew/opt/libpq/bin/pg_dump -h localhost -p 5433 -U claude_admin -d profitpad_crm_db -Fc -f backups/profitpad_crm_db_$(date +%Y%m%d_%H%M%S).dump
+/opt/homebrew/opt/libpq/bin/pg_dump -h localhost -p 5433 -U pc_migrator -d profitpad_crm_db -Fc -f backups/profitpad_crm_db_$(date +%Y%m%d_%H%M%S).dump
 ```
 
 ## Deploying
+
+To run your own copy on a server, follow [docs/self-hosting.md](docs/self-hosting.md). The notes below are about ProfitPad's own deployment.
 
 - **Web app:** every push to `main` that touches `web/` is built and published to GitHub Pages.
 - **API:** apply any new migrations first, then on the server pull and rebuild the container:
