@@ -579,14 +579,32 @@ iframe.template-preview { display: block; width: 100%; min-height: 400px; border
 .comment-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted-text); }
 .comment-author { font-weight: 600; color: var(--text); }
 a.comment-author:hover { color: var(--primary); }
-.comment-actions { display: inline-flex; gap: 10px; margin-left: auto; opacity: 0; transition: opacity 0.1s; }
+.comment-actions { display: inline-flex; gap: 2px; margin-left: auto; align-self: center; opacity: 0; transition: opacity 0.1s; }
 .comment:hover .comment-actions, .comment:focus-within .comment-actions { opacity: 1; }
 @media (hover: none) { .comment-actions { opacity: 1; } }
-.comment-actions .link-btn { font-size: 12px; }
-.comment-actions .link-btn.danger-text { color: var(--danger); }
+.comment-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted-text);
+}
+.comment-icon-btn:hover { background: var(--surface); color: var(--text); }
+.comment-icon-btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
 .comment-body { margin-top: 2px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .comment-editor { display: flex; flex-direction: column; gap: 8px; }
 .comment-editor textarea { line-height: 1.5; }
+/* the box sits over a copy of its text whose @mentions are chips (CommentEditor) */
+.mention-field { position: relative; background: var(--page-background); border-radius: var(--radius-sm); }
+.mention-field textarea { position: relative; z-index: 1; background: transparent; }
+.mention-backdrop {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  padding: 7px 10px; border: 1px solid transparent; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: transparent;
+}
+.mention-backdrop mark {
+  color: transparent; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent), 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
 .comment-editor-foot { display: flex; justify-content: flex-end; gap: 8px; }
 .activity-comment-count { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted-text); }
 /* the thread on an activity's own page */

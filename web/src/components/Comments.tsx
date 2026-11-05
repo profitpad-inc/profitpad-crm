@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Pencil, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { initials } from '../lib/display';
 import { TextArea } from '../lib/snippets';
-import { MENTION_TOKEN, encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
+import { MENTION_TOKEN, encodeMentions, mentionParts, mentionsAsText, type MentionUser } from '../lib/text-complete';
 import { MentionText } from './MentionText';
 import { confirmDialog, alertDialog } from './confirm';
 import { useLiveVersion } from '../lib/live';
@@ -127,8 +127,8 @@ function CommentItem({ comment: c, highlighted, onSaved, onDelete }: { comment: 
           {c.edited_at && <span className="muted" title={`Edited ${full(c.edited_at)}`}>(edited)</span>}
           {!editing && (c.can_edit || c.can_delete) && (
             <span className="comment-actions">
-              {c.can_edit && <button className="link-btn" onClick={() => setEditing(true)}>Edit</button>}
-              {c.can_delete && <button className="link-btn danger-text" onClick={onDelete}>Delete</button>}
+              {c.can_edit && <button className="comment-icon-btn" title="Edit" aria-label="Edit comment" onClick={() => setEditing(true)}><Pencil size={14} strokeWidth={1.75} /></button>}
+              {c.can_delete && <button className="comment-icon-btn danger" title="Delete" aria-label="Delete comment" onClick={onDelete}><Trash2 size={14} strokeWidth={1.75} /></button>}
             </span>
           )}
         </div>
@@ -164,6 +164,7 @@ function CommentEditor({ initial, submitLabel, placeholder, autoFocus = false, o
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = box.current;
     if (!autoFocus || !el) return;
@@ -193,13 +194,21 @@ function CommentEditor({ initial, submitLabel, placeholder, autoFocus = false, o
   const showFoot = !!onCancel || text.trim() !== '';
   return (
     <div className="comment-editor">
+      {/* the picked @mentions drawn as chips on a copy of the text behind the box */}
+      <div className="mention-field">
+      <div className="mention-backdrop" ref={backdrop} aria-hidden="true">
+        {mentionParts(text, mentioned).map((p, i) => (p.mention ? <mark key={i}>{p.text}</mark> : p.text))}
+        {'\u200b'}
+      </div>
       <TextArea ref={box} grow rows={1} value={text} placeholder={placeholder} aria-label="Comment" disabled={saving}
+        onScroll={(e) => { if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop; }}
         onChange={(e) => setText(e.target.value)}
         onMention={(u) => setMentioned((m) => [...m, u])}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); }
           else if (e.key === 'Escape' && !e.defaultPrevented && onCancel) { e.preventDefault(); void cancel(); }
         }} />
+      </div>
       {error && <div className="error">{error}</div>}
       {showFoot && (
         <div className="comment-editor-foot">

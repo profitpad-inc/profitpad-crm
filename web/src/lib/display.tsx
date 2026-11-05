@@ -53,9 +53,9 @@ export const ReportingIcon = BarChart3;
 // Groups for the "More" menu.
 export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'CRM', objects: ['contacts', 'companies', 'deals', 'tickets', 'products', 'orders', 'services', 'lines', 'quotes', 'invoices', 'payments', 'carts'] },
-  { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks', 'booking_pages'] },
-  { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'email_campaigns', 'marketing_events', 'marketing_event_participations', 'card_scans'] },
-  { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'document_templates', 'object_events', 'object_event_occurrences', 'comments'] }
+  { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks', 'comments'] },
+  { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'email_campaigns', 'marketing_events', 'marketing_event_participations', 'card_scans', 'booking_pages'] },
+  { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'document_templates', 'object_events', 'object_event_occurrences'] }
 ];
 
 // The best human name for a record: name, else first + last, else email,

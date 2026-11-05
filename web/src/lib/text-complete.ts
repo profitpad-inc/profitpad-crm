@@ -349,5 +349,24 @@ export function encodeMentions(text: string, picked: MentionUser[]): string {
   return out;
 }
 
+// The text split into plain runs and "@Name" runs for the users picked (same
+// matching as encodeMentions), so a text box can draw the mentions as chips.
+export function mentionParts(text: string, picked: MentionUser[]): { text: string; mention: boolean }[] {
+  const names = [...new Set(picked.map((u) => u.name))].sort((a, b) => b.length - a.length);
+  if (names.length === 0) return [{ text, mention: false }];
+  const alt = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(`(^|[\\s([{"'])(@(?:${alt}))(?![\\p{L}\\p{N}_])`, 'gu');
+  const parts: { text: string; mention: boolean }[] = [];
+  let at = 0;
+  for (const m of text.matchAll(re)) {
+    const start = m.index! + m[1]!.length;
+    if (start > at) parts.push({ text: text.slice(at, start), mention: false });
+    parts.push({ text: m[2]!, mention: true });
+    at = start + m[2]!.length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at), mention: false });
+  return parts;
+}
+
 // The tokens shown as "@Name" (plain text: search, excerpts).
 export const mentionsAsText = (text: string) => text.replace(MENTION_TOKEN, '@$1');

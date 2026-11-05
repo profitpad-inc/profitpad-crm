@@ -235,28 +235,30 @@ export async function snippetRoutes(app: FastifyInstance) {
   // Notes and comments (0085) the caller was tagged in, newest first,
   // with the record each activity is on. Ones whose activity the caller cannot
   // read are left out. Note items keep note_id; comment items carry comment_id.
-  app.get<{ Querystring: { limit?: string } }>('/v1/me/mentions', async (req) => {
+  // ?unread=1 lists only the ones not marked read yet.
+  app.get<{ Querystring: { limit?: string; unread?: string } }>('/v1/me/mentions', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
     if (!p.userId) return { results: [], unseen: 0 };
     const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+    const unreadOnly = req.query.unread === '1' || req.query.unread === 'true';
     const { rows } = await pool.query(
       `select x.*, u.name as mentioned_by_name from (
          select 'note' as kind, 'pc_0032' as object_type_id, m.note_id as activity_id, null::text as comment_id, null::text as comment_body,
            m.created_at, m.seen_at, m.mentioned_by
          from ui.mentions m
          join crm.pc_0032 n on n.pc_0032_id = m.note_id and n.record_status = 'active'
-         where m.user_id = $1
+         where m.user_id = $1 and (not $3 or m.seen_at is null)
          union all
          select 'comment', a.other_object_type_id, a.other_record_id, c.pc_0034_id, c.body, m.created_at, m.seen_at, m.mentioned_by
          from ui.comment_mentions m
          join crm.pc_0034 c on c.pc_0034_id = m.comment_id and c.record_status = 'active'
          join crm.associations_both a on a.object_type_id = 'pc_0034' and a.record_id = c.pc_0034_id
-         where m.user_id = $1
+         where m.user_id = $1 and (not $3 or m.seen_at is null)
        ) x
        left join crm.pc_0000 u on u.pc_0000_id = x.mentioned_by
        order by x.created_at desc limit $2`,
-      [p.userId, limit]
+      [p.userId, limit, unreadOnly]
     );
     if (rows.length === 0) return { results: [], unseen: 0 };
 

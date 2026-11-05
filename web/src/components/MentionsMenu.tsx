@@ -5,7 +5,8 @@ import { api } from '../lib/api';
 import { onFrameFocus } from '../lib/frame-focus';
 
 // The sidebar's Mentions button: notes and comments you were tagged in (@Name),
-// with a count of the ones not looked at yet. Opening the list marks them seen.
+// with a count of the unread ones. Opening a mention marks it read; "Mark all
+// as read" does the rest. "Unread only" (remembered per browser) hides read ones.
 
 interface Mention {
   kind: 'note' | 'comment';
@@ -41,15 +42,28 @@ function mentionLink(m: Mention): string {
   return `/objects/${a.object}/${a.id}${comment ? `?${comment}` : ''}`;
 }
 
+const UNREAD_KEY = 'pc.mentions.unreadOnly';
+const loadUnreadOnly = () => {
+  try { return localStorage.getItem(UNREAD_KEY) === '1'; } catch { return false; }
+};
+
 export function MentionsButton({ expanded }: { expanded: boolean }) {
   const [unseen, setUnseen] = useState(0);
   const [list, setList] = useState<Mention[] | null>(null);
   const [anchor, setAnchor] = useState<number | null>(null);
+  const [unreadOnly, setUnreadOnly] = useState(loadUnreadOnly);
   const ref = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(() => api<{ results: Mention[]; unseen: number }>('GET', '/v1/me/mentions')
-    .then((r) => { setUnseen(r.unseen); return r.results; })
+  // the badge: the unread count, up to the API's 100
+  const refreshCount = useCallback(() => api<{ unseen: number }>('GET', '/v1/me/mentions?unread=1&limit=100')
+    .then((r) => setUnseen(r.unseen))
+    .catch(() => undefined), []);
+
+  const load = useCallback((onlyUnread: boolean) => api<{ results: Mention[] }>('GET', `/v1/me/mentions${onlyUnread ? '?unread=1' : ''}`)
+    .then((r) => r.results)
     .catch(() => null), []);
+
+  const refresh = refreshCount;
 
   // the count: now, every two minutes, and when the tab comes back
   useEffect(() => {
@@ -82,12 +96,33 @@ export function MentionsButton({ expanded }: { expanded: boolean }) {
 
   async function open(bottom: number) {
     setAnchor(bottom);
-    const results = await refresh();
-    setList(results ?? []);
-    if (results?.some((m) => !m.seen)) {
-      await api('POST', '/v1/me/mentions/seen', {}).catch(() => undefined);
-      setUnseen(0);
-    }
+    setList(null);
+    void refreshCount();
+    setList((await load(unreadOnly)) ?? []);
+  }
+
+  async function toggleUnreadOnly(on: boolean) {
+    setUnreadOnly(on);
+    try { localStorage.setItem(UNREAD_KEY, on ? '1' : '0'); } catch { /* not stored */ }
+    setList(null);
+    setList((await load(on)) ?? []);
+  }
+
+  const idOf = (m: Mention) => m.comment_id ?? m.note_id;
+
+  function markRead(m: Mention) {
+    if (m.seen) return;
+    setList((l) => l && l.map((x) => (x === m ? { ...x, seen: true } : x)));
+    setUnseen((n) => Math.max(0, n - 1));
+    void api('POST', '/v1/me/mentions/seen', m.kind === 'comment' ? { comment_ids: [m.comment_id] } : { note_ids: [m.note_id] }).catch(() => undefined);
+  }
+
+  async function markAllRead() {
+    setUnseen(0);
+    // with "Unread only" on, the list empties; otherwise everything turns read
+    setList((l) => l && (unreadOnly ? [] : l.map((x) => ({ ...x, seen: true }))));
+    await api('POST', '/v1/me/mentions/seen', {}).catch(() => undefined);
+    void refreshCount();
   }
 
   const label = unseen ? `Mentions (${unseen} new)` : 'Mentions';
@@ -101,15 +136,22 @@ export function MentionsButton({ expanded }: { expanded: boolean }) {
       </button>
       {anchor !== null && (
         <div className="mentions-menu" ref={ref} style={{ bottom: Math.max(8, window.innerHeight - anchor) }} role="dialog" aria-label="Mentions">
-          <h3>Mentions</h3>
+          <div className="mentions-head">
+            <h3>Mentions</h3>
+            <button type="button" className="btn ghost small push-right" disabled={unseen === 0} onClick={() => void markAllRead()}>Mark all as read</button>
+          </div>
+          <label className="mentions-filter small">
+            <input type="checkbox" checked={unreadOnly} onChange={(e) => void toggleUnreadOnly(e.target.checked)} />
+            <span>Unread only</span>
+          </label>
           {list === null ? (
             <div className="muted small mentions-empty">Loading…</div>
           ) : list.length === 0 ? (
-            <div className="muted small mentions-empty">When someone tags you in a note or comment with @ and your name, it shows here.</div>
+            <div className="muted small mentions-empty">{unreadOnly ? 'No unread mentions.' : 'When someone tags you in a note or comment with @ and your name, it shows here.'}</div>
           ) : (
             <div className="mentions-list">
               {list.map((m) => (
-                <Link key={`${m.kind}-${m.comment_id ?? m.note_id}`} to={mentionLink(m)} className={`mention-item${m.seen ? '' : ' new'}`} onClick={close}>
+                <Link key={`${m.kind}-${idOf(m)}`} to={mentionLink(m)} className={`mention-item${m.seen ? '' : ' new'}`} onClick={() => { markRead(m); close(); }}>
                   <div className="mention-head">
                     <strong>{m.mentioned_by?.name ?? 'Someone'}</strong>
                     <span> tagged you{m.kind === 'comment' ? ' in a comment' : ''}{m.record ? <> on <strong>{m.record.name || m.record.label}</strong></> : null}</span>
