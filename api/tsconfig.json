@@ -9,7 +9,10 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": false,
-    "outDir": "dist"
+    "outDir": "dist",
+    // the repo root: src/external-url.test.ts imports web's copy of the
+    // check (TypeScript 7 defaults rootDir to this folder)
+    "rootDir": ".."
   },
   "include": ["src"]
 }
