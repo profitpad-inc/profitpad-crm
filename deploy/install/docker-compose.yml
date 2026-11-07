@@ -1,0 +1,146 @@
+# ProfitPad CRM from published images: no clone, no build. Setup and updates:
+# install.sh in this folder, or docs/self-hosting.md.
+#
+#   web       Caddy: HTTPS, the UI, and every API path on the same address
+#   api       the API
+#   migrate   database roles and migrations; runs on every "up", then exits,
+#             and the API waits for it
+#   db        Postgres
+#   renderer  headless Chromium for custom view previews and quote PDFs
+#
+# Settings come from .env (addresses, sign-in, keys) and db.env (the Postgres
+# superuser password), both next to this file.
+#
+# Update: docker compose pull && docker compose up -d
+# (always through compose, so migrations run before the new API starts; tools
+# that restart containers on their own, such as Watchtower, skip that step)
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:15
+    container_name: pc-db
+    restart: unless-stopped
+    env_file: db.env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: profitpad_crm_db
+    volumes:
+      - pc_db_data:/var/lib/postgresql/data
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d profitpad_crm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+
+  migrate:
+    image: ${PCRM_REGISTRY:-ghcr.io/profitpad-inc}/profitpad-crm-migrate:${PCRM_VERSION:-latest}
+    container_name: pc-migrate
+    restart: "no"
+    env_file: db.env
+    environment:
+      # the API's database password, so its login matches .env
+      PCRM_API_PASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
+    networks:
+      - db_net
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+  api:
+    image: ${PCRM_REGISTRY:-ghcr.io/profitpad-inc}/profitpad-crm-api:${PCRM_VERSION:-latest}
+    container_name: pc-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: pc_api_login
+      PGDATABASE: profitpad_crm_db
+      HOST: 0.0.0.0
+      PORT: "3100"
+      # the UI and the API share one address
+      UI_URL: ${PCRM_URL:?set PCRM_URL in .env}
+      PUBLIC_API_URL: ${PCRM_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:-${PCRM_URL}}
+      TRUST_PROXY: "true"
+      # stored files: written here by the API, sent by Caddy from the same
+      # volume (X-Accel-Redirect, see the Caddyfile in web/)
+      FILES_DIR: /data/files
+      FILES_ACCEL_PREFIX: /_pcrm_files/
+      RENDERER_WS_URL: ws://pc-renderer:3000/
+      VIEW_FRAME_URL: http://web/view-frame/index.html
+    volumes:
+      - ${PCRM_FILES_DIR:-pc_files}:/data/files
+    networks:
+      - db_net
+      - renderer_net
+      - web_net
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      renderer:
+        condition: service_started
+    logging: *logging
+
+  # Reachable only by the API on renderer_net, which has no way out to the
+  # internet; the API also blocks every request the page makes.
+  renderer:
+    image: ${PCRM_REGISTRY:-ghcr.io/profitpad-inc}/profitpad-crm-renderer:${PCRM_VERSION:-latest}
+    container_name: pc-renderer
+    restart: unless-stopped
+    init: true
+    # Chromium needs more shared memory than Docker's 64 MB default
+    shm_size: 512m
+    mem_limit: 1g
+    networks:
+      - renderer_net
+    logging: *logging
+
+  web:
+    image: ${PCRM_REGISTRY:-ghcr.io/profitpad-inc}/profitpad-crm-web:${PCRM_VERSION:-latest}
+    container_name: pc-web
+    restart: unless-stopped
+    environment:
+      # crm.example.com: Caddy gets the HTTPS certificate itself.
+      # :80: plain HTTP behind your own reverse proxy (see docs/self-hosting.md)
+      PCRM_SITE_ADDRESS: ${PCRM_SITE_ADDRESS:?set PCRM_SITE_ADDRESS in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ${PCRM_FILES_DIR:-pc_files}:/srv/files:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - web_net
+    depends_on:
+      api:
+        condition: service_started
+    logging: *logging
+
+volumes:
+  pc_db_data:
+    name: ${PCRM_DB_VOLUME:-pcrm_db_data}
+  pc_files:
+    name: pcrm_files
+  caddy_data:
+    name: pcrm_caddy_data
+  caddy_config:
+    name: pcrm_caddy_config
+
+networks:
+  db_net:
+  web_net:
+  renderer_net:
+    internal: true

@@ -48,7 +48,8 @@ import {
 // in the UI. Served statelessly: each request gets a fresh server instance,
 // for both the 2026-07-28 protocol and older (2025) clients.
 
-const VERSION = '0.1.0';
+// the release the image was built from (api/Dockerfile, PCRM_VERSION)
+const VERSION = process.env.PCRM_VERSION || '0.1.0';
 // Browser-based MCP clients allowed to call /mcp (Origin header). Clients that
 // are not browsers send no Origin and are not affected.
 const allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);

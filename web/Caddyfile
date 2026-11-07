@@ -1,0 +1,133 @@
+# The CRM's front door (web/Dockerfile): serves the UI and sends API paths to
+# the api service, on one address. PCRM_SITE_ADDRESS is either
+#   crm.example.com   Caddy gets and renews the HTTPS certificate itself
+#                     (ports 80 and 443 published)
+#   :80               plain HTTP, behind a reverse proxy that does HTTPS
+#                     (ProfitPad's own server: host nginx -> 127.0.0.1:8080)
+{
+	admin off
+	order rate_limit before basicauth
+	servers {
+		# behind another proxy, take the visitor's address and scheme from
+		# X-Forwarded-For / X-Forwarded-Proto (rate limits key on it, the API
+		# builds cookies and links from it)
+		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+# Everything that goes to the API. A file download comes back from the API as
+# an X-Accel-Redirect to /_pcrm_files/<storage key> (api/src/files.ts); Caddy
+# then sends the bytes from the files volume (range requests included) with
+# the API's content headers and its CSP: an uploaded HTML or SVG file must
+# never run scripts on this site.
+(api) {
+	reverse_proxy api:3100 {
+		flush_interval -1
+		@accel header X-Accel-Redirect *
+		handle_response @accel {
+			root * /srv/files
+			rewrite * {rp.header.X-Accel-Redirect}
+			uri strip_prefix /_pcrm_files
+			copy_response_headers {
+				include Content-Type Content-Disposition Cache-Control Content-Security-Policy
+			}
+			header {
+				X-Content-Type-Options nosniff
+				X-Frame-Options DENY
+			}
+			file_server
+		}
+	}
+}
+
+# Inside the compose network only: the API fetches the custom view frame from
+# here for the renderer (VIEW_FRAME_URL), whatever the public address is.
+http://web {
+	handle /view-frame/* {
+		root * /srv/www
+		file_server
+	}
+	respond 404
+}
+
+{$PCRM_SITE_ADDRESS::80} {
+	# Per visitor, on top of the API's own limits: sign-in 20 a minute, public
+	# quote/form/booking routes 30, OAuth for connected apps 60 (AI services
+	# call the token endpoint for many users from shared addresses).
+	rate_limit {
+		zone auth {
+			match {
+				path /v1/auth/*
+			}
+			key {client_ip}
+			events 20
+			window 1m
+		}
+		zone public {
+			match {
+				path /v1/public/*
+			}
+			key {client_ip}
+			events 30
+			window 1m
+		}
+		zone oauth {
+			match {
+				path /oauth/*
+			}
+			key {client_ip}
+			events 60
+			window 1m
+		}
+	}
+
+	@api path /v1/* /oauth/* /mcp /mcp/* /files/* /docs /docs/* /health /health/* /.well-known/oauth-*
+	header @api X-Robots-Tag "noindex, nofollow, noarchive"
+
+	# upload chunks (8 MB each)
+	@chunk path_regexp ^/v1/files/[0-9a-f]{10}/content$
+	handle @chunk {
+		request_body {
+			max_size 9MB
+		}
+		import api
+	}
+
+	# Postmark's webhooks; inbound replies can carry attachments (up to 35 MB)
+	handle /v1/postmark/* {
+		request_body {
+			max_size 40MB
+		}
+		import api
+	}
+
+	handle @api {
+		request_body {
+			max_size 25MB
+		}
+		import api
+	}
+
+	# The UI. HTML is checked on every load so a new release shows up at once;
+	# the hashed files under /assets/ never change. Public pages (/p/quote/,
+	# /p/form/, /p/book/, /p/invoice/, /p/unsubscribe/) are folders with their
+	# own index.html; every other path is the app, which routes in the browser.
+	handle /assets/* {
+		root * /srv/www
+		encode zstd gzip
+		header X-Content-Type-Options nosniff
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle {
+		root * /srv/www
+		encode zstd gzip
+		header X-Content-Type-Options nosniff
+		header Cache-Control "no-cache"
+		try_files {path} {path}/index.html /index.html
+		file_server
+	}
+}

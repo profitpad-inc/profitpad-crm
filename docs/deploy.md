@@ -290,6 +290,61 @@ Users send email from record pages as themselves through the organization's Goog
 6. In the CRM, Settings → Email: paste the server API token, from name and address, mailing address, reply domain (and a fallback address), turn sending on, Save. Copy the two webhook addresses shown there into Postmark: the events webhook on both the transactional and broadcast streams (Delivery, Bounce, Spam complaint, Open, Click, Subscription change; open and link tracking on for the broadcast stream), the inbound webhook on the inbound stream. Then "Send me a test".
 7. Try a campaign on 2 or 3 internal contacts before a real one: delivery, open and click counts, a reply (shows on the contact's timeline), unsubscribe (contact opted out, left out next time).
 
+## 24. Reinstall from prebuilt images on one address (not done yet)
+
+The server is reinstalled from scratch with the published images, the same way as [self-hosting.md](self-hosting.md) (data was all dummy data, so the database is wiped rather than moved). The UI leaves GitHub Pages: the UI and the API are both served on `crm.profitpad.com` by the `web` container behind the host's nginx, which also keeps `api.crm.profitpad.com` as a second name for the same thing. The app lives in `/opt/profitpad-crm`, not the git checkout.
+
+Until this is done, the server keeps running `deploy/docker-compose.yml` from `/srv/profitpad_crm`, and the UI stays on Pages.
+
+### Before touching the server
+
+1. **Images.** With `.github/workflows/images.yml` on `main`, the Images workflow publishes `:main` for all four images. After that first run, make each `profitpad-crm-*` package public (github.com/orgs/profitpad-inc/packages, the package, Package settings, Change visibility). Check from any machine: `docker pull ghcr.io/profitpad-inc/profitpad-crm-api:main`.
+2. **Google** (Cloud console, the OAuth client): add the redirect URIs `https://crm.profitpad.com/v1/auth/google/callback` and `https://crm.profitpad.com/v1/calendar/google/callback`. **Microsoft** (Entra, the app registration, Authentication): add `https://crm.profitpad.com/v1/auth/microsoft/callback` and `https://crm.profitpad.com/v1/calendar/microsoft/callback`. Keep the `api.crm` ones until everything works.
+3. **DNS**: change `crm.profitpad.com` from the CNAME to `profitpad-inc.github.io` to an A record for `34.130.249.246`. Then, in the repo's Settings, Pages, remove the custom domain. Wait until `dig +short crm.profitpad.com` shows the server's address before step 8 (certbot needs it).
+
+### On the server
+
+4. **Backup** (dummy data, but it costs nothing), and keep the old settings to copy from:
+   ```bash
+   cd /srv/profitpad_crm/deploy
+   sudo docker exec pc-db pg_dump -U postgres -d profitpad_crm_db -Fc > ~/profitpad_crm_db_before_reinstall.dump
+   sudo cp .env ~/old_profitpad_crm.env && sudo cp db.env ~/old_profitpad_crm_db.env
+   ```
+5. **Wipe the old install** (containers, the database volume and the uploads):
+   ```bash
+   cd /srv/profitpad_crm/deploy
+   sudo docker compose down -v
+   sudo rm -rf /srv/profitpad_crm_files
+   ```
+6. **Install**:
+   ```bash
+   sudo mkdir -p /opt/profitpad-crm && cd /opt/profitpad-crm
+   sudo curl -fsSLO https://raw.githubusercontent.com/profitpad-inc/profitpad-crm/main/deploy/install/install.sh
+   sudo PCRM_VERSION=main PCRM_BEHIND_PROXY=8080 bash install.sh
+   ```
+   Address: `crm.profitpad.com`. Google and Microsoft IDs and secrets: copy them from `~/old_profitpad_crm.env`. Then the first admin (your email).
+   Copy any optional settings from the old file into `/opt/profitpad-crm/.env` (`GOOGLE_ALLOWED_DOMAINS`, `MICROSOFT_ALLOWED_DOMAINS`, `MICROSOFT_TENANT`, `CALENDAR_GOOGLE_DOMAINS`, `DOCS_PUBLIC`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `MCP_ALLOWED_ORIGINS`), but not `UI_URL`, `PUBLIC_API_URL`, `CORS_ORIGINS`, `VITE_API_URL` (`PCRM_URL` replaces them) or the database and key lines (new ones were generated). Then `sudo docker compose up -d`.
+7. **The database tunnel** (`CLAUDE.md`): add the `db` service to `/opt/profitpad-crm/docker-compose.override.yml`, below the `web` lines install.sh wrote:
+   ```yaml
+     db:
+       ports:
+         - "127.0.0.1:5434:5432"
+   ```
+   then `sudo docker compose up -d`, and give `pc_migrator` the password that is in `~/.pgpass` on your Mac: `sudo docker compose run --rm migrate psql`, then `\password pc_migrator`.
+8. **nginx**: both names forward everything to `127.0.0.1:8080`.
+   - `crm.profitpad.com`: a new site from `deploy/install/nginx-proxy.conf` with `server_name crm.profitpad.com`, enabled, then `sudo certbot --nginx -d crm.profitpad.com`.
+   - `api.crm.profitpad.com`: in its existing site, keep the lines certbot added (`listen 443 ssl`, `ssl_certificate`, the redirect server) and replace everything else in the HTTPS server with the body of `nginx-proxy.conf` (body size, request buffering and the one `location /`).
+   - Add `http2 on;` to both HTTPS servers (live updates hold a connection per open record page). `/etc/nginx/conf.d/pcrm-limits.conf` is no longer used (Caddy does the rate limits); delete it or leave it.
+   - `sudo nginx -t && sudo systemctl reload nginx`
+9. **Check**: `curl -s https://crm.profitpad.com/health` prints `{"ok":true}`; sign in at `https://crm.profitpad.com`.
+
+### After
+
+10. **Set up again** what lived in the old database: users and roles; Settings, Email (Postmark token and sender; then paste the two webhook addresses it shows, now on `crm.profitpad.com`, into Postmark); theme and logo; embed domains; calendar connections; API keys for n8n flows; the MCP connector in Claude (`https://crm.profitpad.com/mcp`).
+11. **Repo cleanup** once it works: remove `.github/workflows/pages.yml`, `deploy/docker-compose.yml`, `deploy/db.sh`, `deploy/nginx-api.conf`, `deploy/nginx-ui.conf`, `deploy/nginx-pcrm-limits.conf`, and update `HANDOFF.md`. `/srv/profitpad_crm` is then only a checkout, no longer what runs.
+
+Updating afterwards: `cd /opt/profitpad-crm && sudo bash install.sh` (fetches main's `docker-compose.yml`, pulls the `:main` images, runs migrations, restarts).
+
 ## Notes
 
 - The UI signs in with Google (an HttpOnly `pcrm_session` cookie on the API's domain, sent with `credentials: 'include'`) or with an API key sent as a bearer header. The UI and API hosts are the same site (profitpad.com), so the SameSite=Lax cookie is sent on the UI's API calls; CORS allows credentials for the origins in `CORS_ORIGINS`.
