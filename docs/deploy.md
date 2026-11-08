@@ -322,7 +322,7 @@ Until this is done, the server keeps running `deploy/docker-compose.yml` from `/
    sudo curl -fsSLO https://raw.githubusercontent.com/profitpad-inc/profitpad-crm/main/deploy/install/install.sh
    sudo PCRM_VERSION=main PCRM_BEHIND_PROXY=8080 bash install.sh
    ```
-   Address: `crm.profitpad.com`. Google and Microsoft IDs and secrets: copy them from `~/old_profitpad_crm.env`. Then the first admin (your email).
+   Address: `crm.profitpad.com`. Sign-in: both; IDs and secrets from `~/old_profitpad_crm.env`. Then the first admin (your email). 8080 was already taken on this server (2026-11-08), so the installer picks the next free port and says which: use that port in step 8. If a start fails, fix the cause and run `install.sh` again; it carries on (port, admin) without touching `.env`.
    Copy any optional settings from the old file into `/opt/profitpad-crm/.env` (`GOOGLE_ALLOWED_DOMAINS`, `MICROSOFT_ALLOWED_DOMAINS`, `MICROSOFT_TENANT`, `CALENDAR_GOOGLE_DOMAINS`, `DOCS_PUBLIC`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `MCP_ALLOWED_ORIGINS`), but not `UI_URL`, `PUBLIC_API_URL`, `CORS_ORIGINS`, `VITE_API_URL` (`PCRM_URL` replaces them) or the database and key lines (new ones were generated). Then `sudo docker compose up -d`.
 7. **The database tunnel** (`CLAUDE.md`): add the `db` service to `/opt/profitpad-crm/docker-compose.override.yml`, below the `web` lines install.sh wrote:
    ```yaml
@@ -331,7 +331,7 @@ Until this is done, the server keeps running `deploy/docker-compose.yml` from `/
          - "127.0.0.1:5434:5432"
    ```
    then `sudo docker compose up -d`, and give `pc_migrator` the password that is in `~/.pgpass` on your Mac: `sudo docker compose run --rm migrate psql`, then `\password pc_migrator`.
-8. **nginx**: both names forward everything to `127.0.0.1:8080`.
+8. **nginx**: both names forward everything to the port from step 6 (shown in `/opt/profitpad-crm/docker-compose.override.yml`; `nginx-proxy.conf` says 8080, change it to match).
    - `crm.profitpad.com`: a new site from `deploy/install/nginx-proxy.conf` with `server_name crm.profitpad.com`, enabled, then `sudo certbot --nginx -d crm.profitpad.com`.
    - `api.crm.profitpad.com`: in its existing site, keep the lines certbot added (`listen 443 ssl`, `ssl_certificate`, the redirect server) and replace everything else in the HTTPS server with the body of `nginx-proxy.conf` (body size, request buffering and the one `location /`).
    - Add `http2 on;` to both HTTPS servers (live updates hold a connection per open record page). `/etc/nginx/conf.d/pcrm-limits.conf` is no longer used (Caddy does the rate limits); delete it or leave it.

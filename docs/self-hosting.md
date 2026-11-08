@@ -133,7 +133,7 @@ If the server already runs nginx, Traefik or another proxy on ports 80 and 443, 
 sudo PCRM_BEHIND_PROXY=8080 bash install.sh
 ```
 
-That sets `PCRM_SITE_ADDRESS=:80` in `.env` and writes a `docker-compose.override.yml` that publishes the web container on `127.0.0.1:8080` instead of ports 80 and 443. Then forward your address to `http://127.0.0.1:8080`. For nginx, `deploy/install/nginx-proxy.conf` in the repo is a ready site (then `certbot --nginx`). For any other proxy: set `X-Forwarded-For` and `X-Forwarded-Proto`, no request buffering for uploads, no response buffering for `/v1/live/` and `/mcp` (Server-Sent Events), a body limit of at least 40 MB, and HTTP/2 on (each open record page holds a live-update connection, and HTTP/1.1 allows only 6 per browser).
+That sets `PCRM_SITE_ADDRESS=:80` in `.env` and writes a `docker-compose.override.yml` that publishes the web container on `127.0.0.1:8080` instead of ports 80 and 443 (or the next free port, if something already uses 8080; the installer says which). Then forward your address to that port. For nginx, `deploy/install/nginx-proxy.conf` in the repo is a ready site (then `certbot --nginx`). For any other proxy: set `X-Forwarded-For` and `X-Forwarded-Proto`, no request buffering for uploads, no response buffering for `/v1/live/` and `/mcp` (Server-Sent Events), a body limit of at least 40 MB, and HTTP/2 on (each open record page holds a live-update connection, and HTTP/1.1 allows only 6 per browser).
 
 To switch an existing install, set `PCRM_SITE_ADDRESS=:80` in `.env`, write the override by hand:
 
