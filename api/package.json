@@ -14,7 +14,7 @@
     "node": ">=22.9"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.136.0",
+    "@anthropic-ai/sdk": "1.6.0",
     "@fastify/cors": "11.4.0",
     "@modelcontextprotocol/server": "2.4.0",
     "@scalar/fastify-api-reference": "1.76.4",
