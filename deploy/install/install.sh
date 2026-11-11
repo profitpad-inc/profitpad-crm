@@ -3,7 +3,7 @@
 # images (nothing to clone or build). Needs Docker with the compose plugin.
 #
 #   mkdir -p /opt/profitpad-crm && cd /opt/profitpad-crm
-#   curl -fsSLO https://github.com/profitpad-inc/profitpad-crm/releases/latest/download/install.sh
+#   curl -fsSLO --retry 6 --retry-delay 5 https://github.com/profitpad-inc/profitpad-crm/releases/latest/download/install.sh
 #   sudo bash install.sh
 #
 # First run: asks for the address, the sign-in provider and the first admin,
@@ -90,7 +90,9 @@ compose_url="${PCRM_COMPOSE_URL:-$compose_url}"
 proxy_port="${PCRM_BEHIND_PROXY:-}"
 [[ -z "$proxy_port" || "$proxy_port" =~ ^[0-9]+$ ]] || die "PCRM_BEHIND_PROXY must be a port number"
 echo "fetching docker-compose.yml"
-curl -fsSL "$compose_url" -o docker-compose.yml.new || die "could not download $compose_url"
+# --retry: GitHub's downloads sometimes time out (502, 503, 504) for a while
+curl -fsSL --retry 6 --retry-delay 5 "$compose_url" -o docker-compose.yml.new \
+  || die "could not download $compose_url (GitHub may be having trouble; run this again in a few minutes)"
 mv docker-compose.yml.new docker-compose.yml
 
 if [[ ! -f .env ]]; then
@@ -208,7 +210,13 @@ if [[ -f docker-compose.override.yml ]]; then
 fi
 
 echo "pulling images"
-docker compose pull </dev/null
+# a few tries: the registry, like GitHub's downloads, sometimes times out
+for try in 1 2 3; do
+  docker compose pull </dev/null && break
+  [[ $try == 3 ]] && die "could not pull the images (see above); run this again in a few minutes"
+  echo "pull failed; trying again in 15 seconds"
+  sleep 15
+done
 echo "starting (database migrations run first)"
 docker compose up -d --remove-orphans </dev/null || die "starting failed (see above). Fix the cause and run this script again; nothing is lost."
 

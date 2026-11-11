@@ -1,5 +1,5 @@
 # CRM API image (ghcr.io/profitpad-inc/profitpad-crm-api), published by
-# .github/workflows/images.yml and run by deploy/docker-compose.yml.
+# .github/workflows/images.yml and run by deploy/install/docker-compose.yml.
 FROM node:24-alpine
 # Tesseract reads business cards for the card scanner (src/card-scan.ts)
 RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng

@@ -1,7 +1,7 @@
 -- Bootstrap: roles and database settings the migrations rely on. Run as the
 -- superuser (postgres), connected to the CRM database, before the first
--- migration. Safe to run again. deploy/db.sh init runs it; so does
--- db/test-local.sh. By hand:
+-- migration. Safe to run again. The migrate image runs it on every start
+-- (db/entrypoint.sh); so does db/test-local.sh. By hand:
 --   psql -U postgres -d profitpad_crm_db -v ON_ERROR_STOP=1 -f db/bootstrap/000_superuser.sql
 --
 -- Roles (cluster-wide; everything else here applies to this database only):

@@ -20,7 +20,7 @@ fi
 
 su() { psql -X -q -h 127.0.0.1 -p "$port" -U postgres "$@"; }
 su -d postgres -c "drop database if exists profitpad_crm_db" -c "create database profitpad_crm_db" >/dev/null
-# roles and settings, as on a server (deploy/db.sh init); no API login needed here
+# roles and settings, as on a server (db/entrypoint.sh); no API login needed here
 su -d profitpad_crm_db -v ON_ERROR_STOP=1 -f "$root/db/bootstrap/000_superuser.sql" >/dev/null
 
 PGHOST=127.0.0.1 PGPORT="$port" PGUSER=pc_migrator PGDATABASE=profitpad_crm_db "$root/db/migrate.sh" | grep -v '^applying'

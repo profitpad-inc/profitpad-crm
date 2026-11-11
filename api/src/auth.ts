@@ -67,7 +67,8 @@ export function generateKey(): { key: string; prefix: string } {
   return { key: `pcrm_${prefix}_${randomBytes(32).toString('base64url')}`, prefix };
 }
 
-// Browser origins allowed to call the API, e.g. the GitHub Pages site:
+// Browser origins allowed to call the API (the compose file sets it to
+// PCRM_URL, the UI's own address), e.g.:
 // CORS_ORIGINS=https://crm.profitpad.com,http://localhost:5173
 export const browserOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 

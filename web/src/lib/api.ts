@@ -11,8 +11,10 @@ export class ApiError extends Error {
   }
 }
 
-// Where the API lives. Empty in dev (Vite proxies /v1); in production the
-// static site (GitHub Pages) is built with VITE_API_URL=https://<api host>.
+// Where the API lives. Empty in dev (Vite proxies /v1) and in the published
+// image (Caddy serves the UI and the API on one address); set
+// VITE_API_URL=https://<api host> only when the UI is built for a static
+// host apart from the API.
 export const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown, _unused?: unknown): Promise<T> {

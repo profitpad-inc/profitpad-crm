@@ -39,7 +39,7 @@ Calendar connections for the meeting booker use the same apps with extra scopes 
 
 ```bash
 sudo mkdir -p /opt/profitpad-crm && cd /opt/profitpad-crm
-sudo curl -fsSLO https://github.com/profitpad-inc/profitpad-crm/releases/latest/download/install.sh
+sudo curl -fsSLO --retry 6 --retry-delay 5 https://github.com/profitpad-inc/profitpad-crm/releases/latest/download/install.sh
 sudo bash install.sh
 ```
 

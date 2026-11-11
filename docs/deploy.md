@@ -1,12 +1,14 @@
 # Deploying
 
-> ProfitPad's own server, as a diary of what was done when. To set up a new server, follow [self-hosting.md](self-hosting.md). Since 2026-11-05 the bootstrap is `db/bootstrap/000_superuser.sql` plus `001_api_login.sql` (`002_view_reader.sql` folded into 000), run by `deploy/db.sh init`; the nginx template is `deploy/nginx-api.conf`.
+> ProfitPad's own server, as a diary of what was done when. To set up a new server, follow [self-hosting.md](self-hosting.md). **Since 2026-11-08 (section 24) the server runs the published images from `/opt/profitpad-crm`.** Sections 1 to 23 describe the setup before that (UI on GitHub Pages, API built on the server from `deploy/docker-compose.yml`, `deploy/db.sh`, `deploy/nginx-*.conf`); those files are removed, and are in git history up to the commit before that cleanup.
 
 | Piece | Where | Address |
 |---|---|---|
-| UI (static) | GitHub Pages, built by `.github/workflows/pages.yml` | `https://crm.profitpad.com` |
-| API | the server (34.130.249.246), Docker container behind nginx | `https://api.crm.profitpad.com` |
-| Database | the server, `pc-db` Docker container (`deploy/docker-compose.yml`) | `profitpad_crm_db` on 127.0.0.1:5434 |
+| UI, API, files | the server (34.130.249.246): the `pc-web` container (Caddy) on 127.0.0.1:8081 behind the host's nginx, `pc-api` behind it | `https://crm.profitpad.com` (also `https://api.crm.profitpad.com`) |
+| Database | the server, `pc-db` container | `profitpad_crm_db` on 127.0.0.1:5434 (SSH tunnel) |
+| Everything else | `/opt/profitpad-crm`: `docker-compose.yml`, `docker-compose.override.yml` (port 8081, db on 5434), `.env`, `db.env` | |
+
+Update: `cd /opt/profitpad-crm && sudo bash install.sh` once the Images workflow has published `:main`.
 
 Hostnames use hyphens: underscores are not valid in hostnames for TLS certificates or GitHub Pages custom domains.
 
@@ -290,11 +292,13 @@ Users send email from record pages as themselves through the organization's Goog
 6. In the CRM, Settings → Email: paste the server API token, from name and address, mailing address, reply domain (and a fallback address), turn sending on, Save. Copy the two webhook addresses shown there into Postmark: the events webhook on both the transactional and broadcast streams (Delivery, Bounce, Spam complaint, Open, Click, Subscription change; open and link tracking on for the broadcast stream), the inbound webhook on the inbound stream. Then "Send me a test".
 7. Try a campaign on 2 or 3 internal contacts before a real one: delivery, open and click counts, a reply (shows on the contact's timeline), unsubscribe (contact opted out, left out next time).
 
-## 24. Reinstall from prebuilt images on one address (not done yet)
+## 24. Reinstall from prebuilt images on one address (done 2026-11-08)
+
+What happened, beyond the steps below: 8080 was Foundry/ERPNext's, so the web container is on **8081**; the first install stopped on that port, which led to install.sh picking free ports and resuming after a failed start. The `api.crm.profitpad.com` site was rewritten to forward to 8081 (its old file still pointed at `127.0.0.1:3100`), `api.test-crm.profitpad.com` now redirects to `crm.profitpad.com`, and `DOCS_PUBLIC=true` was added to the new `.env`. Backups of the old nginx sites are in the admin's home folder on the server.
 
 The server is reinstalled from scratch with the published images, the same way as [self-hosting.md](self-hosting.md) (data was all dummy data, so the database is wiped rather than moved). The UI leaves GitHub Pages: the UI and the API are both served on `crm.profitpad.com` by the `web` container behind the host's nginx, which also keeps `api.crm.profitpad.com` as a second name for the same thing. The app lives in `/opt/profitpad-crm`, not the git checkout.
 
-Until this is done, the server keeps running `deploy/docker-compose.yml` from `/srv/profitpad_crm`, and the UI stays on Pages.
+Before this, the server ran `deploy/docker-compose.yml` from `/srv/profitpad_crm` and the UI was on Pages.
 
 ### Before touching the server
 
@@ -341,7 +345,7 @@ Until this is done, the server keeps running `deploy/docker-compose.yml` from `/
 ### After
 
 10. **Set up again** what lived in the old database: users and roles; Settings, Email (Postmark token and sender; then paste the two webhook addresses it shows, now on `crm.profitpad.com`, into Postmark); theme and logo; embed domains; calendar connections; API keys for n8n flows; the MCP connector in Claude (`https://crm.profitpad.com/mcp`).
-11. **Repo cleanup** once it works: remove `.github/workflows/pages.yml`, `deploy/docker-compose.yml`, `deploy/db.sh`, `deploy/nginx-api.conf`, `deploy/nginx-ui.conf`, `deploy/nginx-pcrm-limits.conf`, and update `HANDOFF.md`. `/srv/profitpad_crm` is then only a checkout, no longer what runs.
+11. **Repo cleanup** (done 2026-11-08): removed `.github/workflows/pages.yml`, `deploy/docker-compose.yml`, `deploy/db.sh`, `deploy/.env.example` and the three `deploy/nginx-*.conf`. `/srv/profitpad_crm` is only a checkout now, not what runs. Pages was unpublished 2026-11-11; still to do in GitHub's settings: delete the repository variable `VITE_API_URL`, which nothing uses any more.
 
 Updating afterwards: `cd /opt/profitpad-crm && sudo bash install.sh` (fetches main's `docker-compose.yml`, pulls the `:main` images, runs migrations, restarts).
 

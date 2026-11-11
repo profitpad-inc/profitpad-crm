@@ -10,8 +10,8 @@ import react from '@vitejs/plugin-react';
 // download the public code. embed.js is built separately (vite.embed.config.ts).
 const page = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
-// Content Security Policy as a <meta> tag on every page (GitHub Pages cannot
-// send headers). Built pages only: the dev server injects inline scripts.
+// Content Security Policy as a <meta> tag on every page, so it holds on any
+// static host, including ones that cannot send headers. Built pages only: the dev server injects inline scripts.
 // Scripts only from the site itself, so injected markup (say, a form's custom
 // HTML) cannot run code; requests only to the site and the API. Images may
 // come from any https site (custom form HTML). frame-ancestors cannot be set
