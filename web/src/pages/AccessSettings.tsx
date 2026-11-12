@@ -112,6 +112,8 @@ function useAccessData() {
 export function UserSettings() {
   const { me } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles, reloadUsers } = useAccessData();
+  const [show, setShow] = useState<'active' | 'deactivated' | 'all'>('active');
+  const shown = users.filter((u) => show === 'all' || (show === 'active') === !u.deactivated);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -159,6 +161,15 @@ export function UserSettings() {
       </>}
       actions={<Link className="btn primary" to="/objects/users"><Plus size={14} /> Add a user</Link>}
     >
+      {loaded && users.length > 0 && (
+        <div className="settings-toolbar">
+          <Select value={show} onChange={(v) => setShow(v as typeof show)} aria-label="Which users">
+            <option value="active">Active users</option>
+            <option value="deactivated">Deactivated users</option>
+            <option value="all">All users</option>
+          </Select>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       {!loaded && <TableSkeleton rows={4} />}
       {loaded && users.length === 0 && (
@@ -166,14 +177,19 @@ export function UserSettings() {
           Create a user record with someone's email so they can sign in.
         </EmptyState>
       )}
-      {loaded && users.length > 0 && (
+      {loaded && users.length > 0 && shown.length === 0 && (
+        <EmptyState icon={<Users size={18} />} title={show === 'active' ? 'No active users' : 'No deactivated users'}>
+          Nothing matches this filter.
+        </EmptyState>
+      )}
+      {loaded && shown.length > 0 && (
         <div className="access-table">
           <table className="grid">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Roles</th><th aria-label="Actions" /></tr>
+              <tr><th>Name</th><th>Email</th><th>Status</th><th>Roles</th><th aria-label="Actions" /></tr>
             </thead>
             <tbody>
-              {users.map((u) => {
+              {shown.map((u) => {
                 const assigned = rolesOf(u.id);
                 const available = roles.filter((r) => !assigned.some((a) => a.role.id === r.id));
                 const isMe = me.user?.id === u.id;
@@ -185,10 +201,10 @@ export function UserSettings() {
                         <span className="person-avatar">{initials(u.name)}</span>
                         <Link to={`/objects/users/${u.id}`}>{u.name}</Link>
                         {isMe && <span className="muted small">You</span>}
-                        {u.deactivated && <StatusPill tone="off">Deactivated</StatusPill>}
                       </span>
                     </td>
                     <td>{u.email ?? <span className="muted">No email</span>}</td>
+                    <td>{u.deactivated ? <StatusPill tone="off">Deactivated</StatusPill> : <StatusPill tone="on">Active</StatusPill>}</td>
                     <td>
                       <div className="role-chips">
                         {assigned.length === 0 && <span className="muted small">No role</span>}
@@ -204,21 +220,10 @@ export function UserSettings() {
                             </button>
                           </span>
                         ))}
-                        {available.length > 0 && (
-                          <Select
-                            className="role-add"
-                            value=""
-                            aria-label={`Add a role for ${u.name}`}
-                            onChange={(v) => run(() => api('POST', `/v1/roles/${v}/assignments`, { user_id: u.id }))}
-                          >
-                            <option value="">Add role</option>
-                            {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                          </Select>
-                        )}
                       </div>
                     </td>
                     <td className="row-actions">
-                      {(canSignInAs || !isMe) && (
+                      {(available.length > 0 || canSignInAs || !isMe) && (
                         <Menu
                           align="right"
                           trigger={(toggle) => (
@@ -229,7 +234,18 @@ export function UserSettings() {
                         >
                           {(close) => (
                             <>
-                              {canSignInAs && <button onClick={() => { close(); signInAs(u); }}>Sign in as {u.name}</button>}
+                              {available.length > 0 && (
+                                <>
+                                  <div className="menu-label">Add role</div>
+                                  {available.map((r) => (
+                                    <button key={r.id} onClick={() => { close(); run(() => api('POST', `/v1/roles/${r.id}/assignments`, { user_id: u.id })); }}>
+                                      <Plus size={14} /> {r.name}
+                                    </button>
+                                  ))}
+                                  {(canSignInAs || !isMe) && <div className="menu-sep" />}
+                                </>
+                              )}
+                              {canSignInAs &&<button onClick={() => { close(); signInAs(u); }}>Sign in as {u.name}</button>}
                               {!isMe && (u.deactivated
                                 ? <button onClick={() => { close(); setStatus(u, 'active'); }}>Reactivate</button>
                                 : <button className="danger" onClick={() => { close(); setStatus(u, 'deactivated'); }}>Deactivate</button>)}
