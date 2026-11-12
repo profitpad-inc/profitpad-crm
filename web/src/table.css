@@ -47,15 +47,6 @@
 .table-search .icon-btn { padding: 3px; }
 .table-search .icon-btn:focus-visible { outline-offset: 0; }
 
-.segmented { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--radius); background: var(--surface); }
-.segmented button {
-  height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: none;
-  color: var(--muted-text); font-size: 13px; font-weight: 500;
-}
-.segmented button:hover { color: var(--text); }
-.segmented button[aria-pressed='true'] { background: var(--page-background); color: var(--text); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(24, 32, 43, 0.06); }
-.segmented button:focus-visible { outline-offset: 0; }
-
 .table-note { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--muted-text); }
 .table-note::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .table-toolbar .table-columns { margin-left: auto; height: 32px; padding: 0 12px; }

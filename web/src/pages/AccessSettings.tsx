@@ -112,8 +112,8 @@ function useAccessData() {
 export function UserSettings() {
   const { me } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles, reloadUsers } = useAccessData();
-  const [show, setShow] = useState<'active' | 'deactivated' | 'all'>('active');
-  const shown = users.filter((u) => show === 'all' || (show === 'active') === !u.deactivated);
+  const [show, setShow] = useState<'active' | 'deactivated'>('active');
+  const shown = users.filter((u) => (show === 'active') === !u.deactivated);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -163,11 +163,10 @@ export function UserSettings() {
     >
       {loaded && users.length > 0 && (
         <div className="settings-toolbar">
-          <Select value={show} onChange={(v) => setShow(v as typeof show)} aria-label="Which users">
-            <option value="active">Active users</option>
-            <option value="deactivated">Deactivated users</option>
-            <option value="all">All users</option>
-          </Select>
+          <div className="segmented" role="group" aria-label="Which users">
+            <button type="button" aria-pressed={show === 'active'} onClick={() => setShow('active')}>Active</button>
+            <button type="button" aria-pressed={show === 'deactivated'} onClick={() => setShow('deactivated')}>Deactivated</button>
+          </div>
         </div>
       )}
       {error && <div className="error">{error}</div>}
