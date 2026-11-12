@@ -91,7 +91,7 @@ sudo docker compose up -d                                           # apply .env
 | `db/Dockerfile` | The migrate image (`db/entrypoint.sh`) |
 | `deploy/install/` | The compose file, installer and nginx template that installs use |
 | `deploy/renderer/` | The renderer image |
-| `scripts/` | Sample data generator |
+| `scripts/` | Sample data generator; `deploy.sh` updates ProfitPad's own server |
 | `docs/` | Architecture, rules, property types, hosting |
 
 ### Running it locally
@@ -138,11 +138,13 @@ To try local changes in the full setup, build the images yourself (`docker build
 
 ## ProfitPad's own server
 
-It runs the `:main` images from `/opt/profitpad-crm`, behind the server's nginx. After a push to `main`, once the Images workflow has finished:
+It runs the `:main` images from `/opt/profitpad-crm`, behind the server's nginx. After a push to `main`:
 
 ```bash
-ssh -o ClearAllForwardings=yes profitpad_claude_profitpad_crm "cd /opt/profitpad-crm && sudo bash install.sh"
+./scripts/deploy.sh
 ```
+
+That waits for CI and the Images workflow on the pushed commit (and stops if either fails), runs `install.sh` on the server, then checks that every container runs that commit.
 
 Database access through the SSH tunnel and backups are in `CLAUDE.md`; the history of the server is in `docs/deploy.md`.
 
