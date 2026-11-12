@@ -258,7 +258,7 @@ declare
   v_a text;
   v_b text;
   v_plain text;
-  v_role bigint := (select id from auth.roles where name = 'Admin');
+  v_role bigint := (select id from auth.roles where name = 'Super Admin');
 begin
   delete from auth.role_assignments;
   insert into crm.pc_0000 (name, email) values ('Keep Admin A', 'keep.admin.a@test.example') returning pc_0000_id into v_a;

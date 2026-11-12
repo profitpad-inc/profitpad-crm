@@ -66,7 +66,7 @@ set local crm.source = 'setup';
 insert into crm.pc_0000 (name, first_name, last_name, email)
 select :'first' || ' ' || :'last', :'first', :'last', :'email'
 where not exists (select 1 from crm.pc_0000 where lower(email) = lower(:'email') and record_status = 'active');
--- the admin role (a fresh install has one, "Admin")
+-- the admin role (a fresh install has one, "Super Admin"); the user also gets the default "View Only" role when created, which the admin role outranks
 insert into auth.role_assignments (role_id, user_id)
 select r.id, u.pc_0000_id
 from (select id from auth.roles where is_admin order by id limit 1) r
