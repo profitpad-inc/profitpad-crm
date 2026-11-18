@@ -4,6 +4,26 @@ What it takes to rebuild Matt's "Signal Flare CRM" prototype (Base44, `https://d
 
 Reviewed 2026-11-03 by reading every page, opening every create form and reading the app's own record shapes (Base44 entities). Nothing was saved in Matt's app; the only state changed was the Card Scanner's "Trade Show Mode" switch being flipped on in that browser session.
 
+## Status (2026-11-04)
+
+| Item | State |
+|---|---|
+| 2.1 and 2.2 data model | Built as the `defense` package (`api/packages/defense/manifest.json`), installed only on a throwaway cluster |
+| 3 custom views | 13 built in the package (`api/packages/defense/views/`), checked by running queries and server rendering, not yet in a browser. Not built: the AI ones (RFP generator, opportunity evaluator, AI reports, follow-up drafts, intel feed), PDF and CSV export |
+| 4.0 package installer | Built (`api/src/packages.ts`, migration 0091): install only, no upgrade or uninstall yet |
+| 4.1 file upload from views | Built and committed |
+| 4.2 AI actions | Only inside the card scanner; no general AI action yet |
+| 4.3 business card scanner | Built; extracted fields are not yet configurable per package |
+| 4.4 email and notifications | In progress in the `email-sending` and `postmark-email` worktrees |
+| 4.5 stage history | Built (`view_data.property_history`, migration 0089) |
+| 4.6 receipt scanning | Not started |
+| 4.7 multi-currency | Built and committed (rates, `amount_base`) |
+| 4.8 PDFs | Quotes: Liquid document templates. Printing views: not started |
+| 4.9 per-user view settings | Built (`useViewSetting`, migration 0090) |
+| 4.10 outside links | Built and committed |
+
+Migrations 0089 to 0091 are not applied to the server yet.
+
 ## Bottom line
 
 - **Almost everything fits the current database model.** Matt's app has 14 record types. 5 map onto native objects (deals, contacts, companies, products, quotes, plus lines and invoices), 1 maps onto marketing events, and the rest become custom objects. None of them need a new kind of storage.

@@ -34,6 +34,7 @@ export function propertyOut(p: PropertyDef, principal?: Principal) {
     type: p.type,
     options: p.options,
     dropdown_options: p.type === 'dropdown' || p.type === 'actor' ? p.dropdown_options : undefined,
+    option_list: p.type === 'dropdown' ? p.option_list : undefined,
     calc_sql: p.calc_sql ?? undefined,
     calc_output_type: p.calc_output_type ?? undefined,
     calc_last_error: p.calc_last_error ?? undefined,

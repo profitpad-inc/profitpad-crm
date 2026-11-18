@@ -1,0 +1,8 @@
+{
+  "sources": "select s.{{id:opportunity_sources}} as id, s.name, s.url, s.category, s.category__label as category_label, s.description from opportunity_sources s order by s.category, s.name",
+  "source_categories": "select api_value, label from property_options where object_type_id = '{{code:opportunity_sources}}' and property = 'category' and record_status = 'active' order by display_order",
+  "leads": "select l.{{id:leads}} as id, l.name, l.status, l.status__label as status_label, l.source__label as source, l.agency, l.solicitation_number, l.due_date, l.summary, l.raw_text, l.owner__label as owner_name, l.created_at, (select a.other_record_id from associations a where a.object = 'leads' and a.other_object = 'deals' and a.record_id = l.{{id:leads}} limit 1) as deal_id from leads l order by l.created_at desc limit 500",
+  "lead_statuses": "select api_value, label from property_options where object_type_id = '{{code:leads}}' and property = 'status' and record_status = 'active' order by display_order",
+  "topics": "select t.{{id:intel_topics}} as id, t.name, t.topic_type__label as topic_type, t.query from intel_topics t order by t.name",
+  "first_stage": "select api_value from property_options where object_type_id = 'pc_0012' and property = 'stage' and record_status = 'active' and 'defense' = any(parent_values) and not is_closed order by display_order limit 1"
+}

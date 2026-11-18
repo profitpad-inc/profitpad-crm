@@ -55,6 +55,8 @@ export interface PropertyDef {
   // for actor properties: one per user (user:<id>, archived users included),
   // so their names show and filters can offer them
   dropdown_options: OptionDef[];
+  // the shared option list this dropdown follows (migration 0097), if any
+  option_list: { id: string; api_name: string; label: string } | null;
 }
 
 export interface Registry {
@@ -73,7 +75,7 @@ export async function getRegistry(): Promise<Registry> {
   if (cached && cached.version === version) return cached;
 
   // user renames reach the registry through sync_user_options, which logs a schema change
-  const [objects, properties, options, users] = await Promise.all([
+  const [objects, properties, options, users, lists] = await Promise.all([
     pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties, o.aliases,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
                                and meta.association_allowed(o.object_type_id, x.object_type_id) order by x.object_type_id) as links_to,
@@ -85,8 +87,11 @@ export async function getRegistry(): Promise<Registry> {
                 from meta.pc_0002 order by object_type_id, is_base desc, pc_0002_id`),
     pool.query(`select property_id, api_value, label, display_order, record_status, parent_values, is_closed, is_won, probability, color from meta.pc_0003 order by property_id, display_order, api_value`),
     pool.query(`select pc_0000_id as id, coalesce(nullif(btrim(name), ''), pc_0000_id) as name, record_status
-                from crm.pc_0000 where record_status in ('active', 'archived') order by lower(name), pc_0000_id`)
+                from crm.pc_0000 where record_status in ('active', 'archived') order by lower(name), pc_0000_id`),
+    pool.query(`select m.property_id, l.id, l.api_name, l.label from meta.option_list_members m join meta.option_lists l on l.id = m.list_id`)
   ]);
+  const listByProp = new Map<string, { id: string; api_name: string; label: string }>(
+    lists.rows.map((r) => [r.property_id, { id: r.id, api_name: r.api_name, label: r.label }]));
 
   const optionsByProp = new Map<string, OptionDef[]>();
   for (const o of options.rows) {
@@ -114,7 +119,10 @@ export async function getRegistry(): Promise<Registry> {
   for (const p of properties.rows) {
     const obj = byKey.get(p.object_type_id);
     if (!obj) continue;
-    const prop: PropertyDef = { ...p, dropdown_options: p.type === 'actor' ? actorOptions : optionsByProp.get(p.pc_0002_id) ?? [] };
+    const prop: PropertyDef = {
+      ...p, dropdown_options: p.type === 'actor' ? actorOptions : optionsByProp.get(p.pc_0002_id) ?? [],
+      option_list: listByProp.get(p.pc_0002_id) ?? null
+    };
     obj.properties.push(prop);
     obj.byName.set(p.api_name.toLowerCase(), prop);
   }

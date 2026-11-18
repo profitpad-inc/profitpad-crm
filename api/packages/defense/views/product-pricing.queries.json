@@ -1,0 +1,4 @@
+{
+  "products": "select p.pc_0021_id as id, p.name, p.sku, p.product_category, p.product_category__label as category, p.msrp, p.gsa_price, p.distributor_price, p.unit_price, p.unit_cost, p.target_margin, p.berry_compliant__label as berry, p.country_of_origin, p.lead_time, p.price_effective_date, p.price_expiry_date, p.active from products p order by p.name",
+  "categories": "select api_value, label from property_options where object_type_id = 'pc_0021' and property = 'product_category' and record_status = 'active' order by display_order"
+}

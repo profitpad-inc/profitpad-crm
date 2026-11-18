@@ -8,6 +8,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src ./src
+# niche packages (src/packages.ts)
+COPY packages ./packages
 # stored files (FILES_DIR); a fresh named volume takes this folder's owner
 RUN mkdir -p /data/files && chown node:node /data/files
 # the release, shown to MCP clients (src/mcp.ts); set by the publish workflow.

@@ -97,6 +97,8 @@ export interface Property {
   type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list' | 'actor';
   options: Record<string, unknown>;
   dropdown_options?: DropdownOption[];
+  // the shared option list this dropdown follows (Settings, Option lists)
+  option_list?: { id: string; api_name: string; label: string } | null;
   calc_output_type?: 'text' | 'number' | 'date' | 'datetime';
   calc_sql?: string;
   calc_last_error?: string;
@@ -204,6 +206,17 @@ export interface CustomViewSummary {
   status: 'draft' | 'published';
   audience: 'admins' | 'everyone';
   unpublished_changes: boolean;
+}
+
+// Shared option lists (GET /v1/option-lists): dropdowns that keep the same choices
+export interface OptionList {
+  id: string;
+  api_name: string;
+  label: string;
+  description: string | null;
+  created_at: string;
+  members: { object: string; object_label: string; property: string; property_label: string; record_status: string }[];
+  choices: { api_value: string; label: string; display_order: number; record_status: string; color: string | null }[];
 }
 
 // ---- schema cache -----------------------------------------------------------

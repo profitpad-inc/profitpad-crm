@@ -5,7 +5,7 @@ import { toDb } from './values.js';
 
 const fileProp = (options: Record<string, unknown>): PropertyDef => ({
   pc_0002_id: 'p1', object_type_id: 'pc_0100', api_name: 'receipt', label: 'Receipt', description: null, type: 'file', options,
-  calc_sql: null, calc_output_type: null, calc_last_error: null, is_base: false, is_native: false, read_only: false, record_status: 'active', dropdown_options: []
+  calc_sql: null, calc_output_type: null, calc_last_error: null, is_base: false, is_native: false, read_only: false, record_status: 'active', dropdown_options: [], option_list: null
 });
 
 test('file properties take file ids, one or a list, without repeats', () => {

@@ -193,6 +193,30 @@ export async function analyzeQuery(name: string, spec: QuerySpec): Promise<Query
   return info;
 }
 
+// The same checks as saving a draft, on a given connection, so a package
+// install can check views against objects its own transaction just created.
+// Not cached: the registry version does not know those objects yet.
+export async function checkViewOn(c: pg.PoolClient, label: string, source: string, rawQueries: unknown): Promise<Queries> {
+  try {
+    compileSource(source);
+  } catch (err) {
+    throw badRequest(`${label}: ${(err as Error).message}`);
+  }
+  const queries = parseQueries(rawQueries);
+  for (const [name, spec] of Object.entries(queries)) {
+    const probe = substitute(spec.sql, (p) => `(null::${PARAM_TYPES[p === 'me' ? 'text' : spec.params[p]]})`);
+    await c.query('savepoint view_check');
+    try {
+      await c.query('select meta.analyze_view_query($1)', [probe]);
+      await c.query('release savepoint view_check');
+    } catch (err) {
+      await c.query('rollback to savepoint view_check');
+      throw badRequest(`${label}, query "${name}": ${(err as Error).message}`);
+    }
+  }
+  return queries;
+}
+
 // What the caller's roles allow: Read on every object the query reads, and no
 // hidden property among its columns. Rows are limited by row-level security.
 export async function checkQueryAccess(p: Principal, name: string, info: QueryAnalysis): Promise<void> {
@@ -219,6 +243,28 @@ function rlsSettings(p: Principal): [string, string[], number[]] {
   return ['restricted', perms.recordAccess === 'own' ? [p.userId] : perms.teamUserIds, perms.sharingRules.map((r) => r.id)];
 }
 
+// What view_data.property_history must leave out for the caller (migration
+// 0089): "pc_0012:*" for an object their roles cannot read, "pc_0012:amount"
+// for a property their roles hide.
+async function hiddenForHistory(p: Principal): Promise<string[]> {
+  const perms = p.permissions;
+  if (!perms) return [];
+  const out: string[] = [];
+  for (const obj of (await getRegistry()).objects) {
+    if (!perms.objects.get(obj.object_type_id)?.read) {
+      out.push(`${obj.object_type_id}:*`);
+      continue;
+    }
+    for (const prop of obj.properties) {
+      if (propertyAccess(p, prop) === 'hidden') out.push(`${obj.object_type_id}:${prop.api_name}`);
+    }
+  }
+  return out;
+}
+
+// Postgres array literal of plain strings (codes and api_names: no quotes or commas)
+const textArray = (items: string[]) => `{${items.map((s) => `"${s}"`).join(',')}}`;
+
 const INT8 = 20;
 const NUMERIC = 1700;
 
@@ -243,14 +289,16 @@ export async function runQuery(
     return `$${index.get(param)}::${PARAM_TYPES[param === 'me' ? 'text' : spec.params[param]]}`;
   });
   const [access, owners, rules] = rlsSettings(p);
+  const hidden = textArray(await hiddenForHistory(p));
   const client = await pool.connect();
   try {
     await client.query('begin read only');
     await client.query('set local role pc_view_reader');
     await client.query(
       `select set_config('pcrm.access', $1, true), set_config('pcrm.owner_ids', $2, true), set_config('pcrm.rule_ids', $3, true),
-              set_config('statement_timeout', $4, true), set_config('search_path', 'view_data, pg_catalog, public', true)`,
-      [access, `{${owners.join(',')}}`, `{${rules.join(',')}}`, QUERY_TIMEOUT]
+              set_config('statement_timeout', $4, true), set_config('search_path', 'view_data, pg_catalog, public', true),
+              set_config('pcrm.hidden_properties', $5, true)`,
+      [access, `{${owners.join(',')}}`, `{${rules.join(',')}}`, QUERY_TIMEOUT, hidden]
     );
     let res: pg.QueryResult;
     try {
@@ -362,6 +410,49 @@ export async function allowWrites(p: Principal, slug: string, draft: boolean): P
   if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');
   await pool.query('insert into ui.view_write_approvals (view_id, approved_by) values ($1, $2) on conflict (view_id) do nothing', [v.id, p.actor]);
   return { writes_allowed: true };
+}
+
+// ---- per-user settings (0090) ----------------------------------------------------
+
+export const SETTING_KEY_RE = /^[A-Za-z0-9_.:-]{1,100}$/;
+const SETTING_MAX_BYTES = 32768;
+const SETTINGS_PER_VIEW = 200;
+
+async function settingsView(p: Principal, slug: string, draft: boolean): Promise<{ viewId: string; userId: string }> {
+  if (!p.userId) throw badRequest('view settings are kept per user: sign in as a user (API keys have none)');
+  const v = await loadView(pool, slug);
+  if (!canOpen(p, v, draft)) throw forbidden('you cannot open this view');
+  return { viewId: v.id, userId: p.userId };
+}
+
+// Everything the signed-in user saved in this view, as { key: value }.
+export async function getViewSettings(p: Principal, slug: string, draft: boolean): Promise<Record<string, unknown>> {
+  const { viewId, userId } = await settingsView(p, slug, draft);
+  const { rows } = await pool.query('select key, value from ui.view_user_settings where view_id = $1 and user_id = $2 order by key', [viewId, userId]);
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+// Saves one setting for the signed-in user; null or undefined removes it.
+export async function setViewSetting(p: Principal, slug: string, key: string, value: unknown, draft: boolean): Promise<{ key: string; saved: boolean }> {
+  if (!SETTING_KEY_RE.test(key)) throw badRequest('a setting key is 1 to 100 letters, digits, _ . : or -');
+  const { viewId, userId } = await settingsView(p, slug, draft);
+  if (value === null || value === undefined) {
+    await pool.query('delete from ui.view_user_settings where view_id = $1 and user_id = $2 and key = $3', [viewId, userId, key]);
+    return { key, saved: false };
+  }
+  const json = JSON.stringify(value);
+  if (json === undefined) throw badRequest('a setting must be JSON (text, number, true/false, a list or an object)');
+  if (Buffer.byteLength(json) > SETTING_MAX_BYTES) throw badRequest(`a setting is at most ${SETTING_MAX_BYTES / 1024} KB`);
+  const { rows } = await pool.query(
+    `insert into ui.view_user_settings (view_id, user_id, key, value)
+     select $1, $2, $3, $4::jsonb
+     where (select count(*) from ui.view_user_settings where view_id = $1 and user_id = $2 and key <> $3) < $5
+     on conflict (view_id, user_id, key) do update set value = excluded.value, updated_at = now()
+     returning key`,
+    [viewId, userId, key, json, SETTINGS_PER_VIEW]
+  );
+  if (!rows[0]) throw badRequest(`a view keeps at most ${SETTINGS_PER_VIEW} settings per user: remove some (set them to null) first`);
+  return { key, saved: true };
 }
 
 export async function runViewQuery(p: Principal, slug: string, name: string, params: Record<string, unknown>, draft: boolean): Promise<QueryResult> {

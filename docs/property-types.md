@@ -42,7 +42,7 @@ Values are `api_value`s; labels live in `meta.pc_0003` and are looked up at read
 | Option | Type | Effect |
 |---|---|---|
 | `single_value` | boolean | *enforced*: at most one value. Switching on fails (listing record IDs) if any record has more than one. Switching is instant either way: storage is always `text[]` |
-| `allow_user_add` | boolean | API writes may introduce new values (created with label = api_value) |
+| `allow_user_add` | boolean | API writes may introduce new values (created with label = api_value; on a dropdown that shares an option list, the new value reaches every dropdown on the list) |
 | `allow_form_add` | boolean | reserved for forms |
 | `auto_append_users` | boolean | every active user becomes an option (`api_value` = user id, label = user name). A user who is archived, deactivated, merged or deleted has their option archived, and it comes back if they return (migration 0050) |
 | `color_display` | `none` / `dot` / `pill` | how choice colours show: none (the default when unset), a large dot left of the label, or a tinted pill around each value. *enforced*: `dot` needs `single_value` (migration 0039) |

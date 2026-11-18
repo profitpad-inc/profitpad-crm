@@ -121,6 +121,61 @@ export const callIntegration = <T = unknown>(key: string, data?: unknown) => cal
 // Resolves with { opened: false } when the viewer cancels.
 export const openUrl = (url: string) => call<{ opened: boolean }>('openUrl', [url]);
 
+// ---- the viewer's own settings (kept per user and view on the server) -----------------
+
+// All of the viewer's saved settings in this view, as { key: value }.
+export const getViewSettings = () => call<Record<string, unknown>>('getSettings', []);
+// Saves one setting for the viewer (any JSON up to 32 KB); null removes it.
+export const setViewSetting = (key: string, value: unknown) => call<{ key: string; saved: boolean }>('setSetting', [key, value ?? null]);
+
+let settingsCache: Promise<Record<string, unknown>> | null = null;
+const settingsValues: Record<string, unknown> = {};
+const settingsListeners = new Set<() => void>();
+const settingsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function loadSettings(): Promise<Record<string, unknown>> {
+  if (!settingsCache) {
+    settingsCache = getViewSettings().then((all) => {
+      for (const [k, v] of Object.entries(all)) if (!(k in settingsValues)) settingsValues[k] = v;
+      settingsListeners.forEach((f) => f());
+      return settingsValues;
+    }, (err) => {
+      settingsCache = null;
+      throw err;
+    });
+  }
+  return settingsCache;
+}
+
+// Like useState, but remembered for this viewer in this view, on any device:
+//   const [cards, setCards] = useViewSetting('cards', ['pipeline', 'weighted']);
+// Starts as fallback until the saved value loads (loading is true meanwhile).
+// Saves a moment after the last change, so typing or dragging is one save.
+export function useViewSetting<T>(key: string, fallback: T): [T, (next: T | ((prev: T) => T)) => void, { loading: boolean; error: Error | null }] {
+  const [, rerender] = useState(0);
+  const [loading, setLoading] = useState(!settingsCache);
+  const [error, setError] = useState<Error | null>(null);
+  useEffect(() => {
+    const f = () => rerender((n) => n + 1);
+    settingsListeners.add(f);
+    loadSettings().then(() => setLoading(false), (err: Error) => { setError(err); setLoading(false); });
+    return () => { settingsListeners.delete(f); };
+  }, []);
+  const value = (key in settingsValues ? settingsValues[key] : fallback) as T;
+  const set = useCallback((next: T | ((prev: T) => T)) => {
+    const prev = (key in settingsValues ? settingsValues[key] : fallback) as T;
+    const v = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
+    settingsValues[key] = v;
+    settingsListeners.forEach((f) => f());
+    clearTimeout(settingsTimers.get(key));
+    settingsTimers.set(key, setTimeout(() => {
+      settingsTimers.delete(key);
+      setViewSetting(key, v).catch((err: Error) => setError(err));
+    }, 400));
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [value, set, { loading, error }];
+}
+
 // ---- files (the page uploads and reads them as the viewer) -------------------------
 
 export type { ViewFile };

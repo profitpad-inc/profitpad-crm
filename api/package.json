@@ -8,7 +8,8 @@
     "start": "tsx --env-file-if-exists=.env src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test 'src/**/*.test.ts'",
-    "create-key": "tsx --env-file-if-exists=.env src/cli/create-key.ts"
+    "create-key": "tsx --env-file-if-exists=.env src/cli/create-key.ts",
+    "install-package": "tsx --env-file-if-exists=.env src/cli/install-package.ts"
   },
   "engines": {
     "node": ">=22.9"

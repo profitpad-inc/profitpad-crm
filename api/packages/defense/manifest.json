@@ -1,0 +1,401 @@
+{
+  "name": "defense",
+  "label": "Defense",
+  "version": "0.1.0",
+  "description": "Business development for defense, public safety and federal sellers: a defense pipeline with PWIN and BANT scoring, contract vehicles and solicitations, compliance fields on products and quotes, partnerships, OEM integrations, proposals, BOMs, travel, marketing materials and opportunity discovery. Built from defense_crm_handoff.md sections 2.1 and 2.2.",
+
+  "objects": [
+    { "api_name": "partnerships", "label_singular": "Partnership", "label_plural": "Partnerships", "description": "Teaming partners, VARs, distributors and alliances" },
+    { "api_name": "oem_integrations", "label_singular": "OEM integration", "label_plural": "OEM integrations", "description": "Integration work with OEM partners" },
+    { "api_name": "proposals", "label_singular": "Proposal", "label_plural": "Proposals", "description": "RFP, RFQ and RFI responses" },
+    { "api_name": "boms", "label_singular": "BOM", "label_plural": "BOMs", "description": "Bills of materials: a product's components (as line items), cost and target margin" },
+    { "api_name": "trips", "label_singular": "Trip", "label_plural": "Trips", "description": "Business travel: itinerary, budget and approval" },
+    { "api_name": "expenses", "label_singular": "Expense", "label_plural": "Expenses", "description": "Travel and business expenses, with receipts" },
+    { "api_name": "marketing_materials", "label_singular": "Marketing material", "label_plural": "Marketing materials", "description": "Slick sheets, presentations, posts and event materials" },
+    { "api_name": "documents", "label_singular": "Document", "label_plural": "Documents", "description": "Business documents, tagged by type and section" },
+    { "api_name": "opportunity_sources", "label_singular": "Opportunity source", "label_plural": "Opportunity sources", "description": "Where to look for solicitations and market intelligence" },
+    { "api_name": "leads", "label_singular": "Lead", "label_plural": "Leads", "description": "Possible opportunities waiting for review: from tender emails, alerts or by hand" },
+    { "api_name": "intel_topics", "label_singular": "Intel topic", "label_plural": "Intel topics", "description": "Topics, competitors and tenders to follow" },
+    { "api_name": "escalations", "label_singular": "Escalation", "label_plural": "Escalations", "description": "Red Star alerts: roadblocks on a deal that need the team now" }
+  ],
+
+  "properties": [
+    { "object": "deals", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+      ] },
+    { "object": "deals", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true },
+      "description": "Your product lines. Add your own in Settings, Properties." },
+    { "object": "deals", "api_name": "contract_vehicle", "label": "Contract vehicle", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "rfi", "label": "RFI" }, { "api_value": "rfq", "label": "RFQ" }, { "api_value": "rfp", "label": "RFP" },
+        { "api_value": "sole_source", "label": "Sole source" }, { "api_value": "idiq", "label": "IDIQ" }, { "api_value": "bpa", "label": "BPA" },
+        { "api_value": "gsa_schedule", "label": "GSA Schedule" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "deals", "api_name": "region", "label": "Region", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "noram", "label": "NORAM" }, { "api_value": "europe", "label": "Europe" }, { "api_value": "africa", "label": "Africa" },
+        { "api_value": "middle_east", "label": "Middle East" }, { "api_value": "latam", "label": "LATAM" }, { "api_value": "asia", "label": "Asia" }
+      ] },
+    { "object": "deals", "api_name": "solicitation_number", "label": "Solicitation number", "type": "text", "options": { "single_line": true } },
+    { "object": "deals", "api_name": "pwin", "label": "PWIN", "type": "number", "options": { "min": 0, "max": 100, "decimals": 0, "suffix": "%" },
+      "description": "Probability of win, 0 to 100. The BANT Calculator sets it from the BANT total; reps may override it." },
+    { "object": "deals", "api_name": "bant_budget", "label": "BANT budget", "type": "number", "options": { "min": 0, "max": 25, "decimals": 0 } },
+    { "object": "deals", "api_name": "bant_authority", "label": "BANT authority", "type": "number", "options": { "min": 0, "max": 25, "decimals": 0 } },
+    { "object": "deals", "api_name": "bant_need", "label": "BANT need", "type": "number", "options": { "min": 0, "max": 25, "decimals": 0 } },
+    { "object": "deals", "api_name": "bant_timeline", "label": "BANT timeline", "type": "number", "options": { "min": 0, "max": 25, "decimals": 0 } },
+    { "object": "deals", "api_name": "bant_total", "label": "BANT total", "type": "calculation", "calc_output_type": "number", "options": { "decimals": 0 },
+      "calc_sql": "case when num_nonnulls(r.bant_budget, r.bant_authority, r.bant_need, r.bant_timeline) = 0 then null else coalesce(r.bant_budget, 0) + coalesce(r.bant_authority, 0) + coalesce(r.bant_need, 0) + coalesce(r.bant_timeline, 0) end" },
+    { "object": "deals", "api_name": "bant_answers", "label": "BANT answers", "type": "text", "options": { "json_only": true, "display": "json" },
+      "description": "The BANT Calculator's answers, so it can show them again." },
+    { "object": "deals", "api_name": "weighted_amount", "label": "Weighted amount", "type": "calculation", "calc_output_type": "number", "options": { "format": "formatted", "decimals": 2 },
+      "description": "Amount in base currency times PWIN.",
+      "calc_sql": "case when r.amount_base is null or r.pwin is null then null else round(r.amount_base * r.pwin / 100, 2) end" },
+    { "object": "deals", "api_name": "next_step", "label": "Next step", "type": "text", "options": { "single_line": true } },
+    { "object": "deals", "api_name": "next_step_date", "label": "Next step date", "type": "date" },
+    { "object": "deals", "api_name": "loss_reason", "label": "Loss reason", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "price", "label": "Price" }, { "api_value": "technical", "label": "Technical fit" }, { "api_value": "incumbent", "label": "Incumbent kept" },
+        { "api_value": "no_funding", "label": "No funding" }, { "api_value": "timing", "label": "Timing" }, { "api_value": "no_decision", "label": "No decision" },
+        { "api_value": "requirements_changed", "label": "Requirements changed" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "deals", "api_name": "loss_notes", "label": "Loss notes", "type": "text" },
+    { "object": "deals", "api_name": "description", "label": "Description", "type": "text", "options": { "display": "markdown" } },
+
+    { "object": "contacts", "api_name": "branch", "label": "Branch or agency", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true },
+      "dropdown_options": [
+        { "api_value": "army", "label": "Army" }, { "api_value": "navy", "label": "Navy" }, { "api_value": "air_force", "label": "Air Force" },
+        { "api_value": "marine_corps", "label": "Marine Corps" }, { "api_value": "space_force", "label": "Space Force" }, { "api_value": "coast_guard", "label": "Coast Guard" },
+        { "api_value": "national_guard", "label": "National Guard" }, { "api_value": "socom", "label": "SOCOM" }, { "api_value": "dhs", "label": "DHS" },
+        { "api_value": "cbp", "label": "CBP" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "contacts", "api_name": "command_unit", "label": "Command or unit", "type": "text", "options": { "single_line": true } },
+    { "object": "contacts", "api_name": "rank", "label": "Rank or grade", "type": "text", "options": { "single_line": true }, "description": "As printed, e.g. Col., O-6, GS-15, SES." },
+    { "object": "contacts", "api_name": "department", "label": "Department", "type": "text", "options": { "single_line": true } },
+    { "object": "contacts", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+      ] },
+    { "object": "contacts", "api_name": "linkedin_url", "label": "LinkedIn", "type": "text", "options": { "single_line": true, "display": "url" } },
+
+    { "object": "companies", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+      ] },
+    { "object": "companies", "api_name": "cage_code", "label": "CAGE code", "type": "text", "options": { "single_line": true } },
+    { "object": "companies", "api_name": "uei", "label": "UEI", "type": "text", "options": { "single_line": true }, "description": "Unique Entity ID from SAM.gov." },
+
+    { "object": "products", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true },
+      "description": "Your product lines. Add your own in Settings, Properties." },
+    { "object": "products", "api_name": "specifications", "label": "Specifications", "type": "text", "options": { "display": "markdown" } },
+    { "object": "products", "api_name": "key_features", "label": "Key features", "type": "text", "options": { "display": "markdown" } },
+    { "object": "products", "api_name": "compliance_standards", "label": "Compliance standards", "type": "text", "options": { "display": "markdown" } },
+    { "object": "products", "api_name": "spec_documents", "label": "Spec documents", "type": "file", "options": { "max_files": 20 } },
+    { "object": "products", "api_name": "msrp", "label": "MSRP", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "products", "api_name": "gsa_price", "label": "GSA price", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "products", "api_name": "distributor_price", "label": "Distributor price", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "products", "api_name": "price_effective_date", "label": "Prices effective", "type": "date" },
+    { "object": "products", "api_name": "price_expiry_date", "label": "Prices expire", "type": "date" },
+    { "object": "products", "api_name": "berry_compliant", "label": "Berry compliant", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [ { "api_value": "yes", "label": "Yes" }, { "api_value": "no", "label": "No" }, { "api_value": "na", "label": "N/A" } ] },
+    { "object": "products", "api_name": "country_of_origin", "label": "Country of origin", "type": "text", "options": { "single_line": true } },
+    { "object": "products", "api_name": "lead_time", "label": "Lead time", "type": "text", "options": { "single_line": true }, "description": "e.g. 6 to 8 weeks ARO" },
+    { "object": "products", "api_name": "target_margin", "label": "Target margin", "type": "number", "options": { "min": 0, "max": 100, "decimals": 1, "suffix": "%" } },
+
+    { "object": "quotes", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+      ] },
+    { "object": "quotes", "api_name": "price_list", "label": "Price list", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [ { "api_value": "msrp", "label": "MSRP" }, { "api_value": "gsa", "label": "GSA" }, { "api_value": "distributor", "label": "Distributor" } ] },
+    { "object": "quotes", "api_name": "payment_terms", "label": "Payment terms", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "net_30", "label": "Net 30" }, { "api_value": "net_45", "label": "Net 45" }, { "api_value": "net_60", "label": "Net 60" },
+        { "api_value": "due_on_receipt", "label": "Due on receipt" }, { "api_value": "prepaid", "label": "Prepaid" }
+      ] },
+    { "object": "quotes", "api_name": "lead_time", "label": "Lead time", "type": "text", "options": { "single_line": true } },
+    { "object": "quotes", "api_name": "berry_compliant", "label": "Berry compliant", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [ { "api_value": "yes", "label": "Yes" }, { "api_value": "no", "label": "No" }, { "api_value": "na", "label": "N/A" } ] },
+    { "object": "quotes", "api_name": "country_of_origin", "label": "Country of origin", "type": "text", "options": { "single_line": true } },
+    { "object": "quotes", "api_name": "shipping_address", "label": "Shipping address", "type": "text" },
+    { "object": "quotes", "api_name": "ship_length", "label": "Length", "type": "number", "options": { "min": 0, "decimals": 2 } },
+    { "object": "quotes", "api_name": "ship_width", "label": "Width", "type": "number", "options": { "min": 0, "decimals": 2 } },
+    { "object": "quotes", "api_name": "ship_height", "label": "Height", "type": "number", "options": { "min": 0, "decimals": 2 } },
+    { "object": "quotes", "api_name": "ship_weight", "label": "Weight", "type": "number", "options": { "min": 0, "decimals": 2 } },
+    { "object": "quotes", "api_name": "ship_units", "label": "Shipping units", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [ { "api_value": "in_lb", "label": "in / lb" }, { "api_value": "cm_kg", "label": "cm / kg" } ] },
+    { "object": "quotes", "api_name": "est_freight", "label": "Estimated freight", "type": "number", "options": { "format": "currency", "currency_property": "currency", "min": 0, "decimals": 2 } },
+    { "object": "quotes", "api_name": "notes_terms", "label": "Notes and special terms", "type": "text", "options": { "display": "markdown" } },
+
+    { "object": "lines", "api_name": "berry_compliant", "label": "Berry compliant", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [ { "api_value": "yes", "label": "Yes" }, { "api_value": "no", "label": "No" }, { "api_value": "na", "label": "N/A" } ] },
+    { "object": "lines", "api_name": "lead_time", "label": "Lead time", "type": "text", "options": { "single_line": true } },
+    { "object": "lines", "api_name": "country_of_origin", "label": "Country of origin", "type": "text", "options": { "single_line": true } },
+
+    { "object": "users", "api_name": "position", "label": "Position", "type": "text", "options": { "single_line": true } },
+    { "object": "teams", "api_name": "lead", "label": "Lead", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true },
+      "description": "Who the team's members report to." },
+
+    { "object": "partnerships", "api_name": "partner_type", "label": "Partner type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "var", "label": "VAR" }, { "api_value": "teaming", "label": "Teaming" }, { "api_value": "technology", "label": "Technology" },
+        { "api_value": "distribution", "label": "Distribution" }, { "api_value": "strategic_alliance", "label": "Strategic alliance" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "partnerships", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "partnerships", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "prospecting", "color_display": "pill" },
+      "dropdown_options": [
+        { "api_value": "active", "label": "Active" }, { "api_value": "pursuing", "label": "Pursuing" }, { "api_value": "prospecting", "label": "Prospecting" },
+        { "api_value": "on_hold", "label": "On hold" }, { "api_value": "inactive", "label": "Inactive" }
+      ] },
+    { "object": "partnerships", "api_name": "agreement_type", "label": "Agreement", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "none", "label": "None" }, { "api_value": "nda", "label": "NDA only" }, { "api_value": "mou", "label": "MOU" },
+        { "api_value": "teaming_agreement", "label": "Teaming agreement" }, { "api_value": "reseller_agreement", "label": "Reseller agreement" }
+      ] },
+    { "object": "partnerships", "api_name": "agreement_date", "label": "Agreement date", "type": "date" },
+    { "object": "partnerships", "api_name": "renewal_date", "label": "Renewal date", "type": "date" },
+    { "object": "partnerships", "api_name": "rationale", "label": "Why we are pursuing it", "type": "text" },
+    { "object": "partnerships", "api_name": "value_to_us", "label": "Value to us", "type": "text" },
+    { "object": "partnerships", "api_name": "value_to_partner", "label": "Value to partner", "type": "text" },
+    { "object": "partnerships", "api_name": "gaps_addressed", "label": "Gaps addressed", "type": "text" },
+    { "object": "partnerships", "api_name": "still_needed", "label": "Still needed", "type": "text" },
+    { "object": "partnerships", "api_name": "notes", "label": "Notes", "type": "text" },
+    { "object": "partnerships", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "oem_integrations", "api_name": "integration_type", "label": "Integration type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "software", "label": "Software" }, { "api_value": "hardware", "label": "Hardware" }, { "api_value": "data", "label": "Data" },
+        { "api_value": "api", "label": "API" }, { "api_value": "manufacturing", "label": "Manufacturing" }, { "api_value": "distribution", "label": "Distribution" }
+      ] },
+    { "object": "oem_integrations", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "scoping", "color_display": "pill" },
+      "dropdown_options": [
+        { "api_value": "scoping", "label": "Scoping" }, { "api_value": "in_development", "label": "In development" }, { "api_value": "testing", "label": "Testing" },
+        { "api_value": "active", "label": "Active" }, { "api_value": "on_hold", "label": "On hold" }, { "api_value": "cancelled", "label": "Cancelled" }
+      ] },
+    { "object": "oem_integrations", "api_name": "priority", "label": "Priority", "type": "dropdown", "options": { "single_value": true, "default_value": "medium" },
+      "dropdown_options": [ { "api_value": "high", "label": "High" }, { "api_value": "medium", "label": "Medium" }, { "api_value": "low", "label": "Low" } ] },
+    { "object": "oem_integrations", "api_name": "target_completion", "label": "Target completion", "type": "date" },
+    { "object": "oem_integrations", "api_name": "go_live_date", "label": "Go-live date", "type": "date" },
+    { "object": "oem_integrations", "api_name": "description", "label": "Description", "type": "text" },
+    { "object": "oem_integrations", "api_name": "value_proposition", "label": "Value proposition", "type": "text" },
+    { "object": "oem_integrations", "api_name": "next_steps", "label": "Next steps", "type": "text" },
+    { "object": "oem_integrations", "api_name": "notes", "label": "Notes", "type": "text" },
+    { "object": "oem_integrations", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "proposals", "api_name": "solicitation_number", "label": "Solicitation number", "type": "text", "options": { "single_line": true } },
+    { "object": "proposals", "api_name": "contract_type", "label": "Type", "type": "dropdown", "options": { "single_value": true, "default_value": "rfp" },
+      "dropdown_options": [
+        { "api_value": "rfp", "label": "RFP" }, { "api_value": "rfq", "label": "RFQ" }, { "api_value": "rfi", "label": "RFI" },
+        { "api_value": "sources_sought", "label": "Sources sought" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "proposals", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "draft", "color_display": "pill" },
+      "dropdown_options": [
+        { "api_value": "draft", "label": "Draft" }, { "api_value": "in_review", "label": "In review" }, { "api_value": "submitted", "label": "Submitted" },
+        { "api_value": "awarded", "label": "Awarded" }, { "api_value": "lost", "label": "Lost" }, { "api_value": "no_bid", "label": "No bid" }
+      ] },
+    { "object": "proposals", "api_name": "due_date", "label": "Due date", "type": "date" },
+    { "object": "proposals", "api_name": "estimated_value", "label": "Estimated value", "type": "number", "options": { "format": "formatted", "min": 0, "decimals": 2 } },
+    { "object": "proposals", "api_name": "template", "label": "Template", "type": "file", "options": { "max_files": 1 }, "description": "A previous proposal to follow." },
+    { "object": "proposals", "api_name": "ai_context", "label": "Context for drafting", "type": "text", "description": "Scope, unique capabilities and differentiators." },
+    { "object": "proposals", "api_name": "content", "label": "Proposal", "type": "text", "options": { "display": "markdown" } },
+    { "object": "proposals", "api_name": "fit_evaluation", "label": "Product fit", "type": "text", "options": { "display": "markdown" } },
+    { "object": "proposals", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "boms", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "boms", "api_name": "total_cogs", "label": "Total COGS", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "boms", "api_name": "target_margin", "label": "Target margin", "type": "number", "options": { "min": 0, "max": 100, "decimals": 1, "suffix": "%" } },
+    { "object": "boms", "api_name": "bom_file", "label": "BOM file", "type": "file", "options": { "max_files": 5 } },
+    { "object": "boms", "api_name": "notes", "label": "Notes", "type": "text" },
+
+    { "object": "trips", "api_name": "destination", "label": "Destination", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "purpose", "label": "Business purpose", "type": "text" },
+    { "object": "trips", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "planning", "color_display": "pill" },
+      "dropdown_options": [
+        { "api_value": "planning", "label": "Planning" }, { "api_value": "pending_approval", "label": "Pending approval" }, { "api_value": "approved", "label": "Approved" },
+        { "api_value": "rejected", "label": "Rejected" }, { "api_value": "completed", "label": "Completed" }, { "api_value": "cancelled", "label": "Cancelled" }
+      ] },
+    { "object": "trips", "api_name": "start_date", "label": "Start date", "type": "date" },
+    { "object": "trips", "api_name": "end_date", "label": "End date", "type": "date" },
+    { "object": "trips", "api_name": "est_airfare", "label": "Estimated airfare", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "trips", "api_name": "est_hotel", "label": "Estimated hotel", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "trips", "api_name": "est_meals", "label": "Estimated meals", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "trips", "api_name": "est_other", "label": "Estimated other", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
+    { "object": "trips", "api_name": "est_total", "label": "Estimated total", "type": "calculation", "calc_output_type": "number", "options": { "format": "currency", "currency_code": "USD", "decimals": 2 },
+      "calc_sql": "case when num_nonnulls(r.est_airfare, r.est_hotel, r.est_meals, r.est_other) = 0 then null else coalesce(r.est_airfare, 0) + coalesce(r.est_hotel, 0) + coalesce(r.est_meals, 0) + coalesce(r.est_other, 0) end" },
+    { "object": "trips", "api_name": "travel_poc", "label": "Point of contact while away", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+    { "object": "trips", "api_name": "ooo_email", "label": "Out-of-office email", "type": "text" },
+    { "object": "trips", "api_name": "approver", "label": "Approver", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+    { "object": "trips", "api_name": "approved_date", "label": "Approved date", "type": "date" },
+    { "object": "trips", "api_name": "approval_notes", "label": "Approval notes", "type": "text" },
+    { "object": "trips", "api_name": "outbound_from", "label": "Outbound from", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "outbound_to", "label": "Outbound to", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "outbound_at", "label": "Outbound departs", "type": "datetime" },
+    { "object": "trips", "api_name": "outbound_flight", "label": "Outbound flight", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "return_from", "label": "Return from", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "return_to", "label": "Return to", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "return_at", "label": "Return departs", "type": "datetime" },
+    { "object": "trips", "api_name": "return_flight", "label": "Return flight", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "hotel_name", "label": "Hotel", "type": "text", "options": { "single_line": true } },
+    { "object": "trips", "api_name": "hotel_address", "label": "Hotel address", "type": "text" },
+    { "object": "trips", "api_name": "check_in", "label": "Check-in", "type": "date" },
+    { "object": "trips", "api_name": "check_out", "label": "Check-out", "type": "date" },
+    { "object": "trips", "api_name": "owner", "label": "Traveller", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "expenses", "api_name": "amount", "label": "Amount", "type": "number", "options": { "format": "currency", "currency_code": "USD", "decimals": 2 } },
+    { "object": "expenses", "api_name": "expense_date", "label": "Date", "type": "date" },
+    { "object": "expenses", "api_name": "category", "label": "Category", "type": "dropdown", "options": { "single_value": true, "default_value": "other" },
+      "dropdown_options": [
+        { "api_value": "airfare", "label": "Airfare" }, { "api_value": "hotel", "label": "Hotel" }, { "api_value": "meals", "label": "Meals" },
+        { "api_value": "ground", "label": "Ground transport" }, { "api_value": "registration", "label": "Event registration" },
+        { "api_value": "shipping", "label": "Shipping" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "expenses", "api_name": "vendor", "label": "Vendor", "type": "text", "options": { "single_line": true } },
+    { "object": "expenses", "api_name": "receipt", "label": "Receipt", "type": "file", "options": { "max_files": 3 } },
+    { "object": "expenses", "api_name": "notes", "label": "Notes", "type": "text" },
+    { "object": "expenses", "api_name": "owner", "label": "Spent by", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "marketing_materials", "api_name": "material_type", "label": "Type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "slick_sheet", "label": "Product slick sheet" }, { "api_value": "product_presentation", "label": "Product presentation" },
+        { "api_value": "company_presentation", "label": "Company presentation" }, { "api_value": "linkedin_post", "label": "LinkedIn post" },
+        { "api_value": "event_support", "label": "Event support" }, { "api_value": "case_study", "label": "Case study" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "marketing_materials", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "marketing_materials", "api_name": "folder", "label": "Folder", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "marketing_materials", "api_name": "description", "label": "Description", "type": "text" },
+    { "object": "marketing_materials", "api_name": "file", "label": "File", "type": "file", "options": { "max_files": 5 } },
+    { "object": "marketing_materials", "api_name": "notes", "label": "Notes", "type": "text" },
+    { "object": "marketing_materials", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "documents", "api_name": "doc_type", "label": "Type", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "product_presentation", "label": "Product presentation" }, { "api_value": "datasheet", "label": "Datasheet" },
+        { "api_value": "contract", "label": "Contract" }, { "api_value": "nda", "label": "NDA" }, { "api_value": "teaming_agreement", "label": "Teaming agreement" },
+        { "api_value": "proposal", "label": "Proposal" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "documents", "api_name": "section", "label": "Section", "type": "dropdown", "options": { "single_value": true, "default_value": "general" },
+      "dropdown_options": [
+        { "api_value": "general", "label": "General" }, { "api_value": "sales", "label": "Sales" }, { "api_value": "engineering", "label": "Engineering" },
+        { "api_value": "operations", "label": "Operations" }, { "api_value": "legal", "label": "Legal" }
+      ] },
+    { "object": "documents", "api_name": "folder", "label": "Folder", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "documents", "api_name": "file", "label": "File", "type": "file", "options": { "max_files": 1 } },
+    { "object": "documents", "api_name": "notes", "label": "Notes", "type": "text" },
+    { "object": "documents", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "opportunity_sources", "api_name": "url", "label": "Address", "type": "text", "options": { "single_line": true, "display": "url" } },
+    { "object": "opportunity_sources", "api_name": "category", "label": "Category", "type": "dropdown", "options": { "single_value": true },
+      "dropdown_options": [
+        { "api_value": "federal", "label": "Federal" }, { "api_value": "defense", "label": "Defense" }, { "api_value": "intel", "label": "Intel" },
+        { "api_value": "research", "label": "Research" }, { "api_value": "international", "label": "International" }
+      ] },
+    { "object": "opportunity_sources", "api_name": "description", "label": "Description", "type": "text" },
+
+    { "object": "leads", "api_name": "source", "label": "Source", "type": "dropdown", "options": { "single_value": true, "default_value": "manual" },
+      "dropdown_options": [
+        { "api_value": "email", "label": "Email" }, { "api_value": "manual", "label": "Added by hand" }, { "api_value": "alert", "label": "Alert" }, { "api_value": "other", "label": "Other" }
+      ] },
+    { "object": "leads", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "new", "color_display": "pill" },
+      "dropdown_options": [
+        { "api_value": "new", "label": "New" }, { "api_value": "reviewed", "label": "Reviewed" }, { "api_value": "pushed_to_pipeline", "label": "Pushed to pipeline" },
+        { "api_value": "pushed_to_evaluator", "label": "Pushed to evaluator" }, { "api_value": "dismissed", "label": "Dismissed" }
+      ] },
+    { "object": "leads", "api_name": "solicitation_number", "label": "Solicitation number", "type": "text", "options": { "single_line": true } },
+    { "object": "leads", "api_name": "agency", "label": "Agency", "type": "text", "options": { "single_line": true } },
+    { "object": "leads", "api_name": "due_date", "label": "Response due", "type": "date" },
+    { "object": "leads", "api_name": "raw_text", "label": "Original text", "type": "text" },
+    { "object": "leads", "api_name": "summary", "label": "Summary", "type": "text", "options": { "display": "markdown" } },
+    { "object": "leads", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+
+    { "object": "intel_topics", "api_name": "topic_type", "label": "Type", "type": "dropdown", "options": { "single_value": true, "default_value": "topic" },
+      "dropdown_options": [
+        { "api_value": "topic", "label": "Topic" }, { "api_value": "competitor", "label": "Competitor" }, { "api_value": "tender", "label": "Tender" }, { "api_value": "company", "label": "Company" }
+      ] },
+    { "object": "intel_topics", "api_name": "query", "label": "Search for", "type": "text", "options": { "single_line": true } },
+
+    { "object": "escalations", "api_name": "roadblocks", "label": "Roadblocks", "type": "dropdown", "options": { "allow_user_add": true },
+      "dropdown_options": [
+        { "api_value": "need_nda", "label": "Need executed NDA" }, { "api_value": "need_specs", "label": "Need technical details or specs" },
+        { "api_value": "customer_questions", "label": "Awaiting customer product questions" }, { "api_value": "pricing_approval", "label": "Need pricing approval" },
+        { "api_value": "legal_review", "label": "Requires legal review" }, { "api_value": "budget_confirmation", "label": "Budget confirmation needed" },
+        { "api_value": "need_decision_maker", "label": "Need POC or decision-maker contact" }, { "api_value": "clearance_export", "label": "Awaiting clearance or export approval" },
+        { "api_value": "teaming_agreement", "label": "Need teaming agreement" }, { "api_value": "demo_required", "label": "Customer demo required" }
+      ] },
+    { "object": "escalations", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "open", "color_display": "pill" },
+      "dropdown_options": [ { "api_value": "open", "label": "Open" }, { "api_value": "in_progress", "label": "In progress" }, { "api_value": "resolved", "label": "Resolved" } ] },
+    { "object": "escalations", "api_name": "notified_users", "label": "Notified", "type": "dropdown", "options": { "auto_append_users": true } },
+    { "object": "escalations", "api_name": "notes", "label": "Notes", "type": "text" },
+    { "object": "escalations", "api_name": "owner", "label": "Raised by", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } }
+  ],
+
+  "scope_existing_options": [
+    { "object": "deals", "property": "stage", "parent_value": "sales", "note": "so the sales pipeline's stages do not show on the defense board" }
+  ],
+
+  "options": [
+    { "object": "deals", "property": "pipeline", "api_value": "defense", "label": "Defense BD" },
+    { "object": "deals", "property": "stage", "api_value": "initial_discussion", "label": "Initial discussion", "details": { "parent_values": ["defense"] } },
+    { "object": "deals", "property": "stage", "api_value": "rfx_posted", "label": "RFI/RFQ/RFP posted", "details": { "parent_values": ["defense"] } },
+    { "object": "deals", "property": "stage", "api_value": "in_review", "label": "In discussion or review", "details": { "parent_values": ["defense"] } },
+    { "object": "deals", "property": "stage", "api_value": "with_partner", "label": "Passed to VAR or partner", "details": { "parent_values": ["defense"] } },
+    { "object": "deals", "property": "stage", "api_value": "proposal_submitted", "label": "Proposal or quote submitted", "details": { "parent_values": ["defense"] } },
+    { "object": "deals", "property": "stage", "api_value": "customer_review", "label": "Customer review", "details": { "parent_values": ["defense"] } },
+    { "object": "deals", "property": "stage", "api_value": "awarded", "label": "Awarded", "details": { "parent_values": ["defense"], "is_closed": true, "is_won": true, "probability": 1 } },
+    { "object": "deals", "property": "stage", "api_value": "lost", "label": "Lost", "details": { "parent_values": ["defense"], "is_closed": true, "is_won": false, "probability": 0 } }
+  ],
+
+  "association_labels": [
+    { "from": "deals", "to": "contacts", "label": "Point of contact", "inverse_label": "Point of contact for" },
+    { "from": "partnerships", "to": "companies", "label": "Partner company", "inverse_label": "Partnership" }
+  ],
+
+  "option_lists": [
+    { "api_name": "product_categories", "label": "Product categories", "description": "The tenant's product lines, shared by deals, products, partnerships, BOMs and marketing materials",
+      "dropdowns": [
+        { "object": "products", "property": "product_category" },
+        { "object": "deals", "property": "product_category" },
+        { "object": "partnerships", "property": "product_category" },
+        { "object": "boms", "property": "product_category" },
+        { "object": "marketing_materials", "property": "product_category" }
+      ] }
+  ],
+
+  "records": [
+    { "object": "opportunity_sources", "values": { "name": "SAM.gov", "category": "federal", "url": "https://sam.gov", "description": "Federal contract opportunities: the primary source" } },
+    { "object": "opportunity_sources", "values": { "name": "DIBBS (DLA)", "category": "defense", "url": "https://www.dibbs.bsm.dla.mil", "description": "Defense Logistics Agency solicitations" } },
+    { "object": "opportunity_sources", "values": { "name": "Army AMPS / AiDA", "category": "defense", "description": "Army acquisition and contracting portal" } },
+    { "object": "opportunity_sources", "values": { "name": "SOCOM Acquisition", "category": "defense", "description": "Special Operations Command opportunities" } },
+    { "object": "opportunity_sources", "values": { "name": "AFWERX / SBIR", "category": "defense", "url": "https://www.sbir.gov", "description": "Air Force innovation and SBIR programs" } },
+    { "object": "opportunity_sources", "values": { "name": "DARPA Opportunities", "category": "defense", "url": "https://www.darpa.mil", "description": "DARPA BAAs and solicitations" } },
+    { "object": "opportunity_sources", "values": { "name": "GovWin IQ", "category": "intel", "description": "Deltek pipeline intelligence (subscription)" } },
+    { "object": "opportunity_sources", "values": { "name": "Bloomberg Government", "category": "intel", "description": "Federal market intelligence" } },
+    { "object": "opportunity_sources", "values": { "name": "USASpending.gov", "category": "research", "url": "https://www.usaspending.gov", "description": "Federal spending data: track awards and incumbents" } },
+    { "object": "opportunity_sources", "values": { "name": "FPDS-NG", "category": "research", "url": "https://www.fpds.gov", "description": "Federal procurement data system" } },
+    { "object": "opportunity_sources", "values": { "name": "Defense.gov Contracts", "category": "research", "url": "https://www.defense.gov/News/Contracts/", "description": "DoD contract award announcements" } },
+    { "object": "opportunity_sources", "values": { "name": "NATO NSPA Procurement", "category": "international", "url": "https://www.nspa.nato.int", "description": "NATO Support and Procurement Agency" } },
+    { "object": "opportunity_sources", "values": { "name": "UK Find a Tender", "category": "international", "url": "https://www.find-tender.service.gov.uk", "description": "UK public procurement, including the Ministry of Defence" } },
+    { "object": "opportunity_sources", "values": { "name": "Australian AusTender", "category": "international", "url": "https://www.tenders.gov.au", "description": "Australian Government tenders" } },
+    { "object": "opportunity_sources", "values": { "name": "DSCA (FMS)", "category": "international", "url": "https://www.dsca.mil", "description": "Foreign Military Sales notifications" } },
+    { "object": "opportunity_sources", "values": { "name": "CanadaBuys", "category": "international", "url": "https://canadabuys.canada.ca", "description": "Canadian government tenders" } }
+  ],
+
+  "views": [
+    { "slug": "defense-pipeline", "name": "Defense pipeline", "icon": "kanban", "description": "Opportunities by stage, PWIN bands, and a workspace with contacts, time in stage and Red Star alerts." },
+    { "slug": "defense-velocity", "name": "Opportunity velocity", "icon": "timer", "description": "Days in each stage, the bottleneck, and how long wins and losses took." },
+    { "slug": "bant-calculator", "name": "BANT calculator", "icon": "calculator", "description": "Score an opportunity on Budget, Authority, Need and Timeline and push the PWIN to it." },
+    { "slug": "command-dashboard", "name": "Command dashboard", "icon": "layout-dashboard", "description": "Pipeline value and PWIN, stages, award forecast, categories, regions, partnerships and cash flow." },
+    { "slug": "my-dashboard", "name": "My dashboard", "icon": "house", "description": "Your numbers, quick links, calendar, action items, training and achievements." },
+    { "slug": "scenario-generator", "name": "Scenario generator", "icon": "scale", "description": "Model a bid against a BOM's cost: margin, risk, competitive position and discounts." },
+    { "slug": "opportunity-discovery", "name": "Opportunity discovery", "icon": "radar", "description": "Solicitation sources, the lead inbox and intel topics." },
+    { "slug": "partnerships", "name": "Partnerships", "icon": "handshake", "description": "Teaming partners, VARs and distributors by status, and OEM integrations on a board." },
+    { "slug": "org-chart", "name": "Org chart", "icon": "network", "description": "Customer contacts by organization, and our teams under their leads." },
+    { "slug": "trade-show-follow-up", "name": "Trade show follow-up", "icon": "ticket", "description": "People met at events, hottest first, with their follow-up status." },
+    { "slug": "travel-ops", "name": "Travel ops", "icon": "plane", "description": "Trips with itinerary, budget and approval; expenses with receipts." },
+    { "slug": "product-pricing", "name": "Product pricing", "icon": "tags", "description": "MSRP, GSA and distributor prices by product, margins and expiring price lists." },
+    { "slug": "materials-library", "name": "Materials library", "icon": "library", "description": "Marketing materials and business documents by folder and type, with upload." }
+  ]
+}

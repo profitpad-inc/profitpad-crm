@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowUp, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { api, clearSchemaCache, getSchema, type DropdownOption, type Property, type SearchResult } from '../lib/api';
+import { api, clearSchemaCache, getSchema, type DropdownOption, type OptionList, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { nameProperties, recordName } from '../lib/display';
 import { Menu, Modal } from '../components/ui';
@@ -347,11 +347,20 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   const parents = siblings.filter((s) => s.type === 'dropdown' && s.record_status === 'active' && s.options.single_value && s.api_name !== property?.api_name);
   const parent = parents.find((s) => s.api_name === options.parent_property);
   const parentChoices = (parent?.dropdown_options ?? []).filter((o) => o.record_status === 'active').sort((a, b) => a.display_order - b.display_order);
+  // shared option list (Settings, Option lists): '' = only this dropdown
+  const [listId, setListId] = useState(property?.option_list?.id ?? '');
+  const [lists, setLists] = useState<OptionList[] | null>(null);
+  useEffect(() => {
+    if (type !== 'dropdown' || lists) return;
+    api<{ option_lists: OptionList[] }>('GET', '/v1/option-lists').then((r) => setLists(r.option_lists)).catch(() => setLists([]));
+  }, [type, lists]);
+  // user pickers and money properties' currency dropdowns fill themselves
+  const isCurrency = !!property && siblings.some((s) => s.options.currency_property === property.api_name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // once something is edited, closing asks first so the work isn't lost by accident;
   // until then Escape, clicking outside, X and Cancel just close
-  const snapshot = JSON.stringify({ label, apiName, description, type, options, calcSql, calcType, choices, stages });
+  const snapshot = JSON.stringify({ label, apiName, description, type, options, calcSql, calcType, choices, stages, listId });
   const [initial] = useState(snapshot);
   const dirty = snapshot !== initial;
   const [confirmClose, setConfirmClose] = useState(false);
@@ -451,6 +460,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
               await api('PATCH', `${base}/${encodeURIComponent(apiName.trim())}/options/${encodeURIComponent(c.api_value.trim())}`, change);
             }
           }
+          if (listId) await api('POST', `/v1/option-lists/${listId}/dropdowns`, { object, property: apiName.trim() });
         }
         await onSaved(`${label.trim()} created`);
         return;
@@ -473,6 +483,11 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       }
       if (Object.keys(patch).length) await api('PATCH', url, patch);
 
+      // unlink before changing choices, so the changes stay on this dropdown
+      const listBefore = property.option_list?.id ?? '';
+      if (type === 'dropdown' && listBefore && listBefore !== listId) {
+        await api('DELETE', `/v1/option-lists/${listBefore}/dropdowns/${encodeURIComponent(object)}/${encodeURIComponent(property.api_name)}`);
+      }
       if (type === 'dropdown') {
         const kept = new Set(choices.filter((c) => c.existing).map((c) => c.existing!.api_value));
         for (const o of property.dropdown_options ?? []) {
@@ -494,6 +509,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
           if (c.color !== (o.color ?? null)) change.color = c.color;
           if (Object.keys(change).length) await api('PATCH', `${url}/options/${encodeURIComponent(o.api_value)}`, change);
         }
+        // link after: the choices merge with the list's
+        if (listId && listId !== listBefore) await api('POST', `/v1/option-lists/${listId}/dropdowns`, { object, property: property.api_name });
       }
       await onSaved(`${label.trim()} saved`);
     } catch (e) {
@@ -689,7 +706,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                 if (!e.target.checked && str('color_display') === 'dot') set('color_display', 'pill');
               }} /> One choice per record</label>
               <label><input type="checkbox" checked={bool('allow_user_add')} onChange={(e) => set('allow_user_add', e.target.checked)} /> API writes may add new choices</label>
-              <label><input type="checkbox" checked={bool('auto_append_users')} onChange={(e) => set('auto_append_users', e.target.checked)} /> Fill choices with every active user</label>
+              <label><input type="checkbox" checked={bool('auto_append_users')} disabled={!!listId} onChange={(e) => set('auto_append_users', e.target.checked)} /> Fill choices with every active user</label>
             </div>
             {bool('single_value') && (
               <label className="field">
@@ -731,6 +748,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                 <option value="pill">Pill</option>
               </Select>
             </label>
+            <SharedChoices object={object} property={property} listId={listId} setListId={setListId} lists={lists}
+              blocked={bool('auto_append_users') ? 'Choices filled with users cannot be shared.' : isCurrency ? 'Currency choices follow Settings, Currencies, so they cannot be shared.' : null} />
             <div className="field">
               <span>Choices</span>
               <div className="choice-list">
@@ -845,6 +864,38 @@ interface CalcResult {
 
 // Pick a record of the object and run the unsaved expression on it. The API
 // applies the same checks as saving, and nothing is written.
+// Shared choices: which option list this dropdown follows, and what saving does
+function SharedChoices({ object, property, listId, setListId, lists, blocked }: {
+  object: string; property: Property | null; listId: string; setListId: (v: string) => void; lists: OptionList[] | null; blocked: string | null;
+}) {
+  const before = property?.option_list?.id ?? '';
+  const list = lists?.find((l) => l.id === listId);
+  const others = (list?.members ?? []).filter((m) => !(property && m.object === object && m.property === property.api_name));
+  let hint: string | null = null;
+  if (blocked && !listId) hint = blocked;
+  else if (listId && listId === before) {
+    hint = others.length
+      ? `Same choices as ${others.map((m) => `${m.object_label} · ${m.property_label}`).join(', ')}. Changing a choice here changes it there too.`
+      : 'No other dropdown shares this list yet.';
+  } else if (listId) {
+    hint = `Saving links this dropdown to ${list?.label ?? 'the list'}: choices with the same internal value become one (the list's label, order and colour win), and its other choices are added to ${others.length ? others.map((m) => `${m.object_label} · ${m.property_label}`).join(', ') : 'the list'}.`;
+  } else if (before) {
+    hint = 'Saving unlinks this dropdown. It keeps the choices it has now.';
+  }
+  return (
+    <label className="field">
+      <span>Shared choices</span>
+      <Select value={listId} onChange={setListId} disabled={!!blocked && !listId}>
+        <option value="">Only this dropdown</option>
+        {(lists ?? []).map((l) => <option key={l.id} value={l.id}>Option list: {l.label}</option>)}
+        {listId && !lists?.some((l) => l.id === listId) && <option value={listId}>{property?.option_list?.label ?? 'Option list'}</option>}
+      </Select>
+      {hint && <p className="muted small shared-list-note">{hint}</p>}
+      {!hint && <p className="muted small shared-list-note">Create lists under Settings, Option lists to give dropdowns on different objects the same choices.</p>}
+    </label>
+  );
+}
+
 function CalcTester({ object, sql, outputType }: { object: string; sql: string; outputType: string }) {
   const { objects } = useApp();
   const [record, setRecord] = useState<{ id: string; name: string } | null>(null);

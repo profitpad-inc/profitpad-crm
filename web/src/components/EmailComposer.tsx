@@ -293,15 +293,17 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
           onChange={chooseTemplate} />
       </div>
       <div className="ec-body">
-        <RichTextEditor ref={editor} value="" onChange={(html, empty) => setBody({ html, empty })} record={page} ariaLabel="Email body"
-          placeholder="Write your email… (# for a snippet)" />
-      </div>
-      {signature && me.user?.email_signature && (
-        <div className="ec-signature" aria-label="Your signature, added under the email">
-          <span className="muted small">Signature</span>
-          <SignaturePreview html={me.user.email_signature} />
+        {/* the signature sits on the same page as the body, where the API puts it (withSignature: right under it) */}
+        <div className="ec-page">
+          <RichTextEditor ref={editor} value="" onChange={(html, empty) => setBody({ html, empty })} record={page} ariaLabel="Email body"
+            placeholder="Write your email… (# for a snippet)" />
+          {signature && me.user?.email_signature && (
+            <div className="ec-signature" aria-label="Your signature, added under the email" title="Your signature. Turn it off below.">
+              <SignaturePreview html={me.user.email_signature} />
+            </div>
+          )}
         </div>
-      )}
+      </div>
       {(files.length > 0 || uploading) && (
         <div className="ec-files">
           {files.map((f) => (
@@ -364,7 +366,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
 function SignaturePreview({ html }: { html: string }) {
   const [height, setHeight] = useState(40);
   const frame = useRef<HTMLIFrameElement>(null);
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}body{font:13px/1.5 Inter,system-ui,sans-serif;color:#1f2328;background:transparent}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`;
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}body{font:14px/1.55 Inter,system-ui,sans-serif;color:#1f2328;background:transparent}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`;
   return (
     <iframe ref={frame} className="ec-signature-frame" title="Signature" sandbox="allow-same-origin" srcDoc={doc} style={{ height }}
       onLoad={() => { const d = frame.current?.contentDocument; if (d) setHeight(Math.min(240, Math.max(24, d.documentElement.scrollHeight))); }} />

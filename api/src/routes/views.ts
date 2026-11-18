@@ -4,8 +4,8 @@ import { badRequest } from '../errors.js';
 import { requireScope } from '../auth.js';
 import { ICON_NAMES } from '../icons.js';
 import {
-  allowWrites, canEditViews, createView, listViewErrors, listViews, loadView, logViewErrors, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery,
-  saveDraft, viewOut, writesAllowed, type DraftInput
+  allowWrites, canEditViews, createView, getViewSettings, listViewErrors, listViews, loadView, logViewErrors, openView, parseQueries, publishView, revertDraft, runQuery, runViewQuery,
+  saveDraft, setViewSetting, viewOut, writesAllowed, type DraftInput
 } from '../views.js';
 
 type SlugParams = { slug: string };
@@ -41,6 +41,23 @@ export async function viewRoutes(app: FastifyInstance) {
     requireScope(p, 'read');
     return allowWrites(p, req.params.slug, isDraft(req.query));
   });
+
+  // The signed-in user's own settings in a view (0090): read all, write one.
+  app.get<{ Params: SlugParams; Querystring: { draft?: string } }>('/v1/views/:slug/settings', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    return { settings: await getViewSettings(p, req.params.slug, isDraft(req.query)) };
+  });
+
+  app.put<{ Params: { slug: string; key: string }; Querystring: { draft?: string }; Body: { value?: unknown } }>(
+    '/v1/views/:slug/settings/:key',
+    async (req) => {
+      const p = req.principal!;
+      // the user's own preference, not CRM data: read access is enough
+      requireScope(p, 'read');
+      return setViewSetting(p, req.params.slug, req.params.key, req.body?.value ?? null, isDraft(req.query));
+    }
+  );
 
   // The source and queries, draft and published (admins).
   app.get<{ Params: SlugParams }>('/v1/views/:slug/code', async (req) => {

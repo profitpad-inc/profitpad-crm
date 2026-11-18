@@ -1,0 +1,7 @@
+{
+  "contacts": "select ct.pc_0010_id as id, ct.name, ct.job_title, ct.rank, ct.department, ct.email, ct.phone, ct.customer_type, ct.customer_type__label as ctype, ct.branch__label as branch, ct.command_unit, co.company_id, co.company from contacts ct left join lateral (select c.pc_0011_id as company_id, c.name as company from associations a join companies c on c.pc_0011_id = a.other_record_id where a.object = 'contacts' and a.other_object = 'companies' and a.record_id = ct.pc_0010_id order by c.name limit 1) co on true order by co.company nulls last, ct.name",
+  "customer_types": "select api_value, label from property_options where object_type_id = 'pc_0010' and property = 'customer_type' and record_status = 'active' order by display_order",
+  "teams": "select t.pc_0006_id as id, t.name, t.description, t.lead, t.lead__label as lead_name from teams t order by t.name",
+  "members": "select a.record_id as team_id, u.pc_0000_id as id, u.name, u.email, u.position from associations a join users u on u.pc_0000_id = a.other_record_id where a.object = 'teams' and a.other_object = 'users' and u.status = 'active' order by u.name",
+  "unassigned": "select u.pc_0000_id as id, u.name, u.email, u.position from users u where u.status = 'active' and not exists (select 1 from associations a join teams t on t.pc_0006_id = a.other_record_id where a.object = 'users' and a.other_object = 'teams' and a.record_id = u.pc_0000_id) order by u.name"
+}

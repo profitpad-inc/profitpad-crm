@@ -3,7 +3,7 @@ import { chromium, type Browser, type ConsoleMessage } from 'playwright-core';
 import { pool } from './db.js';
 import { ApiError, badRequest } from './errors.js';
 import { requireScope, type Principal } from './auth.js';
-import { loadView, openView, runViewQuery } from './views.js';
+import { getViewSettings, loadView, openView, runViewQuery } from './views.js';
 import { checkPhone, DEFAULT_REGION, phoneRegions } from './phone.js';
 import { callFromView } from './integrations.js';
 import { CONTENT_MAX_BYTES, fileSummaries, readFileBytes } from './files.js';
@@ -331,6 +331,7 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
     const failedQueries: { query: string; message: string }[] = [];
     const refused: string[] = [];
     const navigations: string[] = [];
+    const renderSettings: Record<string, unknown> = {};
     // what the view sent with callIntegration, and how it was answered
     const integrationCalls: { key: string; data: unknown; answered: 'canned' | 'sent' | 'refused'; status?: number; error?: string }[] = [];
     const shortData = (d: unknown) => {
@@ -380,6 +381,13 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
               const file = await readFileBytes(pool, p, String(args[0] ?? ''), CONTENT_MAX_BYTES);
               return { ok: true, value: { __blob: file.bytes.toString('base64'), type: file.mime_type } };
             }
+            // the caller's own saved settings; saves stay in this render only
+            case 'getSettings':
+              return { ok: true, value: { ...(p.userId ? await getViewSettings(p, v.slug, draft) : {}), ...renderSettings } };
+            case 'setSetting':
+              renderSettings[String(args[0] ?? '')] = args[1] ?? null;
+              refused.push('setSetting (kept for this render, not saved)');
+              return { ok: true, value: { key: String(args[0] ?? ''), saved: false } };
             case 'openFile':
             case 'openRecord':
             case 'navigate':

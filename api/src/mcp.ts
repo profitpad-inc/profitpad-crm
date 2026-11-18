@@ -30,6 +30,7 @@ import {
   sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut
 } from './templates.js';
 import { findIcons } from './icons.js';
+import { createOptionList, deleteOptionList, linkDropdown, listOptionLists, unlinkDropdown, updateOptionList } from './option-lists.js';
 import { registerEmailTools } from './email/mcp-tools.js';
 import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
@@ -180,7 +181,9 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
         options: pr.type === 'dropdown'
           ? pr.dropdown_options.filter((o) => o.record_status === 'active').map((o) => ({ value: o.api_value, label: o.label, ...optionDetails(o) }))
           : undefined,
-        parent_property: (pr.options.parent_property as string | undefined) ?? undefined
+        parent_property: (pr.options.parent_property as string | undefined) ?? undefined,
+        // shared option list: its choices are kept the same on every dropdown linked to it
+        shared_option_list: pr.type === 'dropdown' && pr.option_list ? pr.option_list.api_name : undefined
       }))
     };
   }));
@@ -932,6 +935,63 @@ function registerAdminTools(server: McpServer, p: Principal) {
       scopeChallenge: schemaChallenge
     }, async ({ object, property, value }) => run(() => updateOption(p, object, property, value, { record_status: archived ? 'archived' : 'active' }, SCHEMA_SOURCE)));
   }
+
+  // ---- shared option lists (src/option-lists.ts) ----
+
+  const listArg = z.string().describe('Option list api_name or id from list_option_lists');
+  const dropdownArg = z.object({ object: objectArg, property: propertyArg });
+
+  server.registerTool('list_option_lists', {
+    title: 'List shared option lists',
+    description: 'Lists shared option lists: groups of dropdowns, on any objects, that keep the same choices. Adding, relabelling, recolouring, reordering, archiving or deleting a choice on one linked dropdown does the same on all of them (stage details such as parent_values and probability stay per dropdown). Shows each list\'s dropdowns and choices.',
+    inputSchema: z.object({}),
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => ({ option_lists: await listOptionLists(p) })));
+
+  server.registerTool('create_option_list', {
+    title: 'Create shared option list',
+    description: 'Creates a shared option list and optionally links dropdowns to it (same as link_dropdown_to_option_list for each). Ask the user before changing properties.',
+    inputSchema: z.object({
+      label: z.string().describe('e.g. Product categories'),
+      api_name: z.string().optional().describe('lowercase name; made from the label when left out'),
+      description: z.string().optional(),
+      dropdowns: z.array(dropdownArg).optional().describe('Dropdowns to link, in order; the first one\'s choices start the list')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async (b) => run(() => createOptionList(p, b, SCHEMA_SOURCE)));
+
+  server.registerTool('update_option_list', {
+    title: 'Rename shared option list',
+    description: 'Changes a shared option list\'s label or description (an empty description clears it).',
+    inputSchema: z.object({ list: listArg, label: z.string().optional(), description: z.string().optional() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ list, ...b }) => run(() => updateOptionList(p, list, b, SCHEMA_SOURCE)));
+
+  server.registerTool('link_dropdown_to_option_list', {
+    title: 'Link dropdown to shared option list',
+    description: 'Makes a dropdown share a list\'s choices. Choices are matched by value: the list\'s label, order, colour and status win for values both have, and the dropdown\'s other choices are added to every dropdown on the list. Refused when one label is used for two different values, for user pickers and currency dropdowns, and for a dropdown already on another list.',
+    inputSchema: z.object({ list: listArg, object: objectArg, property: propertyArg }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ list, ...d }) => run(() => linkDropdown(p, list, d, SCHEMA_SOURCE)));
+
+  server.registerTool('unlink_dropdown_from_option_list', {
+    title: 'Unlink dropdown from shared option list',
+    description: 'Stops a dropdown from following its shared option list. It keeps the choices it has.',
+    inputSchema: z.object({ object: objectArg, property: propertyArg }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async (d) => run(async () => { await unlinkDropdown(p, d, SCHEMA_SOURCE); return { unlinked: true }; }));
+
+  server.registerTool('delete_option_list', {
+    title: 'Delete shared option list',
+    description: 'Deletes a shared option list. Its dropdowns are unlinked and keep the choices they have. Confirm with the user first.',
+    inputSchema: z.object({ list: listArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ list }) => run(async () => { await deleteOptionList(p, list, SCHEMA_SOURCE); return { deleted: true }; }));
 
   // ---- webhooks ----
 

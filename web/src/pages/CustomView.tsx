@@ -342,6 +342,10 @@ export function CustomView() {
       }
       case 'query':
         return api('POST', `/v1/views/${str(s, 'slug')}/queries/${str(args[0], 'query name')}${d ? '?draft=1' : ''}`, { params: args[1] ?? {} });
+      case 'getSettings':
+        return (await api<{ settings: Record<string, unknown> }>('GET', `/v1/views/${str(s, 'slug')}/settings${d ? '?draft=1' : ''}`)).settings;
+      case 'setSetting':
+        return api('PUT', `/v1/views/${str(s, 'slug')}/settings/${str(args[0], 'setting key')}${d ? '?draft=1' : ''}`, { value: args[1] ?? null });
       case 'openRecord':
         navigate(`/objects/${str(args[0], 'object')}/${str(args[1], 'id')}`, { state: backHere() });
         return null;

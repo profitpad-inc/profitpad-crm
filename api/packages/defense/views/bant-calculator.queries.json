@@ -1,0 +1,4 @@
+{
+  "deals": "select d.pc_0012_id as id, d.name, d.stage, d.pwin, d.bant_total, d.bant_answers, (select c.name from associations a join companies c on c.pc_0011_id = a.other_record_id where a.object = 'deals' and a.other_object = 'companies' and a.record_id = d.pc_0012_id order by c.name limit 1) as company from deals d left join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where d.pipeline = 'defense' and not coalesce(s.is_closed, false) order by d.name",
+  "first_stage": "select api_value from property_options where object_type_id = 'pc_0012' and property = 'stage' and record_status = 'active' and 'defense' = any(parent_values) and not is_closed order by display_order limit 1"
+}

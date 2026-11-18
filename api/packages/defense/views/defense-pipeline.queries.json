@@ -1,0 +1,20 @@
+{
+  "deals": "select d.pc_0012_id as id, d.name, d.stage, d.amount, d.currency, d.amount_base, d.weighted_amount, d.pwin, d.bant_total, d.product_category, d.product_category__label as category, d.customer_type, d.customer_type__label as customer_type_label, d.contract_vehicle__label as vehicle, d.region, d.region__label as region_label, d.owner, d.owner__label as owner_name, d.next_step, d.next_step_date, d.close_date, d.solicitation_number, d.updated_at, (select c.name from associations a join companies c on c.pc_0011_id = a.other_record_id where a.object = 'deals' and a.other_object = 'companies' and a.record_id = d.pc_0012_id order by c.name limit 1) as company from deals d where d.pipeline = 'defense' order by d.amount_base desc nulls last, d.name",
+  "stages": "select api_value, label, is_closed, is_won, color from property_options where object_type_id = 'pc_0012' and property = 'stage' and record_status = 'active' and 'defense' = any(parent_values) order by display_order",
+  "filters": "select property, api_value, label from property_options where object_type_id = 'pc_0012' and property in ('product_category', 'customer_type', 'region') and record_status = 'active' order by property, display_order",
+  "users": "select pc_0000_id as id, name from users where status = 'active' union select owner, owner__label from deals where owner is not null and pipeline = 'defense' order by 2",
+  "base": "select code from currencies where is_base",
+  "detail_contacts": {
+    "sql": "select distinct ct.pc_0010_id as id, ct.name, ct.job_title, ct.email, ct.phone, a.label from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' and a.record_id = :deal order by ct.name",
+    "params": { "deal": "text" }
+  },
+  "detail_stage_since": {
+    "sql": "select h.changed_at from property_history h where h.object = 'deals' and h.property = 'stage' and h.record_id = :deal order by h.changed_at desc, h.history_id desc limit 1",
+    "params": { "deal": "text" }
+  },
+  "detail_escalations": {
+    "sql": "select e.{{id:escalations}} as id, e.name, e.status, e.status__label as status_label, e.roadblocks__label as roadblocks, e.created_at from associations a join escalations e on e.{{id:escalations}} = a.other_record_id where a.object = 'deals' and a.other_object = 'escalations' and a.record_id = :deal order by e.created_at desc",
+    "params": { "deal": "text" }
+  },
+  "roadblocks": "select api_value, label from property_options where object_type_id = '{{code:escalations}}' and property = 'roadblocks' and record_status = 'active' order by display_order"
+}

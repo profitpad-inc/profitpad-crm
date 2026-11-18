@@ -1,0 +1,31 @@
+{
+  "totals": "select count(*) filter (where not coalesce(s.is_closed, false)) as active, sum(d.amount_base) filter (where not coalesce(s.is_closed, false)) as pipeline, sum(d.weighted_amount) filter (where not coalesce(s.is_closed, false)) as weighted, count(*) filter (where not coalesce(s.is_closed, false) and d.owner = :me) as mine, count(*) filter (where not coalesce(s.is_closed, false) and d.owner = :me and d.next_step_date <= current_date) as due, sum(d.amount_base) filter (where s.is_won and d.close_date >= date_trunc('year', current_date)) as awarded_year from deals d left join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where d.pipeline = 'defense'",
+  "my_deals": "select d.pc_0012_id as id, d.name, d.stage__label as stage, d.amount, d.currency, d.pwin, d.next_step, d.next_step_date, d.close_date from deals d left join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where d.pipeline = 'defense' and d.owner = :me and not coalesce(s.is_closed, false) order by d.next_step_date nulls last, d.name limit 100",
+  "my_tasks": "select t.pc_0033_id as id, t.name, t.due_at, t.status, t.status__label as status_label, t.priority, t.priority__label as priority_label from tasks t where t.owner = :me and coalesce(t.status, '') <> 'completed' order by t.due_at nulls last, t.created_at limit 100",
+  "month_steps": {
+    "sql": "select d.pc_0012_id as id, d.name, d.next_step, d.next_step_date as day from deals d where d.pipeline = 'defense' and d.next_step_date between :from and :to and (:all or d.owner = :me) order by d.next_step_date",
+    "params": {
+      "from": "date",
+      "to": "date",
+      "all": "boolean"
+    }
+  },
+  "month_tasks": {
+    "sql": "select t.pc_0033_id as id, t.name, (t.due_at at time zone 'UTC')::date as day from tasks t where t.owner = :me and t.due_at is not null and (t.due_at at time zone 'UTC')::date between :from and :to and coalesce(t.status, '') <> 'completed' order by t.due_at",
+    "params": {
+      "from": "date",
+      "to": "date"
+    }
+  },
+  "month_trips": {
+    "sql": "select r.{{id:trips}} as id, r.name, r.destination, r.start_date, coalesce(r.end_date, r.start_date) as end_date from trips r where r.start_date <= :to and coalesce(r.end_date, r.start_date) >= :from and (:all or r.owner = :me) order by r.start_date",
+    "params": {
+      "from": "date",
+      "to": "date",
+      "all": "boolean"
+    }
+  },
+  "achievements": "select (select count(*) from deals where created_by = 'user:' || :me) as deals_created, (select count(*) from deals d join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where s.is_won and d.owner = :me) as deals_won, (select coalesce(sum(d.amount_base), 0) from deals d join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where s.is_won and d.owner = :me) as won_value, (select coalesce(sum(d.amount_base), 0) from deals d left join property_options s on s.object_type_id = 'pc_0012' and s.property = 'stage' and s.api_value = d.stage where not coalesce(s.is_closed, false) and d.owner = :me) as open_value, (select count(*) from contacts where created_by = 'user:' || :me) as contacts_added, (select count(*) from quotes where created_by = 'user:' || :me and status <> 'draft') as quotes_sent, (select count(*) from deals where owner = :me and bant_total is not null) as bant_scored, (select count(*) from partnerships where created_by = 'user:' || :me) as partnerships, (select count(*) from trips where owner = :me) as trips, (select count(*) from escalations where created_by = 'user:' || :me) as escalations",
+  "views": "select slug, name from views where status = 'published' order by name",
+  "base": "select code from currencies where is_base"
+}

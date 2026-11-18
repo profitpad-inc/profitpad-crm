@@ -24,9 +24,10 @@ import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
 import { CurrencySettings } from './CurrencySettings';
+import { OptionListSettings } from './OptionListSettings';
 import { AddressSettings } from './AddressSettings';
 import { EmailSettings } from './EmailSettings';
-import { Send } from 'lucide-react';
+import { ListChecks, Send } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { MailboxSettings } from './MailboxSettings';
 import { Select } from '../components/Select';
@@ -52,6 +53,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'nav', element: <NavSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> },
+    { path: 'option-lists', label: 'Option lists', icon: <ListChecks size={16} />, gate: 'admin', element: <OptionListSettings /> },
     { path: 'currencies', label: 'Currencies', icon: <Coins size={16} />, gate: 'admin', element: <CurrencySettings /> }
   ] },
   { label: 'People and access', links: [

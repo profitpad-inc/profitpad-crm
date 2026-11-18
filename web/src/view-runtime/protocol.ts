@@ -23,7 +23,9 @@ export interface ViewInit {
 type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone'
   | 'uploadFile' | 'getFiles' | 'fileBlob' | 'openFile'
   // snippets for the # menu in text boxes (read only, never asked)
-  | 'snippets' | 'renderSnippet';
+  | 'snippets' | 'renderSnippet'
+  // the viewer's own settings in this view (never asked: their preferences, not CRM data)
+  | 'getSettings' | 'setSetting';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

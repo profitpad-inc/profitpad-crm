@@ -347,3 +347,10 @@
 .mailbox-user { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; }
 .mailbox-user-remove { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--muted-text); cursor: pointer; padding: 0; }
 .mailbox-user-remove:hover { background: var(--border); color: var(--text); }
+
+/* Settings → Option lists */
+.option-list-pick { display: flex; align-items: flex-end; gap: 6px; }
+.option-list-pick .field-row { flex: 1 1 auto; }
+.option-list-member { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; line-height: 18px; }
+.option-list-member .icon-btn { width: 18px; height: 18px; padding: 0; }
+.shared-list-note { margin: 4px 0 0; }
