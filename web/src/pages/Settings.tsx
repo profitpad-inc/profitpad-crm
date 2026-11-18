@@ -6,10 +6,10 @@ import {
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
 import { api, type CrmRecord, type NavItem, type SearchResult, type View } from '../lib/api';
-import { useApp } from '../lib/app-context';
+import { useApp, type Themes } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
-import { DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type Theme, type ThemeKey } from '../lib/theme';
+import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type ColorMode, type Mode, type Theme, type ThemeKey } from '../lib/theme';
 import { HomeIcon, displayName, initials } from '../lib/display';
 import { navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
@@ -113,8 +113,14 @@ export function Settings() {
   );
 }
 
+const COLOR_MODES: { value: ColorMode; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'Match device' }
+];
+
 function Account() {
-  const { me, signOut } = useApp();
+  const { me, signOut, colorMode, setColorMode } = useApp();
   const name = me.user?.name || [me.user?.first_name, me.user?.last_name].filter(Boolean).join(' ') || me.key_name;
   return (
     <SettingsPage title="Account" description="Who you are signed in as and what you can do in this portal.">
@@ -129,11 +135,18 @@ function Account() {
         <SettingRow label="Access" hint={me.is_admin ? 'Admins can change every setting here.' : 'What this sign-in is allowed to do.'}>
           {me.is_admin ? <StatusPill tone="info">Admin</StatusPill> : <span>{me.scopes.join(', ')}</span>}
         </SettingRow>
+        <SettingRow label="Appearance" hint="Light or dark, for you on this device. Match device follows your computer or phone.">
+          <div className="segmented" role="group" aria-label="Appearance">
+            {COLOR_MODES.map((m) => (
+              <button key={m.value} type="button" aria-pressed={colorMode === m.value} onClick={() => setColorMode(m.value)}>{m.label}</button>
+            ))}
+          </div>
+        </SettingRow>
         <SettingRow label="Sign out" hint="Ends this session on this device. Other devices stay signed in.">
           <button className="btn" onClick={signOut}>Sign out</button>
         </SettingRow>
       </div>
-      {me.user && <EmailSignature userId={me.user.id} initial={me.user.email_signature ?? null} canWrite={me.scopes.includes('write')} />}
+      {me.user && <EmailSignature userId={me.user.id} initial={me.user.email_signature ?? null} canWrite={me.is_admin || me.scopes.includes('write') || me.scopes.includes('admin')} />}
     </SettingsPage>
   );
 }
@@ -209,21 +222,29 @@ async function logoFromFile(file: File): Promise<string> {
 }
 
 function ThemeSettings() {
-  const { theme, setTheme, dropdownColors, setDropdownColors, logo, setLogo } = useApp();
-  const [draft, setDraft] = useState<Theme>(theme);
+  const { themes, setThemes, mode, setPreviewMode, dropdownColors, setDropdownColors, logo, setLogo } = useApp();
+  // which palette is being edited; the whole CRM shows it while this page is open
+  const [editing, setEditing] = useState<Mode>(mode);
+  const [draft, setDraft] = useState<Themes>(themes);
   const [colors, setColors] = useState<string[]>(dropdownColors);
   const [logoDraft, setLogoDraft] = useState<string | null>(logo);
   // what is saved, to tell whether the draft has unsaved changes (the live preview changes `theme` itself)
-  const [saved, setSaved] = useState(() => JSON.stringify({ theme, colors: dropdownColors, logo }));
+  const [saved, setSaved] = useState(() => JSON.stringify({ themes, colors: dropdownColors, logo }));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dirty = JSON.stringify({ theme: draft, colors, logo: logoDraft }) !== saved;
+  const dirty = JSON.stringify({ themes: draft, colors, logo: logoDraft }) !== saved;
+  const palette = draft[editing];
 
-  function update(next: Theme) {
+  useEffect(() => { setPreviewMode(editing); }, [editing, setPreviewMode]);
+  useEffect(() => () => setPreviewMode(null), [setPreviewMode]);
+
+  function updateAll(next: Themes) {
     setDraft(next);
-    setTheme(next); // live preview
+    setThemes(next); // live preview
     setMessage(null);
   }
+
+  const update = (next: Theme) => updateAll({ ...draft, [editing]: next });
 
   function updateLogo(next: string | null) {
     setLogoDraft(next);
@@ -249,11 +270,12 @@ function ThemeSettings() {
   async function save() {
     setError(null);
     try {
-      await api('PUT', '/v1/ui/settings/theme', draft);
+      await api('PUT', '/v1/ui/settings/theme', draft.light);
+      await api('PUT', '/v1/ui/settings/theme_dark', draft.dark);
       await api('PUT', '/v1/ui/settings/dropdown_colors', { colors });
       await api('PUT', '/v1/ui/settings/logo', { image: logoDraft });
       setDropdownColors(colors);
-      setSaved(JSON.stringify({ theme: draft, colors, logo: logoDraft }));
+      setSaved(JSON.stringify({ themes: draft, colors, logo: logoDraft }));
       setMessage('Theme saved for everyone.');
     } catch (err) {
       setError((err as Error).message);
@@ -269,7 +291,7 @@ function ThemeSettings() {
           <SettingsSection title="Logo" description="Shown in the sidebar, the phone header and the login page. A square image with a transparent background works best.">
             <div className="logo-field">
               <span className="logo-field-tile dark" title="On the sidebar"><BrandMark src={logoDraft} size={36} /></span>
-              <span className="logo-field-tile light" title="On a light page"><BrandMark src={logoDraft} size={36} /></span>
+              <span className="logo-field-tile light" title="On the page"><BrandMark src={logoDraft} size={36} /></span>
               <div className="logo-field-actions">
                 <label className="btn">
                   <Upload size={14} /> {logoDraft ? 'Change logo' : 'Upload logo'}
@@ -279,15 +301,19 @@ function ThemeSettings() {
               </div>
             </div>
           </SettingsSection>
-          <SettingsSection title="Portal colours">
+          <SettingsSection title="Portal colours" description="Each person picks light or dark in Settings, Account. The CRM shows the palette you are editing while this page is open.">
+            <div className="segmented palette-tabs" role="group" aria-label="Palette">
+              <button type="button" aria-pressed={editing === 'light'} onClick={() => setEditing('light')}>Light mode</button>
+              <button type="button" aria-pressed={editing === 'dark'} onClick={() => setEditing('dark')}>Dark mode</button>
+            </div>
             {THEME_GROUPS.map((g) => (
               <div key={g.label} className="color-rows">
                 <div className="color-rows-head">{g.label}</div>
                 {g.keys.map((k) => (
                   <label key={k} className="color-field">
-                    <ColorInput value={draft[k]} onChange={(hex) => update({ ...draft, [k]: hex })} label={label(k)} />
+                    <ColorInput value={palette[k]} onChange={(hex) => update({ ...palette, [k]: hex })} label={label(k)} />
                     <span>{label(k)}</span>
-                    <HexInput value={draft[k]} onChange={(hex) => update({ ...draft, [k]: hex })} />
+                    <HexInput value={palette[k]} onChange={(hex) => update({ ...palette, [k]: hex })} />
                   </label>
                 ))}
               </div>
@@ -308,10 +334,10 @@ function ThemeSettings() {
             </div>
           </SettingsSection>
         </div>
-        <ThemePreview theme={draft} colors={colors} logo={logoDraft} />
+        <ThemePreview theme={palette} colors={colors} logo={logoDraft} />
       </div>
       <SaveBar dirty={dirty} message={message} error={error}>
-        <button className="btn" onClick={() => { update(DEFAULT_THEME); setColors(defaultDropdownColors()); updateLogo(null); }}>Reset to defaults</button>
+        <button className="btn" onClick={() => { updateAll({ light: DEFAULT_THEME, dark: DEFAULT_DARK_THEME }); setColors(defaultDropdownColors()); updateLogo(null); }}>Reset to defaults</button>
         <button className="btn primary" onClick={save} disabled={!dirty}>Save theme</button>
       </SaveBar>
     </SettingsPage>

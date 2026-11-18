@@ -440,10 +440,10 @@ export async function uiRoutes(app: FastifyInstance) {
     requireAdmin(p);
     if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
     const validators: Record<string, (v: unknown) => unknown> = {
-      theme: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo
+      theme: validateTheme, theme_dark: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo
     };
     const validate = validators[req.params.key];
-    if (!validate) throw badRequest('unknown setting (supported: theme, dropdown_colors, logo, forms)');
+    if (!validate) throw badRequest('unknown setting (supported: theme, theme_dark, dropdown_colors, logo, forms)');
     const value = await validate(req.body);
     await pool.query(
       `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)

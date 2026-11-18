@@ -23,6 +23,7 @@ import { Settings } from './pages/Settings';
 import { CustomView } from './pages/CustomView';
 import { CardScanner } from './pages/CardScanner';
 import { SignedInAsBanner } from './components/SignedInAsBanner';
+import { applyMode, getColorMode, resolveMode } from './lib/theme';
 
 // Desktop: sidebar rail on the left. Phone: bottom bar, with the full menu
 // in a hamburger drawer on the home page.
@@ -88,6 +89,8 @@ function App() {
   );
 }
 
+// light or dark before the first paint (the login page too); AppProvider takes over once signed in
+applyMode(resolveMode(getColorMode()));
 installTooltips();
 
 createRoot(document.getElementById('root')!).render(

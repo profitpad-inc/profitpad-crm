@@ -26,6 +26,25 @@
   --sidebar-collapsed: 64px;
   --sidebar-expanded: 200px;
 }
+/* Dark mode (data-mode on <html>, set by lib/theme.ts): the dark palette's defaults until the saved one loads
+   (same values as DEFAULT_DARK_THEME), and the fixed colours made to read on a dark page */
+:root[data-mode='dark'] {
+  --primary: #3b76ef;
+  --sidebar-background: #0a0f1a;
+  --sidebar-text: #e2e8f0;
+  --sidebar-active: #1e2a40;
+  --page-background: #161b26;
+  --surface: #0f131c;
+  --text: #e6eaf0;
+  --muted-text: #9aa4b4;
+  --border: #2e3646;
+  --money: #3fbf7f;
+  --danger: #f0574b;
+  --warn: #f5a524;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
@@ -133,6 +152,10 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
   color: #14532d; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .signed-in-as button:hover:not(:disabled) { background: #d7f0e0; }
 .signed-in-as button:disabled { opacity: 0.7; cursor: default; }
+:root[data-mode='dark'] .signed-in-as { border-color: #2c6b47; background: #12301f; color: #b9f0cf; }
+:root[data-mode='dark'] .signed-in-as svg { color: #4cc38a; }
+:root[data-mode='dark'] .signed-in-as button { border-color: #2c6b47; background: transparent; color: #b9f0cf; }
+:root[data-mode='dark'] .signed-in-as button:hover:not(:disabled) { background: #1a4029; }
 .main { flex: 1; min-width: 0; overflow: auto; }
 
 /* sidebar */
@@ -677,12 +700,12 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .custom-view { display: flex; flex-direction: column; min-height: 100%; }
 .custom-view-bar { display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .custom-view-bar .spacer { flex: 1; }
-.custom-view-bar .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--primary) 10%, #fff); color: var(--primary); }
+.custom-view-bar .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--primary) 10%, var(--page-background)); color: var(--primary); }
 .view-integrations { display: flex; flex-direction: column; gap: 10px; }
 .view-integration { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
 .view-integration p { margin: 4px 0 0; }
 .view-integration .pill { margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--surface); color: var(--muted-text); }
-.view-integration .pill.danger { background: color-mix(in srgb, var(--danger) 12%, #fff); color: var(--danger); }
+.view-integration .pill.danger { background: color-mix(in srgb, var(--danger) 12%, var(--page-background)); color: var(--danger); }
 .view-integration dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; }
 .view-integration dt { color: var(--muted-text); }
 .view-integration dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -810,6 +833,7 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .app-tooltip { position: fixed; z-index: 10000; max-width: 280px; padding: 5px 8px; border-radius: var(--radius-sm, 4px);
   background: #0f172a; color: #f1f5f9; font: 500 12px/1.35 var(--font-body, system-ui, sans-serif); white-space: pre-line;
   overflow-wrap: anywhere; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2); pointer-events: none; }
+:root[data-mode='dark'] .app-tooltip { background: #e6eaf0; color: #0b1220; }
 .app-tooltip[hidden] { display: none; }
 
 /* address suggestions under a street box (components/AddressInput.tsx) */

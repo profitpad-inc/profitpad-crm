@@ -2,7 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 import { api, type CustomViewSummary, type Me, type NavItem, type ObjectSummary } from './api';
-import { applyTheme, defaultDropdownColors, type Theme } from './theme';
+import {
+  DEFAULT_DARK_THEME, DEFAULT_THEME, applyMode, applyTheme, defaultDropdownColors, getColorMode, onSystemModeChange,
+  resolveMode, saveColorMode, systemPrefersDark, type ColorMode, type Mode, type Theme
+} from './theme';
+
+// the portal's two palettes (Settings, Theme)
+export interface Themes { light: Theme; dark: Theme }
 
 interface AppState {
   me: Me;
@@ -19,13 +25,22 @@ interface AppState {
   // custom views this user can open (menu items for others are hidden)
   customViews: CustomViewSummary[];
   reloadCustomViews: () => Promise<void>;
+  // the palette in use now, and both palettes
   theme: Theme;
+  themes: Themes;
+  // light or dark in use now; colorMode is this person's choice (light, dark or follow the device)
+  mode: Mode;
+  colorMode: ColorMode;
+  setColorMode: (m: ColorMode) => void;
+  // Settings, Theme: shows the palette being edited until cleared (null)
+  setPreviewMode: (m: Mode | null) => void;
   reloadNav: () => Promise<void>;
   // Settings, Navigation menus: shows the menu being edited in the sidebar and bottom bar until cleared (null)
   navPreview: NavPreview | null;
   setNavPreview: (p: NavPreview | null) => void;
   reloadObjects: () => Promise<void>;
-  setTheme: (t: Partial<Theme>) => void;
+  // live preview of edited palettes (saving is the Theme page's job)
+  setThemes: (t: Themes) => void;
   // the 16 colours offered for dropdown choices (Settings, Theme)
   dropdownColors: string[];
   setDropdownColors: (colors: string[]) => void;
@@ -60,7 +75,11 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const [bottomNav, setBottomNav] = useState<NavItem[]>([]);
   const [navPreview, setNavPreview] = useState<NavPreview | null>(null);
   const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
-  const [theme, setThemeState] = useState<Theme>(() => applyTheme(undefined));
+  const [themes, setThemes] = useState<Themes>({ light: DEFAULT_THEME, dark: DEFAULT_DARK_THEME });
+  const [colorMode, setColorModeState] = useState<ColorMode>(getColorMode);
+  const [systemDark, setSystemDark] = useState(systemPrefersDark);
+  const [previewMode, setPreviewMode] = useState<Mode | null>(null);
+  const mode = previewMode ?? resolveMode(colorMode, systemDark);
   const [dropdownColors, setDropdownColors] = useState<string[]>(defaultDropdownColors);
   const [logo, setLogo] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -106,15 +125,23 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
       reloadObjects(),
       reloadNav(),
       reloadCustomViews().catch(() => undefined),
-      api<{ theme?: Partial<Theme>; dropdown_colors?: { colors?: string[] }; logo?: { image?: string | null } }>('GET', '/v1/ui/settings').then((s) => {
-        setThemeState(applyTheme(s.theme));
+      api<{ theme?: Partial<Theme>; theme_dark?: Partial<Theme>; dropdown_colors?: { colors?: string[] }; logo?: { image?: string | null } }>('GET', '/v1/ui/settings').then((s) => {
+        setThemes({ light: { ...DEFAULT_THEME, ...(s.theme ?? {}) }, dark: { ...DEFAULT_DARK_THEME, ...(s.theme_dark ?? {}) } });
         setLogo(s.logo?.image ?? null);
         if (s.dropdown_colors?.colors?.length === 16) setDropdownColors(s.dropdown_colors.colors);
       })
     ]).finally(() => setReady(true));
   }, [reloadObjects, reloadNav, reloadCustomViews]);
 
-  const setTheme = useCallback((t: Partial<Theme>) => setThemeState(applyTheme(t)), []);
+  useEffect(() => onSystemModeChange(setSystemDark), []);
+  useEffect(() => {
+    applyMode(mode);
+    applyTheme(themes[mode], document.documentElement, mode === 'dark' ? DEFAULT_DARK_THEME : DEFAULT_THEME);
+  }, [mode, themes]);
+  const setColorMode = useCallback((m: ColorMode) => {
+    saveColorMode(m);
+    setColorModeState(m);
+  }, []);
   const signOut = useCallback(() => {
     api('POST', '/v1/auth/logout').catch(() => undefined).finally(onSignOut);
   }, [onSignOut]);
@@ -126,8 +153,8 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
         me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])),
         nav: navPreview?.items ?? nav, navSource, navCanEdit,
         bottomLeft: navPreview?.bottomLeft ?? bottomLeft, bottomNav: navPreview?.bottom ?? bottomNav,
-        navPreview, setNavPreview, customViews, theme,
-        reloadNav, reloadObjects, reloadCustomViews, setTheme, dropdownColors, setDropdownColors, logo, setLogo, signOut, toast
+        navPreview, setNavPreview, customViews, theme: themes[mode], themes, mode, colorMode, setColorMode, setPreviewMode,
+        reloadNav, reloadObjects, reloadCustomViews, setThemes, dropdownColors, setDropdownColors, logo, setLogo, signOut, toast
       }}
     >
       {children}

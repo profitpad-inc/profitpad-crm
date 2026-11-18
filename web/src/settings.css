@@ -114,6 +114,7 @@
 /* Theme */
 .theme-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; align-items: start; max-width: 1180px; }
 .theme-controls { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.palette-tabs { align-self: flex-start; width: fit-content; margin-bottom: 12px; }
 .logo-field { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .logo-field-tile { width: 56px; height: 56px; border-radius: var(--radius-lg); display: grid; place-items: center; border: 1px solid var(--border); }
 .logo-field-tile.dark { background: var(--sidebar-background); color: var(--sidebar-text); border-color: transparent; }

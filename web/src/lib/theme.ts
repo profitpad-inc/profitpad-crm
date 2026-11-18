@@ -28,10 +28,60 @@ export const DEFAULT_THEME: Theme = {
   border: '#cfd6df'
 };
 
+// The dark palette (ui.settings 'theme_dark'), editable in Settings, Theme like the light one.
+export const DEFAULT_DARK_THEME: Theme = {
+  primary: '#3b76ef',
+  sidebar_background: '#0a0f1a',
+  sidebar_text: '#e2e8f0',
+  sidebar_active: '#1e2a40',
+  page_background: '#161b26',
+  surface: '#0f131c',
+  text: '#e6eaf0',
+  muted_text: '#9aa4b4',
+  border: '#2e3646'
+};
+
+// Light or dark: each person's own choice, kept in this browser. 'system' follows the device.
+export type ColorMode = 'light' | 'dark' | 'system';
+export type Mode = 'light' | 'dark';
+const MODE_KEY = 'pc.color_mode';
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+export function getColorMode(): ColorMode {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (v === 'light' || v === 'dark' || v === 'system') return v;
+  } catch { /* storage blocked */ }
+  return 'light';
+}
+
+export function saveColorMode(mode: ColorMode): void {
+  try { localStorage.setItem(MODE_KEY, mode); } catch { /* storage blocked */ }
+}
+
+export const systemPrefersDark = () => window.matchMedia(DARK_QUERY).matches;
+
+export function onSystemModeChange(fn: (dark: boolean) => void): () => void {
+  const mq = window.matchMedia(DARK_QUERY);
+  const handler = (e: MediaQueryListEvent) => fn(e.matches);
+  mq.addEventListener('change', handler);
+  return () => mq.removeEventListener('change', handler);
+}
+
+export const resolveMode = (mode: ColorMode, systemDark = systemPrefersDark()): Mode =>
+  mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
+
+// data-mode on <html> picks the dark fallbacks and fixed colours in styles.css;
+// color-scheme makes scrollbars and native controls match
+export function applyMode(mode: Mode): void {
+  document.documentElement.dataset.mode = mode;
+  document.documentElement.style.colorScheme = mode;
+}
+
 // target: where the CSS variables go (default the whole page; an embedded
 // booking page sets them on its own element so the website is not touched)
-export function applyTheme(partial: Partial<Theme> | undefined, target: HTMLElement = document.documentElement): Theme {
-  const theme = { ...DEFAULT_THEME, ...(partial ?? {}) };
+export function applyTheme(partial: Partial<Theme> | undefined, target: HTMLElement = document.documentElement, defaults: Theme = DEFAULT_THEME): Theme {
+  const theme = { ...defaults, ...(partial ?? {}) };
   const root = target;
   for (const [k, v] of Object.entries(theme)) root.style.setProperty(`--${k.replace(/_/g, '-')}`, v);
   return theme;
