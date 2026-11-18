@@ -307,7 +307,10 @@
 .change-links a:hover { color: var(--primary); }
 .change-links a.muted { color: var(--muted-text); font-weight: 400; }
 .link-change.unlinked .change-links a { color: var(--muted-text); text-decoration: line-through; text-decoration-color: var(--border); }
-.record-page .history-filters { gap: 8px; margin-bottom: 14px; }
+.record-page .history-filters { gap: 8px; margin-bottom: 14px; align-items: stretch; }
+/* Write email, Log email, Clear: as tall as the search box and the time menu beside them */
+.record-page .history-filters .activity-create { align-items: stretch; }
+.record-page .history-filters .btn { font-size: 13px; padding: 5px 10px; border-radius: var(--radius); }
 .record-page .history-filters .activity-search { flex: 1 1 180px; width: auto; min-width: 0; font-size: 13px; padding: 5px 10px; border-radius: var(--radius); }
 .record-page .history-filters .select-face {
   flex: 0 1 auto; width: auto; max-width: 100%; min-width: 0; font-size: 13px;

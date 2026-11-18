@@ -54,7 +54,8 @@ interface State {
 interface TestResult { ok: boolean; address: string; aliases?: { address: string; name: string | null }[]; error?: string }
 
 const PROVIDER_LABEL: Record<Provider, string> = { google: 'Google Workspace (Gmail)', microsoft: 'Microsoft 365 (Outlook)' };
-const domainText = (d: string[]) => d.join(', ');
+const TAB_LABEL: Record<Provider, string> = { google: 'Google Workspace', microsoft: 'Microsoft 365' };
+const domainText =(d: string[]) => d.join(', ');
 const domainList = (t: string) => t.split(/[\s,;]+/).map((s) => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
 const userLabel = (u: UserOption) => (u.name ? `${u.name}${u.email ? ` (${u.email})` : ''}` : u.email ?? u.id);
 
@@ -69,6 +70,7 @@ export function MailboxSettings() {
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SharedMailbox | 'new' | null>(null);
+  const [tab, setTab] = useState<Provider | null>(null);
 
   useEffect(() => {
     api<State>('GET', '/v1/mailboxes/settings').then(setState).catch((err) => setError((err as Error).message));
@@ -79,6 +81,8 @@ export function MailboxSettings() {
     return <SettingsPage title="Mailboxes" description={description}>{error ? <div className="error">{error}</div> : <TableSkeleton rows={3} />}</SettingsPage>;
   }
   const ready = state.providers.some((p) => p.ready);
+  // open on the provider already in use, Google when neither is
+  const activeTab: Provider = tab ?? state.providers.find((p) => p.enabled)?.provider ?? state.providers[0]?.provider ?? 'google';
 
   async function removeShared(m: SharedMailbox) {
     if (!(await confirmDialog(`Remove ${m.address}? Its users can no longer send from it. Emails already sent stay on their records.`, { confirmLabel: 'Remove', danger: true }))) return;
@@ -100,8 +104,18 @@ export function MailboxSettings() {
   return (
     <SettingsPage title="Mailboxes" description={description}>
       {!state.secrets_ready && <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>}
+      <div className="tabs" role="tablist" aria-label="Provider">
+        {state.providers.map((p) => (
+          <div key={p.provider} className={`tab${activeTab === p.provider ? ' active' : ''}`}>
+            <button role="tab" aria-selected={activeTab === p.provider} onClick={() => setTab(p.provider)}>{TAB_LABEL[p.provider]}</button>
+          </div>
+        ))}
+      </div>
+      {/* both stay mounted, so a key or secret pasted on one tab survives a look at the other */}
       {state.providers.map((p) => (
-        <ProviderCard key={p.provider} p={p} canStore={state.secrets_ready} onSaved={setState} />
+        <div key={p.provider} role="tabpanel" hidden={activeTab !== p.provider}>
+          <ProviderCard p={p} canStore={state.secrets_ready} onSaved={setState} />
+        </div>
       ))}
 
       <SettingsSection
@@ -214,6 +228,10 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
       {error && <div className="error">{error}</div>}
       {p.last_error && p.status === 'error' && !test && <div className="callout warn">Last test: {p.last_error}</div>}
 
+      <SettingRow label="Sending" hint={hasCredentials && p.domains.length ? 'Turn off to stop all sending through this provider without removing the setup.' : 'Add the domains and credentials below first.'}>
+        <label><input type="checkbox" role="switch" checked={p.enabled} disabled={busy || (!p.enabled && !(hasCredentials && p.domains.length))} onChange={(e) => put({ enabled: e.target.checked }, e.target.checked ? 'Sending turned on.' : 'Sending turned off.')} /> {p.enabled ? 'On' : 'Off'}</label>
+      </SettingRow>
+
       <SettingRow label="Sends for these domains" htmlFor={`${p.provider}-domains`} hint={`People whose sign-in address is in one of these domains send through ${p.provider === 'google' ? 'Google' : 'Microsoft'}. Separate with commas.`}>
         <div className="key-row">
           <input id={`${p.provider}-domains`} value={domains} placeholder={ownDomain ?? 'example.com'} onChange={(e) => setDomains(e.target.value)} />
@@ -280,10 +298,6 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
           </SettingRow>
         </>
       )}
-
-      <SettingRow label="Sending" hint={hasCredentials && p.domains.length ? 'Turn off to stop all sending through this provider without removing the setup.' : 'Add the domains and credentials first.'}>
-        <label><input type="checkbox" role="switch" checked={p.enabled} disabled={busy || (!p.enabled && !(hasCredentials && p.domains.length))} onChange={(e) => put({ enabled: e.target.checked }, e.target.checked ? 'Sending turned on.' : 'Sending turned off.')} /> {p.enabled ? 'On' : 'Off'}</label>
-      </SettingRow>
 
       {hasCredentials && (
         <SettingRow label="Test" htmlFor={`${p.provider}-test`} hint="Signs in as a mailbox and reads the addresses it can send as. Nothing is sent. Leave empty to use your own address.">
