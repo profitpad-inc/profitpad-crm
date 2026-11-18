@@ -146,6 +146,20 @@ services:
 
 and run `sudo docker compose up -d`.
 
+## Several installs on one server
+
+A second copy (a demo, a staging copy) runs beside the first, in its own folder, with its own database, files, keys and admin. Give it a name when you install it; the name goes into its container names (`pc-demo-api`) and volumes (`pcrm_demo_db_data`), so nothing is shared with the first install:
+
+```bash
+sudo mkdir -p /opt/profitpad-crm-demo && cd /opt/profitpad-crm-demo
+sudo curl -fsSLO --retry 6 --retry-delay 5 https://github.com/profitpad-inc/profitpad-crm/releases/latest/download/install.sh
+sudo PCRM_INSTANCE=demo PCRM_BEHIND_PROXY=8082 bash install.sh
+```
+
+Only one install can hold ports 80 and 443, so the second one always runs behind a reverse proxy (see above), on its own address with its own DNS record and sign-in redirect URIs. The name is saved in `.env` as `PCRM_INSTANCE` and can never change afterwards. Each install updates on its own: run `install.sh` in its folder. Each can follow its own release (`PCRM_VERSION`), but they share the server's memory: plan on about 2 GB per install.
+
+The installer refuses to start a new install whose names are already used on the server, so a second install run without a name cannot take over the first one's data.
+
 ## Database access from your computer
 
 ```bash

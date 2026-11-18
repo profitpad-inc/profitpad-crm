@@ -42,6 +42,8 @@ sudo PCRM_BEHIND_PROXY=8080 bash install.sh
 
 The CRM then listens on `127.0.0.1:8080` (or the next free port; the installer says which). For nginx, [`deploy/install/nginx-proxy.conf`](deploy/install/nginx-proxy.conf) is a ready site: set your address and port, enable it, and run `certbot --nginx`.
 
+A second install on the same server (a demo, say) goes in its own folder with a name: `sudo PCRM_INSTANCE=demo PCRM_BEHIND_PROXY=8082 bash install.sh`. See [several installs on one server](docs/self-hosting.md#several-installs-on-one-server).
+
 ### Updating
 
 ```bash
@@ -145,6 +147,8 @@ It runs the `:main` images from `/opt/profitpad-crm`, behind the server's nginx.
 ```
 
 That waits for CI and the Images workflow on the pushed commit (and stops if either fails), runs `install.sh` on the server, then checks that every container runs that commit.
+
+The demo (`/opt/profitpad-crm-demo`, `PCRM_INSTANCE=demo`) follows releases instead. After tagging one: `./scripts/deploy.sh demo`.
 
 Database access through the SSH tunnel and backups are in `CLAUDE.md`; the history of the server is in `docs/deploy.md`.
 

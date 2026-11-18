@@ -22,6 +22,11 @@
 #                                      (the next free port if that one is
 #                                      taken), written to
 #                                      docker-compose.override.yml
+# PCRM_INSTANCE=demo bash install.sh   first run only: a second install on a
+#                                      server that already has one, in its
+#                                      own folder. Names its containers
+#                                      (pc-demo-api) and volumes
+#                                      (pcrm_demo_files); saved in .env
 set -euo pipefail
 
 repo=profitpad-inc/profitpad-crm
@@ -42,12 +47,12 @@ command -v openssl >/dev/null || die "openssl is not installed"
 # value of KEY in .env, if any
 env_value() { [[ -f .env ]] && grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- || true; }
 
-# Is something already listening on this TCP port? Our own web container
-# holding it does not count (an update recreates it).
+# Is something already listening on this TCP port? This install's own web
+# container holding it does not count (an update recreates it).
 port_taken() {
   local p="$1"
-  if docker port pc-web 80/tcp 2>/dev/null | grep -qE "(^|:)$p\$"; then return 1; fi
-  if docker port pc-web 443/tcp 2>/dev/null | grep -qE "(^|:)$p\$"; then return 1; fi
+  if docker port "pc${instance:+-$instance}-web" 80/tcp 2>/dev/null | grep -qE "(^|:)$p\$"; then return 1; fi
+  if docker port "pc${instance:+-$instance}-web" 443/tcp 2>/dev/null | grep -qE "(^|:)$p\$"; then return 1; fi
   if command -v ss >/dev/null; then
     ss -Hltn "sport = :$p" 2>/dev/null | grep -q .
   elif command -v lsof >/dev/null; then
@@ -76,6 +81,23 @@ services:
 EOF
 }
 
+saved_instance="$(env_value PCRM_INSTANCE)"
+instance="${PCRM_INSTANCE:-$saved_instance}"
+[[ -z "$instance" || "$instance" =~ ^[a-z0-9]+$ ]] || die "PCRM_INSTANCE must be lowercase letters and digits only, e.g. demo"
+if [[ -f .env && "$instance" != "$saved_instance" ]]; then
+  die "this install is named '${saved_instance:-(none)}' in .env; the name cannot change after the first start (its data is in volumes named after it)"
+fi
+if [[ ! -f .env ]]; then
+  # A fresh folder must not take over another install's containers or data.
+  db_volume="pcrm${instance:+_$instance}_db_data"
+  if docker volume inspect "$db_volume" >/dev/null 2>&1 || docker container inspect "pc${instance:+-$instance}-db" >/dev/null 2>&1; then
+    if [[ -z "$instance" ]]; then
+      die "another ProfitPad install on this server already uses the default names. Run this in the folder of that install to update it, or start a second one with: sudo PCRM_INSTANCE=demo PCRM_BEHIND_PROXY=8082 bash install.sh"
+    fi
+    die "an install named '$instance' already exists on this server (volume $db_volume). Run this in its folder, or pick another name"
+  fi
+fi
+
 version="${PCRM_VERSION:-$(env_value PCRM_VERSION)}"
 if [[ "$version" == main ]]; then
   compose_url="https://raw.githubusercontent.com/$repo/main/deploy/install/docker-compose.yml"
@@ -93,6 +115,10 @@ echo "fetching docker-compose.yml"
 # --retry: GitHub's downloads sometimes time out (502, 503, 504) for a while
 curl -fsSL --retry 6 --retry-delay 5 "$compose_url" -o docker-compose.yml.new \
   || die "could not download $compose_url (GitHub may be having trouble; run this again in a few minutes)"
+if [[ -n "$instance" ]] && ! grep -q PCRM_INSTANCE docker-compose.yml.new; then
+  rm -f docker-compose.yml.new
+  die "this release's docker-compose.yml cannot run a second install (PCRM_INSTANCE); use a newer release"
+fi
 mv docker-compose.yml.new docker-compose.yml
 
 if [[ ! -f .env ]]; then
@@ -160,6 +186,9 @@ PCRM_URL=https://$domain
 PCRM_SITE_ADDRESS=$site_address
 # release to run: latest, a major version (1), an exact one (1.4.0) or main
 PCRM_VERSION=${version:-latest}
+# names this install's containers and volumes when a server has more than
+# one (empty: pc-api, pcrm_files). Never change it after the first start.
+PCRM_INSTANCE=$instance
 
 # the API's database password (the migrate step sets the login to match)
 PGPASSWORD=$(rand_hex)
