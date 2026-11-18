@@ -33,10 +33,26 @@ export function cleanEmailHtml(raw: string): string {
   return sanitizeHtml(raw, EMAIL_OPTIONS).trim();
 }
 
-// The body with the sender's signature under it (both already cleaned).
+// A body from the composer (already cleaned) with Gmail's line spacing: each
+// paragraph is one line with no gap under it (mail clients add about a line
+// under a <p> otherwise), and an empty one keeps its line as a blank line.
+// A paragraph that sets its own margin keeps it.
+export function tightParagraphs(html: string): string {
+  return html
+    .replace(/<p(\s[^>]*)?>/g, (tag, attrs: string | undefined) => {
+      const a = attrs ?? '';
+      if (/style="[^"]*margin/i.test(a)) return tag;
+      if (/style="/i.test(a)) return `<p${a.replace(/style="/i, 'style="margin:0;')}>`;
+      return `<p${a} style="margin:0">`;
+    })
+    .replace(/(<p\b[^>]*>)<\/p>/g, '$1<br /></p>');
+}
+
+// The body with the sender's signature right under it (both already cleaned).
+// No break between them: a signature that wants a blank line starts with one.
 export function withSignature(body: string, signature: string | null): string {
   if (!signature?.trim()) return body;
-  return `${body}<br><div class="pcrm-signature">${signature}</div>`;
+  return `${body}<div class="pcrm-signature">${signature}</div>`;
 }
 
 const BLOCKS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'table', 'tr', 'ul', 'ol', 'center', 'hr']);

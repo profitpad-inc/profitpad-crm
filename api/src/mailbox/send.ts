@@ -5,7 +5,7 @@ import { recordFilter, type Principal } from '../auth.js';
 import { getObject, type ObjectDef } from '../registry.js';
 import { assertAccessible, createRecord } from '../records.js';
 import { fileSummaries, readFileBytes } from '../files.js';
-import { cleanEmailHtml, htmlToText, MAX_BODY, withSignature } from './html.js';
+import { cleanEmailHtml, htmlToText, MAX_BODY, tightParagraphs, withSignature } from './html.js';
 import { buildMime } from './mime.js';
 import { loadProviders, MailAuthError, MailSendError, sendMessage, type MailProvider, type OutgoingMessage } from './providers.js';
 import { resolveSender, userName } from './senders.js';
@@ -111,6 +111,7 @@ export async function createSend(p: Principal, b: SendInput): Promise<SendResult
   if (b.body_html.length > MAX_BODY) throw badRequest('the email is too long', { property: 'body_html' });
   let html = cleanEmailHtml(b.body_html);
   if (!htmlToText(html) && !/<img\b/i.test(html)) throw badRequest('write something in the email', { property: 'body_html' });
+  html = tightParagraphs(html);
   if (b.add_signature !== false) {
     const { signature } = await userName(pool, p.userId);
     html = withSignature(html, signature ? cleanEmailHtml(signature) : null);

@@ -294,7 +294,12 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
       </div>
       <div className="ec-body">
         {/* the signature sits on the same page as the body, where the API puts it (withSignature: right under it) */}
-        <div className="ec-page">
+        <div className={`ec-page${signature && me.user?.email_signature ? ' with-signature' : ''}`}
+          onMouseDown={(e) => {
+            // empty space in the box, or the signature: type in the email instead
+            const t = e.target as HTMLElement;
+            if (t === e.currentTarget || t.closest('.ec-signature')) { e.preventDefault(); editor.current?.focus(); }
+          }}>
           <RichTextEditor ref={editor} value="" onChange={(html, empty) => setBody({ html, empty })} record={page} ariaLabel="Email body"
             placeholder="Write your email… (# for a snippet)" />
           {signature && me.user?.email_signature && (

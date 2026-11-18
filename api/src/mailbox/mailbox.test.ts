@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { createVerify, generateKeyPairSync, randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { buildMime } from './mime.js';
-import { cleanEmailHtml, htmlToText, withSignature } from './html.js';
+import { cleanEmailHtml, htmlToText, tightParagraphs, withSignature } from './html.js';
 import { forgetProvider, googleAssertion, parseGoogleKey, sendMessage, listAliases, MailAuthError, type OutgoingMessage, type ProviderRow } from './providers.js';
 import { cleanAddresses } from './send.js';
 
@@ -93,8 +93,15 @@ test('Google key: checked and parsed; JWT signed for the mailbox with the Gmail 
 test('email HTML: scripts, handlers, frames and data images go; formatting stays; signature goes underneath', () => {
   const out = cleanEmailHtml('<p onclick="x()">Hi <strong>there</strong></p><script>alert(1)</script><iframe src="https://x"></iframe><img src="data:image/png;base64,AA"><ul><li>One</li></ul>');
   assert.equal(out, '<p>Hi <strong>there</strong></p><img /><ul><li>One</li></ul>');
-  assert.equal(withSignature('<p>Hi</p>', '<b>Sam</b>'), '<p>Hi</p><br><div class="pcrm-signature"><b>Sam</b></div>');
+  assert.equal(withSignature('<p>Hi</p>', '<b>Sam</b>'), '<p>Hi</p><div class="pcrm-signature"><b>Sam</b></div>');
   assert.equal(withSignature('<p>Hi</p>', null), '<p>Hi</p>');
+});
+
+test('email HTML: composer paragraphs are one line each, blank ones stay blank', () => {
+  assert.equal(tightParagraphs('<p>Hi</p><p></p><p>Bye</p>'), '<p style="margin:0">Hi</p><p style="margin:0"><br /></p><p style="margin:0">Bye</p>');
+  assert.equal(tightParagraphs('<p style="color:red">x</p>'), '<p style="margin:0;color:red">x</p>');
+  assert.equal(tightParagraphs('<p style="margin:0 0 8px">x</p>'), '<p style="margin:0 0 8px">x</p>');
+  assert.equal(tightParagraphs('<pre>code</pre><p class="a">x</p>'), '<pre>code</pre><p class="a" style="margin:0">x</p>');
 });
 
 test('plain-text part: paragraphs, line breaks, lists and links', () => {
