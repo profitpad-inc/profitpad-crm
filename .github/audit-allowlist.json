@@ -1,0 +1,11 @@
+{
+  "_comment": "High or critical advisories CI accepts for now (scripts/ci/audit.mjs). Each needs a reason and a review_by date (YYYY-MM-DD); after that date CI fails again until it is rechecked. Remove an entry once a fixed version is installed.",
+  "advisories": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "reason": "ReDoS from crafted extglob patterns; no fixed version exists (4.0.7 is the latest and the advisory lists no patched version). The API reaches it only through sucrase's command-line tool (tinyglobby), which it never runs: it calls sucrase's transform. The UI reaches it only through Vite and tinyglobby at build time, with the repo's own patterns. npm's suggested fix downgrades Vite 8 to 6 and sucrase to 3.35.0. Allowed on 2026-11-18 by the user's decision.",
+      "review_by": "2026-12-18"
+    }
+  ]
+}

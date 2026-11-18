@@ -1,5 +1,7 @@
 # Checks every push and pull request: the API typechecks, the UI builds, and
-# neither ships a dependency with a known high or critical vulnerability.
+# neither ships a dependency with a known high or critical vulnerability
+# (scripts/ci/audit.mjs: advisories in .github/audit-allowlist.json, each with
+# a reason and a review date, only warn).
 name: CI
 
 on:
@@ -26,7 +28,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: node ../scripts/ci/audit.mjs --omit=dev
 
   web:
     runs-on: ubuntu-latest
@@ -43,4 +45,4 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        run: node ../scripts/ci/audit.mjs
