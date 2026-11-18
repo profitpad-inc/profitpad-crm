@@ -71,11 +71,25 @@ export interface Manifest {
   // {{id:<object>}} in either file become the object's code and id column
   // ('pc_2012', pc_2012_id), since custom objects get their codes at install.
   views?: { slug: string; name: string; icon?: string; description?: string; audience?: 'admins' | 'everyone' }[];
+  // publish the views when installing: new ones go in published, and the
+  // package's own views still waiting as never-published drafts get published
+  publish_views?: boolean;
+  // the default sidebar menu (what everyone without a group or own menu sees),
+  // set the first time the package installs; later installs keep the tenant's
+  // menu. A custom_view or object this CRM does not have is left out.
+  nav?: { items: NavSpec[]; bottom_left?: 'menu' | 'home'; bottom?: NavSpec[] };
 }
+
+export type NavSpec =
+  | { type: 'home' | 'divider' }
+  | { type: 'object'; object: string; label?: string }
+  | { type: 'custom_view'; slug: string; label?: string }
+  | { type: 'card_scanner'; label?: string }
+  | { type: 'section'; label: string; items: NavSpec[] };
 
 export type StepAction = 'create' | 'exists' | 'conflict' | 'update';
 export interface Step {
-  kind: 'object' | 'property' | 'option' | 'option_scope' | 'association_label' | 'record' | 'view' | 'option_list' | 'option_list_link';
+  kind: 'object' | 'property' | 'option' | 'option_scope' | 'association_label' | 'record' | 'view' | 'option_list' | 'option_list_link' | 'nav';
   target: string;
   action: StepAction;
   detail?: string;
@@ -133,7 +147,7 @@ export async function loadManifest(name: string): Promise<Manifest> {
 }
 
 export function checkManifest(name: string, m: Manifest): void {
-  const fail = (msg: string) => { throw badRequest(`package "${name}": ${msg}`); };
+  const fail = (msg: string): never => { throw badRequest(`package "${name}": ${msg}`); };
   if (!m || typeof m !== 'object') fail('the manifest must be an object');
   if (m.name !== name) fail(`the manifest's name is "${m.name}", not "${name}"`);
   if (!m.label || !m.version) fail('the manifest needs a label and a version');
@@ -178,6 +192,37 @@ export function checkManifest(name: string, m: Manifest): void {
     if (v.icon && !ICON_NAMES.has(v.icon)) fail(`view ${v.slug}: "${v.icon}" is not a Lucide icon name`);
     if (!v.slug || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(v.slug) || !v.name) fail('every view needs a slug (lowercase letters, digits, dashes) and a name');
     once(`view ${v.slug}`);
+  }
+  if (m.nav !== undefined) {
+    if (!m.nav || !Array.isArray(m.nav.items)) fail('nav needs items');
+    checkNav(m.nav.items, fail, 0);
+    if (m.nav.bottom_left !== undefined && m.nav.bottom_left !== 'menu' && m.nav.bottom_left !== 'home') fail('nav.bottom_left must be "menu" or "home"');
+    if (m.nav.bottom !== undefined) {
+      if (!Array.isArray(m.nav.bottom) || m.nav.bottom.length > 3) fail('nav.bottom must be a list of at most 3 items');
+      checkNav(m.nav.bottom, fail, 1);
+      if (m.nav.bottom.some((it) => it.type === 'home' || it.type === 'divider')) fail('nav.bottom takes object, custom_view and card_scanner items only');
+    }
+  }
+}
+
+// the same rules as the menu editor (validateNav in routes/ui.ts): one level of sections, labels of 1 to 63 characters
+function checkNav(items: NavSpec[], fail: (msg: string) => never, depth: number): void {
+  if (items.length > 100) fail('a nav list takes at most 100 items');
+  for (const it of items) {
+    const label = (it as { label?: unknown }).label;
+    if (label !== undefined && (typeof label !== 'string' || label.length < 1 || label.length > 63)) fail('nav labels must be 1 to 63 characters');
+    switch (it?.type) {
+      case 'home': case 'divider': case 'card_scanner': break;
+      case 'object': if (!it.object) fail('a nav object item needs object'); break;
+      case 'custom_view': if (!it.slug) fail('a nav custom_view item needs slug'); break;
+      case 'section':
+        if (depth > 0) fail('nav sections cannot be nested');
+        if (!it.label) fail('nav sections need a label');
+        if (!Array.isArray(it.items)) fail(`nav section "${it.label}" needs items`);
+        checkNav(it.items, fail, depth + 1);
+        break;
+      default: fail(`unknown nav item type "${String((it as { type?: unknown })?.type)}"`);
+    }
   }
 }
 
@@ -428,10 +473,24 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
   for (const v of m.views ?? []) {
     const target = `${v.slug} (${v.name})`;
     const { source, queries } = await loadViewFiles(m.name, v.slug);
-    const { rows } = await ctx.c.query(`select pc_0055_id as id from crm.pc_0055 where lower(slug) = lower($1) and record_status <> 'deleted'`, [v.slug]);
-    if (rows[0]) {
+    const { rows } = await ctx.c.query(
+      `select pc_0055_id as id, status, draft_source, draft_queries,
+         exists (select 1 from meta.package_items i where i.package = $2 and i.kind = 'view' and i.item_key = pc_0055_id::text) as ours
+       from crm.pc_0055 where lower(slug) = lower($1) and record_status <> 'deleted'`, [v.slug, m.name]);
+    const found = rows[0];
+    if (found) {
+      ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: found.id, created: false });
+      // a draft this package installed that nobody published yet: publish what is in it
+      if (m.publish_views && found.ours && !(found.status ?? []).includes('published') && found.draft_source) {
+        const parsed = await checkViewOn(ctx.c, `view ${v.slug}`, found.draft_source, found.draft_queries ? JSON.parse(found.draft_queries) : {});
+        ctx.steps.push({ kind: 'view', target, action: 'update', detail: `published the draft, ${Object.keys(parsed).length} queries checked` });
+        if (!ctx.dryRun) {
+          await ctx.c.query(
+            `update crm.pc_0055 set source = draft_source, queries = draft_queries, status = '{published}', published_at = now() where pc_0055_id = $1`, [found.id]);
+        }
+        continue;
+      }
       ctx.steps.push({ kind: 'view', target, action: 'exists', detail: 'kept as it is: update it from the view page, or archive it and install again' });
-      ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: rows[0].id, created: false });
       continue;
     }
     const { source: filledSource, queries: filledQueries, unresolved } = await fillView(ctx, source, queries);
@@ -439,16 +498,74 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
     // only plans them, so once it plans one the views' queries would fail on it and are checked when installing
     const planned = unresolved || (ctx.dryRun && ctx.steps.some((s) => (s.kind === 'object' || s.kind === 'property') && s.action === 'create'));
     const parsed = planned ? null : await checkViewOn(ctx.c, `view ${v.slug}`, filledSource, filledQueries);
-    ctx.steps.push({ kind: 'view', target, action: 'create', detail: parsed ? `draft, ${Object.keys(parsed).length} queries checked` : 'draft (queries are checked when installing)' });
+    const state = m.publish_views ? 'published' : 'draft';
+    ctx.steps.push({ kind: 'view', target, action: 'create', detail: parsed ? `${state}, ${Object.keys(parsed).length} queries checked` : `${state} (queries are checked when installing)` });
     if (ctx.dryRun) {
       ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: `new:${v.slug}`, created: true });
       continue;
     }
+    const queriesText = JSON.stringify(parsed, null, 2);
     const { rows: made } = await ctx.c.query(
-      `insert into crm.pc_0055 (name, slug, icon, description, status, audience, draft_source, draft_queries)
-       values ($1, $2, $3, $4, '{draft}', $5, $6, $7) returning pc_0055_id as id`,
-      [v.name, v.slug, v.icon ?? null, v.description ?? null, [v.audience ?? 'everyone'], filledSource, JSON.stringify(parsed, null, 2)]);
+      m.publish_views
+        ? `insert into crm.pc_0055 (name, slug, icon, description, status, audience, draft_source, draft_queries, source, queries, published_at)
+           values ($1, $2, $3, $4, '{published}', $5, $6, $7, $6, $7, now()) returning pc_0055_id as id`
+        : `insert into crm.pc_0055 (name, slug, icon, description, status, audience, draft_source, draft_queries)
+           values ($1, $2, $3, $4, '{draft}', $5, $6, $7) returning pc_0055_id as id`,
+      [v.name, v.slug, v.icon ?? null, v.description ?? null, [v.audience ?? 'everyone'], filledSource, queriesText]);
     ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: made[0].id, created: true });
+  }
+
+  if (m.nav) await installNav(ctx, m, m.nav);
+}
+
+// The default sidebar menu, after the views so its custom_view items can point
+// at them. Set once: when this package set it before, the tenant's menu stays.
+async function installNav(ctx: Ctx, m: Manifest, nav: NonNullable<Manifest["nav"]>): Promise<void> {
+  const target = 'default menu';
+  const { rows: before } = await ctx.c.query(`select 1 from meta.package_items where package = $1 and kind = 'nav'`, [m.name]);
+  if (before.length) {
+    ctx.steps.push({ kind: 'nav', target, action: 'exists', detail: 'the package set it before: kept as the tenant has it now' });
+    ctx.items.push({ kind: 'nav', object_type_id: 'ui', item_key: 'default', created: false });
+    return;
+  }
+  const skipped: string[] = [];
+  const packageViews = new Set((m.views ?? []).map((v) => v.slug.toLowerCase()));
+  const resolve = async (items: NavSpec[]): Promise<NavSpec[]> => {
+    const out: NavSpec[] = [];
+    for (const it of items) {
+      if (it.type === 'object') {
+        if (await objectCode(ctx, it.object)) out.push(it);
+        else skipped.push(`object ${it.object}`);
+      } else if (it.type === 'custom_view') {
+        const { rows } = await ctx.c.query(`select slug from crm.pc_0055 where lower(slug) = lower($1) and record_status = 'active'`, [it.slug]);
+        if (rows[0]) out.push({ ...it, slug: rows[0].slug });
+        else if (ctx.dryRun && packageViews.has(it.slug.toLowerCase())) out.push(it);
+        else skipped.push(`view ${it.slug}`);
+      } else if (it.type === 'section') {
+        out.push({ ...it, items: await resolve(it.items) });
+      } else {
+        out.push(it);
+      }
+    }
+    return out;
+  };
+  const items = await resolve(nav.items);
+  const bottom = nav.bottom ? await resolve(nav.bottom) : null;
+  const { rows: [others] } = await ctx.c.query(
+    `select count(*) filter (where scope = 'user')::int as users, count(*) filter (where scope = 'group')::int as groups from ui.nav_menus`);
+  const notes = [`replaces the default menu`];
+  if (others.users || others.groups) notes.push(`${others.users} own and ${others.groups} group menu(s) still show instead of it for their people`);
+  if (skipped.length) notes.push(`left out (not in this CRM): ${skipped.join(', ')}`);
+  ctx.steps.push({ kind: 'nav', target, action: 'update', detail: notes.join('; ') });
+  ctx.items.push({ kind: 'nav', object_type_id: 'ui', item_key: 'default', created: true });
+  if (ctx.dryRun) return;
+  const args = [JSON.stringify(items), nav.bottom_left ?? null, bottom && JSON.stringify(bottom)];
+  const { rowCount } = await ctx.c.query(
+    `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
+       updated_at = now(), updated_by = meta.actor() where scope = 'default'`, args);
+  if (!rowCount) {
+    await ctx.c.query(
+      `insert into ui.nav_menus (scope, items, bottom_left, bottom_items) values ('default', $1, coalesce($2, 'menu'), coalesce($3, '[]'::jsonb))`, args);
   }
 }
 

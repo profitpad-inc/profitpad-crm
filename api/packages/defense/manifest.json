@@ -397,5 +397,130 @@
     { "slug": "travel-ops", "name": "Travel ops", "icon": "plane", "description": "Trips with itinerary, budget and approval; expenses with receipts." },
     { "slug": "product-pricing", "name": "Product pricing", "icon": "tags", "description": "MSRP, GSA and distributor prices by product, margins and expiring price lists." },
     { "slug": "materials-library", "name": "Materials library", "icon": "library", "description": "Marketing materials and business documents by folder and type, with upload." }
-  ]
+  ],
+
+  "publish_views": true,
+
+  "nav": {
+    "items": [
+      {
+        "type": "custom_view",
+        "slug": "command-dashboard",
+        "label": "Dashboard"
+      },
+      {
+        "type": "custom_view",
+        "slug": "my-dashboard",
+        "label": "My Dashboard"
+      },
+      {
+        "type": "section",
+        "label": "Business Development",
+        "items": [
+          {
+            "type": "custom_view",
+            "slug": "defense-pipeline",
+            "label": "Pipeline"
+          },
+          {
+            "type": "custom_view",
+            "slug": "partnerships",
+            "label": "Partnerships"
+          },
+          {
+            "type": "object",
+            "object": "quotes",
+            "label": "Quotations"
+          },
+          {
+            "type": "object",
+            "object": "oem_integrations",
+            "label": "OEM Integrations"
+          },
+          {
+            "type": "custom_view",
+            "slug": "reporting",
+            "label": "Reports"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "label": "Tools",
+        "items": [
+          {
+            "type": "custom_view",
+            "slug": "bant-calculator",
+            "label": "BANT Calculator"
+          },
+          {
+            "type": "object",
+            "object": "proposals",
+            "label": "RFP Generator"
+          },
+          {
+            "type": "custom_view",
+            "slug": "scenario-generator",
+            "label": "Scenario Generator"
+          },
+          {
+            "type": "object",
+            "object": "products",
+            "label": "Opp. Evaluator"
+          },
+          {
+            "type": "card_scanner",
+            "label": "Card Scanner"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "label": "Resources",
+        "items": [
+          {
+            "type": "object",
+            "object": "contacts",
+            "label": "Contacts"
+          },
+          {
+            "type": "custom_view",
+            "slug": "product-pricing",
+            "label": "Product Pricing"
+          },
+          {
+            "type": "custom_view",
+            "slug": "materials-library",
+            "label": "Marketing Materials"
+          },
+          {
+            "type": "object",
+            "object": "documents",
+            "label": "Documents"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "label": "Operations",
+        "items": [
+          {
+            "type": "custom_view",
+            "slug": "org-chart",
+            "label": "Team Hierarchy"
+          },
+          {
+            "type": "object",
+            "object": "boms",
+            "label": "Operations"
+          },
+          {
+            "type": "custom_view",
+            "slug": "travel-ops",
+            "label": "Travel Ops"
+          }
+        ]
+      }
+    ]
+  }
 }

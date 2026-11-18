@@ -70,3 +70,27 @@ test('the defense product categories are one shared list', async () => {
     if (p.api_name === 'product_category') assert.ok(linked.has(`${p.object}.${p.api_name}`), `${p.object}.product_category is not on the list`);
   }
 });
+
+test('the manifest check covers the default menu', () => {
+  const base: Manifest = { name: 'x', label: 'X', version: '1' };
+  const nav = (items: unknown[], extra: Record<string, unknown> = {}) => ({ ...base, nav: { items, ...extra } } as Manifest);
+  assert.doesNotThrow(() => checkManifest('x', nav([{ type: 'custom_view', slug: 'a', label: 'A' }, { type: 'section', label: 'S', items: [{ type: 'object', object: 'contacts' }, { type: 'card_scanner' }] }])));
+  assert.throws(() => checkManifest('x', nav([{ type: 'section', label: 'S', items: [{ type: 'section', label: 'T', items: [] }] }])), /nested/);
+  assert.throws(() => checkManifest('x', nav([{ type: 'section', items: [] }])), /need a label/);
+  assert.throws(() => checkManifest('x', nav([{ type: 'link' }])), /unknown nav item/);
+  assert.throws(() => checkManifest('x', nav([{ type: 'object', object: 'contacts', label: '' }])), /1 to 63/);
+  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'home' }] })), /bottom takes/);
+  assert.throws(() => checkManifest('x', nav([], { bottom_left: 'left' })), /bottom_left/);
+});
+
+test('the defense menu points only at its own views, core views and known objects', async () => {
+  const m = await loadManifest('defense');
+  assert.equal(m.publish_views, true);
+  const slugs = new Set((m.views ?? []).map((v) => v.slug));
+  const objects = new Set([...(m.objects ?? []).map((o) => o.api_name), 'contacts', 'quotes', 'products']);
+  const flat = (m.nav?.items ?? []).flatMap((it) => (it.type === 'section' ? it.items : [it]));
+  for (const it of flat) {
+    if (it.type === 'custom_view') assert.ok(slugs.has(it.slug) || it.slug === 'reporting', it.slug);
+    if (it.type === 'object') assert.ok(objects.has(it.object), it.object);
+  }
+});
