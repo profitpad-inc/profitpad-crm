@@ -435,8 +435,10 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
       continue;
     }
     const { source: filledSource, queries: filledQueries, unresolved } = await fillView(ctx, source, queries);
-    // checked against this transaction, where the package's objects already exist (not when they are only planned)
-    const parsed = unresolved ? null : await checkViewOn(ctx.c, `view ${v.slug}`, filledSource, filledQueries);
+    // checked against this transaction, where the package's objects and properties already exist; a dry run
+    // only plans them, so once it plans one the views' queries would fail on it and are checked when installing
+    const planned = unresolved || (ctx.dryRun && ctx.steps.some((s) => (s.kind === 'object' || s.kind === 'property') && s.action === 'create'));
+    const parsed = planned ? null : await checkViewOn(ctx.c, `view ${v.slug}`, filledSource, filledQueries);
     ctx.steps.push({ kind: 'view', target, action: 'create', detail: parsed ? `draft, ${Object.keys(parsed).length} queries checked` : 'draft (queries are checked when installing)' });
     if (ctx.dryRun) {
       ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: `new:${v.slug}`, created: true });
