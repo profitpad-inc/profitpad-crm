@@ -55,7 +55,13 @@
 .ec-page.with-signature .rte-content { padding-bottom: 0; }
 /* each paragraph one line, as sent (tightParagraphs in api/src/mailbox/html.ts) */
 .ec-page .rte-content p { margin: 0; }
-.ec-signature { padding: 0 12px 12px; }
+.ec-signature { position: relative; padding: 0 12px 12px; cursor: pointer; }
+.ec-sig-tip {
+  position: absolute; z-index: 20; left: 12px; bottom: calc(100% - 4px); max-width: min(340px, calc(100% - 24px));
+  padding: 8px 10px; border-radius: var(--radius-sm); background: var(--text); color: var(--page-background);
+  font-size: 12px; line-height: 1.45; cursor: default; box-shadow: 0 6px 20px rgba(24, 32, 43, 0.18);
+}
+.ec-sig-tip a { color: inherit; text-decoration: underline; }
 .ec-signature-frame { display: block; width: 100%; border: 0; background: transparent; pointer-events: none; }
 .ec-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
 .ec-later { border-top: 1px solid var(--hairline); }

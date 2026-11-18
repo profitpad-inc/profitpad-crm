@@ -145,6 +145,16 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
   const [files, setFiles] = useState<Attached[]>([]);
   const [uploading, setUploading] = useState<string | null>(null);
   const [signature, setSignature] = useState(!!me.user?.email_signature);
+  const [sigTip, setSigTip] = useState(false);
+  // the signature's popup closes on a click anywhere else or Escape
+  useEffect(() => {
+    if (!sigTip) return;
+    const down = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest?.('.ec-signature')) setSigTip(false); };
+    const key = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setSigTip(false); };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+  }, [sigTip]);
   const [later, setLater] = useState<string | null>(null);
   const [templates, setTemplates] = useState<CrmRecord[] | null>(null);
   const [sending, setSending] = useState(false);
@@ -296,15 +306,23 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
         {/* the signature sits on the same page as the body, where the API puts it (withSignature: right under it) */}
         <div className={`ec-page${signature && me.user?.email_signature ? ' with-signature' : ''}`}
           onMouseDown={(e) => {
-            // empty space in the box, or the signature: type in the email instead
+            // empty space in the box types in the email; the signature itself says what it is
             const t = e.target as HTMLElement;
-            if (t === e.currentTarget || t.closest('.ec-signature')) { e.preventDefault(); editor.current?.focus(); }
+            if (t.closest('.ec-sig-tip')) return;
+            if (t.closest('.ec-signature')) { e.preventDefault(); setSigTip((v) => !v); return; }
+            if (t === e.currentTarget) { e.preventDefault(); editor.current?.focus(); }
           }}>
           <RichTextEditor ref={editor} value="" onChange={(html, empty) => setBody({ html, empty })} record={page} ariaLabel="Email body"
             placeholder="Write your email… (# for a snippet)" />
           {signature && me.user?.email_signature && (
-            <div className="ec-signature" aria-label="Your signature, added under the email" title="Your signature. Turn it off below.">
+            <div className="ec-signature" aria-label="Your signature, added under the email">
               <SignaturePreview html={me.user.email_signature} />
+              {sigTip && (
+                <div className="ec-sig-tip" role="tooltip">
+                  Your signature, added under the email when it is sent. Change it in{' '}
+                  <a href="/settings" target="_blank" rel="noopener">Settings → Account</a>, or turn it off with the Signature switch below.
+                </div>
+              )}
             </div>
           )}
         </div>
