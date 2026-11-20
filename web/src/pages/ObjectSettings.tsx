@@ -5,6 +5,7 @@ import { api, clearSchemaCache, type NavItem, type ObjectSummary } from '../lib/
 import { useApp } from '../lib/app-context';
 import { Menu, Modal } from '../components/ui';
 import { EmptyState, SettingsPage } from '../components/settings';
+import { useUrlSearch } from '../lib/use-url-search';
 
 // Admin page listing the objects and creating custom ones. Creation goes
 // through POST /v1/schema (meta.create_object), so the database enforces the
@@ -31,7 +32,7 @@ function slug(label: string): string {
 export function ObjectSettings() {
   const { objects, reloadObjects, toast } = useApp();
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useUrlSearch();
   const [editing, setEditing] = useState<ObjectSummary | 'new' | null>(null);
 
   const q = query.trim().toLowerCase();

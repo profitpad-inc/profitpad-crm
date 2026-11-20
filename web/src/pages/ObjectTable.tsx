@@ -18,6 +18,7 @@ import { EmptyState, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import '../table.css';
 import { confirmDialog } from '../components/confirm';
+import { useUrlSearch } from '../lib/use-url-search';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -44,11 +45,10 @@ function ObjectTableFor({ object }: { object: string }) {
   const [sorts, setSorts] = useState<Sort[]>([]);
   const [appliedViewId, setAppliedViewId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
-  const urlSearch = searchParams.get('s') ?? '';
   // ?status=archived shows the recycle bin instead of the active records
   const archived = searchParams.get('status') === 'archived';
-  const [query, setQuery] = useState(urlSearch);
-  const [debounced, setDebounced] = useState(query);
+  // the search lives in ?s= so a refresh or shared link keeps it
+  const [query, setQuery, debounced] = useUrlSearch();
   const [data, setData] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,35 +101,6 @@ function ObjectTableFor({ object }: { object: string }) {
     setAppliedViewId(activeView.id);
     setDirty(false);
   }, [activeView?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const h = setTimeout(() => setDebounced(query.trim()), 300);
-    return () => clearTimeout(h);
-  }, [query]);
-
-  // the search lives in ?s= so a refresh or shared link keeps it; replace
-  // rather than push so typing doesn't fill the back button. syncedSearch is
-  // the value both sides agree on, so each effect only reacts to the other side
-  const syncedSearch = useRef(urlSearch);
-  useEffect(() => {
-    if (debounced === syncedSearch.current) return;
-    syncedSearch.current = debounced;
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (debounced) next.set('s', debounced);
-      else next.delete('s');
-      return next;
-    }, { replace: true });
-  }, [debounced, setSearchParams]);
-
-  // the URL changed from outside (back button, a "See all" link while already
-  // on this table)
-  useEffect(() => {
-    if (urlSearch === syncedSearch.current) return;
-    syncedSearch.current = urlSearch;
-    setQuery(urlSearch);
-    setDebounced(urlSearch);
-  }, [urlSearch]);
 
   // switching views keeps the search and the active/archived choice
   function showView(id: number | undefined) {

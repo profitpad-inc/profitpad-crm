@@ -8,6 +8,7 @@ import { Menu, Modal } from '../components/ui';
 import { EmptyState, SettingsPage, TableSkeleton } from '../components/settings';
 import { ColorPicker } from '../components/ColorPicker';
 import { Select } from '../components/Select';
+import { useUrlSearch } from '../lib/use-url-search';
 
 // Admin page for an object's properties. Every change goes through the
 // /v1/schema endpoints, so the database (meta.* functions) enforces the
@@ -93,7 +94,7 @@ export function PropertySettings() {
       ?? objects.find((o) => o.api_name === 'contacts')?.api_name ?? objects[0]?.api_name ?? ''
   );
   const [props, setProps] = useState<Property[] | null>(null);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useUrlSearch();
   const [status, setStatus] = useState<'active' | 'archived'>('active');
   const [typeFilter, setTypeFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');

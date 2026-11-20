@@ -39,6 +39,7 @@ import { ShowMore } from '../components/ShowMore';
 import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
+import { useUrlSearch } from '../lib/use-url-search';
 
 interface Link_ {
   association_id: string;
@@ -877,7 +878,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
   const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes);
   const go = (search: string) => navigate({ search }, { replace: true });
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useUrlSearch();
   const [kind, setKind] = useState('');
   const [days, setDays] = useState('');
 

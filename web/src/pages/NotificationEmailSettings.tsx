@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
+import { useUrlSearch } from '../lib/use-url-search';
 
 // Settings → Notification emails (admins, migration 0099): the system address
 // internal notifications come from (e.g. noreply@), sent through the Google or
@@ -202,7 +203,7 @@ function EmailLog() {
   const [totals, setTotals] = useState<Record<Status, number> | null>(null);
   const [status, setStatus] = useState('');
   const [kind, setKind] = useState('');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useUrlSearch();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Detail | null>(null);
 
