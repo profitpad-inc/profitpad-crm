@@ -110,7 +110,7 @@ function useAccessData() {
 }
 
 export function UserSettings() {
-  const { me } = useApp();
+  const { me, toast } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles, reloadUsers } = useAccessData();
   const [show, setShow] = useState<'active' | 'deactivated'>('active');
   const shown = users.filter((u) => (show === 'active') === !u.deactivated);
@@ -136,6 +136,18 @@ export function UserSettings() {
       await api('POST', `/v1/users/${u.id}/sign-in-as`);
       // a full load, so the menu, objects and views are theirs
       window.location.assign('/');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // an email from the system sender (Settings → Notification emails) asking them to sign in
+  async function sendInvite(u: UserRow) {
+    if (!(await confirmDialog(`They get an email at ${u.email} asking them to sign in.`, { title: `Send ${u.name} an invite?`, confirmLabel: 'Send invite' }))) return;
+    setError(null);
+    try {
+      const r = await api<{ to: string }>('POST', `/v1/users/${u.id}/invite`);
+      toast(`Invite on its way to ${r.to}.`);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -245,6 +257,7 @@ export function UserSettings() {
                                 </>
                               )}
                               {canSignInAs &&<button onClick={() => { close(); signInAs(u); }}>Sign in as {u.name}</button>}
+                              {!u.deactivated && u.email && <button onClick={() => { close(); sendInvite(u); }}>Send invite</button>}
                               {!isMe && (u.deactivated
                                 ? <button onClick={() => { close(); setStatus(u, 'active'); }}>Reactivate</button>
                                 : <button className="danger" onClick={() => { close(); setStatus(u, 'deactivated'); }}>Deactivate</button>)}

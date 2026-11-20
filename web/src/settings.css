@@ -292,6 +292,8 @@
 .plain-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted-text); line-height: 1.5; max-width: 80ch; }
 .settings .input-narrow { width: 120px; }
 .delivery-log { display: flex; flex-direction: column; gap: 10px; }
+/* a sent notification email, shown as recipients see it (white on purpose) */
+.notification-email-preview { display: block; width: 100%; min-width: 260px; height: 320px; margin: 8px 0 0; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
 .prop-editor input.input-xs, .prop-editor .field-row .field input.input-xs { width: 90px; }
 .prop-editor input.input-sm, .prop-editor .field-row .field input.input-sm { width: 120px; }
 .settings .grid button.link-btn { font-weight: 500; }

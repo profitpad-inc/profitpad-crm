@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type R
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
   Menu as MenuIcon, Search, Copy, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  Hash, Mail, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
+  BellRing, Hash, Mail, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
 import { api, type CrmRecord, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -30,6 +30,7 @@ import { EmailSettings } from './EmailSettings';
 import { ListChecks, Send } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { MailboxSettings } from './MailboxSettings';
+import { NotificationEmailSettings } from './NotificationEmailSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
@@ -65,6 +66,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: 'admin', element: <IntegrationSettings /> },
     { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
     { path: 'mailboxes', label: 'Mailboxes', icon: <Mail size={16} />, gate: 'admin', element: <MailboxSettings /> },
+    { path: 'notification-emails', label: 'Notification emails', icon: <BellRing size={16} />, gate: 'admin', element: <NotificationEmailSettings /> },
     { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> },
     { path: 'email', label: 'Email', icon: <Send size={16} />, gate: 'admin', element: <EmailSettings /> },
     { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: 'admin', element: <CardScannerSettings /> },

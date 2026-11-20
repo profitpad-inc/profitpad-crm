@@ -301,6 +301,12 @@ export async function userIsAdmin(userId: string): Promise<boolean> {
   return (await loadPermissions(pool, userId)) === null;
 }
 
+// A user acting as themselves, for reads done on their behalf with no request
+// (notification emails show only what the recipient may read).
+export async function userPrincipal(userId: string): Promise<Principal> {
+  return { keyId: null, name: `user ${userId}`, scopes: new Set(['read']), userId, actor: `user:${userId}`, permissions: await loadPermissions(pool, userId) };
+}
+
 // A user's roles come from direct assignment or from their teams. Across
 // roles the most permissive setting wins.
 async function loadPermissions(db: Db, userId: string): Promise<Permissions | null> {
