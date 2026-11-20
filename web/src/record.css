@@ -609,10 +609,11 @@ a.comment-author:hover { color: var(--primary); }
   padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--page-background); color: var(--text); line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
+  position: relative; text-align: left;
 }
 .rich-box:focus { outline: 2px solid color-mix(in srgb, var(--primary) 30%, transparent); outline-offset: 0; border-color: var(--primary); }
 .rich-box[contenteditable='false'] { opacity: 0.6; cursor: default; }
-.rich-box.empty::before { content: attr(data-placeholder); color: var(--muted-text); pointer-events: none; position: absolute; }
+.rich-box.empty::before { content: attr(data-placeholder); color: var(--muted-text); pointer-events: none; position: absolute; top: 7px; left: 10px; right: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rich-box .mention { cursor: default; }
 .comment-editor-foot { display: flex; justify-content: flex-end; gap: 8px; }
 .activity-comment-count { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted-text); }
