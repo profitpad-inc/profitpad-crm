@@ -239,6 +239,90 @@ function webhookPaths(): Record<string, Schema> {
   };
 }
 
+// Notification emails (notifications/routes.ts, migrations 0099 and 0100)
+function notificationPaths(): Record<string, Schema> {
+  const tags = ['Notification emails'];
+  const id = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9]{1,18}$' } };
+  const kind = { type: 'string', enum: ['mention', 'task_assigned', 'invite', 'api', 'test'] };
+  const status = { type: 'string', enum: ['queued', 'sending', 'sent', 'failed', 'skipped'] };
+  const sender = { type: 'object', nullable: true, properties: {
+    provider: { type: 'string', enum: ['google', 'microsoft'] },
+    mailbox: { type: 'string', description: 'The user the service account acts as' },
+    from_address: { type: 'string', description: 'The mailbox or one of its aliases' },
+    from_name: { type: 'string', nullable: true },
+    enabled: { type: 'boolean' },
+    invite_new_users: { type: 'boolean' },
+    status: { type: 'string', enum: ['unchecked', 'ok', 'error'], description: 'From the last test' },
+    last_error: { type: 'string', nullable: true },
+    last_checked_at: { type: 'string', format: 'date-time', nullable: true }
+  } };
+  const settings = json({ type: 'object', properties: {
+    sender,
+    providers: { type: 'array', items: { type: 'object', properties: { provider: { type: 'string' }, ready: { type: 'boolean' }, domains: { type: 'array', items: { type: 'string' } } } } },
+    ui_url_set: { type: 'boolean' }
+  } });
+  const email = { type: 'object', properties: {
+    id: { type: 'string' }, kind, status,
+    source_object: { type: 'string', nullable: true, description: 'pc_0032 note, pc_0034 comment, pc_0033 task, pc_0000 user' },
+    source_id: { type: 'string', nullable: true },
+    user_id: { type: 'string', nullable: true, description: 'The user it goes to' },
+    actor_user_id: { type: 'string', nullable: true, description: 'The user who caused it' },
+    to_address: { type: 'string' },
+    subject: { type: 'string', nullable: true, description: 'Null until written (emails from triggers are written when sent)' },
+    link: { type: 'string', nullable: true },
+    attempts: { type: 'integer' },
+    next_attempt_at: { type: 'string', format: 'date-time', nullable: true },
+    last_error: { type: 'string', nullable: true, description: 'Why it failed or was skipped' },
+    provider: { type: 'string', nullable: true },
+    from_address: { type: 'string', nullable: true },
+    created_by: { type: 'string', nullable: true },
+    created_at: { type: 'string', format: 'date-time' },
+    sent_at: { type: 'string', format: 'date-time', nullable: true }
+  } };
+  const delivered = json({ type: 'object', properties: { ok: { type: 'boolean' }, status, error: { type: 'string', nullable: true } } });
+  const prefValue = { type: 'string', enum: ['email', 'off'] };
+  const prefs = json({ type: 'object', properties: {
+    notify_mentions: { ...prefValue, description: 'Being @mentioned in a note or a comment' },
+    notify_tasks: { ...prefValue, description: 'A task assigned to them by someone else' },
+    sender_on: { type: 'boolean', description: 'Whether notification emails go out at all' }
+  } });
+  return {
+    '/v1/notifications/settings': {
+      get: { tags, summary: 'The system sender (admin)', description: 'The address notification emails come from, sent through the Google or Microsoft service account of Settings → Mailboxes, plus which providers are ready. sender is null until set up.', operationId: 'get_notification_settings', responses: { 200: settings, ...errors } },
+      put: { tags, summary: 'Set up the system sender (admin)', description: 'Admins; a browser session needs a sign-in within 4 hours. Fields not sent stay. mailbox must be in a domain of a ready provider in Settings → Mailboxes; the provider follows from it. from_address defaults to the mailbox and must be the mailbox or one of its aliases (checked by the test, not here). Changing the mailbox or From resets the test status.', operationId: 'update_notification_settings', requestBody: body({ type: 'object', properties: {
+        mailbox: { type: 'string', example: 'noreply@example.com' },
+        from_address: { type: 'string', example: 'noreply@example.com' },
+        from_name: { type: 'string', nullable: true, example: 'ProfitPad CRM' },
+        enabled: { type: 'boolean' },
+        invite_new_users: { type: 'boolean', description: 'Email an invite to each user created with an email address' }
+      } }), responses: { 200: settings, ...errors } }
+    },
+    '/v1/notifications/settings/test': { post: { tags, summary: 'Send a test email now (admin)', description: 'Checks the From against the mailbox\'s aliases, then sends one email at once, to address or the admin\'s own. Works while sending is off. Recorded in the log as kind test.', operationId: 'test_notification_email', requestBody: body({ type: 'object', properties: { address: { type: 'string' } } }), responses: { 200: json({ type: 'object', properties: { ok: { type: 'boolean' }, id: { type: 'string' }, to: { type: 'string' }, error: { type: 'string', nullable: true } } }), ...errors } } },
+    '/v1/notifications/email': { post: { tags, summary: 'Email CRM users from the system sender (admin)', description: 'Admins, or API keys with the admin scope (and write). Goes to CRM users only: each of to is a user ID or the email address of an active user (400 names any other). One email per user, queued and sent within seconds; follow each with GET /v1/notifications/emails/{id}. text is plain text (blank lines make paragraphs); html is cleaned (no scripts). Either one is required. link (an https URL or a CRM path like /objects/deals/0000000001) adds a button. 409 not_configured while notification emails are off. Users\' notification settings do not apply.', operationId: 'send_notification_email', requestBody: body({ type: 'object', required: ['to', 'subject'], properties: {
+      to: { type: 'array', items: { type: 'string' }, maxItems: 50, example: ['0000000001', 'ann@example.com'] },
+      subject: { type: 'string', maxLength: 300 },
+      text: { type: 'string', maxLength: 50000 },
+      html: { type: 'string', maxLength: 100000 },
+      link: { type: 'string', maxLength: 2000 },
+      link_label: { type: 'string', maxLength: 60, description: 'Button text (default: Open in the CRM)' }
+    } }), responses: { 202: json({ type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, status }, }, 'Queued'), ...errors } } },
+    '/v1/notifications/emails': { get: { tags, summary: 'The sent log, newest first (admin)', description: 'Every notification email of the last 90 days: mentions, tasks assigned, invites, API emails and tests. The answer has results, next_before (pass as before for the next page) and totals per status for the same filters (all pages).', operationId: 'list_notification_emails', parameters: [
+      { name: 'status', in: 'query', required: false, schema: status },
+      { name: 'kind', in: 'query', required: false, schema: kind },
+      { name: 'q', in: 'query', required: false, description: 'Part of the recipient\'s address', schema: { type: 'string' } },
+      { name: 'user_id', in: 'query', required: false, schema: { type: 'string' } },
+      { name: 'before', in: 'query', required: false, description: 'An id, for the next page', schema: { type: 'string' } },
+      { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } }
+    ], responses: { 200: json({ type: 'object', properties: { results: { type: 'array', items: email }, next_before: { type: 'string', nullable: true }, totals: { type: 'object', additionalProperties: { type: 'integer' } } } }), ...errors } } },
+    '/v1/notifications/emails/{id}': { get: { tags, summary: 'One notification email (admin)', description: 'With its HTML as sent, the mailbox and the provider\'s message id.', operationId: 'get_notification_email', parameters: [id], responses: { 200: json({ ...email, properties: { ...email.properties, html: { type: 'string', nullable: true }, mailbox: { type: 'string', nullable: true }, provider_message_id: { type: 'string', nullable: true } } }), ...errors } } },
+    '/v1/notifications/emails/{id}/retry': { post: { tags, summary: 'Send a failed or skipped email again, now (admin)', description: 'A skipped email from a mention or a task is written again first, so it can be skipped again for the same reason. 409 for any other status.', operationId: 'retry_notification_email', parameters: [id], responses: { 200: delivered, ...errors } } },
+    '/v1/me/notifications': {
+      get: { tags, summary: 'Your own notification settings', description: 'The notify_mentions and notify_tasks properties of the caller\'s user record. Users only (not service keys).', operationId: 'get_my_notification_settings', responses: { 200: prefs, ...errors } },
+      put: { tags, summary: 'Change your own notification settings', description: 'Write scope. Works whatever the caller\'s role allows on users, for their own record only; admins change anyone\'s through the users object (PATCH /v1/objects/users/{id} with notify_mentions or notify_tasks). Fields not sent stay.', operationId: 'update_my_notification_settings', requestBody: body({ type: 'object', properties: { notify_mentions: prefValue, notify_tasks: prefValue } }), responses: { 200: prefs, ...errors } }
+    }
+  };
+}
+
 const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
 const toObjectParam = { name: 'toObject', in: 'path', required: true, description: 'Object api_name or code', schema: { type: 'string' } };
 const toIdParam = { name: 'toId', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
@@ -561,6 +645,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     ...oauthPaths(),
     ...viewPaths(),
     ...webhookPaths(),
+    ...notificationPaths(),
     ...livePaths(),
     '/v1/view-integrations/{table}': { get: { tags: ['View integrations'], summary: 'Read an integration table', operationId: 'read_integration', parameters: [{ name: 'table', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } } }
   };
@@ -583,6 +668,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       { name: 'Schema' }, { name: 'Admin' }, { name: 'Currencies', description: 'Currencies, exchange rates (typed or looked up on a schedule), rate history and conversion.' }, { name: 'Integrations' }, { name: 'Files', description: 'Uploading files and links to open them. Files are attached to records through file properties.' }, { name: 'Utilities', description: 'Helpers such as phone number validation.' }, { name: 'Public pages', description: 'Customer-facing quote and form pages. The /v1/public routes need no API key.' },
       { name: 'OAuth and MCP', description: 'Connecting apps as a user (OAuth 2.1) and the MCP server for AI clients. See Authentication above.' },
       { name: 'Custom views', description: 'Pages built from React and read-only SQL over the view_data schema, stored as views records (/view/#slug in the UI). Queries run with row-level security as the caller. Usually built by an admin\'s AI through the MCP server.' },
+      { name: 'Notification emails', description: 'Emails to CRM users from one system address (such as noreply@), sent through the Google or Microsoft service account of Settings → Mailboxes: @mentions, tasks assigned, invites, and emails from automations. Each user turns mentions and tasks on or off.' },
       { name: 'View integrations', description: 'Outside endpoints (n8n webhooks and the like) that custom views send data to with callIntegration. The API makes the request, so there is no CORS and the secret header stays on the server.' },
       ...objects.map((o) => ({ name: o.label_plural, description: `${o.object_type_id}${o.description ? ': ' + o.description : ''}` }))
     ],
