@@ -195,6 +195,7 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .nav-item.active { background: var(--sidebar-active); }
 .nav-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 2px 2px 0; background: var(--primary); }
 .nav-item svg { flex-shrink: 0; }
+.nav-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-divider { height: 1px; background: color-mix(in srgb, var(--sidebar-text) 25%, transparent); margin: 10px 8px; }
 .nav-section { display: flex; flex-direction: column; gap: 2px; }
 .nav-section-head {
