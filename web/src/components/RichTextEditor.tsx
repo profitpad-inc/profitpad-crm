@@ -2,9 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import Underline from '@tiptap/extension-underline';
-import Placeholder from '@tiptap/extension-placeholder';
+import { Placeholder } from '@tiptap/extensions';
 import { Bold, Italic, Link2, List, ListOrdered, RemoveFormatting, Underline as UnderlineIcon } from 'lucide-react';
 import { effectiveSnippets, matchSnippets, type Snippet } from '../lib/text-complete';
 import { loadSnippets, renderSnippet } from '../lib/snippets';
@@ -71,11 +69,16 @@ export const RichTextEditor = forwardRef<RichTextHandle, {
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ heading: false, codeBlock: false, code: false, horizontalRule: false }),
-      Underline,
-      Link.configure({ openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto', 'tel'], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      // TipTap 3's StarterKit brings underline and link itself; trailingNode
+      // is off so an email does not end in an extra empty paragraph
+      StarterKit.configure({
+        heading: false, codeBlock: false, code: false, horizontalRule: false, trailingNode: false,
+        link: { openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto', 'tel'], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }
+      }),
       Placeholder.configure({ placeholder: placeholder ?? '' })
     ],
+    // the toolbar reads editor.isActive() while rendering, so redraw on every change (TipTap 3 no longer does by default)
+    shouldRerenderOnTransaction: true,
     content: value,
     editorProps: {
       attributes: { class: 'rte-content', role: 'textbox', 'aria-multiline': 'true', ...(ariaLabel ? { 'aria-label': ariaLabel } : {}) },
@@ -124,7 +127,7 @@ export const RichTextEditor = forwardRef<RichTextHandle, {
 
   useImperativeHandle(ref, () => ({
     setHTML: (html: string) => {
-      editor?.commands.setContent(html, true);
+      editor?.commands.setContent(html, { emitUpdate: true });
     },
     focus: () => editor?.commands.focus('end')
   }), [editor]);

@@ -17,6 +17,10 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # TipTap packages share exact peer versions, so they only install
+      # together: one PR for all of them, major versions included
+      tiptap:
+        patterns: ["@tiptap/*"]
       web-minor:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
