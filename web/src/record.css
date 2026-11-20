@@ -598,16 +598,20 @@ a.comment-author:hover { color: var(--primary); }
 .comment-editor textarea { line-height: 1.5; }
 /* the box sits over a copy of its text whose @mentions are chips (CommentEditor) */
 .mention-field { position: relative; background: var(--page-background); border-radius: var(--radius-sm); }
-.mention-field textarea { position: relative; z-index: 1; background: transparent; }
+.mention-field textarea { position: relative; z-index: 1; background: transparent; color: transparent; caret-color: var(--text); }
+.mention-field textarea::placeholder { color: var(--muted-text); }
+/* the backdrop draws the text, so a mention can be tinted like a posted one (.mention) */
 .mention-backdrop {
   position: absolute; inset: 0; overflow: hidden; pointer-events: none;
   padding: 7px 10px; border: 1px solid transparent; line-height: 1.5;
-  white-space: pre-wrap; overflow-wrap: anywhere; color: transparent;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text);
 }
+/* no inline padding here (it would push the text out of line with the box), so a
+   same-color shadow gives the pill its room */
 .mention-backdrop mark {
-  color: transparent; border-radius: var(--radius-sm);
+  color: var(--primary); border-radius: 5px;
   background: color-mix(in srgb, var(--primary) 12%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent), 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 .comment-editor-foot { display: flex; justify-content: flex-end; gap: 8px; }
