@@ -6,7 +6,7 @@ import { ApiError, fromPg } from './errors.js';
 import { authenticate, browserOrigins } from './auth.js';
 import { ssoRoutes } from './sso.js';
 import { buildOpenApi } from './openapi.js';
-import { docsCss } from './docs-theme.js';
+import { docsCss, docsScript } from './docs-theme.js';
 import { drainCalcQueue } from './records.js';
 import { recordRoutes } from './routes/records.js';
 import { schemaRoutes } from './routes/schema.js';
@@ -128,6 +128,15 @@ export async function buildApp() {
     return payload;
   });
 
+  // the docs page gets the sidebar accordion script (docs-theme.ts); deep
+  // links re-send the /docs/ page, which already has it
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (typeof payload !== 'string' || !req.url.startsWith('/docs')) return payload;
+    if (!String(reply.getHeader('content-type') ?? '').includes('text/html')) return payload;
+    if (payload.includes('data-pcrm-docs-accordion')) return payload;
+    return payload.includes('</body>') ? payload.replace('</body>', `${docsScript}</body>`) : payload + docsScript;
+  });
+
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS') return;
     const path = req.url.split('?')[0];
@@ -184,6 +193,8 @@ export async function buildApp() {
       defaultOpenAllTags: false,
       hideClientButton: true,
       metaData: { title: 'ProfitPad CRM API' },
+      // brand.ts serves it on the API too
+      favicon: '/favicon.svg',
       // short, path-based links: /docs/tag/contacts/list-contacts instead of
       // #tag/contacts/GET/v1/records/contacts
       pathRouting: { basePath: '/docs' },

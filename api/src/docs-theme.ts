@@ -57,4 +57,64 @@ export const docsCss = `
   --scalar-sidebar-font-weight-active: 600;
   --scalar-sidebar-padding: 12px;
 }
+
+/* Scalar shows a sticky breadcrumb bar once the sidebar has nested tags (the
+   Objects parent). For a top-level section it shows the first nested path
+   instead (Objects > Users above Schema), so it is hidden. */
+nav.context-bar {
+  display: none !important;
+}
 `;
+
+// Sidebar accordion for the docs: opening a group closes the other open
+// groups at the same level (Currencies closes Files; Contacts closes Deals
+// inside Objects). Scalar has no option for it, so this finds its event bus
+// (exposed by the ApiReference component) through the mounted Vue tree and
+// closes siblings with its own toggle event, which does not navigate. If a
+// Scalar upgrade moves things, it quietly does nothing.
+export const docsScript = `<script data-pcrm-docs-accordion>
+(() => {
+  let bus;
+  const find = (v, depth) => {
+    if (!v || depth > 400) return;
+    const c = v.component;
+    if (c) return c.exposed && c.exposed.eventBus ? c.exposed.eventBus : find(c.subTree, depth + 1);
+    if (v.suspense) return find(v.suspense.activeBranch, depth + 1);
+    if (Array.isArray(v.children)) {
+      for (const child of v.children) {
+        const found = find(child, depth + 1);
+        if (found) return found;
+      }
+    }
+  };
+  const getBus = () => {
+    if (bus) return bus;
+    for (const el of document.querySelectorAll('[data-v-app]')) {
+      bus = find(el._vnode, 0);
+      if (bus) return bus;
+    }
+  };
+  const isOpen = (item) => {
+    const button = item.querySelector('button[aria-expanded]');
+    return !!button && button.getAttribute('aria-expanded') === 'true';
+  };
+  document.addEventListener('click', (e) => {
+    // a group's header row holds the name (a link that opens and selects it)
+    // and the chevron (a button that only toggles); either one counts
+    const header = e.target instanceof Element ? e.target.closest('[data-sidebar-id] > div') : null;
+    const item = header && header.parentElement;
+    const button = header && header.querySelector('button[aria-expanded]');
+    if (!button || !item.parentElement) return;
+    setTimeout(() => {
+      if (button.getAttribute('aria-expanded') !== 'true') return;
+      const eventBus = getBus();
+      if (!eventBus) return;
+      for (const sibling of item.parentElement.children) {
+        const id = sibling.getAttribute('data-sidebar-id');
+        if (sibling === item || !id || !isOpen(sibling)) continue;
+        eventBus.emit('toggle:nav-item', { id, open: false });
+      }
+    }, 50);
+  });
+})();
+</script>`;

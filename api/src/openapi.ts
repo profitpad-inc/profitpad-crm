@@ -504,6 +504,21 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
   };
 }
 
+// The general tags, then one collapsible "Objects" parent in the docs sidebar
+// holding a tag per object (nested tags: Scalar reads parent, as in OpenAPI
+// 3.2). An object named like a general tag (the Files object and the Files
+// upload routes) shares that tag and stays at the top level.
+function withObjectTags(objects: { label_plural: string; object_type_id: string; description?: string | null }[], general: { name: string; description?: string }[]) {
+  const taken = new Set(general.map((t) => t.name));
+  return [
+    ...general,
+    { name: 'Objects', description: 'Records of each object: list, search, create, change, delete, associations and import. Objects and their properties come from the live schema.' },
+    ...objects
+      .filter((o) => !taken.has(o.label_plural))
+      .map((o) => ({ name: o.label_plural, parent: 'Objects', description: `${o.object_type_id}${o.description ? ': ' + o.description : ''}` }))
+  ];
+}
+
 export async function buildOpenApi(serverUrl: string): Promise<Schema> {
   const reg = await getRegistry();
   const objects = reg.objects.filter((o) => o.record_status === 'active');
@@ -664,14 +679,13 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     servers: [{ url: serverUrl }],
     // either credential works: an API key or an OAuth access token (alternatives)
     security: [{ bearer: [] }, { oauth2: [] }],
-    tags: [
+    tags: withObjectTags(objects, [
       { name: 'Schema' }, { name: 'Admin' }, { name: 'Currencies', description: 'Currencies, exchange rates (typed or looked up on a schedule), rate history and conversion.' }, { name: 'Integrations' }, { name: 'Files', description: 'Uploading files and links to open them. Files are attached to records through file properties.' }, { name: 'Utilities', description: 'Helpers such as phone number validation.' }, { name: 'Public pages', description: 'Customer-facing quote and form pages. The /v1/public routes need no API key.' },
       { name: 'OAuth and MCP', description: 'Connecting apps as a user (OAuth 2.1) and the MCP server for AI clients. See Authentication above.' },
       { name: 'Custom views', description: 'Pages built from React and read-only SQL over the view_data schema, stored as views records (/view/#slug in the UI). Queries run with row-level security as the caller. Usually built by an admin\'s AI through the MCP server.' },
       { name: 'Notification emails', description: 'Emails to CRM users from one system address (such as noreply@), sent through the Google or Microsoft service account of Settings → Mailboxes: @mentions, tasks assigned, invites, and emails from automations. Each user turns mentions and tasks on or off.' },
-      { name: 'View integrations', description: 'Outside endpoints (n8n webhooks and the like) that custom views send data to with callIntegration. The API makes the request, so there is no CORS and the secret header stays on the server.' },
-      ...objects.map((o) => ({ name: o.label_plural, description: `${o.object_type_id}${o.description ? ': ' + o.description : ''}` }))
-    ],
+      { name: 'View integrations', description: 'Outside endpoints (n8n webhooks and the like) that custom views send data to with callIntegration. The API makes the request, so there is no CORS and the secret header stays on the server.' }
+    ]),
     paths,
     components: {
       securitySchemes: {
