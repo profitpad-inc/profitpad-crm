@@ -6,6 +6,7 @@ import { logEvent } from '../audit.js';
 import { approveFields, approveUrl, canApprove, requestFields } from '../approval.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
+import { ICON_NAMES } from '../icons.js';
 
 // Admins: keys with the admin scope, or user keys whose roles include an admin role.
 export function isAdmin(p: Principal): boolean {
@@ -148,7 +149,8 @@ type NavItem =
   | { type: 'custom_view'; slug: string; label?: string }
   // the business card scanner page (/scan)
   | { type: 'card_scanner'; label?: string }
-  | { type: 'section'; label: string; items: NavItem[] };
+  // icon: a Lucide name (kebab case); without one the sidebar draws a folder
+  | { type: 'section'; label: string; icon?: string; items: NavItem[] };
 
 async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
   if (!Array.isArray(items) || items.length > 100) throw badRequest('items must be an array of at most 100 menu items');
@@ -187,7 +189,8 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
       case 'section':
         if (depth > 0) throw badRequest('sections cannot be nested');
         if (!label) throw badRequest('sections need a label');
-        out.push({ type: 'section', label, items: await validateNav(it.items ?? [], depth + 1) });
+        if (it.icon != null && !ICON_NAMES.has(String(it.icon))) throw badRequest(`"${String(it.icon)}" is not a Lucide icon name`);
+        out.push({ type: 'section', label, ...(it.icon != null ? { icon: String(it.icon) } : {}), items: await validateNav(it.items ?? [], depth + 1) });
         break;
       default:
         throw badRequest(`unknown menu item type "${String(it.type)}"`);

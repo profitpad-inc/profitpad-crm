@@ -416,6 +416,7 @@
       {
         "type": "section",
         "label": "Business Development",
+        "icon": "briefcase",
         "items": [
           {
             "type": "custom_view",
@@ -447,6 +448,7 @@
       {
         "type": "section",
         "label": "Tools",
+        "icon": "wrench",
         "items": [
           {
             "type": "custom_view",
@@ -477,6 +479,7 @@
       {
         "type": "section",
         "label": "Resources",
+        "icon": "library",
         "items": [
           {
             "type": "object",
@@ -503,6 +506,7 @@
       {
         "type": "section",
         "label": "Operations",
+        "icon": "factory",
         "items": [
           {
             "type": "custom_view",

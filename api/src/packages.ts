@@ -85,7 +85,7 @@ export type NavSpec =
   | { type: 'object'; object: string; label?: string }
   | { type: 'custom_view'; slug: string; label?: string }
   | { type: 'card_scanner'; label?: string }
-  | { type: 'section'; label: string; items: NavSpec[] };
+  | { type: 'section'; label: string; icon?: string; items: NavSpec[] };
 
 export type StepAction = 'create' | 'exists' | 'conflict' | 'update';
 export interface Step {
@@ -218,6 +218,7 @@ function checkNav(items: NavSpec[], fail: (msg: string) => never, depth: number)
       case 'section':
         if (depth > 0) fail('nav sections cannot be nested');
         if (!it.label) fail('nav sections need a label');
+        if (it.icon !== undefined && !ICON_NAMES.has(it.icon)) fail(`nav section "${it.label}" icon "${it.icon}" is not a Lucide icon name`);
         if (!Array.isArray(it.items)) fail(`nav section "${it.label}" needs items`);
         checkNav(it.items, fail, depth + 1);
         break;

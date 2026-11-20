@@ -194,7 +194,7 @@ export type NavItem =
   | { type: 'view'; object: string; view_id: number; label?: string }
   | { type: 'custom_view'; slug: string; label?: string }
   | { type: 'card_scanner'; label?: string }
-  | { type: 'section'; label: string; items: NavItem[] };
+  | { type: 'section'; label: string; icon?: string; items: NavItem[] };
 
 // A custom view the user can open (GET /v1/views), for menus
 export interface CustomViewSummary {

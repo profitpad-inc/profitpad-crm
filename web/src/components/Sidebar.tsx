@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Ellipsis, Eye, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
 import { MORE_GROUPS, initials, objectIcon } from '../lib/display';
@@ -22,16 +22,20 @@ function readExpanded(): boolean {
 }
 
 // 'rail' is the desktop sidebar; 'drawer' is the same menu, always expanded,
-// inside the phone hamburger drawer (More opens inline there).
+// inside the phone hamburger drawer (More and sections open inline there).
+// On the rail, More and each section open a flyout beside the sidebar, one at a time.
+type Flyout = { key: string; top: number };
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   const { me, nav, navCanEdit, navPreview, objectByName, objects, customViews, logo } = useApp();
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
   const [searchOpen, setSearchOpen] = useState(false);
-  const [moreTop, setMoreTop] = useState<number | null>(null);
-  const moreOpen = moreTop !== null;
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [flyout, setFlyout] = useState<Flyout | null>(null);
+  const moreOpen = flyout?.key === 'more';
+  const toggleFlyout = (key: string, el: HTMLElement) =>
+    setFlyout((f) => (f?.key === key ? null : { key, top: el.getBoundingClientRect().top }));
+  const closeFlyout = () => setFlyout(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -59,26 +63,25 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   function renderItem(item: NavItem, key: string) {
     if (item.type === 'divider') return <div key={key} className="nav-divider" />;
     if (item.type === 'section') {
-      const closed = collapsedSections.has(key);
+      const open = flyout?.key === key;
+      const holdsActive = item.items.some((child) => child.type !== 'divider' && child.type !== 'section' && isNavActive(child, location));
       return (
         <div key={key} className="nav-section">
-          {expanded ? (
-            <button
-              className="nav-section-head"
-              onClick={() => setCollapsedSections((s) => {
-                const next = new Set(s);
-                if (next.has(key)) next.delete(key);
-                else next.add(key);
-                return next;
-              })}
-            >
-              {closed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-              <span>{item.label}</span>
-            </button>
-          ) : (
-            <div className="nav-divider" />
-          )}
-          {(!closed || !expanded) && item.items.map((child, i) => renderItem(child, `${key}.${i}`))}
+          <button
+            className={`nav-item${open || holdsActive ? ' active' : ''}`}
+            onClick={(e) => toggleFlyout(key, e.currentTarget)}
+            title={expanded ? undefined : item.label}
+            aria-expanded={open}
+          >
+            <ViewIcon icon={item.icon} fallback={Folder} size={20} strokeWidth={1.75} />
+            {expanded && (
+              <>
+                <span>{item.label}</span>
+                {drawer && open ? <ChevronDown size={16} className="push-right" /> : <ChevronRight size={16} className="push-right" />}
+              </>
+            )}
+          </button>
+          {drawer && open && <div className="nav-section-inline">{item.items.map((child, i) => renderItem(child, `${key}.${i}`))}</div>}
         </div>
       );
     }
@@ -111,10 +114,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         )}
         <div className="sidebar-items">
           {nav.map((item, i) => renderItem(item, String(i)))}
-          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => {
-            const top = e.currentTarget.getBoundingClientRect().top;
-            setMoreTop((v) => (v === null ? top : null));
-          }} title={expanded ? undefined : 'More'}>
+          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} title={expanded ? undefined : 'More'} aria-expanded={moreOpen}>
             <Ellipsis size={20} strokeWidth={1.75} />
             {expanded && (
               <>
@@ -145,7 +145,9 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
           </Link>
         </div>
       </nav>
-      {!drawer && moreTop !== null && <MoreMenu objects={objects.map((o) => o.api_name)} anchorTop={moreTop} onClose={() => setMoreTop(null)} />}
+      {!drawer && flyout && (flyout.key === 'more'
+        ? <MoreMenu objects={objects.map((o) => o.api_name)} anchorTop={flyout.top} onClose={closeFlyout} />
+        : <SectionMenu section={nav[Number(flyout.key)]} anchorTop={flyout.top} onClose={closeFlyout} />)}
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
     </>
   );
@@ -186,12 +188,8 @@ function InlineMore({ objects }: { objects: string[] }) {
   );
 }
 
-function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTop: number; onClose: () => void }) {
-  const { objectByName } = useApp();
-  const ref = useRef<HTMLDivElement>(null);
-  const groups = moreGroups(objects);
-  const [group, setGroup] = useState(groups[0]?.label);
-
+// Closes a flyout on a click outside it and the sidebar, Escape, or focus moving into a view's frame.
+function useFlyoutClose(ref: RefObject<HTMLDivElement | null>, onClose: () => void) {
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node) && !(e.target as HTMLElement).closest('.sidebar')) onClose();
@@ -205,7 +203,15 @@ function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTo
       document.removeEventListener('keydown', onKey);
       offFrame();
     };
-  }, [onClose]);
+  }, [ref, onClose]);
+}
+
+function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTop: number; onClose: () => void }) {
+  const { objectByName } = useApp();
+  const ref = useRef<HTMLDivElement>(null);
+  const groups = moreGroups(objects);
+  const [group, setGroup] = useState(groups[0]?.label);
+  useFlyoutClose(ref, onClose);
 
   const current = groups.find((g) => g.label === group) ?? groups[0];
   return (
@@ -237,6 +243,40 @@ function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTo
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// A section's flyout: its links in one column, top aligned with the section's
+// button and moved up when it would run off the bottom of the window.
+function SectionMenu({ section, anchorTop, onClose }: { section: NavItem | undefined; anchorTop: number; onClose: () => void }) {
+  const { objectByName, customViews } = useApp();
+  const location = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(Math.max(8, anchorTop - 16));
+  useFlyoutClose(ref, onClose);
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 0;
+    setTop(Math.max(8, Math.min(anchorTop - 16, window.innerHeight - h - 8)));
+  }, [anchorTop, section]);
+
+  if (section?.type !== 'section') return null;
+  return (
+    <div className="more-menu section-menu" ref={ref} style={{ top, maxHeight: window.innerHeight - 16 }}>
+      <h3>{section.label}</h3>
+      {section.items.map((item, i) => {
+        if (item.type === 'divider') return <div key={i} className="section-menu-divider" />;
+        const link = navLink(item, objectByName, customViews);
+        if (!link) return null;
+        const { to, label, Icon, iconName } = link;
+        return (
+          <Link key={i} to={to} className={`more-object${isNavActive(item, location) ? ' active' : ''}`} onClick={onClose}>
+            <ViewIcon icon={iconName} fallback={Icon} size={16} strokeWidth={1.75} />
+            <span>{label}</span>
+          </Link>
+        );
+      })}
+      {section.items.length === 0 && <div className="section-menu-empty">Nothing in this section yet</div>}
     </div>
   );
 }

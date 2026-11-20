@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type R
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import {
   Menu as MenuIcon, Search, Copy, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
-  BellRing, Hash, Mail, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
+  BellRing, Folder, Hash, Mail, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
 import { api, type CrmRecord, type NavItem, type SearchResult, type View } from '../lib/api';
@@ -33,6 +33,7 @@ import { MailboxSettings } from './MailboxSettings';
 import { NotificationEmailSettings } from './NotificationEmailSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
+import { IconPicker } from '../components/IconPicker';
 import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import '../settings.css';
 import { confirmDialog } from '../components/confirm';
@@ -736,6 +737,8 @@ function NavSettings() {
   // the row being dragged and where it would land
   const dragFrom = useRef<Spot | null>(null);
   const [dropAt, setDropAt] = useState<Spot | null>(null);
+  // the top-level section whose icon is being picked
+  const [iconFor, setIconFor] = useState<number | null>(null);
   // with unsaved changes: the page or menu the admin asked to go to, held until they discard or keep editing
   const [leaving, setLeaving] = useState<{ to: string } | { target: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1062,6 +1065,11 @@ function NavSettings() {
           <GripVertical size={14} />
         </span>
         <span className="nav-edit-label">
+          {it.type === 'section' && (
+            <button type="button" className="icon-btn nav-edit-icon" title="Change icon" aria-label={`Change the icon of ${label}`} onClick={() => setIconFor(i)}>
+              <ViewIcon icon={it.icon} fallback={Folder} size={16} strokeWidth={1.75} />
+            </button>
+          )}
           {it.type === 'home' || it.type === 'divider' ? label : (
             <EditableLabel
               value={label}
@@ -1194,7 +1202,24 @@ function NavSettings() {
   );
 
 
+  const iconSection = iconFor === null ? undefined : items[iconFor];
   return (
+    <>
+    {iconSection?.type === 'section' && (
+      <IconPicker
+        value={iconSection.icon ?? null}
+        onPick={(name) => {
+          const at = iconFor;
+          setItems((all) => all.map((x, j) => {
+            if (j !== at || x.type !== 'section') return x;
+            const { icon: _old, ...rest } = x;
+            return name ? { ...rest, icon: name } : rest;
+          }));
+          setIconFor(null);
+        }}
+        onClose={() => setIconFor(null)}
+      />
+    )}
     <SettingsPage
       title={isAdmin ? 'Navigation menus' : 'Your menu'}
       description={isAdmin
@@ -1288,6 +1313,7 @@ function NavSettings() {
         </Modal>
       )}
     </SettingsPage>
+    </>
   );
 }
 
