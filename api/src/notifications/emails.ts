@@ -182,6 +182,20 @@ async function linkedRecord(code: string, id: string, reader: Principal): Promis
   return { path: `/objects/${l.api_name}/${l.other_record_id}`, label: String(l.label_singular).toLowerCase(), name };
 }
 
+// Objects shown in a record's activity stream (RecordPage's ACTIVITY_OBJECTS).
+const STREAM_OBJECTS = ['calls', 'emails', 'notes', 'tasks', 'form_submissions'];
+
+// Where a notification about an activity opens, like the Mentions menu
+// (MentionsMenu.tsx): the activity in its record's stream
+// (/objects/contacts/<id>?pc_0031=<email id>, plus &comment=<id> to mark a
+// comment), or the activity's own page when it is on no record.
+async function activityLink(code: string, id: string, rec: { path: string } | null, commentId?: string): Promise<string> {
+  const obj = await getObject(code);
+  const comment = commentId ? `comment=${commentId}` : '';
+  if (rec && STREAM_OBJECTS.includes(obj.api_name)) return `${rec.path}?${code}=${id}${comment ? `&${comment}` : ''}`;
+  return `/objects/${obj.api_name}/${id}${comment ? `?${comment}` : ''}`;
+}
+
 interface QueuedRow {
   id: string;
   kind: Kind;
@@ -222,10 +236,11 @@ async function write(row: QueuedRow): Promise<Written> {
     if (!rows[0]) return { skip: 'the note was deleted, or no longer mentions them' };
     const rec = await linkedRecord('pc_0032', row.source_id, reader);
     const on = rec ? ` on ${rec.name ? rec.name : `a ${rec.label}`}` : '';
+    const link = await activityLink('pc_0032', row.source_id, rec);
     return {
       subject: `${actor} mentioned you in a note${on}`,
-      html: layout({ heading: `${actor} mentioned you in a note${on}`, quote: excerpt(String(rows[0].body ?? '')), link: rec?.path ?? null, linkLabel: 'Open the note' }),
-      link: rec?.path ?? null
+      html: layout({ heading: `${actor} mentioned you in a note${on}`, quote: excerpt(String(rows[0].body ?? '')), link, linkLabel: 'Open the note' }),
+      link
     };
   }
 
@@ -239,17 +254,23 @@ async function write(row: QueuedRow): Promise<Written> {
     // a comment is on an activity (note, email, call, task...) or a record
     const target = await linkedRecord('pc_0034', row.source_id, reader);
     let rec = target;
+    let link = target ? `${target.path}?comment=${row.source_id}` : null;
     const { rows: t } = await pool.query(
-      `select other_object_type_id as code, other_record_id as id from crm.associations_both
-       where object_type_id = 'pc_0034' and record_id = $1 order by 1, 2 limit 1`,
+      `select a.other_object_type_id as code, a.other_record_id as id, o.api_name from crm.associations_both a
+       join meta.objects o on o.object_type_id = a.other_object_type_id
+       where a.object_type_id = 'pc_0034' and a.record_id = $1 order by 1, 2 limit 1`,
       [row.source_id]
     );
-    if (t[0] && ['pc_0030', 'pc_0031', 'pc_0032', 'pc_0033'].includes(t[0].code)) rec = (await linkedRecord(t[0].code, t[0].id, reader)) ?? target;
+    if (t[0] && STREAM_OBJECTS.includes(t[0].api_name)) {
+      // on an activity: the record it is in, with the activity open and the comment marked
+      rec = (await linkedRecord(t[0].code, t[0].id, reader)) ?? null;
+      link = await activityLink(t[0].code, t[0].id, rec, row.source_id);
+    }
     const on = rec ? ` on ${rec.name ? rec.name : `a ${rec.label}`}` : '';
     return {
       subject: `${actor} mentioned you in a comment${on}`,
-      html: layout({ heading: `${actor} mentioned you in a comment${on}`, quote: excerpt(String(rows[0].body ?? '')), link: rec?.path ?? null, linkLabel: 'Open the comment' }),
-      link: rec?.path ?? null
+      html: layout({ heading: `${actor} mentioned you in a comment${on}`, quote: excerpt(String(rows[0].body ?? '')), link, linkLabel: 'Open the comment' }),
+      link
     };
   }
 
@@ -271,7 +292,7 @@ async function write(row: QueuedRow): Promise<Written> {
     if (task.priority) details.push(['Priority', task.priority.charAt(0).toUpperCase() + task.priority.slice(1)]);
     const rec = await linkedRecord('pc_0033', row.source_id, reader);
     if (rec) details.push(['For', rec.name ?? `A ${rec.label}`]);
-    const path = `/objects/tasks/${row.source_id}`;
+    const path = await activityLink('pc_0033', row.source_id, rec);
     const heading = row.actor_user_id ? `${actor} assigned you a task: ${name}` : `You were assigned a task: ${name}`;
     return {
       subject: heading,

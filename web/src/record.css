@@ -163,14 +163,17 @@
 }
 
 /* ---- centre: ledger timeline ------------------------------------------------------ */
-/* day headings stay pinned at the top of the column while their entries scroll under them;
-   they reach across .record-middle's side padding so an open card (and its shadow)
-   passes cleanly under them instead of showing at the sides */
+/* day headings stay pinned at the top of the column while their entries scroll under them.
+   A sticky box stops at the scroller's padding, so it is pinned 20px higher (.record-middle's
+   top padding) and carries 20px more padding on top, taken back by its margin: it sits where
+   it would anyway, and when pinned it covers that strip instead of letting entries show there */
 .record-page .ledger-day {
-  position: sticky; top: 0; z-index: 2; margin: 14px -28px 4px; padding: 8px 28px 6px;
+  position: sticky; top: -20px; z-index: 2; margin: -6px 0 4px; padding: 28px 0 6px;
   background: var(--page-background); font-size: 13px; font-weight: 600; color: var(--text);
 }
-.record-page .timeline > .ledger-day:first-child, .record-page .history-filters + .ledger-day { margin-top: 0; }
+/* right under the filters: up to their margin only, so it never covers them */
+.record-page .history-filters + .ledger-day { margin-top: -14px; padding-top: 22px; }
+.record-page .timeline > .ledger-day:first-child { margin-top: 0; padding-top: 8px; }
 .record-page .ledger-day::after { border-top-color: var(--hairline); }
 .record-page .ledger-entries::before { left: 15px; top: 18px; bottom: 18px; background: var(--hairline); }
 .record-page .activity-item, .record-page .ledger-entry { gap: 14px; padding: 8px 10px 8px 0; border-radius: var(--radius); }
@@ -553,7 +556,8 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
   .activity-links-pop { grid-template-columns: 1fr; max-height: 60vh; }
   .activity-links-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
   .record-page .record-middle { padding: 16px 16px 32px; }
-  .record-page .ledger-day { position: static; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
+  .record-page .ledger-day { position: static; margin-top: 14px; padding-top: 8px; }
+  .record-page .timeline > .ledger-day:first-child, .record-page .history-filters + .ledger-day { margin-top: 0; padding-top: 8px; }
   .record-page .record-identity h1 { font-size: 19px; }
   .record-page .history-filters .select-face, .record-page .history-filters .activity-search { flex: 1 1 100%; }
   .record-page .activity > .tabs { gap: 16px; }
