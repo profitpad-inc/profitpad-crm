@@ -186,7 +186,7 @@
 .nav-edit-row.section > .nav-edit-label { font-weight: 600; }
 .nav-edit-row.divider > .nav-edit-label { color: var(--muted-text); font-size: 12px; }
 .nav-edit-row.divider > .nav-edit-label::after { content: ''; flex: 1; border-top: 1px dashed var(--border); margin-left: 4px; }
-.nav-edit-row .icon-btn { opacity: 0; }
+.nav-edit-row > .icon-btn { opacity: 0; }
 .nav-edit-row:hover > .icon-btn, .nav-edit-row:focus-within > .icon-btn { opacity: 1; }
 .nav-edit-children { flex-basis: 100%; margin: 2px 0 2px 14px; padding-left: 8px; border-left: 2px solid var(--hairline); display: flex; flex-direction: column; gap: 1px; }
 .nav-edit-children:empty::before { content: 'Empty section'; font-size: 12px; color: var(--muted-text); padding: 6px 10px; }

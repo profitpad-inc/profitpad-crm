@@ -23,13 +23,13 @@
     { "object": "deals", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
       "dropdown_options": [
         { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
-        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }
       ] },
-    { "object": "deals", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true },
+    { "object": "deals", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true }, "dropdown_options": [{ "api_value": "sensor", "label": "Sensor" }, { "api_value": "uas", "label": "UAS" }, { "api_value": "cuas", "label": "CUAS" }, { "api_value": "contract_manufacturing", "label": "Contract manufacturing" }],
       "description": "Your product lines. Add your own in Settings, Properties." },
     { "object": "deals", "api_name": "contract_vehicle", "label": "Contract vehicle", "type": "dropdown", "options": { "single_value": true },
       "dropdown_options": [
-        { "api_value": "rfi", "label": "RFI" }, { "api_value": "rfq", "label": "RFQ" }, { "api_value": "rfp", "label": "RFP" },
+        { "api_value": "rfi", "label": "RFI" }, { "api_value": "rfq", "label": "RFQ" },
         { "api_value": "sole_source", "label": "Sole source" }, { "api_value": "idiq", "label": "IDIQ" }, { "api_value": "bpa", "label": "BPA" },
         { "api_value": "gsa_schedule", "label": "GSA Schedule" }, { "api_value": "other", "label": "Other" }
       ] },
@@ -76,19 +76,19 @@
     { "object": "contacts", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
       "dropdown_options": [
         { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
-        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }
       ] },
     { "object": "contacts", "api_name": "linkedin_url", "label": "LinkedIn", "type": "text", "options": { "single_line": true, "display": "url" } },
 
     { "object": "companies", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
       "dropdown_options": [
         { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
-        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }
       ] },
     { "object": "companies", "api_name": "cage_code", "label": "CAGE code", "type": "text", "options": { "single_line": true } },
     { "object": "companies", "api_name": "uei", "label": "UEI", "type": "text", "options": { "single_line": true }, "description": "Unique Entity ID from SAM.gov." },
 
-    { "object": "products", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true },
+    { "object": "products", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true }, "dropdown_options": [{ "api_value": "sensor", "label": "Sensor" }, { "api_value": "uas", "label": "UAS" }, { "api_value": "cuas", "label": "CUAS" }, { "api_value": "contract_manufacturing", "label": "Contract manufacturing" }],
       "description": "Your product lines. Add your own in Settings, Properties." },
     { "object": "products", "api_name": "specifications", "label": "Specifications", "type": "text", "options": { "display": "markdown" } },
     { "object": "products", "api_name": "key_features", "label": "Key features", "type": "text", "options": { "display": "markdown" } },
@@ -108,7 +108,7 @@
     { "object": "quotes", "api_name": "customer_type", "label": "Customer type", "type": "dropdown", "options": { "single_value": true },
       "dropdown_options": [
         { "api_value": "defense", "label": "Defense" }, { "api_value": "oem", "label": "OEM" }, { "api_value": "public_safety", "label": "Public safety" },
-        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }, { "api_value": "international", "label": "International" }
+        { "api_value": "fed_civ", "label": "Federal civilian" }, { "api_value": "state_local", "label": "State or local" }
       ] },
     { "object": "quotes", "api_name": "price_list", "label": "Price list", "type": "dropdown", "options": { "single_value": true },
       "dropdown_options": [ { "api_value": "msrp", "label": "MSRP" }, { "api_value": "gsa", "label": "GSA" }, { "api_value": "distributor", "label": "Distributor" } ] },
@@ -145,7 +145,7 @@
         { "api_value": "var", "label": "VAR" }, { "api_value": "teaming", "label": "Teaming" }, { "api_value": "technology", "label": "Technology" },
         { "api_value": "distribution", "label": "Distribution" }, { "api_value": "strategic_alliance", "label": "Strategic alliance" }, { "api_value": "other", "label": "Other" }
       ] },
-    { "object": "partnerships", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "partnerships", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true }, "dropdown_options": [{ "api_value": "sensor", "label": "Sensor" }, { "api_value": "uas", "label": "UAS" }, { "api_value": "cuas", "label": "CUAS" }, { "api_value": "contract_manufacturing", "label": "Contract manufacturing" }] },
     { "object": "partnerships", "api_name": "status", "label": "Status", "type": "dropdown", "options": { "single_value": true, "default_value": "prospecting", "color_display": "pill" },
       "dropdown_options": [
         { "api_value": "active", "label": "Active" }, { "api_value": "pursuing", "label": "Pursuing" }, { "api_value": "prospecting", "label": "Prospecting" },
@@ -205,7 +205,7 @@
     { "object": "proposals", "api_name": "fit_evaluation", "label": "Product fit", "type": "text", "options": { "display": "markdown" } },
     { "object": "proposals", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
 
-    { "object": "boms", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "boms", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true }, "dropdown_options": [{ "api_value": "sensor", "label": "Sensor" }, { "api_value": "uas", "label": "UAS" }, { "api_value": "cuas", "label": "CUAS" }, { "api_value": "contract_manufacturing", "label": "Contract manufacturing" }] },
     { "object": "boms", "api_name": "total_cogs", "label": "Total COGS", "type": "number", "options": { "format": "currency", "currency_code": "USD", "min": 0, "decimals": 2 } },
     { "object": "boms", "api_name": "target_margin", "label": "Target margin", "type": "number", "options": { "min": 0, "max": 100, "decimals": 1, "suffix": "%" } },
     { "object": "boms", "api_name": "bom_file", "label": "BOM file", "type": "file", "options": { "max_files": 5 } },
@@ -264,7 +264,7 @@
         { "api_value": "company_presentation", "label": "Company presentation" }, { "api_value": "linkedin_post", "label": "LinkedIn post" },
         { "api_value": "event_support", "label": "Event support" }, { "api_value": "case_study", "label": "Case study" }, { "api_value": "other", "label": "Other" }
       ] },
-    { "object": "marketing_materials", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
+    { "object": "marketing_materials", "api_name": "product_category", "label": "Product category", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true }, "dropdown_options": [{ "api_value": "sensor", "label": "Sensor" }, { "api_value": "uas", "label": "UAS" }, { "api_value": "cuas", "label": "CUAS" }, { "api_value": "contract_manufacturing", "label": "Contract manufacturing" }] },
     { "object": "marketing_materials", "api_name": "folder", "label": "Folder", "type": "dropdown", "options": { "single_value": true, "allow_user_add": true } },
     { "object": "marketing_materials", "api_name": "description", "label": "Description", "type": "text" },
     { "object": "marketing_materials", "api_name": "file", "label": "File", "type": "file", "options": { "max_files": 5 } },
@@ -396,7 +396,7 @@
     { "slug": "trade-show-follow-up", "name": "Trade show follow-up", "icon": "ticket", "description": "People met at events, hottest first, with their follow-up status." },
     { "slug": "travel-ops", "name": "Travel ops", "icon": "plane", "description": "Trips with itinerary, budget and approval; expenses with receipts." },
     { "slug": "product-pricing", "name": "Product pricing", "icon": "tags", "description": "MSRP, GSA and distributor prices by product, margins and expiring price lists." },
-    { "slug": "materials-library", "name": "Materials library", "icon": "library", "description": "Marketing materials and business documents by folder and type, with upload." }
+    { "slug": "materials-library", "name": "Materials library", "icon": "book-open", "description": "Marketing materials and business documents by folder and type, with upload." }
   ],
 
   "publish_views": true,
@@ -479,7 +479,7 @@
       {
         "type": "section",
         "label": "Resources",
-        "icon": "library",
+        "icon": "book-open",
         "items": [
           {
             "type": "object",
@@ -506,7 +506,7 @@
       {
         "type": "section",
         "label": "Operations",
-        "icon": "factory",
+        "icon": "settings",
         "items": [
           {
             "type": "custom_view",
