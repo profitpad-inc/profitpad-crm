@@ -89,7 +89,7 @@
 .data-grid .lead-col { position: sticky; left: 40px; z-index: 1; box-shadow: inset -1px 0 0 var(--hairline); }
 .data-grid th.pick-cell, .data-grid th.lead-col { z-index: 3; }
 /* row picking keeps real checkboxes (everything else in the UI is a switch, see styles.css) */
-.data-grid .pick-cell input[type='checkbox'] { appearance: auto; -webkit-appearance: checkbox; display: block; width: 15px; height: 15px; margin: 0; border-radius: 0; background: none;
+.data-grid .pick-cell input[type='checkbox'] { appearance: auto; -webkit-appearance: checkbox; display: block; width: 15px; min-width: 15px; height: 15px; margin: 0; border-radius: 0; background: none;
   cursor: pointer; accent-color: var(--primary); transition: none; }
 .data-grid .pick-cell input[type='checkbox']::before { content: none; }
 /* soft ring that hugs the box, instead of a square outline floating around it */
