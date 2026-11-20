@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
+import { Modal } from '../components/ui';
 
 // Settings → Notification emails (admins, migration 0099): the system address
 // internal notifications come from (e.g. noreply@), sent through the Google or
@@ -58,6 +59,13 @@ const PROVIDER_LABEL: Record<Provider, string> = { google: 'Google Workspace', m
 const KIND_LABEL: Record<Kind, string> = { mention: 'Mention', task_assigned: 'Task assigned', invite: 'Invite', api: 'API', test: 'Test' };
 const STATUS_LABEL: Record<Status, string> = { queued: 'Waiting', sending: 'Sending', sent: 'Sent', failed: 'Failed', skipped: 'Skipped' };
 const tone = (s: Status): Tone => (s === 'sent' ? 'on' : s === 'failed' ? 'failed' : s === 'skipped' ? 'off' : 'pending');
+interface Detail extends LogRow {
+  html: string | null;
+  mailbox: string | null;
+  provider: Provider | null;
+  provider_message_id: string | null;
+}
+
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 export function NotificationEmailSettings() {
@@ -196,7 +204,7 @@ function EmailLog() {
   const [kind, setKind] = useState('');
   const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<{ id: string; html: string | null } | null>(null);
+  const [open, setOpen] = useState<Detail | null>(null);
 
   const load = useCallback(async (before?: string) => {
     const p = new URLSearchParams({ limit: '50' });
@@ -216,10 +224,10 @@ function EmailLog() {
     return () => clearTimeout(t);
   }, [load, q]);
 
-  async function show(id: string) {
-    if (open?.id === id) return setOpen(null);
-    const r = await api<{ html: string | null }>('GET', `/v1/notifications/emails/${id}`);
-    setOpen({ id, html: r.html });
+  async function show(row: LogRow) {
+    const r = await api<Detail>('GET', `/v1/notifications/emails/${row.id}`);
+    // names come with the list, not the detail
+    setOpen({ ...row, ...r, user_name: row.user_name, actor_name: row.actor_name });
   }
 
   async function retry(id: string) {
@@ -228,8 +236,10 @@ function EmailLog() {
       const r = await api<{ ok: boolean; error: string | null }>('POST', `/v1/notifications/emails/${id}/retry`);
       if (!r.ok && r.error) setError(r.error);
       await load();
+      return r;
     } catch (e) {
       setError((e as Error).message);
+      return null;
     }
   }
 
@@ -282,9 +292,6 @@ function EmailLog() {
                   <td className="small wrap">
                     {r.subject ?? <span className="muted">Written when sent</span>}
                     {r.link && r.link.startsWith('/') && <span className="sub"><Link to={r.link}>Open what it links to</Link></span>}
-                    {open?.id === r.id && (open.html
-                      ? <iframe className="notification-email-preview" title={`Email ${r.id}`} sandbox="" srcDoc={open.html} />
-                      : <span className="sub">Nothing was written for this one.</span>)}
                   </td>
                   <td className="small wrap">
                     <StatusPill tone={tone(r.status)}>{STATUS_LABEL[r.status]}</StatusPill>
@@ -295,7 +302,7 @@ function EmailLog() {
                   </td>
                   <td className="row-actions">
                     <span className="row-actions-inner">
-                      <button className="btn small ghost" onClick={() => show(r.id).catch((e) => setError((e as Error).message))}>{open?.id === r.id ? 'Hide' : 'View'}</button>
+                      <button className="btn small ghost" onClick={() => show(r).catch((e) => setError((e as Error).message))}>View</button>
                       {(r.status === 'failed' || r.status === 'skipped') && <button className="btn small" onClick={() => retry(r.id)}>Send again</button>}
                     </span>
                   </td>
@@ -305,7 +312,67 @@ function EmailLog() {
           </table>
         </div>
       )}
+      {open && (
+        <EmailModal
+          email={open}
+          onClose={() => setOpen(null)}
+          onRetry={async () => {
+            await retry(open.id);
+            await show(open).catch((e) => setError((e as Error).message));
+          }}
+        />
+      )}
       {next && <div className="load-more"><button className="btn small" onClick={() => load(next).catch((e) => setError((e as Error).message))}>Older</button></div>}
     </div>
+  );
+}
+
+// One notification email: what it is, how it went, and the email as the
+// recipient saw it (in a sandboxed frame: no scripts, no navigation).
+function EmailModal({ email: e, onClose, onRetry }: { email: Detail; onClose: () => void; onRetry: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const canRetry = e.status === 'failed' || e.status === 'skipped';
+  return (
+    <Modal
+      title={e.subject ?? `${KIND_LABEL[e.kind]} email`}
+      onClose={onClose}
+      wide
+      className="notification-email-modal"
+      footer={(
+        <>
+          {canRetry && (
+            <button className="btn primary" disabled={busy} onClick={async () => { setBusy(true); try { await onRetry(); } finally { setBusy(false); } }}>
+              {busy ? 'Sending…' : 'Send again'}
+            </button>
+          )}
+          <button className="btn" onClick={onClose}>Close</button>
+        </>
+      )}
+    >
+      <dl className="facts">
+        <dt>Status</dt>
+        <dd>
+          <StatusPill tone={tone(e.status)}>{STATUS_LABEL[e.status]}</StatusPill>
+          {e.sent_at && <span className="muted small"> {when(e.sent_at)}</span>}
+        </dd>
+        {e.last_error && e.status !== 'sent' && (<><dt>{e.status === 'skipped' ? 'Why skipped' : 'Error'}</dt><dd className={e.status === 'failed' ? 'failed' : ''}>{e.last_error}</dd></>)}
+        {e.status === 'queued' && e.next_attempt_at && (<><dt>Next try</dt><dd>{when(e.next_attempt_at)}</dd></>)}
+        <dt>Type</dt>
+        <dd>{KIND_LABEL[e.kind]}{e.actor_name && <span className="muted"> by {e.actor_name}</span>}</dd>
+        <dt>To</dt>
+        <dd>{e.user_name ? <>{e.user_id ? <Link to={`/objects/users/${e.user_id}`} onClick={onClose}>{e.user_name}</Link> : e.user_name} <span className="muted">{e.to_address}</span></> : e.to_address}</dd>
+        {e.from_address && (<><dt>From</dt><dd>{e.from_address}{e.mailbox && e.mailbox !== e.from_address && <span className="muted"> through {e.mailbox}</span>}</dd></>)}
+        {e.provider && (<><dt>Sent with</dt><dd>{PROVIDER_LABEL[e.provider]}</dd></>)}
+        <dt>Queued</dt>
+        <dd>{when(e.created_at)}{e.created_by && <span className="muted"> ({e.created_by})</span>}</dd>
+        <dt>Tries</dt>
+        <dd>{e.attempts}</dd>
+        {e.link && (<><dt>Links to</dt><dd>{e.link.startsWith('/') ? <Link to={e.link} onClick={onClose}>{e.link}</Link> : <a href={e.link} target="_blank" rel="noreferrer">{e.link}</a>}</dd></>)}
+        {e.provider_message_id && (<><dt>Message ID</dt><dd className="mono small">{e.provider_message_id}</dd></>)}
+      </dl>
+      {e.html
+        ? <iframe className="notification-email-preview" title="The email as sent" sandbox="" srcDoc={e.html} />
+        : <p className="muted">Nothing was written for this one{e.status === 'skipped' ? ': it was skipped before sending.' : ' yet: it is written when it is sent.'}</p>}
+    </Modal>
   );
 }

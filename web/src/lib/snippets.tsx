@@ -9,7 +9,8 @@ import { attachComplete, mentionTrigger, snippetTrigger, type MentionUser, type 
 // page sets it for everything on the page (note box, property boxes, create
 // and log modals opened from it).
 interface SnippetRecord { object: string; id: string }
-const RecordContext = createContext<SnippetRecord | null>(null);
+export const SnippetRecordContext = createContext<SnippetRecord | null>(null);
+const RecordContext = SnippetRecordContext;
 
 export function SnippetRecordProvider({ object, id, children }: SnippetRecord & { children: ReactNode }) {
   return <RecordContext.Provider value={{ object, id }}>{children}</RecordContext.Provider>;

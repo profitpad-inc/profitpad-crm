@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowRight, AtSign, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo } from '../lib/files';
@@ -100,6 +100,12 @@ function publishedUrl(object: string, r: CrmRecord): string | null {
   const key = (typeof r.properties.slug === 'string' && r.properties.slug) || (typeof r.properties.public_key === 'string' && r.properties.public_key);
   return key && live.statuses.includes(String(status)) ? `${window.location.origin}/p/${live.path}/#${key}` : null;
 }
+
+// Properties shown in a section of their own under the main one, per object
+const PROP_SECTIONS: Record<string, { key: string; title: string; props: string[] }[]> = {
+  // notification settings (migration 0100): admins manage them here for each user
+  users: [{ key: 'notifications', title: 'Notifications', props: ['notify_mentions', 'notify_tasks'] }]
+};
 
 // Shown elsewhere on the page (builder, answers, link and signing cards) rather than as raw values
 const HIDDEN_PROPS: Record<string, string[]> = {
@@ -626,7 +632,11 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   const addressGroups = useAddressGroups(schema.api_name);
   const shown = schema.properties.filter((p) => p.record_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   // each address group's properties together, in order (Settings → Address autocomplete)
-  const main = withAddressesTogether(shown.filter((p) => !p.is_base || p.api_name === 'name'), addressGroups);
+  const extraSections = (PROP_SECTIONS[schema.api_name] ?? [])
+    .map((sec) => ({ ...sec, list: sec.props.map((n) => shown.find((p) => p.api_name === n)).filter((p): p is Property => !!p) }))
+    .filter((sec) => sec.list.length > 0);
+  const inSection = new Set(extraSections.flatMap((sec) => sec.list.map((p) => p.api_name)));
+  const main = withAddressesTogether(shown.filter((p) => (!p.is_base || p.api_name === 'name') && !inSection.has(p.api_name)), addressGroups);
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
   // without edit access (the role, or this record only through a read-only
   // sharing rule) every property is locked, like a calculation; a save's
@@ -771,6 +781,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   return (
     <div className="props">
       {section('main', `About this ${schema.label_singular.toLowerCase()}`, main)}
+      {extraSections.map((sec) => <Fragment key={sec.key}>{section(sec.key, sec.title, sec.list)}</Fragment>)}
       {section('system', 'System', system)}
       {htmlEditing && (
         <HtmlEditorModal

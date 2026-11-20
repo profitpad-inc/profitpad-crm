@@ -148,8 +148,58 @@ function Account() {
           <button className="btn" onClick={signOut}>Sign out</button>
         </SettingRow>
       </div>
+      {me.user && <NotificationPrefs />}
       {me.user && <EmailSignature userId={me.user.id} initial={me.user.email_signature ?? null} canWrite={me.is_admin || me.scopes.includes('write') || me.scopes.includes('admin')} />}
     </SettingsPage>
+  );
+}
+
+// Your own notification settings (users.notify_*, migration 0100), through
+// /v1/me/notifications so it works whatever your role allows on users.
+// Admins change anyone's on their user record.
+type NotifyValue = 'email' | 'off';
+const NOTIFY_ROWS: { key: 'notify_mentions' | 'notify_tasks'; label: string; hint: string }[] = [
+  { key: 'notify_mentions', label: 'Mentions', hint: 'Someone @mentions you in a note or a comment.' },
+  { key: 'notify_tasks', label: 'Tasks assigned', hint: 'A task is assigned to you by someone else.' }
+];
+
+function NotificationPrefs() {
+  const { toast } = useApp();
+  const [prefs, setPrefs] = useState<{ notify_mentions: NotifyValue; notify_tasks: NotifyValue; sender_on: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<typeof prefs>('GET', '/v1/me/notifications').then(setPrefs).catch((e) => setError((e as Error).message));
+  }, []);
+
+  async function save(key: string, on: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      setPrefs(await api<NonNullable<typeof prefs>>('PUT', '/v1/me/notifications', { [key]: on ? 'email' : 'off' }));
+      toast(on ? 'Emails turned on.' : 'Emails turned off.');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SettingsSection title="Notifications" description="Which emails the CRM sends you. Admins can change these for you on your user record.">
+      {error && <div className="error">{error}</div>}
+      {prefs && !prefs.sender_on && <div className="callout">Notification emails are not turned on for this CRM yet, so none are sent for now.</div>}
+      {prefs && (
+        <div className="setting-rows">
+          {NOTIFY_ROWS.map((r) => (
+            <SettingRow key={r.key} label={r.label} hint={r.hint}>
+              <label><input type="checkbox" role="switch" checked={prefs[r.key] === 'email'} disabled={busy} onChange={(e) => save(r.key, e.target.checked)} /> {prefs[r.key] === 'email' ? 'Email' : 'Off'}</label>
+            </SettingRow>
+          ))}
+        </div>
+      )}
+    </SettingsSection>
   );
 }
 

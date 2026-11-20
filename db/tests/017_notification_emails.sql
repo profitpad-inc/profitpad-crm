@@ -66,6 +66,19 @@ begin
   perform 1 from auth.notification_emails where source_id = v_task;
   if found then raise exception 'a completed task is not emailed'; end if;
 
+  -- each user's settings (0100): new users start on email; off stops each kind
+  perform 1 from crm.pc_0000 where pc_0000_id = v_ann and notify_mentions = '{email}' and notify_tasks = '{email}';
+  if not found then raise exception 'users start with email on'; end if;
+  update crm.pc_0000 set notify_tasks = '{off}' where pc_0000_id = v_ann;
+  insert into crm.pc_0033 (name, owner) values ('Quiet', array[v_ann]) returning pc_0033_id into v_task;
+  perform 1 from auth.notification_emails where source_id = v_task;
+  if found then raise exception 'tasks off: no email'; end if;
+  update crm.pc_0000 set notify_mentions = '{off}' where pc_0000_id = v_ann;
+  insert into crm.pc_0032 (body) values (format('Quiet @[Ann Lee](%s)', v_ann)) returning pc_0032_id into v_task;
+  perform 1 from auth.notification_emails where source_id = v_task;
+  if found then raise exception 'mentions off: no email'; end if;
+  update crm.pc_0000 set notify_mentions = '{email}', notify_tasks = '{email}' where pc_0000_id = v_ann;
+
   -- invites: only when turned on, not for users made by system jobs
   insert into crm.pc_0000 (name, email) values ('Cy New', 'cy@example.com') returning pc_0000_id into v_task;
   perform 1 from auth.notification_emails where kind = 'invite';

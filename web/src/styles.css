@@ -544,7 +544,7 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 
 @media (max-width: 767px) {
   .app.mobile { flex-direction: column; height: 100dvh; }
-  input, .select-face, textarea { font-size: 16px; } /* stops iOS zooming into fields */
+  input, .select-face, textarea, .rich-box { font-size: 16px; } /* stops iOS zooming into fields */
 
   .page { padding: 16px; }
   .page-title { font-size: 22px; }

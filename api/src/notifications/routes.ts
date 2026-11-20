@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { pool } from '../db.js';
+import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
 import { requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { isAdmin } from '../routes/ui.js';
 import { cleanAddresses } from '../mailbox/send.js';
 import { loadProviders, MAIL_PROVIDERS, providerFor, providerReady } from '../mailbox/providers.js';
-import { deliver, loadSender, queueApiEmail, queueInvite, sendTest, type ApiEmailInput } from './emails.js';
+import { deliver, loadSender, PREFERENCE_VALUES, queueApiEmail, queueInvite, sendTest, type ApiEmailInput } from './emails.js';
 
 // Settings → Notification emails (admins): the system sender, a test, and
 // the log of every notification email; plus POST /v1/notifications/email for
@@ -109,6 +109,43 @@ export async function notificationRoutes(app: FastifyInstance) {
     const result = await queueApiEmail(p, req.body ?? {});
     reply.code(202);
     return result;
+  });
+
+  // The signed-in user's own notification settings (the notify_* properties
+  // of their user record, migration 0100). Users change their own here even
+  // when their role cannot edit users; admins change anyone's on the user
+  // record. sender_on says whether notification emails go out at all.
+  const SETTINGS = ['notify_mentions', 'notify_tasks'] as const;
+  const mine = async (userId: string) => {
+    const { rows } = await pool.query(`select notify_mentions[1] as notify_mentions, notify_tasks[1] as notify_tasks from crm.pc_0000 where pc_0000_id = $1`, [userId]);
+    const sender = await loadSender();
+    return { notify_mentions: rows[0]?.notify_mentions ?? 'email', notify_tasks: rows[0]?.notify_tasks ?? 'email', sender_on: !!sender?.enabled };
+  };
+
+  app.get('/v1/me/notifications', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    if (!p.userId) throw badRequest('only a user has notification settings');
+    return mine(p.userId);
+  });
+
+  app.put<{ Body: Record<string, unknown> }>('/v1/me/notifications', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    if (!p.userId) throw badRequest('only a user has notification settings');
+    const b = req.body ?? {};
+    const set: string[] = [];
+    const params: unknown[] = [p.userId];
+    for (const k of SETTINGS) {
+      if (b[k] === undefined) continue;
+      if (!PREFERENCE_VALUES.includes(b[k] as (typeof PREFERENCE_VALUES)[number])) throw badRequest(`${k} is one of ${PREFERENCE_VALUES.join(', ')}`, { property: k });
+      params.push([b[k]]);
+      set.push(`${k} = $${params.length}`);
+    }
+    if (set.length) {
+      await withTx({ principal: p, source: 'notification_settings' }, (c) => c.query(`update crm.pc_0000 set ${set.join(', ')} where pc_0000_id = $1`, params));
+    }
+    return mine(p.userId);
   });
 
   // Emails a user an invite to sign in (again, if they had one).

@@ -7,7 +7,7 @@ import { mentionText } from '../snippets.js';
 import { cleanEmailHtml, htmlToText } from '../mailbox/html.js';
 import { buildMime } from '../mailbox/mime.js';
 import {
-  listAliases, loadProviders, MailAuthError, MailSendError, providerFor, providerReady, sendMessage, type MailProvider, type OutgoingMessage,
+  gmailSendAs, listAliases, loadProviders, MailAuthError, MailSendError, providerFor, providerReady, sendMessage, type MailProvider, type OutgoingMessage,
   type ProviderRow
 } from '../mailbox/providers.js';
 
@@ -67,12 +67,41 @@ export async function senderProvider(sender: Pick<SenderRow, 'provider' | 'mailb
 
 // Whether the mailbox may send as the From address: itself, a verified Gmail
 // send-as address, or a Microsoft proxy address when aliases are allowed.
-export async function checkFromAddress(cfg: ProviderRow, mailbox: string, from: string): Promise<void> {
-  if (from === mailbox) return;
-  const aliases = await listAliases(cfg, mailbox, true);
-  if (aliases.some((a) => a.address === from)) return;
+// Gmail does not refuse a From it does not allow: it sends from the account's
+// primary address instead. So every send checks first (the answer is kept 5
+// minutes; Send test always asks again), and a From Gmail would replace fails
+// with what to fix.
+const FROM_OK_TTL = 5 * 60_000;
+const fromOk = new Map<string, number>();
+
+export async function checkFromAddress(cfg: ProviderRow, mailbox: string, from: string, fresh = true): Promise<void> {
+  const key = `${cfg.provider}:${mailbox}:${from}:${cfg.ms_send_from_aliases}`;
+  if (!fresh && (fromOk.get(key) ?? 0) > Date.now() - FROM_OK_TTL) return;
+  fromOk.delete(key);
   if (cfg.provider === 'google') {
-    throw new MailAuthError(`${from} is not a send-as address of ${mailbox}: add it in that user's Gmail settings (Accounts, Send mail as), or make ${from} the user itself`);
+    const { primary, addresses } = await gmailSendAs(cfg, mailbox);
+    if (!addresses.includes(from)) {
+      if (primary && primary !== mailbox) {
+        throw new MailAuthError(
+          `${mailbox} is an alias of ${primary}, and Gmail would send from ${primary} instead of ${from}. ` +
+          `Set the Mailbox to ${primary}, and add ${from} in that account's Gmail settings (Accounts, Send mail as).`
+        );
+      }
+      throw new MailAuthError(
+        `Gmail would send from ${primary ?? mailbox} instead of ${from}: add ${from} in ${primary ?? mailbox}'s Gmail settings (Accounts, Send mail as), or use it as the Mailbox if it is a user of its own.`
+      );
+    }
+    fromOk.set(key, Date.now());
+    return;
+  }
+  if (from === mailbox) {
+    fromOk.set(key, Date.now());
+    return;
+  }
+  const aliases = await listAliases(cfg, mailbox, true);
+  if (aliases.some((a) => a.address === from)) {
+    fromOk.set(key, Date.now());
+    return;
   }
   throw new MailAuthError(
     cfg.ms_send_from_aliases
@@ -167,10 +196,20 @@ interface QueuedRow {
   attempts: number;
 }
 
+// The user property (migration 0100) that turns each kind of email on or off:
+// "email" or "off". Kinds not listed always send.
+export const PREFERENCE: Partial<Record<Kind, 'notify_mentions' | 'notify_tasks'>> = { mention: 'notify_mentions', task_assigned: 'notify_tasks' };
+export const PREFERENCE_VALUES = ['email', 'off'] as const;
+
 type Written = { subject: string; html: string; link: string | null } | { skip: string };
 
 async function write(row: QueuedRow): Promise<Written> {
   if (!row.user_id || !row.source_object || !row.source_id) return { skip: 'nothing to write' };
+  const setting = PREFERENCE[row.kind];
+  if (setting) {
+    const { rows } = await pool.query(`select ${setting}[1] as value from crm.pc_0000 where pc_0000_id = $1`, [row.user_id]);
+    if ((rows[0]?.value ?? 'email') !== 'email') return { skip: 'they turned these emails off in their notification settings' };
+  }
   const reader = await userPrincipal(row.user_id);
   const actor = (await userNameOf(row.actor_user_id)) ?? 'Someone';
 
@@ -328,6 +367,8 @@ export async function deliver(id: string, opts: { retry: boolean }): Promise<{ o
   }
   try {
     const cfg = await senderProvider(sender);
+    // a From Gmail would quietly replace fails here instead of going out wrong
+    await checkFromAddress(cfg, sender.mailbox, sender.from_address, false);
     let subject = row.subject;
     let html = row.html;
     if (subject === null || html === null) {

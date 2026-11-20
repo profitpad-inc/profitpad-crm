@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { MessageSquare, Pencil, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { initials } from '../lib/display';
-import { TextArea } from '../lib/snippets';
-import { MENTION_TOKEN, encodeMentions, mentionParts, mentionsAsText, type MentionUser } from '../lib/text-complete';
+import { RichTextBox, type RichTextBoxHandle } from './RichTextBox';
 import { MentionText } from './MentionText';
 import { confirmDialog, alertDialog } from './confirm';
 import { useLiveVersion } from '../lib/live';
@@ -36,7 +35,6 @@ const ago = (iso: string) => {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 };
 const full = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-const tokensOf = (body: string): MentionUser[] => [...body.matchAll(MENTION_TOKEN)].map((m) => ({ name: m[1]!, id: m[2]! }));
 const authorName = (c: Comment) => c.author?.name ?? (c.created_by.startsWith('api:') ? 'API key' : 'Someone');
 
 export function Comments({ object, id, readOnly = false, onCount, highlight }: {
@@ -153,67 +151,54 @@ function CommentBox({ object, id, onPosted }: { object: string; id: string; onPo
   );
 }
 
-// The comment text box: @ tags users, Cmd/Ctrl+Enter submits, Escape cancels
-// an edit. A new comment's buttons show once there is text.
+// The comment text box: @ tags users (as chips), Cmd/Ctrl+Enter submits,
+// Escape cancels an edit. A new comment's buttons show once there is text.
 function CommentEditor({ initial, submitLabel, placeholder, autoFocus = false, onSubmit, onCancel }: {
   initial: string; submitLabel: string; placeholder?: string; autoFocus?: boolean;
   onSubmit: (body: string) => Promise<void>; onCancel?: () => void;
 }) {
-  const [text, setText] = useState(() => mentionsAsText(initial));
-  const [mentioned, setMentioned] = useState<MentionUser[]>(() => tokensOf(initial));
+  const [body, setBody] = useState(initial);
+  // bumped to empty a new comment's box (Cancel)
+  const [round, setRound] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const box = useRef<HTMLTextAreaElement>(null);
-  const backdrop = useRef<HTMLDivElement>(null);
+  const box = useRef<RichTextBoxHandle>(null);
   useEffect(() => {
-    const el = box.current;
-    if (!autoFocus || !el) return;
-    el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
+    if (autoFocus) box.current?.focus();
   }, [autoFocus]);
-  const changed = text.trim() !== mentionsAsText(initial).trim();
+  const changed = body.trim() !== initial.trim();
 
   async function submit() {
-    if (saving || !text.trim()) return;
+    if (saving || !body.trim()) return;
     if (onCancel && !changed) { onCancel(); return; }
     setSaving(true);
     setError(null);
     try {
-      await onSubmit(encodeMentions(text.trim(), mentioned));
+      await onSubmit(body.trim());
     } catch (err) {
       setError((err as Error).message);
       setSaving(false);
     }
   }
   async function cancel() {
-    if (!onCancel) { setText(''); setMentioned([]); return; }
+    if (!onCancel) { setBody(''); setRound((r) => r + 1); return; }
     if (changed && !(await confirmDialog('Your changes are not saved.', { title: 'Discard your changes?', confirmLabel: 'Discard', danger: true }))) return;
     onCancel();
   }
 
-  const showFoot = !!onCancel || text.trim() !== '';
+  const showFoot = !!onCancel || body.trim() !== '';
   return (
     <div className="comment-editor">
-      {/* the picked @mentions drawn as chips on a copy of the text behind the box */}
-      <div className="mention-field">
-      <div className="mention-backdrop" ref={backdrop} aria-hidden="true">
-        {mentionParts(text, mentioned).map((p, i) => (p.mention ? <mark key={i}>{p.text}</mark> : p.text))}
-        {'\u200b'}
-      </div>
-      <TextArea ref={box} grow rows={1} value={text} placeholder={placeholder} aria-label="Comment" disabled={saving}
-        onScroll={(e) => { if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop; }}
-        onChange={(e) => setText(e.target.value)}
-        onMention={(u) => setMentioned((m) => [...m, u])}
+      <RichTextBox key={round} ref={box} initial={initial} onChange={setBody} placeholder={placeholder} aria-label="Comment" disabled={saving}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); }
           else if (e.key === 'Escape' && !e.defaultPrevented && onCancel) { e.preventDefault(); void cancel(); }
         }} />
-      </div>
       {error && <div className="error">{error}</div>}
       {showFoot && (
         <div className="comment-editor-foot">
           <button className="btn small" onClick={() => void cancel()} disabled={saving}>Cancel</button>
-          <button className="btn primary small" onClick={() => void submit()} disabled={saving || !text.trim()}>{saving ? 'Saving…' : submitLabel}</button>
+          <button className="btn primary small" onClick={() => void submit()} disabled={saving || !body.trim()}>{saving ? 'Saving…' : submitLabel}</button>
         </div>
       )}
     </div>

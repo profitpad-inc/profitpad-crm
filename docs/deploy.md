@@ -353,9 +353,9 @@ Updating afterwards: `cd /opt/profitpad-crm && sudo bash install.sh` (fetches ma
 
 Needs section 23 (Mailboxes) working for the provider that sends.
 
-1. Apply `0099_notification_emails.sql`, rebuild and restart the API, deploy the UI. `UI_URL` must be set (the emails link to the CRM).
+1. Apply `0099_notification_emails.sql` and `0100_user_notification_settings.sql` (each user's settings, all on by default), rebuild and restart the API, deploy the UI. `UI_URL` must be set (the emails link to the CRM).
 2. Pick the mailbox the service account sends as:
-   - Google Workspace: a licensed user (e.g. `noreply@` itself), or an existing user with `noreply@` added as an alternate email in Google Admin and then as a send-as address in that user's Gmail (Settings → Accounts → Send mail as). The service account needs the same two scopes as section 23.
+   - Google Workspace: a licensed user (e.g. `noreply@` itself), or an existing user with `noreply@` added as an alternate email in Google Admin and then as a send-as address in that user's Gmail (Settings → Accounts → Send mail as). With an alias, the Mailbox is that user's own address (not `noreply@`), and the From address is `noreply@`. The service account needs the same two scopes as section 23.
    - Microsoft 365: a licensed user (e.g. `noreply@`), or a user with `noreply@` as an email alias; an alias also needs "Send from aliases" on in Settings → Mailboxes and `SendFromAliasesEnabled` in Exchange (not verified with a real tenant). If the Entra app is limited to some mailboxes, include this one.
 3. Settings → Notification emails: mailbox, From address (empty means the mailbox), From name, Save, Send test, then turn Sending on. Turn "Invite new users" on if new users should get an invite when their user is created.
 4. Check the Sent log there after the first mentions and tasks.

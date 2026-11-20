@@ -25,12 +25,34 @@ export interface Trigger {
   items: (query: string) => CompleteItem[] | Promise<CompleteItem[]>;
   // the text that replaces the trigger and query
   pick: (item: CompleteItem) => string | Promise<string>;
+  // in a rich box: a chip that replaces them instead (null: nothing)
+  chip?: (item: CompleteItem) => Promise<Chip | null>;
 }
 
 type Box = HTMLTextAreaElement | HTMLInputElement;
 
+// A chip a trigger can insert in a rich box (attachRichComplete) instead of text.
+export interface Chip { label: string; id: string }
+
+// The text around the caret that a trigger is looked for in: the whole value of
+// a text box, or the text node the caret is in for a rich box.
+interface Spot { text: string; caret: number; node?: Text }
+
+// What the menu needs from the thing typed into.
+interface Surface {
+  el: HTMLElement;
+  spot(): Spot | null;
+  // the screen position of a place in the spot
+  point(spot: Spot, pos: number): { left: number; top: number; height: number };
+  // the spot's text now (to see if what was typed is still there)
+  current(spot: Spot): string | null;
+  replace(spot: Spot, start: number, end: number, text: string): void;
+  chip?(spot: Spot, start: number, end: number, chip: Chip): void;
+}
+
 interface Open {
   trigger: Trigger;
+  spot: Spot;
   start: number;
   end: number;
   items: CompleteItem[];
@@ -80,7 +102,98 @@ function insert(el: Box, start: number, end: number, text: string): void {
   }
 }
 
+function boxSurface(el: Box): Surface {
+  return {
+    el,
+    spot: () => (el.selectionStart !== null && el.selectionStart === el.selectionEnd ? { text: el.value, caret: el.selectionStart } : null),
+    point: (_spot, pos) => caretPoint(el, pos),
+    current: () => el.value,
+    replace: (_spot, start, end, text) => insert(el, start, end, text)
+  };
+}
+
+// A contenteditable="plaintext-only" box whose chips are
+// <span contenteditable="false" data-chip-id> elements (RichTextBox).
+function richSurface(el: HTMLElement): Surface {
+  const select = (node: Text, start: number, end: number) => {
+    el.focus();
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    const sel = document.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return range;
+  };
+  return {
+    el,
+    spot: () => {
+      const sel = document.getSelection();
+      if (!sel || !sel.isCollapsed || !sel.anchorNode || sel.anchorNode.nodeType !== Node.TEXT_NODE || !el.contains(sel.anchorNode)) return null;
+      const node = sel.anchorNode as Text;
+      return { text: node.data, caret: sel.anchorOffset, node };
+    },
+    point: (spot, pos) => {
+      const range = document.createRange();
+      range.setStart(spot.node!, pos);
+      range.collapse(true);
+      const r = range.getClientRects()[0] ?? el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return { left: r.left, top: r.top, height: r.height || parseFloat(style.lineHeight) || 20 };
+    },
+    current: (spot) => (spot.node!.isConnected ? spot.node!.data : null),
+    replace: (spot, start, end, text) => {
+      select(spot.node!, start, end);
+      if (!(typeof document.execCommand === 'function' && document.execCommand('insertText', false, text))) {
+        const range = document.getSelection()!.getRangeAt(0);
+        range.deleteContents();
+        const t = document.createTextNode(text);
+        range.insertNode(t);
+        range.setStartAfter(t);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    },
+    chip: (spot, start, end, chip) => {
+      const range = select(spot.node!, start, end);
+      range.deleteContents();
+      const span = chipElement(chip);
+      // a space after it, so typing goes on in a text node
+      const after = document.createTextNode('\u00a0');
+      range.insertNode(after);
+      range.insertNode(span);
+      const sel = document.getSelection()!;
+      const caret = document.createRange();
+      caret.setStart(after, 1);
+      caret.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(caret);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  };
+}
+
+export function chipElement(chip: Chip): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = 'mention';
+  span.contentEditable = 'false';
+  span.dataset.chipId = chip.id;
+  span.dataset.chipLabel = chip.label;
+  span.textContent = `@${chip.label}`;
+  return span;
+}
+
 export function attachComplete(el: Box, triggers: Trigger[]): () => void {
+  return attach(boxSurface(el), triggers);
+}
+
+// The same menu on a rich box (components/RichTextBox.tsx); a trigger with
+// chip() inserts a chip there.
+export function attachRichComplete(el: HTMLElement, triggers: Trigger[]): () => void {
+  return attach(richSurface(el), triggers);
+}
+
+function attach(surface: Surface, triggers: Trigger[]): () => void {
+  const el = surface.el;
   let open: Open | null = null;
   let menu: HTMLDivElement | null = null;
   let seq = 0;
@@ -140,7 +253,7 @@ export function attachComplete(el: Box, triggers: Trigger[]): () => void {
       row.addEventListener('click', () => choose(i));
       return row;
     }));
-    const at = caretPoint(el, open.start);
+    const at = surface.point(open.spot, open.start);
     const width = Math.min(320, window.innerWidth - 16);
     const left = Math.max(8, Math.min(at.left, window.innerWidth - width - 8));
     menu.style.width = `${width}px`;
@@ -152,19 +265,21 @@ export function attachComplete(el: Box, triggers: Trigger[]): () => void {
   }
 
   // the trigger and query just before the caret, if any
-  function find(): { trigger: Trigger; start: number; end: number; query: string } | null {
-    const end = el.selectionStart ?? 0;
-    if (end !== el.selectionEnd) return null;
-    const before = el.value.slice(Math.max(0, end - 60), end);
+  function find(): { trigger: Trigger; spot: Spot; start: number; end: number; query: string } | null {
+    const spot = surface.spot();
+    if (!spot) return null;
+    const end = spot.caret;
+    const before = spot.text.slice(Math.max(0, end - 60), end);
     for (const t of triggers) {
       const i = before.lastIndexOf(t.char);
       if (i < 0) continue;
       const start = end - before.length + i;
       // only at the start of a word: not in an email address or a URL#hash
-      if (start > 0 && !/[\s([{"']/.test(el.value[start - 1])) continue;
+      // (\u00a0: the space a rich box puts after a chip)
+      if (start > 0 && !/[\s\u00a0([{"']/.test(spot.text[start - 1])) continue;
       const query = before.slice(i + 1);
       if (!t.query.test(query)) continue;
-      return { trigger: t, start, end, query };
+      return { trigger: t, spot, start, end, query };
     }
     return null;
   }
@@ -180,21 +295,24 @@ export function attachComplete(el: Box, triggers: Trigger[]): () => void {
     const items = (await hit.trigger.items(hit.query)).slice(0, MAX_ITEMS);
     if (mine !== seq) return;
     const sameList = open && open.trigger === hit.trigger && open.items.length === items.length && open.items.every((x, i) => x.key === items[i].key);
-    open = { trigger: hit.trigger, start: hit.start, end: hit.end, items, active: sameList ? Math.min(open!.active, items.length - 1) : 0 };
+    open = { trigger: hit.trigger, spot: hit.spot, start: hit.start, end: hit.end, items, active: sameList ? Math.min(open!.active, items.length - 1) : 0 };
     draw();
   }
 
   async function choose(i: number) {
     if (!open || busy) return;
-    const { trigger, start, end } = open;
+    const { trigger, spot, start, end } = open;
     const item = open.items[i];
-    const typed = el.value.slice(start, end);
+    const typed = spot.text.slice(start, end);
     close();
     busy = true;
     try {
-      const text = await trigger.pick(item);
+      const chip = surface.chip && trigger.chip ? await trigger.chip(item) : null;
+      const text = chip ? '' : await trigger.pick(item);
       // the typed #query is still there: replace it
-      if (el.value.slice(start, end) === typed) insert(el, start, end, text);
+      if (surface.current(spot)?.slice(start, end) !== typed) return;
+      if (chip) surface.chip!(spot, start, end, chip);
+      else surface.replace(spot, start, end, text);
     } catch (err) {
       console.warn('could not insert', err);
     } finally {
@@ -333,6 +451,12 @@ export function mentionTrigger(load: () => Promise<MentionUser[]>, onPick: (u: M
       if (!u) return '';
       onPick(u);
       return `@${u.name} `;
+    },
+    chip: async (item) => {
+      const u = (await list()).find((x) => x.id === item.key);
+      if (!u) return null;
+      onPick(u);
+      return { label: u.name, id: u.id };
     }
   };
 }

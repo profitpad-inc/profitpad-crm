@@ -204,6 +204,21 @@ export interface Alias {
   primary: boolean;
 }
 
+// The From addresses Gmail honors for the account behind a mailbox: its
+// primary address and its accepted send-as addresses, exactly as Gmail lists
+// them. When the mailbox is itself an alias, Google acts as the account that
+// owns it, so the alias is in this list only if it was added under Send mail
+// as. Any other From is quietly replaced by the primary address.
+export async function gmailSendAs(cfg: ProviderRow, mailbox: string): Promise<{ primary: string | null; addresses: string[] }> {
+  const res = await call(cfg, mailbox, `${gmailUrl()}/gmail/v1/users/${encodeURIComponent(mailbox)}/settings/sendAs`);
+  const data = (await res.json()) as { sendAs?: { sendAsEmail: string; isPrimary?: boolean; verificationStatus?: string }[] };
+  const ok = (data.sendAs ?? []).filter((s) => s.isPrimary || !s.verificationStatus || s.verificationStatus === 'accepted');
+  return {
+    primary: ok.find((s) => s.isPrimary)?.sendAsEmail.toLowerCase() ?? null,
+    addresses: ok.map((s) => s.sendAsEmail.toLowerCase())
+  };
+}
+
 const ALIAS_TTL = 5 * 60_000;
 const aliasCache = new Map<string, { at: number; aliases: Alias[] }>();
 
