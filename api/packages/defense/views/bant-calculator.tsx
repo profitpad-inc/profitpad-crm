@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Page, Grid, Stack, Row, Card, Stat, Tabs, Button, Select, TextInput, Loading, ErrorBox, Badge,
+  Page, Grid, Stack, Row, Card, Tabs, Button, Select, TextInput, Loading, ErrorBox, Badge,
   useQuery, useParams, setParams, updateRecord, createRecord, linkRecords, openRecord, navigate, formatNumber
 } from '@pcrm/view'
+
+// the view scrolls itself, so the results bar can stick to the bottom
+export const frame = 'fill'
 
 // Scores an opportunity on Budget, Authority, Need and Timeline (25 points
 // each), derives PWIN from the total, and writes both to the deal.
@@ -75,6 +78,17 @@ function verdict(total) {
   return { label: 'Monitor', tone: 'muted' as const }
 }
 
+// true on a phone-width frame, where the results bar shrinks to two short lines
+function useNarrow(max = 600) {
+  const [narrow, setNarrow] = useState(() => window.innerWidth <= max)
+  useEffect(() => {
+    const update = () => setNarrow(window.innerWidth <= max)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [max])
+  return narrow
+}
+
 export default function BantCalculator() {
   const params = useParams()
   const deals = useQuery('deals')
@@ -103,6 +117,7 @@ export default function BantCalculator() {
   const questionCount = SECTIONS.flatMap((s) => s.questions).length
   const v = verdict(total)
   const creating = params.new === '1'
+  const narrow = useNarrow()
 
   async function save() {
     setSaving(true)
@@ -188,7 +203,7 @@ export default function BantCalculator() {
               </Stack>
             ) : deals.loading ? <Loading /> : deals.error ? <ErrorBox error={deals.error} /> : (
               <Row gap={8}>
-                <Select value={params.deal || ''} placeholder="Pick an open opportunity" style={{ minWidth: 320 }}
+                <Select value={params.deal || ''} placeholder="Pick an open opportunity" style={{ minWidth: 'min(320px, 100%)' }}
                   options={deals.data.map((d) => ({ value: d.id, label: d.company ? `${d.name} (${d.company})` : d.name }))}
                   onChange={(id) => setParams({ deal: id })} />
                 {deal && <Button small onClick={() => openRecord('deals', deal.id)}>Open</Button>}
@@ -197,11 +212,6 @@ export default function BantCalculator() {
             )}
           </Stack>
         </Card>
-        <Grid columns={4}>
-          <Stat label="BANT total" value={`${formatNumber(total)} / 100`} hint={`${answered} of ${questionCount} answered`} />
-          <Stat label="Derived PWIN" value={`${formatNumber(total)}%`} hint="0 unqualified, 50 qualified, 100 certain" />
-          {SECTIONS.slice(0, 2).map((s) => <Stat key={s.key} label={s.label} value={`${scores[s.key]} / 25`} />)}
-        </Grid>
         <Grid columns={2}>
           {SECTIONS.map((s) => (
             <ScoreCard key={s.key} label={s.label} color={s.color} score={scores[s.key]}>
@@ -228,22 +238,62 @@ export default function BantCalculator() {
             </ScoreCard>
           ))}
         </Grid>
-        <Card title="3. Push to the pipeline">
-          <Stack gap={10}>
-            <Row gap={8}>
-              <Badge tone={v.tone}>{v.label}</Badge>
-              <span>PWIN {formatNumber(total)}% · Budget {scores.budget}, Authority {scores.authority}, Need {scores.need}, Timeline {scores.timeline}</span>
+        <section className="v-card" style={{ position: 'sticky', bottom: 0, zIndex: 5, padding: narrow ? '8px 12px' : '12px 16px', boxShadow: '0 -6px 16px rgba(0, 0, 0, 0.12)' }}>
+          <Stack gap={narrow ? 6 : 10}>
+            {narrow ? (
+              <>
+                <Row gap={10} wrap={false} style={{ justifyContent: 'space-between' }}>
+                  <Row gap={10} wrap={false}>
+                    <span style={{ fontSize: 18, fontWeight: 700 }}>{formatNumber(total)} / 100</span>
+                    <span className="small muted">PWIN {formatNumber(total)}%</span>
+                  </Row>
+                  <Badge tone={v.tone}>{v.label}</Badge>
+                </Row>
+                <Row gap={8} wrap={false} style={{ justifyContent: 'space-between' }}>
+                  <Row gap={8} wrap={false} className="small" style={{ fontWeight: 600 }}>
+                    {SECTIONS.map((s) => <span key={s.key} title={s.label} style={{ color: s.color }}>{s.label[0]} {scores[s.key]}</span>)}
+                  </Row>
+                  <Row gap={6} wrap={false}>
+                    <Button small onClick={() => setAnswers({})} disabled={!answered}>Clear</Button>
+                    <Button small variant="primary" disabled={saving || (!creating && !deal) || answered === 0} onClick={save}>
+                      {saving ? 'Saving…' : creating ? 'Create' : 'Update'}
+                    </Button>
+                  </Row>
+                </Row>
+              </>
+            ) : (
+            <Row gap={16} style={{ justifyContent: 'space-between' }}>
+              <Row gap={16}>
+                <div>
+                  <div className="small muted">BANT total</div>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>{formatNumber(total)} / 100</div>
+                </div>
+                <div>
+                  <div className="small muted">Derived PWIN</div>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>{formatNumber(total)}%</div>
+                </div>
+                <Badge tone={v.tone}>{v.label}</Badge>
+                <Row gap={6}>
+                  {SECTIONS.map((s) => (
+                    <span key={s.key} style={{ background: `color-mix(in srgb, ${s.color} 16%, var(--page-background))`, color: s.color, fontWeight: 600, borderRadius: 999, padding: '2px 10px', fontSize: 13 }}>
+                      {s.label} {scores[s.key]}/25
+                    </span>
+                  ))}
+                </Row>
+                <span className="small muted">{answered} of {questionCount} answered</span>
+              </Row>
+              <Row gap={8}>
+                <Button onClick={() => setAnswers({})} disabled={!answered}>Clear answers</Button>
+                <Button variant="primary" disabled={saving || (!creating && !deal) || answered === 0} onClick={save}>
+                  {saving ? 'Saving…' : creating ? 'Create opportunity with this score' : 'Update the opportunity'}
+                </Button>
+              </Row>
             </Row>
+            )}
             {error && <ErrorBox error={error} />}
             {saved && <div className="small" style={{ color: 'var(--money)' }}>{saved}</div>}
-            <Row gap={8}>
-              <Button variant="primary" disabled={saving || (!creating && !deal) || answered === 0} onClick={save}>
-                {saving ? 'Saving…' : creating ? 'Create opportunity with this score' : 'Update the opportunity'}
-              </Button>
-              <Button onClick={() => setAnswers({})} disabled={!answered}>Clear answers</Button>
-            </Row>
           </Stack>
-        </Card>
+        </section>
       </Stack>
     </Page>
   )

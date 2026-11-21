@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { API_BASE, api, type Me } from '../lib/api';
 import { BrandMark } from '../components/Logo';
 import { openSignInPopup, watchSignIn } from '../lib/reauth';
+import { Loading } from '../components/Loading';
 
 // Set by the API's callback as ?auth_error=...
 const AUTH_ERRORS: Record<string, string> = {
@@ -98,7 +99,7 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) 
     }
   };
 
-  if (checking) return <div className="splash">Loading…</div>;
+  if (checking) return <div className="splash"><Loading /></div>;
 
   const hasAny = config.google || config.microsoft;
 

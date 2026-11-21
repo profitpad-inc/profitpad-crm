@@ -199,7 +199,7 @@ function Home({ me, params }) {
         <Card title="Action items" subtitle="Your open tasks, and next steps due on your opportunities">
           <Stack gap={10}>
             <Row gap={6}>
-              <TextInput small value={newTask} onChange={setNewTask} placeholder="Add an action item" style={{ flex: 1, minWidth: 180 }} />
+              <TextInput small value={newTask} onChange={setNewTask} placeholder="Add an action item" style={{ flex: 1, minWidth: 'min(180px, 100%)' }} />
               <Button small variant="primary" disabled={!newTask.trim()} onClick={addTask}>Add</Button>
             </Row>
             {taskError && <ErrorBox error={taskError} />}

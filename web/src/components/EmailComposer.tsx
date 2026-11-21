@@ -9,6 +9,7 @@ import { DatePicker } from './DatePicker';
 import { Select } from './Select';
 import { confirmDialog } from './confirm';
 import './email-composer.css';
+import { Loading } from './Loading';
 
 // Writing and sending an email from a record page, from the user's own
 // mailbox or a shared one (Settings → Mailboxes). The email is saved on this
@@ -277,7 +278,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
       onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } }}>
       <div className="ec-row">
         <span className="ec-label">From</span>
-        {senders === null ? <span className="muted small">Loading your mailboxes…</span>
+        {senders === null ? <Loading inline className="muted small" label="Loading your mailboxes…" />
           : senders.length === 0 ? <span className="muted small">No mailbox is set up for you. An admin can set one up in Settings → Mailboxes.</span>
           : (
             <Select className="ec-from" aria-label="From" value={`${senderKey}|${from}`} options={fromOptions}

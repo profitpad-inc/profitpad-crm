@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { loadTemplateChoices, templateOptions, type TemplateChoice } from '../lib/templates';
 import { Select } from './Select';
+import { Loading } from './Loading';
 
 // Record page card for quotes: which document template draws the quote for
 // the customer (their page and the PDF). "Default (name)" links no template,
@@ -60,7 +61,7 @@ export function QuoteTemplateCard({ quoteId, canEdit }: { quoteId: string; canEd
         <h3>Template</h3>
       </div>
       {templates === null || linked === null ? (
-        <div className="muted small">Loading…</div>
+        <Loading className="muted small" />
       ) : (
         <>
           <Select value={current} onChange={(v) => void pick(v)} options={templateOptions(templates)}

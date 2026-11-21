@@ -7,6 +7,20 @@ import { MAX_QUERIES, MAX_SOURCE, PARAM_TYPES, ROW_CAP, VIEW_MODULES, parseQueri
 // AI needs to build a custom view. The runtime it describes is
 // web/src/view-runtime (kit.tsx); keep the two in step.
 
+// The screen sizes every view is rendered at before the user gets the draft
+// link: desktop, a tablet just above the kit's 720px phone breakpoint (grids
+// still side by side, the tightest layout), a standard iPhone and a small
+// Android phone. Views must look right on phones unless the person building
+// it said otherwise. Used in the guide, render_view's description and the
+// note after each draft save.
+export const CHECK_SIZES = [
+  { name: 'desktop', width: 1280, height: 800 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'phone', width: 390, height: 844 },
+  { name: 'small phone', width: 360, height: 800 }
+] as const;
+export const CHECK_SIZES_TEXT = CHECK_SIZES.map((s) => `${s.width}x${s.height} (${s.name})`).join(', ');
+
 export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'design', 'sql', 'schema', 'properties', 'integrations', 'examples', 'document_templates'] as const;
 export type GuideTopic = (typeof GUIDE_TOPICS)[number];
 
@@ -48,7 +62,7 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 4. Write and test each query with try_view_query until it returns what you expect.
 5. create_view (new) or save_view_draft (change) with the code and queries. Both compile the code and check every query, and refuse with a precise error if something is wrong: fix it and save again. For changes, send save_view_draft edits (find and replace: [{"old_str", "new_str"}], each old_str matching exactly one place) instead of the whole source, and set_queries / remove_queries for single queries. Saves answer with a short summary, including publish_state (whether the published version is behind the draft, and by how many saves; someone may publish from the CRM while you work). get_view shows the current draft code; to find old_str without reading all of it, use get_view with search (matching lines with context) or lines [start, end].
 6. run_view_query runs a saved draft query. Then give the user the draft_url from create_view / save_view_draft (/view/?draft=1#<slug>) so they can preview it, and ask whether to publish.
-6b. render_view draws the draft in a headless browser as you and returns a screenshot and a report: element boxes (with text_cut, overflow and off_right flagged), console errors and failed queries. Check every change with it (also at width 390 for phones, and scrolled with scroll_y for sticky headers) before giving the user the draft_url, so they see a view that already looks right. It can click and type (steps found by text or CSS selector) before the screenshot, runs in the time zone of the person viewing (default: yours; pass timezone to check another), and refuses record changes and uploads (it shows real files, read as you). Outside links (openUrl, ExternalLink) open nothing; a clicked one shows its address in the report's navigations. Integration calls are refused unless you give integration_answers (canned answers, nothing sent) or call_integrations (really called); the report's integration_calls shows the data each call sent.
+6b. render_view draws the draft in a headless browser as you and returns a screenshot and a report: element boxes (with text_cut, overflow and off_right flagged), console errors and failed queries. Check every change with it before giving the user the draft_url, so they see a view that already looks right: at every size in CHECK SIZES below (topic design, Phones), and scrolled with scroll_y for sticky headers. It can click and type (steps found by text or CSS selector) before the screenshot, runs in the time zone of the person viewing (default: yours; pass timezone to check another), and refuses record changes and uploads (it shows real files, read as you). Outside links (openUrl, ExternalLink) open nothing; a clicked one shows its address in the report's navigations. Integration calls are refused unless you give integration_answers (canned answers, nothing sent) or call_integrations (really called); the report's integration_calls shows the data each call sent.
 7. After the user has opened the draft, get_view_runtime_errors lists what went wrong in their browser since the last save: crashes, uncaught errors, console errors and failed queries, with the frame width. Check it after every change the user tries; no errors listed only means nothing failed while someone had it open.
 8. publish_view only when the user says to publish. Never publish on your own, even for a small change: publishing replaces what everyone sees. Drafts never affect the published version.
 9. Give the view an icon for menus: a Lucide icon name (lucide.dev/icons) such as chart-column, set with create_view or update_view_settings. find_icons searches the names. Admins can also pick one on the view's page.
@@ -186,7 +200,7 @@ const STYLING = `# Styling
 - Money: format with formatMoney and the record's currency. Never add raw amounts in different currencies together: convert them in SQL with convert_currency (topic sql) and format the total in the base currency, or group by currency.
 - Dates: YYYY-MM-DD; datetimes YYYY-MM-DD HH:MM.
 - Empty values: "--" (Table does this). Loading and errors: always handle both.
-- Phones: Grid becomes one column below 720px; keep tables to the columns that matter.
+- Phones: every view must look right on phones unless the person building it said it is desktop only. Grid becomes one column below 720px; keep tables to the columns that matter. Rules and the sizes to check: topic design, Phones.
 - How to lay out a view and choose charts, tables and states: topic design.`;
 
 const DESIGN = `# Design
@@ -250,18 +264,24 @@ A view should look like part of the CRM and answer one job quickly. These rules 
 - Color carries meaning only (money, danger, warning, primary). No decorative colors, gradients, extra shadows, emoji as icons, or font sizes outside the kit (only Stat values are big).
 
 ## Phones
-- Grid becomes one column; keep Stat tiles to 4; tables use hideOnMobile; boards scroll sideways with 260 to 300px columns.
+Every view must look right on phones as well as on desktop, unless the person building it said it is desktop only (then say so when handing it over).
+- CHECK SIZES: render at all of ${CHECK_SIZES_TEXT} before every handover. The tablet sits just above the 720px breakpoint, where Grid columns are still side by side in little room; the small phone is the narrowest common one.
+- Grid becomes one column below 720px; keep Stat tiles to 4; tables use hideOnMobile; boards scroll sideways with 260 to 300px columns.
+- No fixed widths wider than a phone: a box's inline minWidth beats the kit's max-width: 100%, so write minWidth: 'min(320px, 100%)', not minWidth: 320. Same for width on anything that is not inside a sideways scroller.
+- Rows of buttons, filters and inputs go in Row (it wraps), never a nowrap flex row.
+- Long names in narrow spots: let them wrap, or cut them with an ellipsis (overflow hidden, text-overflow ellipsis, minWidth: 0 on the flex child).
+- On a phone nothing may push the page sideways: the only sideways scrolling is a ScrollX or a wide table you meant.
 
 ## Review before handing it over
 Render with render_view and fix what it finds before giving the user the draft_url:
-1. 1280 wide, and 390 wide (phones). Long pages: also scrolled (scroll_y), or full_page.
+1. At every CHECK SIZE: ${CHECK_SIZES_TEXT} (pass width and height). Long pages: also scrolled (scroll_y), or full_page. Tabs, panels and forms at the phone sizes too, not only the first screen.
 2. Drill-downs and tabs: with params, or click.
 2b. Anything driven by typing (search, an autocomplete): a click step with type, e.g. {selector: 'input[placeholder="Street"]', type: '51 trolley'}. For an integration, first with integration_answers shaped like the real answer (from test_integration) to check the list, then, once the admin agrees, call_integrations to check it end to end. Then click a result and render again to check what it fills in.
-3. The report has no text_cut, overflow or off_right (except a sideways scroller you meant), an empty console and no failed_queries.
+3. At every size the report has no text_cut, overflow or off_right (except a sideways scroller you meant), an empty console and no failed_queries.
 4. The numbers match what try_view_query returns.
 5. The empty state: params that match nothing.
 6. Title and subtitle still say exactly what the page covers.
-Then tell the user what the view shows, what you checked, and anything you could not check.`;
+Then tell the user what the view shows, what you checked (including the sizes), and anything you could not check.`;
 
 const SQL = `# SQL queries
 

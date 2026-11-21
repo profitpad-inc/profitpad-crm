@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
 import { MobileHeader } from '../components/MobileNav';
 import { Modal } from '../components/ui';
+import { Loading } from '../components/Loading';
 import { useAddToMenu } from '../lib/use-add-to-menu';
 import type { RecordBack } from './RecordPage';
 import { fileInfo, fileLink, formatBytes, openFile, uploadFile } from '../lib/files';
@@ -126,6 +127,8 @@ export function CustomView() {
   const [fill, setFill] = useState(false);
   const [fillHeight, setFillHeight] = useState(400);
   const [frameKey, setFrameKey] = useState(0);
+  // true until the frame has loaded the view's code and starts drawing it
+  const [starting, setStarting] = useState(true);
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
   // A view's record changes are asked about once per view: the first yes
@@ -170,6 +173,8 @@ export function CustomView() {
   }, [slug, draft, reloads]);
 
   useEffect(() => {
+    // another view opens at its top, not at the last one's scroll position
+    frameRef.current?.closest('.main')?.scrollTo({ top: 0 });
     allowWrites.current = false;
     pendingAsk.current = null;
     leavingRef.current?.resolve(false);
@@ -179,6 +184,9 @@ export function CustomView() {
   useEffect(() => {
     frameLoads.current = 0;
     setFill(false);
+    setStarting(true);
+    // the new frame reports its own height; do not keep the last view's
+    setHeight(400);
   }, [frameKey]);
 
   // The view cannot see the CRM page scroll, so tell it where it is: how much
@@ -463,11 +471,13 @@ export function CustomView() {
         });
       } else if (msg.type === 'pcrm:mode') {
         setFill(msg.fill === true);
+        setStarting(false);
       } else if (msg.type === 'pcrm:report') {
         if (Array.isArray(msg.errors)) reportErrors(msg.errors);
       } else if (msg.type === 'pcrm:height') {
         setHeight(Math.max(200, Math.min(Number(msg.height) || 0, 100_000)));
       } else if (msg.type === 'pcrm:error') {
+        setStarting(false);
         setError(`This view could not start: ${msg.message}`);
       } else if (msg.type === 'pcrm:call') {
         runCall(msg.method, Array.isArray(msg.args) ? msg.args : [], msg.id)
@@ -515,6 +525,9 @@ export function CustomView() {
         )}
         {!slug && <div className="page"><p className="muted">No view picked. Admins can see every view under <Link to="/objects/views">Views</Link>.</p></div>}
         {(error ?? menu?.error) && <div className="page"><div className="error">{error ?? menu?.error}</div></div>}
+        {slug && !error && (!view || starting) && (
+          <Loading className="view-loading muted" />
+        )}
         {view && !error && (
           <iframe
             key={frameKey}
@@ -523,7 +536,8 @@ export function CustomView() {
             title={view.name ?? view.slug}
             src={FRAME_URL}
             sandbox="allow-scripts"
-            style={{ height: fill ? fillHeight : height }}
+            // stays hidden (but running) until the view starts drawing
+            style={starting ? { height: 0, visibility: 'hidden' } : { height: fill ? fillHeight : height }}
             onLoad={() => {
               frameLoads.current += 1;
               if (frameLoads.current > 1) setError('This view tried to open another page, so it was stopped.');

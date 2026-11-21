@@ -103,7 +103,7 @@ function RedStarForm({ deal, users, roadblocks, me, onDone }) {
         </Row>
         <div className="small muted">Notify</div>
         <Row gap={6}>
-          <Select small value={notify} placeholder="Add a person" style={{ minWidth: 200 }}
+          <Select small value={notify} placeholder="Add a person" style={{ minWidth: 'min(200px, 100%)' }}
             options={users.filter((u) => !notified.includes(u.id)).map((u) => ({ value: u.id, label: u.name }))}
             onChange={(v) => { setNotified((n) => [...n, v]); setNotify('') }} />
           {notified.map((uid) => (

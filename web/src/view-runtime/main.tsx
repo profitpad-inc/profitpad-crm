@@ -106,6 +106,9 @@ listen((msg) => {
 });
 
 // the page sizes the iframe to its content, so the CRM page scrolls, not the
-// frame (fill views scroll themselves and the page ignores this)
-new ResizeObserver(() => post({ type: 'pcrm:height', height: Math.ceil(document.documentElement.scrollHeight) })).observe(document.body);
+// frame (fill views scroll themselves and the page ignores this). Measured on
+// body, which is as tall as its content: the root element is never shorter
+// than the frame itself, so measuring it would let the frame grow but never
+// shrink (a short tab after a long one, or the next view after a long one).
+new ResizeObserver(() => post({ type: 'pcrm:height', height: Math.ceil(document.body.scrollHeight) })).observe(document.body);
 post({ type: 'pcrm:ready' });

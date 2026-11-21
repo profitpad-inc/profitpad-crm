@@ -849,7 +849,12 @@ export function ExternalLink({ href, children, style, className }: { href: strin
 }
 
 export function Loading({ label = 'Loading…' }: { label?: string }) {
-  return <div className="v-loading muted">{label}</div>;
+  return (
+    <div className="v-loading muted" role="status" aria-live="polite">
+      <span className="v-spinner" aria-hidden="true" />
+      {label}
+    </div>
+  );
 }
 
 export function Empty({ children = 'Nothing to show' }: { children?: ReactNode }) {

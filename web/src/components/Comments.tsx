@@ -7,6 +7,7 @@ import { RichTextBox, type RichTextBoxHandle } from './RichTextBox';
 import { MentionText } from './MentionText';
 import { confirmDialog, alertDialog } from './confirm';
 import { useLiveVersion } from '../lib/live';
+import { Loading } from './Loading';
 
 // Comments on a call, email, note, task, form submission, marketing event
 // participation or object event occurrence (native object comments, pc_0034;
@@ -97,7 +98,7 @@ export function Comments({ object, id, readOnly = false, onCount, highlight }: {
         <span>Comments{list && list.length > 0 ? ` (${list.length})` : ''}</span>
       </div>
       {error && <div className="error">{error}</div>}
-      {list === null && !error && <div className="muted small">Loading…</div>}
+      {list === null && !error && <Loading className="muted small" />}
       {list && list.length > 0 && (
         <ul className="comment-list">
           {list.map((c) => (

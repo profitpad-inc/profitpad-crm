@@ -6,6 +6,7 @@ import { FilterBuilder, describeFilterGroups, emptyGroup, filtersComplete } from
 import { EmptyState, SettingsSection } from './settings';
 import { Select } from './Select';
 import { confirmDialog } from './confirm';
+import { Loading } from './Loading';
 
 // Settings → Roles: sharing rules widen which records a role's users see (or
 // edit) beyond their own or their team's: records of one object that match
@@ -279,7 +280,7 @@ function RuleEditor({ roleId, draft, setDraft, schema, onSave }: {
       {schema ? (
         <FilterBuilder schema={schema} groups={draft.filter_groups} onChange={(filter_groups) => setDraft({ ...draft, filter_groups })} />
       ) : (
-        <p className="muted">Loading…</p>
+        <Loading className="muted" />
       )}
 
       {rows.length > 0 && (

@@ -5,6 +5,7 @@ import { api, type CrmRecord, type SearchResult } from '../lib/api';
 import { AMOUNT_PARENTS, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
 import { useApp } from '../lib/app-context';
 import { Modal } from './ui';
+import { Loading } from './Loading';
 
 // The Line items card's +: every line of a parent (deal, quote, invoice, ...)
 // in one grid, edited together and saved at once. A product line is picked by
@@ -316,7 +317,7 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
         }
       >
         <div onKeyDown={onKey}>
-          {!rows && !error && <div className="muted">Loading…</div>}
+          {!rows && !error && <Loading className="muted" />}
           {rows && (
             <div className="le-scroll">
               <div className="le-grid" role="table" aria-label="Line items" ref={gridRef} onMouseDown={() => setHl(null)} onKeyDown={(e) => e.key !== 'Tab' && setHl(null)}>

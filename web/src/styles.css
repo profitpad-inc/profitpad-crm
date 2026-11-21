@@ -119,6 +119,12 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .pad { padding: 16px; }
 .error { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); border-radius: var(--radius-sm); padding: 8px 10px; margin: 8px 0; }
 .splash { display: grid; place-items: center; height: 100%; color: var(--muted-text); }
+/* components/Loading.tsx: the app's loading indicator */
+.app-loading { display: flex; align-items: center; gap: 8px; }
+.app-loading.inline { display: inline-flex; vertical-align: middle; }
+.spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--muted-text) 25%, transparent); border-top-color: var(--muted-text); animation: spinner-spin 0.8s linear infinite; }
+@keyframes spinner-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 .push-right { margin-left: auto; }
 
 /* buttons */
@@ -705,8 +711,9 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 
 /* ---- Custom views (pages/CustomView.tsx) ---------------------------------- */
 .custom-view { display: flex; flex-direction: column; min-height: 100%; }
-.custom-view-bar { display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; }
+.custom-view-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .custom-view-bar .spacer { flex: 1; }
+@media (max-width: 767px) { .custom-view-bar { padding: 8px 12px; } }
 .custom-view-bar .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--primary) 10%, var(--page-background)); color: var(--primary); }
 .view-integrations { display: flex; flex-direction: column; gap: 10px; }
 .view-integration { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -726,6 +733,8 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .view-code.numbered.wrap .lc { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code-wrap-toggle { display: flex; align-items: center; gap: 8px; margin-right: 12px; align-self: center; white-space: nowrap; }
 .custom-view-frame { display: block; width: 100%; border: 0; background: var(--page-background); }
+.view-loading { justify-content: center; padding: 96px 20px; opacity: 0; animation: view-loading-in 200ms ease-out 150ms forwards; }
+@keyframes view-loading-in { to { opacity: 1; } }
 .view-code { margin: 0; padding: 10px 12px; max-height: 520px; overflow: auto; background: var(--surface); border-radius: var(--radius); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }
 
 /* Settings -> Properties */

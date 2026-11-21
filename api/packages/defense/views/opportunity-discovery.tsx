@@ -50,8 +50,8 @@ function Sources({ params }) {
       <Card title="Add a source">
         <Stack gap={8}>
           <Row gap={6}>
-            <TextInput small value={name} onChange={setName} placeholder="Name" style={{ minWidth: 200 }} />
-            <TextInput small value={url} onChange={setUrl} placeholder="https://" style={{ minWidth: 260 }} />
+            <TextInput small value={name} onChange={setName} placeholder="Name" style={{ minWidth: 'min(200px, 100%)' }} />
+            <TextInput small value={url} onChange={setUrl} placeholder="https://" style={{ minWidth: 'min(260px, 100%)' }} />
             <Select small value={cat} placeholder="Category" options={cats.data.map((c) => ({ value: c.api_value, label: c.label }))} onChange={setCat} />
             <Button small variant="primary" disabled={!name.trim()} onClick={add}>Add source</Button>
           </Row>
@@ -155,7 +155,7 @@ function Leads({ params, me }) {
         <Card title="New lead" subtitle="Paste the tender email or notice; push it to the pipeline once reviewed">
           <Stack gap={8}>
             <Row gap={6}>
-              <TextInput small value={name} onChange={setName} placeholder="Title" style={{ minWidth: 240 }} />
+              <TextInput small value={name} onChange={setName} placeholder="Title" style={{ minWidth: 'min(240px, 100%)' }} />
               <TextInput small value={agency} onChange={setAgency} placeholder="Agency" />
               <TextInput small value={sol} onChange={setSol} placeholder="Solicitation number" />
             </Row>

@@ -24,6 +24,7 @@ import { CustomView } from './pages/CustomView';
 import { CardScanner } from './pages/CardScanner';
 import { SignedInAsBanner } from './components/SignedInAsBanner';
 import { applyMode, getColorMode, resolveMode } from './lib/theme';
+import { Loading } from './components/Loading';
 
 // Desktop: sidebar rail on the left. Phone: bottom bar, with the full menu
 // in a hamburger drawer on the home page.
@@ -67,7 +68,7 @@ function App() {
   const [reauth, setReauth] = useState(reauthPending);
   useEffect(() => onReauthChange(() => setReauth(reauthPending())), []);
 
-  if (checking) return <div className="splash">Loading…</div>;
+  if (checking) return <div className="splash"><Loading /></div>;
   if (!me) return <Login onSignedIn={(m) => m && setMe(m)} />;
   return (
     <AppProvider me={me} onSignOut={() => setMe(null)}>

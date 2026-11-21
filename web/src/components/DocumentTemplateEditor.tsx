@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import { Select } from './Select';
 import { confirmDialog } from './confirm';
 import { CodeTextarea } from './CodeTextarea';
+import { Loading } from './Loading';
 
 // The Template card on a document template's record page (api/src/templates.ts):
 // the draft's code and data sources, editable by admins, Publish / Default /
@@ -69,7 +70,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   }, [t?.object]);
 
   if (error && !t) return <div className="card"><div className="error">{error}</div></div>;
-  if (!t) return <div className="card muted">Loading…</div>;
+  if (!t) return <div className="card muted"><Loading /></div>;
   const dirty = source !== (t.draft_source ?? '') || queries !== (t.draft_queries ?? '');
   const canEdit = me.is_admin;
 

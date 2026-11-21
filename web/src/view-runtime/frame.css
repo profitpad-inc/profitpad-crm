@@ -143,6 +143,10 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .v-scrollx-inner { width: max-content; min-width: 100%; }
 
 .v-loading, .v-empty { padding: 16px 0; text-align: center; }
+.v-loading { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.v-spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--muted-text) 25%, transparent); border-top-color: var(--muted-text); animation: v-spin 0.8s linear infinite; }
+@keyframes v-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .v-spinner { animation-duration: 2.4s; } }
 .v-error { padding: 10px 12px; border-radius: var(--radius); background: color-mix(in srgb, var(--danger) 8%, #fff); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 25%, #fff); white-space: pre-wrap; }
 
 .recharts-text { fill: var(--muted-text); }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AtSign } from 'lucide-react';
 import { api } from '../lib/api';
 import { onFrameFocus } from '../lib/frame-focus';
+import { Loading } from './Loading';
 
 // The sidebar's Mentions button: notes and comments you were tagged in (@Name),
 // with a count of the unread ones. Opening a mention marks it read; "Mark all
@@ -145,7 +146,7 @@ export function MentionsButton({ expanded }: { expanded: boolean }) {
             <span>Unread only</span>
           </label>
           {list === null ? (
-            <div className="muted small mentions-empty">Loading…</div>
+            <Loading className="muted small mentions-empty" />
           ) : list.length === 0 ? (
             <div className="muted small mentions-empty">{unreadOnly ? 'No unread mentions.' : 'When someone tags you in a note or comment with @ and your name, it shows here.'}</div>
           ) : (

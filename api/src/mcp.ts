@@ -23,7 +23,7 @@ import {
   createView, listViewErrors, listViews, loadView, parseQueries, publishView, revertDraft, runQuery, runViewQuery, saveDraft, viewOut,
   viewSummary, publishState, sourceExcerpt, type ViewRow
 } from './views.js';
-import { FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
+import { CHECK_SIZES_TEXT, FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { renderView } from './render.js';
 import {
   createTemplate, listTemplates, loadTemplate, pdfPages, publishTemplate, renderPdf, renderScreenshot, renderTemplate, requireTemplateAdmin,
@@ -380,7 +380,7 @@ const SCHEMA_SOURCE = 'mcp';
 const draftSaved = async (v: ViewRow, withCode = false) => ({
   ...(withCode ? viewOut(v) : viewSummary(v)),
   ...(await publishState(v)),
-  next_step: `Saved as a draft; the published version (if any) is unchanged. Give the user this link to preview it: ${viewOut(v).draft_url} . After they open it, get_view_runtime_errors shows anything that went wrong in their browser. Then ask whether to publish. Do not call publish_view unless they say yes.`
+  next_step: `Saved as a draft; the published version (if any) is unchanged. Before handing it over, check it with render_view at ${CHECK_SIZES_TEXT} (it must look right on phones unless the user said it is desktop only) and fix what you find. Then give the user this link to preview it: ${viewOut(v).draft_url} . After they open it, get_view_runtime_errors shows anything that went wrong in their browser. Then ask whether to publish. Do not call publish_view unless they say yes.`
 });
 
 const editsArg = z.array(z.object({ old_str: z.string(), new_str: z.string() }))
@@ -483,11 +483,11 @@ function registerAdminTools(server: McpServer, p: Principal) {
 
   server.registerTool('render_view', {
     title: 'Render custom view',
-    description: 'Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look. The browser runs in timezone (default: your user\'s zone, else the one most users have; the report says which), so formatDateTime shows what that person sees. click runs up to 8 steps in order before the screenshot, each found by visible text or CSS selector: a click (a selected row, an open panel, a tab), or with type, typing into that box key by key so onChange and debounces run (an autocomplete). Selections kept in address params can be rendered with params instead. Record changes and uploadFile are refused (listed in not_run); getFiles, getFileBlob and useFileUrl / FileImage read real files as you, and openFile is listed in navigations. openUrl and ExternalLink open nothing: the address shows in navigations. callIntegration is refused unless you give integration_answers (a canned answer per key: nothing is sent, good for checking how results look) or call_integrations (keys really called, as the view would: the workflow really runs, so confirm with the admin first, as with test_integration); integration_calls in the report lists every call with the data the view sent and how it was answered. screenshot: false returns the report only (cheaper).',
+    description: `Draws a view (the draft by default) in a headless browser as you, at a given screen size and scroll position, and returns a screenshot plus a report: the boxes of the elements on screen (tag, class, text, x, y, w, h in screenshot pixels, and issues: text_cut when text is wider than its box, overflow when content spills or scrolls, off_right past the screen edge), the console errors and failed queries of that render, and whether the frame is grow or fill. Use it after each change to check layout before asking the user to look, at each of these sizes: ${CHECK_SIZES_TEXT}. Views must look right on phones unless the user said a view is desktop only. The browser runs in timezone (default: your user's zone, else the one most users have; the report says which), so formatDateTime shows what that person sees. click runs up to 8 steps in order before the screenshot, each found by visible text or CSS selector: a click (a selected row, an open panel, a tab), or with type, typing into that box key by key so onChange and debounces run (an autocomplete). Selections kept in address params can be rendered with params instead. Record changes and uploadFile are refused (listed in not_run); getFiles, getFileBlob and useFileUrl / FileImage read real files as you, and openFile is listed in navigations. openUrl and ExternalLink open nothing: the address shows in navigations. callIntegration is refused unless you give integration_answers (a canned answer per key: nothing is sent, good for checking how results look) or call_integrations (keys really called, as the view would: the workflow really runs, so confirm with the admin first, as with test_integration); integration_calls in the report lists every call with the data the view sent and how it was answered. screenshot: false returns the report only (cheaper).`,
     inputSchema: z.object({
       view: viewArg,
-      width: z.number().int().min(320).max(2400).optional().describe('Screen width in pixels (default 1280; 390 for a phone)'),
-      height: z.number().int().min(300).max(2000).optional().describe('Screen height (default 800)'),
+      width: z.number().int().min(320).max(2400).optional().describe(`Screen width in pixels (default 1280). Check every view at each width of ${CHECK_SIZES_TEXT}`),
+      height: z.number().int().min(300).max(2000).optional().describe('Screen height (default 800); use the height that goes with each check size'),
       scroll_y: z.number().int().min(0).max(100000).optional().describe('Scroll down this many pixels before the screenshot'),
       params: z.record(z.string(), z.string()).optional().describe('Address params, as in /view/#slug?stage=won'),
       full_page: z.boolean().optional().describe('The whole page instead of one screen (grow views; at most 8000px tall)'),

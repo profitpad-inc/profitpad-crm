@@ -4,6 +4,7 @@ import { api, type SearchResult } from '../lib/api';
 import { uploadFile, type FileInfo } from '../lib/files';
 import { Menu, Modal } from './ui';
 import '../html-editor.css';
+import { Loading } from './Loading';
 
 // HTML values (text properties with display "html": email signatures, email
 // template bodies, form HTML): a sandboxed preview, and an editor with the
@@ -254,7 +255,7 @@ function FilePanel({ onPick, onCancel }: { onPick: (f: FileRow) => void; onCance
         <button className="btn small" onClick={onCancel}>Cancel</button>
       </div>
       {error ? <div className="error">{error}</div>
-        : rows === null ? <div className="muted">Loading…</div>
+        : rows === null ? <Loading className="muted" />
         : rows.length === 0 ? <div className="muted">No image files{query.trim() ? ' match that name' : ' yet. Upload one instead'}.</div>
         : (
           <ul className="html-file-list">

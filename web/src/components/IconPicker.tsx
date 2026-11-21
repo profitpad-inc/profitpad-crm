@@ -3,6 +3,7 @@ import { Modal } from './ui';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { DEFAULT_VIEW_ICON, ViewIcon, toPascal, useIcons } from '../lib/lucide-icons';
+import { Loading } from './Loading';
 
 const SHOWN = 240;
 
@@ -30,7 +31,7 @@ export function IconPicker({ value, onPick, onClose }: { value: string | null; o
     >
       <input autoFocus placeholder="Search icons, like chart, users, calendar" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: '100%' }} />
       <div className="muted small" style={{ margin: '8px 0' }}>
-        {!names.length || !set ? 'Loading icons…' : `${matches.length} icon${matches.length === 1 ? '' : 's'}${matches.length > SHOWN ? `, first ${SHOWN} shown` : ''} from Lucide`}
+        {!names.length || !set ? <Loading inline label="Loading icons…" /> : `${matches.length} icon${matches.length === 1 ? '' : 's'}${matches.length > SHOWN ? `, first ${SHOWN} shown` : ''} from Lucide`}
       </div>
       {set && (
         <div className="icon-grid">

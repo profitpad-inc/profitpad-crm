@@ -43,7 +43,7 @@ function Customers({ params }) {
   return (
     <Stack gap={12}>
       <Row gap={6}>
-        <TextInput small type="search" value={params.q || ''} debounce={300} placeholder="Search people, units, organizations" onChange={(v) => setParams({ q: v })} style={{ minWidth: 260 }} />
+        <TextInput small type="search" value={params.q || ''} debounce={300} placeholder="Search people, units, organizations" onChange={(v) => setParams({ q: v })} style={{ minWidth: 'min(260px, 100%)' }} />
         <Select small value={params.ctype || ''} placeholder="All customer types" options={[{ value: '', label: 'All customer types' }, ...types.data.map((t) => ({ value: t.api_value, label: t.label }))]} onChange={(v) => setParams({ ctype: v })} />
         <span className="small muted">{`${formatNumber(groups.length)} organizations · ${formatNumber(people)} contacts`}</span>
       </Row>

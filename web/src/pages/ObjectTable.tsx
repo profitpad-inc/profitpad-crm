@@ -19,6 +19,7 @@ import { Select } from '../components/Select';
 import '../table.css';
 import { confirmDialog } from '../components/confirm';
 import { useUrlSearch } from '../lib/use-url-search';
+import { Loading } from '../components/Loading';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -455,7 +456,7 @@ function ObjectTableFor({ object }: { object: string }) {
 
   const summary = objectByName.get(object);
   if (error && !schema) return <div className="page"><div className="error">{error}</div></div>;
-  if (!schema || !summary) return <div className="page muted">Loading…</div>;
+  if (!schema || !summary) return <div className="page muted"><Loading /></div>;
   const Icon = objectIcon(object);
   const plural = schema.label_plural.toLowerCase();
   const singular = schema.label_singular.toLowerCase();
@@ -713,7 +714,7 @@ function ObjectTableFor({ object }: { object: string }) {
           <div className="table-foot">
             <span>{data.results.length.toLocaleString()} of {data.total.toLocaleString()} shown</span>
             {loading ? (
-              <span className="table-foot-loading" role="status">Loading…</span>
+              <Loading inline className="table-foot-loading" />
             ) : (
               <button className="btn small" onClick={() => fetchPage(data.next!)}>Load more</button>
             )}

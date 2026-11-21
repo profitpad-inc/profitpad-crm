@@ -40,6 +40,7 @@ import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
+import { Loading } from '../components/Loading';
 
 interface Link_ {
   association_id: string;
@@ -1212,7 +1213,7 @@ function MentionedActivity({ object, id, highlight, quiet = false, pinned = fals
     return () => { cancelled = true; };
   }, [object, id, version]);
   if (error) return quiet ? null : <div className="error">{error}</div>;
-  if (!record) return quiet ? null : <div className="card muted small">Loading…</div>;
+  if (!record) return quiet ? null : <div className="card muted small"><Loading /></div>;
   const Icon = objectIcon(object);
   const p = record.properties;
   const title = object === 'emails' ? (p.subject as string) || 'Email' : object === 'notes' ? 'Note' : displayName(p, record.id);
@@ -1550,7 +1551,7 @@ function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string
     }
   }
 
-  if (groups === null) return <span className="muted small">Loading associations…</span>;
+  if (groups === null) return <Loading inline className="muted small" label="Loading associations…" />;
   return (
     <div className="activity-links" ref={ref}>
       <button className="activity-links-trigger" aria-expanded={open} onClick={() => setOpen((v) => !v)}>

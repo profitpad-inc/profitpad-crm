@@ -184,7 +184,7 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 ## 17. render_view: the headless browser (migration 0046 for the integration examples that ship with it)
 
-`deploy/docker-compose.yml` now has a second service, `renderer` (container `pc-renderer`, image built from `deploy/renderer/Dockerfile`: `mcr.microsoft.com/playwright:v1.64.1-noble` running `playwright run-server` on port 3000). It sits only on `renderer_net`, an internal network with no way out to the internet; the API joins it too and connects with `RENDERER_WS_URL=ws://pc-renderer:3000/` (set in the compose file). Chromium gets `shm_size: 512m` and the container `mem_limit: 1g`; the API renders at most 2 views at once.
+`deploy/docker-compose.yml` now has a second service, `renderer` (container `pc-renderer`, image built from `deploy/renderer/Dockerfile`: `mcr.microsoft.com/playwright:v1.65.1-noble` running `playwright run-server` on port 3000). It sits only on `renderer_net`, an internal network with no way out to the internet; the API joins it too and connects with `RENDERER_WS_URL=ws://pc-renderer:3000/` (set in the compose file). Chromium gets `shm_size: 512m` and the container `mem_limit: 1g`; the API renders at most 2 views at once.
 
 1. Apply `0046_integration_examples.sql` (`./db/migrate.sh`).
 2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/` (builds and starts both containers; the first renderer build pulls the Playwright base image, which is large).
@@ -193,7 +193,7 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 Document templates (migration 0075) use the same renderer: PDFs of templated quotes are printed there, and since migration 0080 every quote is drawn by a template, so the renderer must be running for any quote PDF (the customer's page still shows the quote without it; the PDF answers 503). Outside images in templates are fetched by the API, not the renderer, so the renderer keeps no internet access.
 
-Keep `playwright-core` in `api/package.json` and the renderer image on the same version: the client refuses a server of another version. Locally, `RENDERER_LOCAL=1` launches Chromium in the API process (`npx playwright-core install chromium` once), or run `npx playwright@1.64.1 run-server --port 3456` and set `RENDERER_WS_URL=ws://127.0.0.1:3456/`.
+Keep `playwright-core` in `api/package.json` and the renderer image on the same version: the client refuses a server of another version. Locally, `RENDERER_LOCAL=1` launches Chromium in the API process (`npx playwright-core install chromium` once), or run `npx playwright@1.65.1 run-server --port 3456` and set `RENDERER_WS_URL=ws://127.0.0.1:3456/`.
 
 ## 18. Object aliases (migration 0047)
 

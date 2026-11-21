@@ -6,6 +6,7 @@ import {
   DEFAULT_DARK_THEME, DEFAULT_THEME, applyMode, applyTheme, defaultDropdownColors, getColorMode, onSystemModeChange,
   resolveMode, saveColorMode, systemPrefersDark, type ColorMode, type Mode, type Theme
 } from './theme';
+import { Loading } from '../components/Loading';
 
 // the portal's two palettes (Settings, Theme)
 export interface Themes { light: Theme; dark: Theme }
@@ -146,7 +147,7 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
     api('POST', '/v1/auth/logout').catch(() => undefined).finally(onSignOut);
   }, [onSignOut]);
 
-  if (!ready) return <div className="splash">Loading…</div>;
+  if (!ready) return <div className="splash"><Loading /></div>;
   return (
     <Ctx.Provider
       value={{

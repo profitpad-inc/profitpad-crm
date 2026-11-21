@@ -506,7 +506,7 @@
       {
         "type": "section",
         "label": "Operations",
-        "icon": "settings",
+        "icon": "factory",
         "items": [
           {
             "type": "custom_view",

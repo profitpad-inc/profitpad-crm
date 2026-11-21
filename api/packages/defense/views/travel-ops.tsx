@@ -144,12 +144,12 @@ function Expenses({ params, me, expenses }) {
       <Card title="Add an expense">
         <Stack gap={8}>
           <Row gap={6}>
-            <TextInput small value={form.name} onChange={set('name')} placeholder="Description" style={{ minWidth: 220 }} />
+            <TextInput small value={form.name} onChange={set('name')} placeholder="Description" style={{ minWidth: 'min(220px, 100%)' }} />
             <TextInput small type="number" value={form.amount} onChange={set('amount')} placeholder="Amount (USD)" style={{ width: 130 }} />
             <TextInput small type="date" value={form.date} onChange={set('date')} />
             <Select small value={form.category} options={cats.data.map((c) => ({ value: c.api_value, label: c.label }))} onChange={set('category')} />
             <TextInput small value={form.vendor} onChange={set('vendor')} placeholder="Vendor" />
-            <Select small value={form.trip} placeholder="No trip" style={{ minWidth: 180 }} options={[{ value: '', label: 'No trip' }, ...trips.data.map((t) => ({ value: t.id, label: t.name }))]} onChange={set('trip')} />
+            <Select small value={form.trip} placeholder="No trip" style={{ minWidth: 'min(180px, 100%)' }} options={[{ value: '', label: 'No trip' }, ...trips.data.map((t) => ({ value: t.id, label: t.name }))]} onChange={set('trip')} />
           </Row>
           <Row gap={12} align="flex-start">
             {receipt ? (

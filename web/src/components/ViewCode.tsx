@@ -7,6 +7,7 @@ import { ViewIcon } from '../lib/lucide-icons';
 import { useAddToMenu } from '../lib/use-add-to-menu';
 import { useViewIconPicker } from './IconPicker';
 import { confirmDialog } from './confirm';
+import { Loading } from './Loading';
 
 interface ViewCodeOut {
   id: string;
@@ -84,7 +85,7 @@ function ViewIntegrations({ source }: { source: string | null }) {
   }, []);
   const { keys, dynamic } = integrationKeys(source);
   if (error) return <div className="error">{error}</div>;
-  if (!all) return <p className="muted">Loading…</p>;
+  if (!all) return <Loading className="muted" />;
   if (keys.length === 0 && dynamic === 0) return <p className="muted">This view sends nothing to integrations.</p>;
   const byKey = new Map(all.map((i) => [i.key, i]));
   return (
@@ -179,7 +180,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   }
 
   if (error && !code) return <div className="card"><div className="error">{error}</div></div>;
-  if (!code) return <div className="card muted">Loading…</div>;
+  if (!code) return <div className="card muted"><Loading /></div>;
   const source = which === 'draft' ? code.draft_source : code.source;
   const queries = which === 'draft' ? code.draft_queries : code.queries;
   return (

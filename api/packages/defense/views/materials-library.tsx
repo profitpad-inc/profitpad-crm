@@ -56,7 +56,7 @@ function Library({ which, params, me }) {
         <Card title="Upload">
           <Stack gap={8}>
             <Row gap={6}>
-              <TextInput small value={name} onChange={setName} placeholder="Title (default: the file name)" style={{ minWidth: 200 }} />
+              <TextInput small value={name} onChange={setName} placeholder="Title (default: the file name)" style={{ minWidth: 'min(200px, 100%)' }} />
               <Select small value={type} placeholder="Type" options={types} onChange={setType} />
               <Select small value={folder} placeholder="Folder" options={folders} onChange={setFolder} />
             </Row>

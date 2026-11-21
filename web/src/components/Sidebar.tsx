@@ -33,8 +33,17 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [flyout, setFlyout] = useState<Flyout | null>(null);
   const moreOpen = flyout?.key === 'more';
-  const toggleFlyout = (key: string, el: HTMLElement) =>
-    setFlyout((f) => (f?.key === key ? null : { key, top: el.getBoundingClientRect().top }));
+  // On the rail, hovering a section or More opens its flyout (switching from
+  // another one), like hovering the groups inside More; a click opens it too
+  // (touch, keyboard) and never closes it, since hover already opened it. In
+  // the phone drawer a tap toggles the inline list.
+  const openFlyout = (key: string, el: HTMLElement) =>
+    setFlyout((f) => (f?.key === key ? f : { key, top: el.getBoundingClientRect().top }));
+  const toggleFlyout = (key: string, el: HTMLElement) => {
+    if (!drawer) openFlyout(key, el);
+    else setFlyout((f) => (f?.key === key ? null : { key, top: 0 }));
+  };
+  const hoverFlyout = (key: string) => (drawer ? undefined : (e: React.MouseEvent<HTMLElement>) => openFlyout(key, e.currentTarget));
   const closeFlyout = () => setFlyout(null);
   const location = useLocation();
 
@@ -70,8 +79,10 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
           <button
             className={`nav-item${open || holdsActive ? ' active' : ''}`}
             onClick={(e) => toggleFlyout(key, e.currentTarget)}
+            onMouseEnter={hoverFlyout(key)}
             title={expanded ? undefined : item.label}
             aria-expanded={open}
+            data-flyout-toggle
           >
             <ViewIcon icon={item.icon} fallback={Folder} size={20} strokeWidth={1.75} />
             {expanded && (
@@ -114,7 +125,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         )}
         <div className="sidebar-items">
           {nav.map((item, i) => renderItem(item, String(i)))}
-          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} title={expanded ? undefined : 'More'} aria-expanded={moreOpen}>
+          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} onMouseEnter={hoverFlyout('more')} title={expanded ? undefined : 'More'} aria-expanded={moreOpen} data-flyout-toggle>
             <Ellipsis size={20} strokeWidth={1.75} />
             {expanded && (
               <>
@@ -188,11 +199,12 @@ function InlineMore({ objects }: { objects: string[] }) {
   );
 }
 
-// Closes a flyout on a click outside it and the sidebar, Escape, or focus moving into a view's frame.
+// Closes a flyout on a click outside it (anywhere in the sidebar too, except the
+// More and section buttons, which open it themselves), Escape, or focus moving into a view's frame.
 function useFlyoutClose(ref: RefObject<HTMLDivElement | null>, onClose: () => void) {
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node) && !(e.target as HTMLElement).closest('.sidebar')) onClose();
+      if (ref.current && !ref.current.contains(e.target as Node) && !(e.target as HTMLElement).closest('[data-flyout-toggle]')) onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('mousedown', onDown);

@@ -41,7 +41,7 @@ export default function TradeShowFollowUp() {
   return (
     <Page title="Trade show follow-up" subtitle="People met at events, from the card scanner's trade show mode"
       actions={<Row gap={6}>
-        <Select small value={params.event || ''} placeholder="All events" style={{ minWidth: 220 }}
+        <Select small value={params.event || ''} placeholder="All events" style={{ minWidth: 'min(220px, 100%)' }}
           options={[{ value: '', label: 'All events' }, ...events.data.map((e) => ({ value: e.id, label: `${e.name}${e.start_at ? ` (${formatDate(e.start_at)})` : ''}` }))]}
           onChange={(v) => setParams({ event: v })} />
         <Button small variant="primary" onClick={() => navigate('/scan')}>Scan a card</Button>
