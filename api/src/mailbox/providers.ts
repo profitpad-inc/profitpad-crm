@@ -20,6 +20,26 @@ export const MICROSOFT_PERMISSIONS = ['Mail.Send', 'User.Read.All'];
 // token of its own, so sending keeps working where the admin has not added it.
 export const GOOGLE_READ_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 export const MICROSOFT_READ_PERMISSIONS = ['Mail.Read'];
+// Calendars connected through the service account (calendar/service.ts) and
+// Meet recordings and transcripts (calendar/media.ts), each with a token of
+// its own like reading. Microsoft's app token carries every application
+// permission the app was given.
+export const GOOGLE_CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.freebusy',
+  'https://www.googleapis.com/auth/calendar.calendarlist.readonly'
+];
+export const GOOGLE_MEET_SCOPES = ['https://www.googleapis.com/auth/meetings.space.readonly'];
+export const MICROSOFT_CALENDAR_PERMISSIONS = ['Calendars.ReadWrite'];
+export const MICROSOFT_MEETING_PERMISSIONS = ['OnlineMeetings.Read.All', 'OnlineMeetingTranscript.Read.All'];
+
+export type TokenPurpose = 'send' | 'read' | 'calendar' | 'meet';
+const GOOGLE_PURPOSE_SCOPES: Record<TokenPurpose, string[]> = {
+  send: GOOGLE_SCOPES,
+  read: GOOGLE_READ_SCOPES,
+  calendar: GOOGLE_CALENDAR_SCOPES,
+  meet: GOOGLE_MEET_SCOPES
+};
 
 const googleTokenUrl = () => process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
 const gmailUrl = () => (process.env.GMAIL_API_URL ?? 'https://gmail.googleapis.com').replace(/\/$/, '');
@@ -43,6 +63,8 @@ export interface ProviderRow {
   autolog_default: 'all' | 'replies' | 'off';
   autolog_exclude: string[];
   autolog_interval_min: number;
+  // calendars connected for everyone (0108, calendar/service.ts)
+  calendar_enabled: boolean;
   status: 'unchecked' | 'ok' | 'error';
   last_error: string | null;
   last_checked_at: Date | null;
@@ -135,7 +157,7 @@ export function forgetProvider(): void {
 
 const fingerprint = (b: Buffer | null) => createHash('sha256').update(b ?? Buffer.alloc(0)).digest('hex').slice(0, 16);
 
-async function tokenRequest(url: string, body: URLSearchParams, provider: MailProvider, read = false): Promise<{ token: string; expires: number }> {
+async function tokenRequest(url: string, body: URLSearchParams, provider: MailProvider, purpose: TokenPurpose = 'send'): Promise<{ token: string; expires: number }> {
   let res: Response;
   try {
     res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body, signal: AbortSignal.timeout(20_000) });
@@ -145,8 +167,9 @@ async function tokenRequest(url: string, body: URLSearchParams, provider: MailPr
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
   if (!res.ok || !data.access_token) {
     if (res.status >= 500 || res.status === 429) throw new MailSendError(`${provider === 'google' ? 'Google' : 'Microsoft'} sign-in is unavailable (HTTP ${res.status})`, true);
-    if (read && provider === 'google' && data.error === 'unauthorized_client') {
-      throw new MailReadDenied(`Google will not let the service account read mail: add ${GOOGLE_READ_SCOPES.join(', ')} to its client ID in Google Admin (Security, API controls, Domain-wide delegation).`);
+    if (purpose !== 'send' && provider === 'google' && data.error === 'unauthorized_client') {
+      const what = purpose === 'read' ? 'read mail' : purpose === 'calendar' ? 'reach calendars' : 'read Meet recordings and transcripts';
+      throw new MailReadDenied(`Google will not let the service account ${what}: add ${GOOGLE_PURPOSE_SCOPES[purpose].join(', ')} to its client ID in Google Admin (Security, API controls, Domain-wide delegation).`);
     }
     throw new MailAuthError(authMessage(provider, data.error, data.error_description));
   }
@@ -164,14 +187,20 @@ function authMessage(provider: MailProvider, error?: string, description?: strin
 }
 
 export async function accessToken(cfg: ProviderRow, mailbox: string, read = false): Promise<string> {
-  const id = cfg.provider === 'google' ? `google:${read ? 'read' : 'send'}:${fingerprint(cfg.google_key)}:${mailbox}` : `microsoft:${cfg.ms_tenant_id}:${cfg.ms_client_id}:${fingerprint(cfg.ms_client_secret)}`;
+  return serviceToken(cfg, mailbox, read ? 'read' : 'send');
+}
+
+// A token acting as `mailbox` for one purpose (Google: its own scopes;
+// Microsoft: the app's token, the same for every purpose).
+export async function serviceToken(cfg: ProviderRow, mailbox: string, purpose: TokenPurpose): Promise<string> {
+  const id = cfg.provider === 'google' ? `google:${purpose}:${fingerprint(cfg.google_key)}:${mailbox}` : `microsoft:${cfg.ms_tenant_id}:${cfg.ms_client_id}:${fingerprint(cfg.ms_client_secret)}`;
   const cached = tokens.get(id);
   if (cached && cached.expires > Date.now() + 60_000) return cached.token;
   let t: { token: string; expires: number };
   if (cfg.provider === 'google') {
     if (!cfg.google_key) throw new MailAuthError('Google sending is not set up');
     const key = parseGoogleKey(open(cfg.google_key));
-    t = await tokenRequest(googleTokenUrl(), new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: googleAssertion(key, mailbox, undefined, read ? GOOGLE_READ_SCOPES : GOOGLE_SCOPES) }), 'google', read);
+    t = await tokenRequest(googleTokenUrl(), new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: googleAssertion(key, mailbox, undefined, GOOGLE_PURPOSE_SCOPES[purpose]) }), 'google', purpose);
   } else {
     if (!cfg.ms_client_secret || !cfg.ms_tenant_id || !cfg.ms_client_id) throw new MailAuthError('Microsoft sending is not set up');
     t = await tokenRequest(
@@ -310,8 +339,9 @@ export interface OutgoingMessage {
   html: string;
   text: string;
   attachments: Attachment[];
-  // our own Message-ID header (Gmail only: Graph makes its own, which the
-  // mailbox sync later finds in Sent Items)
+  // our own Message-ID header (Gmail only, and Gmail may swap in its own; Graph
+  // always makes its own). Either way the mailbox sync later finds the sent
+  // copy and gives the email the Message-ID that really went out
   messageId?: string;
 }
 

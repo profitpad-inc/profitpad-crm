@@ -13,6 +13,7 @@ import {
   busyTimes, CalendarAuthError, cancelEvent, CONNECTION_COLUMNS, createEvent, deleteEvent, moveEvent, type Connection, type Interval
 } from '../calendar/providers.js';
 import { computeSlots, isTimeZone, localDate, readAvailability, type SlotRules } from '../calendar/slots.js';
+import { createZoomMeeting, deleteZoomMeeting, loadZoom, moveZoomMeeting, zoomReady } from '../calendar/zoom.js';
 
 // Meeting booker, public side (/p/book/#key). A visitor fills in the page's
 // form before the time picker (if any), picks an open time, fills in the form
@@ -173,6 +174,7 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
   if (!page.host) out.push('Pick a host.');
   else if (!(await hostConnections(db, page.host)).length) out.push(`${page.hostName ?? 'The host'} has no connected calendar (Settings → Calendars).`);
   if (!page.rules) out.push('Add a meeting length, a time zone and the available hours.');
+  if (page.locationType === 'zoom' && !zoomReady(await loadZoom())) out.push('Zoom is not connected (Settings → Meetings).');
   if (!page.formBeforeId && !page.formAfterId) out.push('Pick a form to ask before or after the time.');
   if (page.formBeforeId && page.formBeforeId === page.formAfterId) out.push('The forms before and after the time must be different.');
   const [before, after] = [await loadForm(db, page.formBeforeId), await loadForm(db, page.formAfterId)];
@@ -335,6 +337,8 @@ interface Meeting {
   calendarId: string | null;
   connectionId: string | null;
   pageId: string | null;
+  // the Zoom meeting the booking made
+  zoomId: string | null;
 }
 
 async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> {
@@ -342,6 +346,7 @@ async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> 
   const { rows } = await db.query(
     `select c.pc_0030_id as id, c.status[1] as status, c.started_at, c.ended_at, c.duration_seconds, c.owner[1] as host, c.attendee_name,
             c.meeting_url, c.calendar_provider, c.calendar_event_id, c.calendar_id, c.calendar_connection_id,
+            case when c.meeting_platform @> '{zoom}' then c.external_meeting_id end as zoom_id,
             (select a.other_record_id from crm.associations_both a
              where a.object_type_id = 'pc_0030' and a.record_id = c.pc_0030_id and a.other_object_type_id = 'pc_0054' limit 1) as page_id
      from crm.pc_0030 c where c.manage_key = $1 and c.record_status = 'active'${lock ? ' for update' : ''}`,
@@ -353,7 +358,8 @@ async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> 
   return {
     id: r.id, status: r.status, start, end: r.ended_at ? new Date(r.ended_at) : new Date(start.getTime() + (Number(r.duration_seconds) || 1800) * 1000),
     host: r.host, attendeeName: r.attendee_name, meetingUrl: r.meeting_url, provider: r.calendar_provider, eventId: r.calendar_event_id,
-    calendarId: r.calendar_id, connectionId: r.calendar_connection_id, pageId: r.page_id
+    calendarId: r.calendar_id, connectionId: r.calendar_connection_id, pageId: r.page_id,
+    zoomId: r.zoom_id ?? null
   };
 }
 
@@ -502,6 +508,7 @@ export async function bookingRoutes(app: FastifyInstance) {
     const pageUrl = typeof b.page_url === 'string' && /^https?:\/\//.test(b.page_url) ? b.page_url.slice(0, 2000) : null;
     const host = page.host!;
     let created: { conn: Connection; calendarId: string | null; id: string } | null = null;
+    let zoomMade: string | null = null;
     const manageKey = randomBytes(32).toString('base64url');
 
     try {
@@ -536,8 +543,22 @@ export async function bookingRoutes(app: FastifyInstance) {
           : page.locationType === 'teams' && conn.provider === 'microsoft' ? 'teams' : null;
         const title = `${page.name ?? 'Meeting'}: ${attendee.name ?? attendee.email}`.slice(0, 200);
         const link = manageUrl(manageKey);
+        // a Zoom meeting hosted by the host's Zoom user (their calendar address)
+        let zoom: { id: string; joinUrl: string } | null = null;
+        if (page.locationType === 'zoom') {
+          const z = await loadZoom();
+          if (!zoomReady(z) || !conn.email) throw new ApiError(503, 'this booking page is not taking bookings right now', 'unavailable');
+          try {
+            zoom = await createZoomMeeting(z, conn.email, { topic: title, agenda: `Booked through ${page.name ?? 'a booking page'}.`, start, minutes: page.rules!.durationMinutes });
+          } catch (err) {
+            req.log.warn({ err }, 'booking: Zoom meeting could not be created');
+            throw new ApiError(503, 'the meeting link could not be made, try again in a minute', 'unavailable');
+          }
+          zoomMade = zoom.id;
+        }
         const lines = [
           `Booked through ${page.name ?? 'a booking page'}.`,
+          ...(zoom ? [`Join Zoom: ${zoom.joinUrl}`] : []),
           `${attendee.name ? `${attendee.name} <${attendee.email}>` : attendee.email}`,
           ...(page.durations.length > 1 ? [`Length: ${page.rules!.durationMinutes} minutes`] : []),
           ...answers.flatMap((a) => summarize(a.form.definition, a.values).filter((x) => !x.hidden).map((x) => `${x.label}: ${x.value}`)),
@@ -553,7 +574,7 @@ export async function bookingRoutes(app: FastifyInstance) {
             start,
             end,
             attendee: { email: attendee.email!, name: attendee.name },
-            location: online ? null : page.locationDetails,
+            location: zoom ? zoom.joinUrl : online ? null : page.locationDetails,
             online,
             requestId: randomUUID()
           });
@@ -574,7 +595,9 @@ export async function bookingRoutes(app: FastifyInstance) {
           owner: host,
           attendee_name: attendee.name,
           attendee_email: attendee.email,
-          meeting_url: event.meetingUrl,
+          meeting_url: zoom?.joinUrl ?? event.meetingUrl,
+          meeting_platform: zoom ? 'zoom' : online ?? null,
+          external_meeting_id: zoom?.id ?? null,
           calendar_provider: conn.provider,
           calendar_event_id: event.id,
           calendar_id: conn.write_calendar_id,
@@ -586,7 +609,7 @@ export async function bookingRoutes(app: FastifyInstance) {
           ...(contact ? [{ object: 'contacts', id: contact }] : []),
           ...submissions.map((id) => ({ object: 'form_submissions', id }))
         ]);
-        return { meetingUrl: event.meetingUrl };
+        return { meetingUrl: zoom?.joinUrl ?? event.meetingUrl };
       });
       forgetBusy(host);
       reply.code(201);
@@ -604,6 +627,10 @@ export async function bookingRoutes(app: FastifyInstance) {
       const made = created as { conn: Connection; calendarId: string | null; id: string } | null;
       if (made) {
         await deleteEvent(made.conn, made.calendarId, made.id).catch((e) => req.log.error({ err: e, event: made.id }, 'booking: could not delete orphaned calendar event'));
+      }
+      if (zoomMade) {
+        const z = await loadZoom();
+        if (zoomReady(z)) await deleteZoomMeeting(z, zoomMade).catch((e) => req.log.error({ err: e, zoom: zoomMade }, 'booking: could not delete orphaned Zoom meeting'));
       }
       throw err;
     }
@@ -687,6 +714,10 @@ export async function bookingRoutes(app: FastifyInstance) {
       await updateRecord(client, await getObject('calls'), BOOKING_PRINCIPAL, m.id, {
         status: 'cancelled', cancelled_at: new Date().toISOString(), cancel_reason: reason
       });
+      if (m.zoomId) {
+        const z = await loadZoom();
+        if (zoomReady(z)) await deleteZoomMeeting(z, m.zoomId).catch((err) => req.log.warn({ err }, 'booking: Zoom meeting could not be deleted'));
+      }
       return m.host;
     });
     if (host) forgetBusy(host);
@@ -724,6 +755,15 @@ export async function bookingRoutes(app: FastifyInstance) {
           } catch (err) {
             req.log.warn({ err }, 'booking: calendar event could not be moved');
             throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
+          }
+        }
+        if (m.zoomId) {
+          const z = await loadZoom();
+          if (zoomReady(z)) {
+            await moveZoomMeeting(z, m.zoomId, start, page.rules!.durationMinutes).catch((err) => {
+              req.log.warn({ err }, 'booking: Zoom meeting could not be moved');
+              throw new ApiError(503, 'the meeting link could not be moved, try again in a minute', 'unavailable');
+            });
           }
         }
         await updateRecord(client, await getObject('calls'), BOOKING_PRINCIPAL, m.id, {

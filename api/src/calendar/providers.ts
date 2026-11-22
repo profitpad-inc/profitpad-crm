@@ -1,10 +1,17 @@
 import { pool } from '../db.js';
 import { open, seal } from '../secret-box.js';
+import { loadProviders, MailAuthError, providerReady, serviceToken } from '../mailbox/providers.js';
 
 // Google Calendar and Microsoft Graph calls for the meeting booker, made with
 // a connection's refresh token (auth.calendar_connections, connect.ts). Access
 // tokens are kept in memory only. A refresh token the provider no longer
 // accepts marks the connection needs_reconnect.
+//
+// Connections made through the organization's service account (via_service,
+// calendar/service.ts) have no refresh token: their tokens come from the
+// mailbox setup (Google domain-wide delegation acting as the user, Microsoft's
+// app token with /users/{address} in place of /me). A refusal there is the
+// admin's to fix, so it never marks the connection needs_reconnect.
 //
 // Base URLs can be pointed at fake servers for tests (GOOGLE_CALENDAR_API_URL,
 // MICROSOFT_GRAPH_URL, GOOGLE_TOKEN_URL, MICROSOFT_TOKEN_URL).
@@ -59,10 +66,11 @@ export interface Connection {
   write_calendar_id: string | null;
   use_for_new_events: boolean;
   status: 'active' | 'needs_reconnect' | 'disconnected';
+  via_service: boolean;
 }
 
 export const CONNECTION_COLUMNS =
-  'id::text as id, user_id, provider, email, refresh_token_enc, busy_calendar_ids, write_calendar_id, use_for_new_events, status';
+  'id::text as id, user_id, provider, email, refresh_token_enc, busy_calendar_ids, write_calendar_id, use_for_new_events, status, via_service';
 
 export interface Interval {
   start: Date;
@@ -93,6 +101,9 @@ export interface NewEvent {
 // The refresh token is refused (revoked, expired, password changed): the user
 // must connect again.
 export class CalendarAuthError extends Error {}
+// The organization's service account may not reach this calendar: an admin
+// must add the calendar scopes (Google) or Calendars.ReadWrite (Microsoft).
+export class CalendarPermissionError extends Error {}
 
 // ---- access tokens ---------------------------------------------------------------
 
@@ -106,7 +117,19 @@ async function markNeedsReconnect(conn: Connection, reason: string): Promise<voi
   );
 }
 
+async function serviceAccessToken(conn: Connection): Promise<string> {
+  const cfg = (await loadProviders()).get(conn.provider);
+  if (!providerReady(cfg) || !cfg.calendar_enabled || !conn.email) throw new CalendarPermissionError('the organization calendar connection is turned off');
+  try {
+    return await serviceToken(cfg, conn.email, 'calendar');
+  } catch (err) {
+    if (err instanceof MailAuthError) throw new CalendarPermissionError(err.message);
+    throw err;
+  }
+}
+
 export async function accessToken(conn: Connection): Promise<string> {
+  if (conn.via_service) return serviceAccessToken(conn);
   const cached = accessTokens.get(conn.id);
   if (cached && cached.expires > Date.now() + 60_000) return cached.token;
   if (conn.status !== 'active' || !conn.refresh_token_enc) throw new CalendarAuthError('calendar needs to be connected again');
@@ -153,6 +176,16 @@ async function call<T>(conn: Connection, method: string, path: string, body?: un
     headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
+  if (conn.via_service && (res.status === 401 || res.status === 403)) {
+    const data = await res.json().catch(() => ({}));
+    const err = (data as { error?: { message?: string } | string }).error;
+    const message = (typeof err === 'string' ? err : err?.message) ?? `HTTP ${res.status}`;
+    throw new CalendarPermissionError(
+      conn.provider === 'microsoft'
+        ? `Microsoft refused the app for ${conn.email}'s calendar: it needs the application permission Calendars.ReadWrite with admin consent. ${message}`
+        : `Google refused the service account for ${conn.email}'s calendar: ${message}`
+    );
+  }
   if (res.status === 401) {
     await markNeedsReconnect(conn, `${conn.provider} refused the access token`);
     throw new CalendarAuthError('calendar needs to be connected again');
@@ -168,6 +201,8 @@ async function call<T>(conn: Connection, method: string, path: string, body?: un
 }
 
 const enc = encodeURIComponent;
+// Graph: the signed-in user for their own token, the user by address for the app's token
+export const me = (conn: Connection) => (conn.via_service ? `/users/${enc(conn.email ?? '')}` : '/me');
 
 // ---- calendars -------------------------------------------------------------------
 
@@ -184,7 +219,7 @@ export async function listCalendars(conn: Connection): Promise<CalendarInfo[]> {
     }));
   }
   const data = await call<{ value?: { id: string; name?: string; isDefaultCalendar?: boolean; canEdit?: boolean }[] }>(
-    conn, 'GET', '/me/calendars?$select=id,name,isDefaultCalendar,canEdit&$top=250'
+    conn, 'GET', `${me(conn)}/calendars?$select=id,name,isDefaultCalendar,canEdit&$top=250`
   );
   return (data.value ?? []).map((c) => ({ id: c.id, name: c.name || c.id, primary: c.isDefaultCalendar === true, can_write: c.canEdit === true }));
 }
@@ -207,7 +242,7 @@ export async function busyTimes(conn: Connection, from: Date, to: Date): Promise
     }
     return out;
   }
-  const paths = conn.busy_calendar_ids.length ? conn.busy_calendar_ids.map((id) => `/me/calendars/${enc(id)}/calendarView`) : ['/me/calendar/calendarView'];
+  const paths = conn.busy_calendar_ids.length ? conn.busy_calendar_ids.map((id) => `${me(conn)}/calendars/${enc(id)}/calendarView`) : [`${me(conn)}/calendar/calendarView`];
   const out: Interval[] = [];
   for (const base of paths) {
     let next: string | null =
@@ -250,7 +285,7 @@ export async function createEvent(conn: Connection, ev: NewEvent): Promise<{ id:
     return { id: data.id, meetingUrl: data.hangoutLink ?? video ?? null };
   }
   const teams = ev.online === 'teams';
-  const path = ev.calendarId ? `/me/calendars/${enc(ev.calendarId)}/events` : '/me/events';
+  const path = ev.calendarId ? `${me(conn)}/calendars/${enc(ev.calendarId)}/events` : `${me(conn)}/events`;
   const data = await call<{ id: string; onlineMeeting?: { joinUrl?: string } | null }>(conn, 'POST', path, {
     subject: ev.title,
     body: { contentType: 'text', content: ev.description },
@@ -268,7 +303,7 @@ export async function deleteEvent(conn: Connection, calendarId: string | null, e
   if (conn.provider === 'google') {
     await call(conn, 'DELETE', `/calendars/${enc(calendarId ?? 'primary')}/events/${enc(eventId)}?sendUpdates=all`);
   } else {
-    await call(conn, 'DELETE', `/me/events/${enc(eventId)}`);
+    await call(conn, 'DELETE', `${me(conn)}/events/${enc(eventId)}`);
   }
 }
 
@@ -280,7 +315,7 @@ export async function moveEvent(conn: Connection, calendarId: string | null, eve
       end: { dateTime: end.toISOString() }
     });
   } else {
-    await call(conn, 'PATCH', `/me/events/${enc(eventId)}`, {
+    await call(conn, 'PATCH', `${me(conn)}/events/${enc(eventId)}`, {
       start: { dateTime: graphDateTime(start), timeZone: 'UTC' },
       end: { dateTime: graphDateTime(end), timeZone: 'UTC' }
     });
@@ -293,8 +328,193 @@ export async function cancelEvent(conn: Connection, calendarId: string | null, e
   if (conn.provider === 'google') {
     await call(conn, 'DELETE', `/calendars/${enc(calendarId ?? 'primary')}/events/${enc(eventId)}?sendUpdates=all`);
   } else {
-    await call(conn, 'POST', `/me/events/${enc(eventId)}/cancel`, { comment: reason ?? '' });
+    await call(conn, 'POST', `${me(conn)}/events/${enc(eventId)}/cancel`, { comment: reason ?? '' });
   }
+}
+
+// ---- reading events (meetings with contacts, calendar/meetings.ts) -------------------
+
+export interface EventPerson {
+  email: string;
+  name: string | null;
+  // accepted, declined, tentative, needsAction / none
+  response: string | null;
+}
+
+export interface CalendarEvent {
+  // the provider's id on this calendar
+  id: string;
+  // the same on every calendar the meeting is on: iCalendar UID, plus the
+  // original start for one meeting of a series
+  key: string;
+  cancelled: boolean;
+  title: string;
+  description: string;
+  location: string | null;
+  // null for all-day events
+  start: Date | null;
+  end: Date | null;
+  organizer: string | null;
+  attendees: EventPerson[];
+  // the calendar's owner declined it
+  selfDeclined: boolean;
+  joinUrl: string | null;
+  updated: Date;
+}
+
+export type MeetingPlatform = 'zoom' | 'google_meet' | 'teams';
+
+const JOIN_PATTERNS: [MeetingPlatform, RegExp][] = [
+  ['zoom', /https:\/\/(?:[a-z0-9-]+\.)?zoom\.us\/(?:j|my|w)\/[^\s<>"')\]]+/i],
+  ['google_meet', /https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}\b/i],
+  ['teams', /https:\/\/teams\.(?:microsoft|live)\.com\/(?:l\/meetup-join|meet)\/[^\s<>"')\]]+/i]
+];
+
+// The platform of a join link, or null for anything else.
+export function platformOf(url: string | null | undefined): MeetingPlatform | null {
+  if (!url) return null;
+  for (const [p, re] of JOIN_PATTERNS) if (re.test(url)) return p;
+  return null;
+}
+
+// The first Zoom, Meet or Teams link in some text (location, description).
+export function findJoinUrl(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    if (!t) continue;
+    for (const [, re] of JOIN_PATTERNS) {
+      const m = t.match(re);
+      if (m) return m[0].replace(/[.,;]+$/, '');
+    }
+  }
+  return null;
+}
+
+const isoKey = (d: string | undefined | null) => {
+  if (!d) return '';
+  const t = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(d) || d.length === 10 ? d : `${d}Z`);
+  return Number.isNaN(t.getTime()) ? d : t.toISOString();
+};
+
+interface GoogleEvent {
+  id: string;
+  iCalUID?: string;
+  status?: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+  organizer?: { email?: string };
+  attendees?: { email?: string; displayName?: string; responseStatus?: string; self?: boolean; resource?: boolean }[];
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
+  recurringEventId?: string;
+  originalStartTime?: { dateTime?: string; date?: string };
+  updated?: string;
+}
+
+export function googleEvent(e: GoogleEvent, owner: string | null): CalendarEvent {
+  const original = e.recurringEventId ? isoKey(e.originalStartTime?.dateTime ?? e.originalStartTime?.date) : '';
+  const people = (e.attendees ?? []).filter((a) => a.email && !a.resource);
+  const self = people.find((a) => a.self || (owner && a.email!.toLowerCase() === owner));
+  const video = e.conferenceData?.entryPoints?.find((x) => x.entryPointType === 'video')?.uri;
+  return {
+    id: e.id,
+    key: `${e.iCalUID ?? e.id}${original ? `#${original}` : ''}`,
+    cancelled: e.status === 'cancelled',
+    title: e.summary ?? '',
+    description: e.description ?? '',
+    location: e.location ?? null,
+    start: e.start?.dateTime ? new Date(e.start.dateTime) : null,
+    end: e.end?.dateTime ? new Date(e.end.dateTime) : null,
+    organizer: e.organizer?.email?.toLowerCase() ?? null,
+    attendees: people.map((a) => ({ email: a.email!.toLowerCase(), name: a.displayName ?? null, response: a.responseStatus ?? null })),
+    selfDeclined: self?.responseStatus === 'declined',
+    joinUrl: e.hangoutLink ?? video ?? findJoinUrl(e.location, e.description),
+    updated: new Date(e.updated ?? Date.now())
+  };
+}
+
+interface GraphEvent {
+  id: string;
+  iCalUId?: string;
+  subject?: string;
+  body?: { content?: string };
+  location?: { displayName?: string };
+  start?: { dateTime: string };
+  end?: { dateTime: string };
+  isAllDay?: boolean;
+  isCancelled?: boolean;
+  organizer?: { emailAddress?: { address?: string } };
+  attendees?: { type?: string; emailAddress?: { address?: string; name?: string }; status?: { response?: string } }[];
+  responseStatus?: { response?: string };
+  onlineMeeting?: { joinUrl?: string } | null;
+  onlineMeetingUrl?: string | null;
+  type?: string;
+  originalStart?: string | null;
+  lastModifiedDateTime?: string;
+}
+
+export function graphEvent(e: GraphEvent): CalendarEvent {
+  const recurring = e.type === 'occurrence' || e.type === 'exception';
+  const original = recurring ? isoKey(e.originalStart ?? e.start?.dateTime) : '';
+  const people = (e.attendees ?? []).filter((a) => a.type !== 'resource' && a.emailAddress?.address);
+  return {
+    id: e.id,
+    key: `${e.iCalUId ?? e.id}${original ? `#${original}` : ''}`,
+    cancelled: e.isCancelled === true,
+    title: e.subject ?? '',
+    description: e.body?.content ?? '',
+    location: e.location?.displayName || null,
+    start: e.isAllDay || !e.start ? null : graphTime(e.start.dateTime),
+    end: e.isAllDay || !e.end ? null : graphTime(e.end.dateTime),
+    organizer: e.organizer?.emailAddress?.address?.toLowerCase() ?? null,
+    attendees: people.map((a) => ({ email: a.emailAddress!.address!.toLowerCase(), name: a.emailAddress?.name ?? null, response: a.status?.response ?? null })),
+    selfDeclined: e.responseStatus?.response === 'declined',
+    joinUrl: e.onlineMeeting?.joinUrl ?? e.onlineMeetingUrl ?? findJoinUrl(e.location?.displayName, e.body?.content),
+    updated: new Date(e.lastModifiedDateTime ?? Date.now())
+  };
+}
+
+const GOOGLE_EVENT_FIELDS =
+  'nextPageToken,items(id,iCalUID,status,summary,description,location,start,end,organizer(email),attendees(email,displayName,responseStatus,self,resource),hangoutLink,conferenceData(entryPoints(entryPointType,uri)),recurringEventId,originalStartTime,updated)';
+const GRAPH_EVENT_SELECT =
+  'id,iCalUId,subject,body,location,start,end,isAllDay,isCancelled,organizer,attendees,responseStatus,onlineMeeting,onlineMeetingUrl,type,originalStart,lastModifiedDateTime';
+export const MAX_EVENTS = 2500;
+
+// Events of the connection's main calendar that end after `from` and start
+// before `to`, recurring ones as single meetings. With `changedSince` only
+// those changed since then (Google filters itself and includes cancelled
+// ones; Microsoft's calendar view cannot filter on it, so it is checked here).
+export async function listEvents(conn: Connection, from: Date, to: Date, changedSince: Date | null): Promise<CalendarEvent[]> {
+  const out: CalendarEvent[] = [];
+  if (conn.provider === 'google') {
+    let pageToken: string | undefined;
+    do {
+      const q = new URLSearchParams({ singleEvents: 'true', timeMin: from.toISOString(), timeMax: to.toISOString(), maxResults: '250', fields: GOOGLE_EVENT_FIELDS });
+      if (changedSince) {
+        q.set('updatedMin', changedSince.toISOString());
+        q.set('showDeleted', 'true');
+      }
+      if (pageToken) q.set('pageToken', pageToken);
+      const data = await call<{ items?: GoogleEvent[]; nextPageToken?: string }>(conn, 'GET', `/calendars/primary/events?${q}`);
+      for (const e of data.items ?? []) out.push(googleEvent(e, conn.email?.toLowerCase() ?? null));
+      pageToken = data.nextPageToken;
+    } while (pageToken && out.length < MAX_EVENTS);
+    return out;
+  }
+  let next: string | null =
+    `${me(conn)}/calendar/calendarView?startDateTime=${enc(from.toISOString())}&endDateTime=${enc(to.toISOString())}&$select=${GRAPH_EVENT_SELECT}&$top=250`;
+  while (next && out.length < MAX_EVENTS) {
+    const data: { value?: GraphEvent[]; '@odata.nextLink'?: string } =
+      await call(conn, 'GET', next, undefined, { prefer: 'outlook.timezone="UTC", outlook.body-content-type="text"' });
+    for (const e of data.value ?? []) {
+      const ev = graphEvent(e);
+      if (!changedSince || ev.updated >= changedSince) out.push(ev);
+    }
+    next = data['@odata.nextLink'] ?? null;
+  }
+  return out;
 }
 
 // ---- revoke ----------------------------------------------------------------------

@@ -38,7 +38,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   let locationDetails: string | null = null;
   const loadedAt = Date.now();
 
-  const LOCATION: Record<string, string> = { google_meet: 'Google Meet', teams: 'Microsoft Teams', phone: 'Phone call', in_person: 'In person' };
+  const LOCATION: Record<string, string> = { google_meet: 'Google Meet', teams: 'Microsoft Teams', zoom: 'Zoom', phone: 'Phone call', in_person: 'In person' };
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   let page: PublicBookingPage;

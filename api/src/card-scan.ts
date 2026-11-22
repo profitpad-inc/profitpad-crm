@@ -8,6 +8,7 @@ import { recordFilter, requireObjectPermission, requireRecentSignIn, requireScop
 import { getObject, getProperty, type ObjectDef } from './registry.js';
 import { assertAccessible, createRecord, drainCalcQueue, updateRecord } from './records.js';
 import { readFileBytes } from './files.js';
+import { contactIdByEmail } from './contact-emails.js';
 import { checkPhone, isRegion } from './phone.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 import { logEvent } from './audit.js';
@@ -468,8 +469,8 @@ async function save(p: Principal, b: SaveBody) {
   } else {
     requireObjectPermission(p, contacts, 'create');
     if (props.email) {
-      const { rows } = await pool.query("select pc_0010_id as id from crm.pc_0010 where lower(email) = $1 and record_status in ('active', 'archived') limit 1", [props.email]);
-      if (rows[0]) throw new ApiError(409, 'A contact with this email already exists. Update that contact instead.', 'contact_exists', { contact_id: rows[0].id });
+      const existing = await contactIdByEmail(pool, props.email as string, ['active', 'archived']);
+      if (existing) throw new ApiError(409, 'A contact with this email already exists. Update that contact instead.', 'contact_exists', { contact_id: existing });
     }
   }
 

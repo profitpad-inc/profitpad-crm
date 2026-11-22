@@ -287,6 +287,15 @@ Users send email from record pages as themselves through the organization's Goog
 4. Settings → Mailboxes → (provider) → Log emails automatically: turn Logging on, pick the default for users and how often to check. Mailboxes appear in the table within a minute; a "Needs permission" row means step 2 or 3 is missing.
 5. Not verified against a real Google Workspace or Microsoft 365 tenant yet (fake servers only). On Microsoft, the delta query's `receivedDateTime` filter and reading `internetMessageHeaders` per message are unverified with a real tenant.
 
+### 23b. Calendars for everyone, meetings with contacts, Zoom (migration 0108)
+
+1. Apply `0108_calendar_meetings.sql`, and `0110_calendar_lookback_additional_emails.sql` after the contact additional emails migration 0109 (`./db/migrate.sh`; migrations also run when the published images start), then deploy the API and UI.
+2. Google: in Google Admin, Domain-wide delegation, edit the CRM's client ID and add `https://www.googleapis.com/auth/calendar.events`, `https://www.googleapis.com/auth/calendar.freebusy` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` (keep the mail scopes). For Meet recordings and transcripts also add `https://www.googleapis.com/auth/meetings.space.readonly`.
+3. Microsoft: on the app registration, add the Microsoft Graph **Application** permission `Calendars.ReadWrite` with admin consent. For Teams transcripts also `OnlineMeetings.Read.All` and `OnlineMeetingTranscript.Read.All`, plus a Teams application access policy (`New-CsApplicationAccessPolicy` / `Grant-CsApplicationAccessPolicy`) for the organizers.
+4. Zoom (optional): in the Zoom App Marketplace, build a Server-to-Server OAuth app with the scopes `meeting:write:admin`, `user:read:admin`, `cloud_recording:read:admin` (or their granular equivalents) and activate it. Paste its account ID, client ID and secret in Settings → Meetings → Zoom, Test, turn it on.
+5. Settings → Meetings: turn on "Calendars for everyone" per provider, then "Mark meetings with contacts" (check every 3 min by default) and, if wanted, "Recordings and transcripts". The Connected calendars table shows each calendar; "Needs permission" means step 2 or 3 is missing.
+6. Not verified against real Google, Microsoft or Zoom accounts (fake servers only). Unverified with real tenants: Graph `originalStart` on occurrences, app-only Teams online meeting lookup by `JoinWebUrl`, Meet `conferenceRecords` filtering by `space.meeting_code` as a delegated non-organizer, and the exact Zoom scope names on newer (granular-scope) apps.
+
 ## 23. Email through Postmark (migration 0094)
 
 1. Apply `0094_email_postmark.sql` (`./db/migrate.sh` through the tunnel, or `./db.sh migrate` on the server) before deploying the API: the email worker starts with the API and reads the new tables.

@@ -6,6 +6,7 @@ import { ApiError, notFound } from '../errors.js';
 import { requireObjectPermission, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
 import { assertAccessible } from '../records.js';
+import { contactIdsByEmail } from '../contact-emails.js';
 import { saveFileBytes } from '../files.js';
 import { SIGNATURE_OPTIONS } from '../signature.js';
 import { MAX_BODY } from './html.js';
@@ -334,14 +335,8 @@ export function emailBody(d: MessageDetail): string {
 
 export type LogOutcome = 'logged' | 'linked' | 'adopted' | 'skipped';
 
-async function contactsOf(c: pg.PoolClient, addresses: string[]): Promise<string[]> {
-  if (!addresses.length) return [];
-  const { rows } = await c.query(
-    `select pc_0010_id as id from crm.pc_0010 where lower(email) = any ($1) and record_status = 'active' limit 100`,
-    [addresses]
-  );
-  return rows.map((r) => r.id as string);
-}
+// by primary or additional email
+const contactsOf = (c: pg.PoolClient, addresses: string[]): Promise<string[]> => contactIdsByEmail(c, addresses);
 
 async function companiesOf(c: pg.PoolClient, contacts: string[]): Promise<string[]> {
   if (!contacts.length) return [];
@@ -362,6 +357,27 @@ export async function logMessage(ctx: LogContext, m: MailMessage): Promise<LogOu
   if (ctx.mode === 'off') return 'skipped';
   const people = outsiders(ctx, m);
   if (!people) return 'skipped';
+
+  // sent from the CRM composer through Gmail: the send kept Gmail's message
+  // id. Gmail may swap our Message-ID for its own, and replies quote Gmail's,
+  // so the email takes the one Gmail actually sent
+  if (m.outbound) {
+    const own = await withTx({ actor: `user:${ctx.userId}`, source: SOURCE }, async (c) => {
+      const { rows } = await c.query(
+        `select email_id from auth.mailbox_sends where mailbox = $1 and provider_message_id = $2 and status = 'sent' limit 1`,
+        [ctx.mailbox, m.providerId]
+      );
+      if (!rows[0]) return false;
+      if (m.messageId) {
+        await c.query(
+          `update crm.pc_0031 set message_id = $2 where pc_0031_id = $1 and message_id is distinct from $2`,
+          [rows[0].email_id, m.messageId]
+        );
+      }
+      return true;
+    });
+    if (own) return 'adopted';
+  }
 
   // already in the CRM: a colleague's mailbox or the composer logged it
   if (m.messageId) {

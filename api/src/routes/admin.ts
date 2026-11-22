@@ -9,7 +9,7 @@ import {
   type Principal, type Scope, type SharingRule
 } from '../auth.js';
 import { logEvent } from '../audit.js';
-import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord } from '../records.js';
+import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord, upsertProperties } from '../records.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { compileFilterGroups, type FilterGroup, type SearchRequest } from '../search.js';
 
@@ -533,7 +533,7 @@ export async function adminRoutes(app: FastifyInstance) {
         try {
           const id = mode === 'upsert' ? await findIdByUnique(c, obj, b.id_property!, row[b.id_property!]) : null;
           if (id) {
-            await updateRecord(c, obj, p, id, row);
+            await updateRecord(c, obj, p, id, await upsertProperties(c, obj, b.id_property!, id, row));
             counts.updated++;
           } else {
             await createRecord(c, obj, p, row);

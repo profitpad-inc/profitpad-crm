@@ -17,6 +17,8 @@ import { allowedOrigins, publicRoutes } from './routes/public.js';
 import { phoneRoutes } from './routes/phone.js';
 import { bookingRoutes } from './routes/booking.js';
 import { calendarRoutes } from './calendar/connect.js';
+import { meetingAdminRoutes } from './calendar/admin.js';
+import { startCalendarWorker } from './calendar/meetings.js';
 import { paymentRoutes } from './routes/payments.js';
 import { oauthRoutes } from './oauth.js';
 import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
@@ -222,6 +224,7 @@ export async function buildApp() {
   await app.register(phoneRoutes);
   await app.register(bookingRoutes);
   await app.register(calendarRoutes);
+  await app.register(meetingAdminRoutes);
   await app.register(paymentRoutes);
   await app.register(oauthRoutes);
   await app.register(mcpRoutes);
@@ -269,6 +272,7 @@ const stopCurrencies = startCurrencyScheduler(app.log);
 const stopLive = startLiveListener(app.log);
 const stopMail = startMailWorker(app.log);
 const stopMailSync = startMailSyncWorker(app.log);
+const stopCalendars = startCalendarWorker(app.log);
 const stopNotificationEmails = startNotificationEmailWorker(app.log);
 const stopEmail = startEmailWorker(app.log);
 const shutdown = async () => {
@@ -279,6 +283,7 @@ const shutdown = async () => {
   stopLive();
   stopMail();
   stopMailSync();
+  stopCalendars();
   stopNotificationEmails();
   stopEmail();
   await app.close();

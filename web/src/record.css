@@ -70,6 +70,12 @@
 .prop-lock { opacity: 0.55; }
 .record-page .prop-value { font-size: 14px; line-height: 1.45; }
 .record-page .prop-value .empty-value { opacity: 0.7; }
+.record-page .additional-emails { display: flex; flex-direction: column; gap: 4px; }
+.record-page .additional-email { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.record-page .additional-email span { overflow-wrap: anywhere; }
+.record-page .additional-email .btn { visibility: hidden; flex: none; }
+.record-page .additional-email:hover .btn, .record-page .additional-email .btn:focus-visible { visibility: visible; }
+@media (hover: none) { .record-page .additional-email .btn { visibility: visible; } }
 /* the property being edited, framed like the kit's EditPanel */
 .record-page .prop-row.editing, .record-page .prop-row.editing:hover {
   background: var(--page-background); cursor: default;
@@ -667,6 +673,19 @@ a.comment-author:hover { color: var(--primary); }
 .email-thread-extra:hover { background: var(--surface); }
 
 /* Attachments of an auto-logged email, fetched from the mailbox on request */
-.email-attachments { margin: 8px 0; }
-.email-attachment-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.email-attachment-files > svg { color: var(--muted-text); }
+.email-attachments { margin: 4px 0 8px; }
+.email-attachments-label { font-size: 12px; color: var(--muted-text); margin-bottom: 6px; }
+.attachment-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.attachment-tile {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); color: inherit; font: inherit; cursor: pointer;
+}
+.attachment-tile:hover:not(:disabled) { border-color: var(--primary-line); background: var(--primary-soft); }
+.attachment-tile:disabled { cursor: default; opacity: .7; }
+.attachment-tile-icon {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 6px;
+  background: var(--surface); color: var(--muted-text);
+}
+.attachment-tile-text { display: flex; flex-direction: column; min-width: 0; }
+.attachment-tile-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-tile-meta { font-size: 12px; color: var(--muted-text); }

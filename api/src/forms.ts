@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { ApiError, badRequest } from './errors.js';
 import type { Principal } from './auth.js';
 import { getObject, type ObjectDef, type PropertyDef } from './registry.js';
-import { cleanSlug, createRecord, findIdByUnique, onWrite, updateRecord } from './records.js';
+import { cleanSlug, createRecord, findIdByUnique, onWrite, updateRecord, upsertProperties } from './records.js';
 import sanitizeHtml from 'sanitize-html';
 import { checkPhone } from './phone.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
@@ -456,7 +456,7 @@ export async function applySubmission(
     const p = props('contacts');
     contact = await findIdByUnique(client, contacts, 'email', p.email);
     if (contact) {
-      await updateRecord(client, contacts, principal, contact, p);
+      await updateRecord(client, contacts, principal, contact, await upsertProperties(client, contacts, 'email', contact, p));
     } else {
       contact = await createRecord(client, contacts, principal, p);
     }

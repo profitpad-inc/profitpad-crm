@@ -13,6 +13,8 @@ import { confirmDialog } from '../components/confirm';
 // the provider's consent screen and comes back here with ?calendar=connected
 // or ?calendar_error=<code>. Booking pages check every connected calendar for
 // busy times and add new meetings to the one marked for new meetings.
+// Calendars the organization connected through its service account
+// (via_service) show here too and cannot be disconnected by the user.
 
 interface CalendarInfo {
   id: string;
@@ -32,6 +34,10 @@ interface Connection {
   error: string | null;
   calendars: CalendarInfo[] | null;
   created_at: string;
+  // connected by the organization's service account (Settings → Meetings)
+  via_service: boolean;
+  sync_ok_at: string | null;
+  meetings_logged: number;
 }
 
 interface Config {
@@ -114,6 +120,7 @@ export function CalendarSettings() {
       title="Calendars"
       description={<>
         Booking pages offer only the times when your connected calendars are free, and add booked meetings to your calendar with the visitor invited.
+        When your organization marks meetings with contacts, events on your main calendar with a contact invited show up on that contact.
         {config && config.google_domains.length > 0 && ` Google accounts must be ${config.google_domains.join(' or ')} accounts.`}
       </>}
       actions={list && list.length > 0 ? providers : undefined}
@@ -135,6 +142,7 @@ export function CalendarSettings() {
               <div>
                 <div className="thing-title">
                   {PROVIDER[c.provider]}
+                  {c.via_service && <StatusPill tone="info">Connected by your organization</StatusPill>}
                   {c.status === 'needs_reconnect' && <StatusPill tone="warn">Needs to be connected again</StatusPill>}
                   {c.use_for_new_events && c.status === 'active' && <StatusPill tone="on">New meetings go here</StatusPill>}
                 </div>
@@ -145,8 +153,8 @@ export function CalendarSettings() {
                 {!c.use_for_new_events && c.status === 'active' && (
                   <button className="btn small" onClick={() => patch(c, { use_for_new_events: true }, 'New meetings go to this calendar')}>Use for new meetings</button>
                 )}
-                <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog('Booking pages stop checking it.', { title: `Disconnect ${PROVIDER[c.provider]}${c.email ? ` (${c.email})` : ''}?`, confirmLabel: 'Disconnect', danger: true }))
-                  && run(() => api('DELETE', `/v1/calendar/connections/${c.id}`), 'Calendar disconnected')}>Disconnect</button>
+                {!c.via_service && <button className="btn small ghost danger-text" onClick={async () => (await confirmDialog('Booking pages stop checking it.', { title: `Disconnect ${PROVIDER[c.provider]}${c.email ? ` (${c.email})` : ''}?`, confirmLabel: 'Disconnect', danger: true }))
+                  && run(() => api('DELETE', `/v1/calendar/connections/${c.id}`), 'Calendar disconnected')}>Disconnect</button>}
               </div>
             </div>
             {(c.error || c.calendars) && (

@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import sanitizeHtml from 'sanitize-html';
 import { withTx } from '../db.js';
+import { contactIdByEmail } from '../contact-emails.js';
 import { SIGNATURE_OPTIONS } from '../signature.js';
 import { EMAIL_ACTOR } from './send.js';
 import { loadEmailSettings, fromHeader } from './settings.js';
@@ -59,14 +60,8 @@ async function linked(c: pg.PoolClient, emailId: string, objectCode: string): Pr
   return rows.map((r) => r.id);
 }
 
-async function contactByEmail(c: pg.PoolClient, address: string | null): Promise<string | null> {
-  if (!address) return null;
-  const { rows } = await c.query(
-    `select pc_0010_id as id from crm.pc_0010 where lower(email) = lower($1) and record_status = 'active' order by created_at limit 1`,
-    [address]
-  );
-  return rows[0]?.id ?? null;
-}
+// by primary or additional email
+const contactByEmail = (c: pg.PoolClient, address: string | null): Promise<string | null> => contactIdByEmail(c, address);
 
 async function contactsFor(c: pg.PoolClient, email: EmailRow | null, address: string | null): Promise<string[]> {
   if (email) {

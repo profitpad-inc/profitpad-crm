@@ -3,7 +3,7 @@ import { pool, quoteIdent, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { requireObjectPermission, requireScope } from '../auth.js';
 import {
-  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, bulkUpdateRecords, canEditRecord, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite,
+  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, bulkUpdateRecords, canEditRecord, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite, upsertProperties,
   parseAssociationQuery, searchRecords, updateRecord, type AssociationSpec, type MultiMode
 } from '../records.js';
 import type { SearchRequest } from '../search.js';
@@ -186,7 +186,8 @@ export async function recordRoutes(app: FastifyInstance) {
           if (mode === 'update' && !id) throw badRequest('update inputs need an id');
           if (mode === 'upsert') id = await findIdByUnique(c, obj, id_property!, input.properties?.[id_property!]);
           if (id) {
-            await updateRecord(c, obj, p, id, input.properties ?? {});
+            const props = mode === 'upsert' ? await upsertProperties(c, obj, id_property!, id, input.properties ?? {}) : input.properties ?? {};
+            await updateRecord(c, obj, p, id, props);
             out.push({ id, action: 'updated' });
           } else {
             out.push({ id: await createRecord(c, obj, p, input.properties ?? {}), action: 'created' });

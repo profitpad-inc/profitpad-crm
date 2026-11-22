@@ -197,7 +197,8 @@ interface SendRow {
 
 const split = (s: unknown) => (typeof s === 'string' ? s.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
-// The Message-ID header a composed email goes out with (Gmail keeps ours).
+// The Message-ID header a composed email goes out with. Gmail may replace it
+// with its own; the mailbox sync then adopts Gmail's (matched by Gmail id).
 export const newMessageId = (emailId: string, from: string) =>
   `<${emailId}.${randomBytes(8).toString('hex')}@${domainOf(from) || 'crm.invalid'}>`;
 

@@ -5,6 +5,7 @@ import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode,
 import { activeProperties, getObject, getProperty, getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
 import { fromDb, isWritable, toDb } from './values.js';
+import { contactIdByEmail } from './contact-emails.js';
 
 export interface RecordOut {
   id: string;
@@ -526,6 +527,8 @@ export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, v
     throw badRequest(`id_property "${propName}" must be a unique text property`);
   }
   if (typeof value !== 'string' || value === '') throw badRequest(`missing "${prop.api_name}" value to match on`);
+  // a contact's email also matches its additional emails
+  if (obj.object_type_id === 'pc_0010' && prop.api_name === 'email') return contactIdByEmail(db, value, ['active', 'archived']);
   const ci = prop.options.case_insensitive === true;
   const col = quoteIdent(prop.api_name);
   const { rows } = await db.query(
@@ -534,6 +537,18 @@ export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, v
     [value]
   );
   return rows[0]?.id ?? null;
+}
+
+// For an upsert matched by findIdByUnique: the properties to update it with.
+// A contact matched through one of its additional emails keeps its primary
+// Email (the upsert's address is already one of its additional emails).
+export async function upsertProperties<T extends Record<string, unknown>>(db: Db, obj: ObjectDef, propName: string, id: string, props: T): Promise<T> {
+  if (obj.object_type_id !== 'pc_0010' || propName !== 'email' || typeof props.email !== 'string') return props;
+  const { rows } = await db.query('select lower(btrim(email)) as email from crm.pc_0010 where pc_0010_id = $1', [id]);
+  const primary = rows[0]?.email as string | null | undefined;
+  if (!primary || primary === props.email.trim().toLowerCase()) return props;
+  const { email: _matched, ...rest } = props;
+  return rest as T;
 }
 
 // Calculations are recomputed by a queue. Draining one batch right after a

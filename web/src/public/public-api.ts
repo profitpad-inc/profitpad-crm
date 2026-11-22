@@ -110,7 +110,7 @@ export interface PublicBookingPage {
   duration_minutes: number;
   durations: number[];
   timezone: string;
-  location_type: 'google_meet' | 'teams' | 'phone' | 'in_person' | 'custom' | null;
+  location_type: 'google_meet' | 'teams' | 'zoom' | 'phone' | 'in_person' | 'custom' | null;
   max_days_ahead: number;
   form_before: Omit<PublicForm, 'theme' | 'description'> | null;
   form_after: Omit<PublicForm, 'theme' | 'description'> | null;

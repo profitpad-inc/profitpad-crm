@@ -1,7 +1,7 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, MessagesSquare, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
-import { fileInfo } from '../lib/files';
+import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, MessagesSquare, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { fileInfo, fileLink, formatBytes, openFile } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
@@ -41,6 +41,9 @@ import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Loading, Spinner } from '../components/Loading';
+
+// a contact's additional emails, as stored ("a@x.com; b@y.com")
+const splitEmails = (s: string) => s.split(/[;,\s]+/).filter(Boolean);
 
 interface Link_ {
   association_id: string;
@@ -732,6 +735,22 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     }
   }
 
+  // contacts: an additional email becomes the primary Email, the old primary
+  // an additional one (one save, so the address never belongs to two fields)
+  const isAdditionalEmails = (p: Property) => schema.api_name === 'contacts' && p.api_name === 'additional_emails';
+  async function makePrimary(addr: string) {
+    const primary = typeof record.properties.email === 'string' ? record.properties.email : '';
+    const rest = splitEmails(String(record.properties.additional_emails ?? '')).filter((x) => x !== addr);
+    const properties = { email: addr, additional_emails: [primary, ...rest].filter(Boolean).join('; ') || null };
+    try {
+      onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties }));
+      setError(null);
+      toast(`${addr} is now the primary email`);
+    } catch (err) {
+      setError({ property: 'additional_emails', message: (err as Error).message, failed: '' });
+    }
+  }
+
   const section = (key: string, title: string, props: Property[]) => {
     const open = !closed[key];
     const Chevron = open ? ChevronDown : ChevronRight;
@@ -776,6 +795,17 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       ) : isHtml(p) && typeof record.properties[p.api_name] === 'string' && record.properties[p.api_name] ? (
         <div className="prop-value">
           <HtmlValue html={record.properties[p.api_name] as string} title={p.label} onEdit={editable(p) ? () => start(p) : undefined} />
+        </div>
+      ) : isAdditionalEmails(p) && typeof record.properties[p.api_name] === 'string' && record.properties[p.api_name] ? (
+        <div className="prop-value additional-emails">
+          {splitEmails(record.properties[p.api_name] as string).map((addr) => (
+            <div key={addr} className="additional-email">
+              <span>{addr}</span>
+              {editable(p) && editable(schema.properties.find((x) => x.api_name === 'email') ?? p) && (
+                <button className="btn small" onClick={(e) => { e.stopPropagation(); void makePrimary(addr); }}>Make primary</button>
+              )}
+            </div>
+          ))}
         </div>
       ) : (
         <div className="prop-value">{propValue(p, record.properties[p.api_name])}</div>
@@ -1553,6 +1583,9 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
   const bodyProp = props.find((x) => x.api_name === 'body');
   const isHtmlBody = /<[a-z][\s\S]*>/i.test(body);
   const bodyEditable = canEdit && !!bodyProp && isEditable(bodyProp) && !isHtmlBody && object !== 'form_submissions';
+  // an auto-logged email's attachments show as tiles under the body, in place
+  // of the line naming them that the log wrote into the body
+  const showAttachments = object === 'emails' && p.logged_via === 'autolog' && !restricted;
   const [editing, setEditing] = useState(false);
   // bumped when fetched attachments add links, so the links list reloads
   const [linksKey, setLinksKey] = useState(0);
@@ -1574,7 +1607,7 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
         <BodyEditor initial={body} mentions={object === 'notes'} placeholder={object === 'calls' ? 'Call notes…' : object === 'notes' ? 'Write a note…' : 'Notes…'}
           onSave={saveBody} onCancel={() => setEditing(false)} />
       ) : body ? (
-        isHtmlBody ? <HtmlBody html={mentionsAsText(body)} />
+        isHtmlBody ? <HtmlBody html={showAttachments ? body.replace(ATTACHMENTS_LINE, '') : mentionsAsText(body)} />
           : bodyEditable ? (
             <div className="activity-plain editable" role="button" tabIndex={0} title="Click to edit"
               onClick={() => { if (!window.getSelection()?.toString()) setEditing(true); }}
@@ -1587,6 +1620,9 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
       ) : (
         <div className="muted small">{object === 'calls' ? 'No call notes' : 'No body'}</div>
       )}
+      {showAttachments && (
+        <LoggedAttachments emailId={id} onFetched={async () => { setLinksKey((n) => n + 1); await onPageLinkChanged(); }} />
+      )}
       {fields.length > 0 && (
         <dl className="activity-fields">
           {fields.map((f) => (
@@ -1596,9 +1632,6 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
             </div>
           ))}
         </dl>
-      )}
-      {object === 'emails' && p.logged_via === 'autolog' && !restricted && (
-        <LoggedAttachments emailId={id} onFetched={async () => { setLinksKey((n) => n + 1); await onPageLinkChanged(); }} />
       )}
       {COMMENT_TARGETS.includes(object) && (
         <Comments object={object} id={id} readOnly={record.record_status === 'archived'} onCount={onCommentCount} highlight={highlightComment} />
@@ -1612,9 +1645,14 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
   );
 }
 
-// An auto-logged email's attachments: their names, and a button that fetches
-// them from the mailbox it was logged from (only on request, once), saving
-// them as files linked to the email and its records.
+// The line the mailbox log appends to an email's body naming its attachments
+// (api/src/mailbox/sync.ts emailBody); the tiles below the body replace it.
+const ATTACHMENTS_LINE = /<p class="pc-email-attachments">[\s\S]*?<\/p>/;
+
+// An auto-logged email's attachments as tiles under its body. Once fetched
+// from the mailbox each tile opens its file; before that, a click fetches them
+// (only on request, once), saving them as files linked to the email and its
+// records, and opens the one clicked.
 interface MailboxSource {
   attachments: string[];
   fetched_at: string | null;
@@ -1625,7 +1663,7 @@ interface MailboxSource {
 function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched: () => Promise<void> }) {
   const { toast } = useApp();
   const [source, setSource] = useState<MailboxSource | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1636,39 +1674,63 @@ function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched:
   }, [emailId]);
   if (!source || (!source.attachments.length && !source.fetched_at)) return null;
 
-  async function fetchNow() {
-    setBusy(true);
+  async function open(id: string) {
     setError(null);
     try {
-      const r = await api<{ source: MailboxSource }>('POST', `/v1/emails/${emailId}/fetch-attachments`);
-      setSource(r.source);
-      toast(r.source.files.length ? `${r.source.files.length} attachment${r.source.files.length === 1 ? '' : 's'} saved` : 'No attachments found in the mailbox');
-      await onFetched();
+      await openFile(id);
     } catch (err) {
       setError((err as Error).message);
-    } finally {
-      setBusy(false);
     }
   }
 
+  // the tab opens before the fetch so pop-up blockers count it as the click's
+  async function fetchAndOpen(name: string) {
+    setBusy(name);
+    setError(null);
+    const tab = window.open('', '_blank');
+    try {
+      const r = await api<{ source: MailboxSource }>('POST', `/v1/emails/${emailId}/fetch-attachments`);
+      setSource(r.source);
+      await onFetched();
+      const file = r.source.files.find((f) => f.name === name);
+      if (file && tab) {
+        tab.opener = null;
+        tab.location.href = await fileLink(file.id);
+      } else {
+        tab?.close();
+        toast(r.source.files.length ? `${r.source.files.length} attachment${r.source.files.length === 1 ? '' : 's'} saved` : 'No attachments found in the mailbox');
+      }
+    } catch (err) {
+      tab?.close();
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const tile = (key: string, name: string, meta: string, onClick: (() => void) | null, title: string) => (
+    <button key={key} type="button" className="attachment-tile" disabled={!onClick || busy !== null} title={title}
+      onClick={onClick ?? undefined}>
+      <span className="attachment-tile-icon">{busy === name ? <Spinner /> : <FileIcon size={18} aria-hidden />}</span>
+      <span className="attachment-tile-text">
+        <span className="attachment-tile-name">{name}</span>
+        {meta && <span className="attachment-tile-meta">{meta}</span>}
+      </span>
+    </button>
+  );
+
   return (
     <div className="email-attachments">
-      {source.fetched_at ? (
-        source.files.length ? (
-          <div className="email-attachment-files">
-            <Paperclip size={14} aria-hidden />
-            {source.files.map((f) => <Link key={f.id} to={`/objects/files/${f.id}`}>{f.name ?? f.id}</Link>)}
-          </div>
-        ) : <div className="small muted">No attachments were found in the mailbox.</div>
+      <div className="email-attachments-label">Attachments in the original email</div>
+      {source.fetched_at && !source.files.length ? (
+        <div className="small muted">No attachments were found in the mailbox.</div>
       ) : (
-        <div className="email-attachment-files">
-          <Paperclip size={14} aria-hidden />
-          <span className="small muted">{source.attachments.join(', ')}</span>
-          {source.can_fetch && (
-            <button className="btn small" disabled={busy} onClick={fetchNow}>
-              {busy ? <Spinner /> : null} {busy ? 'Fetching attachments' : 'Fetch attachments'}
-            </button>
-          )}
+        <div className="attachment-tiles">
+          {source.fetched_at
+            ? source.files.map((f) => tile(f.id, f.name ?? f.id, formatBytes(f.size_bytes), () => void open(f.id), 'Open'))
+            : source.attachments.map((name, i) => tile(`${i}:${name}`, name, source.can_fetch ? 'Click to fetch' : 'Not fetched',
+              source.can_fetch ? () => void fetchAndOpen(name) : null,
+              source.can_fetch ? 'Fetch from the mailbox and open' : 'Only the mailbox owner can fetch attachments'))}
         </div>
       )}
       {error && <div className="error">{error}</div>}

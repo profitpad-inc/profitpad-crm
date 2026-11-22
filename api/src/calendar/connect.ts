@@ -6,7 +6,7 @@ import { authenticate, readCookie, requireScope, setCookie, type Principal } fro
 import { logEvent } from '../audit.js';
 import { secretBoxReady, seal } from '../secret-box.js';
 import {
-  CalendarAuthError, CONNECTION_COLUMNS, forgetAccessToken, listCalendars, PROVIDERS, providerConfigured, REQUIRED_SCOPES, revoke,
+  CalendarAuthError, CalendarPermissionError, CONNECTION_COLUMNS, forgetAccessToken, listCalendars, PROVIDERS, providerConfigured, REQUIRED_SCOPES, revoke,
   type CalendarInfo, type CalendarProvider, type Connection
 } from './providers.js';
 
@@ -210,7 +210,7 @@ export async function calendarRoutes(app: FastifyInstance) {
   app.get('/v1/calendar/connections', async (req) => {
     const userId = signedInUser(req.principal);
     const { rows } = await pool.query(
-      `select ${CONNECTION_COLUMNS}, last_error, created_at, last_used_at from auth.calendar_connections
+      `select ${CONNECTION_COLUMNS}, last_error, created_at, last_used_at, sync_ok_at, sync_error, meetings_logged from auth.calendar_connections
        where user_id = $1 and status <> 'disconnected' order by created_at`,
       [userId]
     );
@@ -222,7 +222,9 @@ export async function calendarRoutes(app: FastifyInstance) {
         try {
           calendars = await listCalendars(r);
         } catch (err) {
-          error = err instanceof CalendarAuthError ? 'Connect this calendar again.' : (err as Error).message;
+          error = err instanceof CalendarAuthError ? 'Connect this calendar again.'
+            : err instanceof CalendarPermissionError ? 'Your organization connected this calendar, but the provider is refusing access. Ask an admin to check Settings, Meetings.'
+            : (err as Error).message;
           if (err instanceof CalendarAuthError) r.status = 'needs_reconnect';
         }
       }
@@ -266,6 +268,7 @@ export async function calendarRoutes(app: FastifyInstance) {
     const userId = signedInUser(req.principal);
     requireScope(req.principal!, 'write');
     const conn = await connectionOf(userId, req.params.id);
+    if (conn.via_service) throw badRequest('this calendar was connected by your organization; an admin can turn that off in Settings, Meetings');
     await revoke(conn);
     forgetAccessToken(conn.id);
     await pool.query('delete from auth.calendar_connections where id = $1', [conn.id]);

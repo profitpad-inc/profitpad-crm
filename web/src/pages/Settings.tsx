@@ -27,9 +27,10 @@ import { CurrencySettings } from './CurrencySettings';
 import { OptionListSettings } from './OptionListSettings';
 import { AddressSettings } from './AddressSettings';
 import { EmailSettings } from './EmailSettings';
-import { ListChecks, Send } from 'lucide-react';
+import { ListChecks, Send, Video } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { MailboxSettings } from './MailboxSettings';
+import { MeetingSettings } from './MeetingSettings';
 import { NotificationEmailSettings } from './NotificationEmailSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
@@ -67,6 +68,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: 'admin', element: <IntegrationSettings /> },
     { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
     { path: 'mailboxes', label: 'Mailboxes', icon: <Mail size={16} />, gate: 'admin', element: <MailboxSettings /> },
+    { path: 'meetings', label: 'Meetings', icon: <Video size={16} />, gate: 'admin', element: <MeetingSettings /> },
     { path: 'notification-emails', label: 'Notification emails', icon: <BellRing size={16} />, gate: 'admin', element: <NotificationEmailSettings /> },
     { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> },
     { path: 'email', label: 'Email', icon: <Send size={16} />, gate: 'admin', element: <EmailSettings /> },
