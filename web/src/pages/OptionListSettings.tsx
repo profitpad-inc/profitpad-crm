@@ -55,8 +55,8 @@ function DropdownPicker({ value, onChange, taken, label }: {
       </label>
       <label className="field">
         <span>Dropdown</span>
-        <Select value={value.property} onChange={(v) => onChange({ ...value, property: v })} disabled={!value.object || !props}>
-          <option value="">{!value.object ? 'Pick an object first' : !props ? 'Loading…' : choices.length ? 'Pick a dropdown' : 'No dropdowns to link'}</option>
+        <Select value={value.property} onChange={(v) => onChange({ ...value, property: v })} disabled={!value.object || !props} loading={!!value.object && !props}>
+          <option value="">{!value.object ? 'Pick an object first' : choices.length ? 'Pick a dropdown' : 'No dropdowns to link'}</option>
           {choices.map((p) => <option key={p.api_name} value={p.api_name}>{p.label}</option>)}
         </Select>
       </label>

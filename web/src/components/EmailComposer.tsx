@@ -298,8 +298,8 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
       <div className="ec-row">
         <span className="ec-label">Subject</span>
         <input className="ec-subject" aria-label="Subject" value={subject} maxLength={900} onChange={(e) => setSubject(e.target.value)} />
-        <Select className="ec-template" aria-label="Use a template" value="" face={<><FileText size={14} /> Template</>}
-          options={[{ value: '', label: templates === null ? 'Loading…' : templates.length ? 'Choose a template' : 'No email templates' },
+        <Select className="ec-template" aria-label="Use a template" value="" face={<><FileText size={14} /> Template</>} loading={templates === null}
+          options={[{ value: '', label: templates?.length ? 'Choose a template' : 'No email templates' },
             ...(templates ?? []).map((t) => ({ value: t.id, label: String(t.properties.name ?? t.properties.subject ?? 'Untitled') }))]}
           onChange={chooseTemplate} />
       </div>

@@ -852,7 +852,7 @@ export function Loading({ label = 'Loading…' }: { label?: string }) {
   return (
     <div className="v-loading muted" role="status" aria-live="polite">
       <span className="v-spinner" aria-hidden="true" />
-      {label}
+      <span className="v-sr-only">{label}</span>
     </div>
   );
 }

@@ -12,10 +12,20 @@ import { createPortal } from 'react-dom';
 // exactly the search (any case, so "on" finds Ontario's ON) first. Keyboard: arrows, Home/End, Enter, Escape, and typing a
 // letter jumps to the next choice starting with it. onBlur fires when focus
 // leaves both the button and the open list, like a native select's blur.
+// While `loading`, the list shows the spinner instead of its choices, and so
+// does the closed button unless it has a `face`.
 
 export interface SelectOption { value: string; label: string; disabled?: boolean }
 
 const SEARCH_FROM = 11;
+
+// .spinner in the app, .v-spinner in custom views
+const spinner = (
+  <>
+    <span className="spinner v-spinner select-spinner" aria-hidden="true" />
+    <span className="sr-only v-sr-only">Loading</span>
+  </>
+);
 
 function optionsFrom(children: ReactNode): SelectOption[] {
   const out: SelectOption[] = [];
@@ -32,13 +42,16 @@ function optionsFrom(children: ReactNode): SelectOption[] {
   return out;
 }
 
-export function Select({ value: raw, onChange, options, children, id, className, style, disabled, autoFocus, onBlur, title, face, search, 'aria-label': ariaLabel }: {
+export function Select({ value: raw, onChange, options, children, id, className, style, disabled, autoFocus, onBlur, title, face, search, loading, 'aria-label': ariaLabel }: {
   value: string | number; onChange: (value: string) => void; options?: SelectOption[]; children?: ReactNode;
   id?: string; className?: string; style?: CSSProperties; disabled?: boolean; autoFocus?: boolean; onBlur?: () => void; title?: string;
   // shown on the closed button instead of the picked choice's label
   face?: ReactNode;
   // force the search box on or off (default: on for long lists)
   search?: boolean;
+  // options are still coming: show the spinner (Loading.tsx's ring, inlined so
+  // this file stays import-free for custom views)
+  loading?: boolean;
   'aria-label'?: string;
 }) {
   const value = String(raw);
@@ -52,10 +65,10 @@ export function Select({ value: raw, onChange, options, children, id, className,
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const open = rect !== null;
-  const searchable = search ?? all.length >= SEARCH_FROM;
+  const searchable = !loading && (search ?? all.length >= SEARCH_FROM);
   const q = query.trim().toLowerCase();
   const exact = q ? all.filter((o) => o.value.toLowerCase() === q) : [];
-  const shown = q ? [...exact, ...all.filter((o) => !exact.includes(o) && o.label.toLowerCase().includes(q))] : all;
+  const shown = loading ? [] : q ? [...exact, ...all.filter((o) => !exact.includes(o) && o.label.toLowerCase().includes(q))] : all;
 
   const close = () => setRect(null);
   const openList = () => {
@@ -180,7 +193,7 @@ export function Select({ value: raw, onChange, options, children, id, className,
         onKeyDown={onKey}
         onBlur={leave}
       >
-        <span className="select-face-label">{face ?? current?.label ?? value}</span>
+        <span className="select-face-label">{face ?? (loading ? spinner : current?.label ?? value)}</span>
       </button>
       {rect &&
         createPortal(
@@ -225,7 +238,8 @@ export function Select({ value: raw, onChange, options, children, id, className,
                 </button>
               ))}
             </div>
-            {shown.length === 0 && <p className="select-none">No matches</p>}
+            {loading ? <p className="select-none select-loading" role="status">{spinner}</p>
+              : shown.length === 0 && <p className="select-none">No matches</p>}
           </div>,
           document.body
         )}

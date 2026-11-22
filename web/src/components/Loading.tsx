@@ -1,4 +1,5 @@
-// The app's loading indicator: a small spinning ring and a label. Use it
+// The app's loading indicator: a spinning ring in the primary colour. The
+// label is for screen readers only, nothing is shown next to the ring. Use it
 // wherever something is still loading, in place of plain "Loading…" text.
 // (Custom views have their own copy in the view kit, view-runtime/kit.tsx.)
 
@@ -11,7 +12,7 @@ export function Loading({ label = 'Loading…', inline = false, className }: { l
   return (
     <Tag className={`app-loading${inline ? ' inline' : ''}${className ? ` ${className}` : ''}`} role="status" aria-live="polite">
       <Spinner />
-      {label}
+      <span className="sr-only">{label}</span>
     </Tag>
   );
 }
