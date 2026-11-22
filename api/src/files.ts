@@ -306,6 +306,25 @@ async function finish(id: string): Promise<string> {
   return checksum;
 }
 
+// A file made on the server from bytes it already has (attachments fetched
+// from a mailbox, mailbox/sync.ts), created as the caller. Returns its id.
+export async function saveFileBytes(p: Principal, name: string, contentType: string, bytes: Buffer): Promise<string> {
+  if (bytes.length > MAX_FILE_BYTES) throw badRequest(`${name} is larger than ${Math.floor(MAX_FILE_BYTES / 1024 ** 2)} MB`);
+  const clean = name.replace(/[\x00-\x1f]/g, ' ').trim().slice(0, 255) || 'attachment';
+  const type = CONTENT_TYPE.test(contentType.toLowerCase()) ? contentType.toLowerCase() : 'application/octet-stream';
+  const id = await withTx({ principal: p }, async (c) => {
+    const { rows } = await c.query(
+      `insert into crm.pc_0050 (name, mime_type, size_bytes, status) values ($1, $2, $3, '{uploading}') returning pc_0050_id as id`,
+      [clean, type, bytes.length]
+    );
+    return rows[0].id as string;
+  });
+  await mkdir(path.dirname(partPath(id)), { recursive: true });
+  await pipeline(Readable.from([bytes]), createWriteStream(partPath(id)));
+  await finish(id);
+  return id;
+}
+
 interface UploadBody {
   name?: unknown;
   size?: unknown;

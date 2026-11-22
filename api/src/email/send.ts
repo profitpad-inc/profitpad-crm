@@ -27,8 +27,8 @@ export async function insertEmailRecord(
   client: pg.PoolClient, f: EmailRecordFields, links: { object: string; id: string }[]
 ): Promise<string> {
   const { rows } = await client.query(
-    `insert into crm.pc_0031 (name, subject, body, from_address, to_addresses, direction, status, stream, reply_token, owner)
-     values ($1, $1, $2, $3, $4, '{outbound}', '{queued}', array[$5], $6, $7) returning pc_0031_id as id`,
+    `insert into crm.pc_0031 (name, subject, body, from_address, to_addresses, direction, status, stream, reply_token, owner, logged_via)
+     values ($1, $1, $2, $3, $4, '{outbound}', '{queued}', array[$5], $6, $7, '{postmark}') returning pc_0031_id as id`,
     [f.subject.slice(0, 500), f.body, f.from, f.to, f.stream, f.replyToken, f.ownerUserId ? [f.ownerUserId] : null]
   );
   const id = rows[0].id as string;

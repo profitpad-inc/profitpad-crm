@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, AtSign, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, History, Inbox, KeyRound, Link2, Lock, MessageSquare, MessagesSquare, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -40,7 +40,7 @@ import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
-import { Loading } from '../components/Loading';
+import { Loading, Spinner } from '../components/Loading';
 
 interface Link_ {
   association_id: string;
@@ -74,7 +74,7 @@ const DEFAULT_CARDS_FOR: Record<string, string[]> = {
 const ACTIVITY_PROPS: Record<string, string[]> = {
   calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at'],
   emails: ['name', 'subject', 'body', 'direction', 'status', 'from_address', 'to_addresses', 'cc_addresses', 'sent_at', 'scheduled_at', 'created_at',
-    'stream', 'delivered_at', 'first_opened_at', 'open_count', 'first_clicked_at', 'click_count', 'replied_at'],
+    'stream', 'delivered_at', 'first_opened_at', 'open_count', 'first_clicked_at', 'click_count', 'replied_at', 'thread_id', 'logged_via'],
   // to suggest as recipients and attachments when writing an email
   contacts: ['email'],
   files: ['size_bytes'],
@@ -106,7 +106,11 @@ function publishedUrl(object: string, r: CrmRecord): string | null {
 // Properties shown in a section of their own under the main one, per object
 const PROP_SECTIONS: Record<string, { key: string; title: string; props: string[] }[]> = {
   // notification settings (migration 0100): admins manage them here for each user
-  users: [{ key: 'notifications', title: 'Notifications', props: ['notify_mentions', 'notify_tasks'] }]
+  users: [
+    { key: 'notifications', title: 'Notifications', props: ['notify_mentions', 'notify_tasks'] },
+    // automatic email logging (migration 0106)
+    { key: 'email_logging', title: 'Email logging', props: ['email_autolog'] }
+  ]
 };
 
 // Shown elsewhere on the page (builder, answers, link and signing cards) rather than as raw values
@@ -923,6 +927,56 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const kinds = [...new Set(allItems.map((x) => (x.quoteResponse ? 'quotes' : x.object)))];
   const clearFilters = () => { setSearch(''); setKind(''); setDays(''); };
 
+  // Email threads: emails sharing thread_id (the id of the thread's first
+  // email, which has none of its own). The Emails tab groups them (or lists
+  // them, the viewer's choice, kept in localStorage); elsewhere each email
+  // says how many its thread has here.
+  const threadSizes = new Map<string, number>();
+  for (const x of allItems) if (x.object === 'emails' && !x.quoteResponse) threadSizes.set(threadOf(x.record), (threadSizes.get(threadOf(x.record)) ?? 0) + 1);
+  const [emailView, setEmailViewState] = useState<'threads' | 'list'>(() => {
+    try {
+      return localStorage.getItem('pc.emails.view') === 'list' ? 'list' : 'threads';
+    } catch {
+      return 'threads';
+    }
+  });
+  const setEmailView = (v: 'threads' | 'list') => {
+    setEmailViewState(v);
+    try {
+      localStorage.setItem('pc.emails.view', v);
+    } catch {
+      // private window: the choice lasts for this page only
+    }
+  };
+  const [openThreads, setOpenThreads] = useState<Set<string>>(new Set());
+  const grouped = tab === 'emails' && emailView === 'threads';
+  const openedEmail = opened?.object === 'emails' ? allItems.find((x) => x.object === 'emails' && x.record.id === opened.id) : undefined;
+  const openedThread = openedEmail ? threadOf(openedEmail.record) : null;
+  const threadOpen = (t: string) => openThreads.has(t) || t === openedThread;
+  const toggleThread = (t: string) => {
+    if (threadOpen(t)) {
+      setOpenThreads((s) => { const n = new Set(s); n.delete(t); return n; });
+      if (t === openedThread) go(searchFor(tab, null));
+    } else {
+      setOpenThreads((s) => new Set(s).add(t));
+    }
+  };
+  const showThread = (t: string) => {
+    setEmailView('threads');
+    setOpenThreads((s) => new Set(s).add(t));
+    go(searchFor('emails', null));
+  };
+  const threadGroups = (() => {
+    if (!grouped) return [];
+    const map = new Map<string, typeof items>();
+    for (const x of items) {
+      const k = threadOf(x.record);
+      map.set(k, [...(map.get(k) ?? []), x]);
+    }
+    // newest email first, as the stream is
+    return [...map.entries()].map(([thread, rows]) => ({ thread, rows, at: rows[0]!.at }));
+  })();
+
   // each call, email, note and task tab has its own button; the box shows on that tab only
   const composeTab = (COMPOSE_OBJECTS as readonly string[]).includes(tab) && record.record_status !== 'archived' ? tab as ComposeObject : null;
   const composing = !!composeTab && compose?.object === composeTab;
@@ -999,6 +1053,96 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
     }
   }
 
+  type StreamItem = (typeof allItems)[number];
+  const renderItem = ({ object: o, record: r, at, quoteResponse }: StreamItem) => {
+    const Icon = objectIcon(o);
+    const p = r.properties;
+    if (quoteResponse) {
+      const pending = p.status === 'pending_countersign';
+      const accepted = pending || p.status === 'accepted';
+      const verb = pending ? 'signed' : accepted ? 'accepted' : 'declined';
+      const amount = p.amount === null || p.amount === undefined || p.amount === '' ? null
+        : Number(p.amount).toLocaleString(undefined, { style: 'currency', currency: typeof p.currency === 'string' && p.currency ? p.currency : 'USD' });
+      return (
+        <Link key={`quote-response-${r.id}`} to={`/objects/quotes/${r.id}`} className="activity-item">
+          <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={15} strokeWidth={1.75} /></span>
+          <div className="activity-body">
+            <div className="activity-head">
+              <strong>Quote {verb}</strong>
+              {amount && <span className={accepted ? 'money push-right' : 'num push-right muted'}>{amount}</span>}
+              <time className="ledger-time" dateTime={at}>{timeOf(at)}</time>
+            </div>
+            <div className="activity-text">
+              {recordName(r)} {verb} by {String(p.responder_name ?? 'the customer')}
+              {p.responder_email ? ` (${String(p.responder_email)})` : ''}
+            </div>
+            {pending ? <div className="small muted">Awaiting countersignature</div> : null}
+            {!pending && accepted && p.countersigner_name ? <div className="small muted">Countersigned by {String(p.countersigner_name)}</div> : null}
+            {!accepted && p.decline_reason ? <div className="small muted">Reason: {String(p.decline_reason)}</div> : null}
+          </div>
+        </Link>
+      );
+    }
+    const title = o === 'emails' ? (p.subject as string) || 'Email' : o === 'notes' ? 'Note' : displayName(p, r.id);
+    const body = plain(o === 'tasks' ? p.body : p.body);
+    const key = `${o}-${r.id}`;
+    const open = openedKey === key;
+    const toggle = () => go(open ? searchFor(tab, null) : searchFor(tab, o, r.id));
+    return (
+      // collapsed, the whole entry opens it (unless text is being selected); open, only the head closes it
+      <div key={key} id={`activity-${key}`} className={`activity-item${open ? ' open' : ''}`}
+        onClick={open ? undefined : () => { if (!window.getSelection()?.toString()) toggle(); }}>
+        <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
+        <div className="activity-body">
+          <div className="activity-head">
+            <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); toggle(); }}>
+              <ChevronRight size={14} className="activity-chevron" aria-hidden="true" />
+              <strong>{title}</strong>
+            </button>
+            {open ? (
+              <span className="activity-actions push-right">
+                {o === 'emails' && p.logged_via === 'autolog' && (threadSizes.get(threadOf(r)) ?? 0) <= 1 && <ThreadIgnoreButton threadId={threadOf(r)} />}
+                <button className="btn small" onClick={() => copyLink(o, r.id)}><Link2 size={14} /> Copy link</button>
+                <Link className="btn small" to={`/objects/${o}/${r.id}`} aria-label={`Open ${(objectByName.get(o)?.label_singular ?? o).toLowerCase()}`}>
+                  <span className="btn-label">Open</span> <ArrowRight size={14} />
+                </Link>
+              </span>
+            ) : (
+              <span className="activity-kind push-right">
+                {o === 'emails' && !grouped && (threadSizes.get(threadOf(r)) ?? 0) > 1 && (
+                  <button type="button" className="email-thread-tag" title="Show the whole thread"
+                    onClick={(e) => { e.stopPropagation(); showThread(threadOf(r)); }}>
+                    <MessagesSquare size={12} strokeWidth={1.75} aria-hidden /> Thread ({threadSizes.get(threadOf(r))})
+                  </button>
+                )}
+                {o === 'emails' && p.logged_via === 'autolog' && <span className="email-autolog-tag">Auto-logged</span>}
+                {(commentCounts[key] ?? 0) > 0 && (
+                  <span className="activity-comment-count" title={`${commentCounts[key]} comment${commentCounts[key] === 1 ? '' : 's'}`}>
+                    <MessageSquare size={12} strokeWidth={1.75} aria-hidden /> {commentCounts[key]}
+                  </span>
+                )}
+                {' '}{objectByName.get(o)?.label_singular}
+              </span>
+            )}
+            {at && <time className="ledger-time" dateTime={at}>{open ? when(at) : timeOf(at)}</time>}
+          </div>
+          {open ? (
+            <ActivityExpanded object={o} id={r.id} initial={r} page={{ object, id }} onPageLinkChanged={onChanged}
+              onCommentCount={(n) => setCommentCounts((m) => ({ ...m, [key]: n }))} highlightComment={params.get('comment')} />
+          ) : (
+            <>
+              {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
+              {o === 'emails' && EMAIL_SEND_STATES.includes(String(p.status)) && <EmailSendState emailId={r.id} status={String(p.status)} scheduledAt={p.scheduled_at as string | null} onChanged={onChanged} />}
+              {body && <div className="activity-text"><MentionText text={body.length > 400 ? `${body.slice(0, 400)}…` : body} /></div>}
+              {o === 'form_submissions' && <Answers record={r} limit={6} />}
+              {o === 'emails' && <EmailTracking p={p} />}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="activity">
       <div className="tabs">
@@ -1047,6 +1191,12 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                 <option value="365">Last 12 months</option>
               </Select>
               {filtered && <button className="btn small" onClick={clearFilters}>Clear</button>}
+              {tab === 'emails' && (
+                <div className="segmented" role="group" aria-label="Show emails">
+                  <button type="button" aria-pressed={emailView === 'threads'} onClick={() => setEmailView('threads')}>Threads</button>
+                  <button type="button" aria-pressed={emailView === 'list'} onClick={() => setEmailView('list')}>List</button>
+                </div>
+              )}
               {createButton}
             </div>
           )}
@@ -1070,92 +1220,140 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                 : `${objectByName.get(tab)?.label_plural} linked to this ${schema.label_singular.toLowerCase()} show here.`}
             </EmptyState>
           )}
-          {byDay(items, (x) => x.at).map(({ day, rows }) => (
+          {grouped ? byDay(threadGroups, (g) => g.at).map(({ day, rows }) => (
             <LedgerDay key={day} day={day}>
-          {rows.map(({ object: o, record: r, at, quoteResponse }) => {
-            const Icon = objectIcon(o);
-            const p = r.properties;
-            if (quoteResponse) {
-              const pending = p.status === 'pending_countersign';
-              const accepted = pending || p.status === 'accepted';
-              const verb = pending ? 'signed' : accepted ? 'accepted' : 'declined';
-              const amount = p.amount === null || p.amount === undefined || p.amount === '' ? null
-                : Number(p.amount).toLocaleString(undefined, { style: 'currency', currency: typeof p.currency === 'string' && p.currency ? p.currency : 'USD' });
-              return (
-                <Link key={`quote-response-${r.id}`} to={`/objects/quotes/${r.id}`} className="activity-item">
-                  <span className={`activity-icon${accepted ? ' good' : ' bad'}`}><Icon size={15} strokeWidth={1.75} /></span>
-                  <div className="activity-body">
-                    <div className="activity-head">
-                      <strong>Quote {verb}</strong>
-                      {amount && <span className={accepted ? 'money push-right' : 'num push-right muted'}>{amount}</span>}
-                      <time className="ledger-time" dateTime={at}>{timeOf(at)}</time>
-                    </div>
-                    <div className="activity-text">
-                      {recordName(r)} {verb} by {String(p.responder_name ?? 'the customer')}
-                      {p.responder_email ? ` (${String(p.responder_email)})` : ''}
-                    </div>
-                    {pending ? <div className="small muted">Awaiting countersignature</div> : null}
-                    {!pending && accepted && p.countersigner_name ? <div className="small muted">Countersigned by {String(p.countersigner_name)}</div> : null}
-                    {!accepted && p.decline_reason ? <div className="small muted">Reason: {String(p.decline_reason)}</div> : null}
-                  </div>
-                </Link>
-              );
-            }
-            const title = o === 'emails' ? (p.subject as string) || 'Email' : o === 'notes' ? 'Note' : displayName(p, r.id);
-            const body = plain(o === 'tasks' ? p.body : p.body);
-            const key = `${o}-${r.id}`;
-            const open = openedKey === key;
-            const toggle = () => go(open ? searchFor(tab, null) : searchFor(tab, o, r.id));
-            return (
-              // collapsed, the whole entry opens it (unless text is being selected); open, only the head closes it
-              <div key={key} id={`activity-${key}`} className={`activity-item${open ? ' open' : ''}`}
-                onClick={open ? undefined : () => { if (!window.getSelection()?.toString()) toggle(); }}>
-                <span className="activity-icon"><Icon size={15} strokeWidth={1.75} /></span>
-                <div className="activity-body">
-                  <div className="activity-head">
-                    <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); toggle(); }}>
-                      <ChevronRight size={14} className="activity-chevron" aria-hidden="true" />
-                      <strong>{title}</strong>
-                    </button>
-                    {open ? (
-                      <span className="activity-actions push-right">
-                        <button className="btn small" onClick={() => copyLink(o, r.id)}><Link2 size={14} /> Copy link</button>
-                        <Link className="btn small" to={`/objects/${o}/${r.id}`} aria-label={`Open ${(objectByName.get(o)?.label_singular ?? o).toLowerCase()}`}>
-                          <span className="btn-label">Open</span> <ArrowRight size={14} />
-                        </Link>
-                      </span>
-                    ) : (
-                      <span className="activity-kind push-right">
-                        {(commentCounts[key] ?? 0) > 0 && (
-                          <span className="activity-comment-count" title={`${commentCounts[key]} comment${commentCounts[key] === 1 ? '' : 's'}`}>
-                            <MessageSquare size={12} strokeWidth={1.75} aria-hidden /> {commentCounts[key]}
-                          </span>
-                        )}
-                        {' '}{objectByName.get(o)?.label_singular}
-                      </span>
-                    )}
-                    {at && <time className="ledger-time" dateTime={at}>{open ? when(at) : timeOf(at)}</time>}
-                  </div>
-                  {open ? (
-                    <ActivityExpanded object={o} id={r.id} initial={r} page={{ object, id }} onPageLinkChanged={onChanged}
-                      onCommentCount={(n) => setCommentCounts((m) => ({ ...m, [key]: n }))} highlightComment={params.get('comment')} />
-                  ) : (
-                    <>
-                      {o === 'tasks' && p.status ? <div className="activity-status"><StatusPill tone={TASK_TONES[String(p.status)] ?? 'off'}>{String(p.status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</StatusPill></div> : null}
-                      {o === 'emails' && EMAIL_SEND_STATES.includes(String(p.status)) && <EmailSendState emailId={r.id} status={String(p.status)} scheduledAt={p.scheduled_at as string | null} onChanged={onChanged} />}
-                      {body && <div className="activity-text"><MentionText text={body.length > 400 ? `${body.slice(0, 400)}…` : body} /></div>}
-                      {o === 'form_submissions' && <Answers record={r} limit={6} />}
-                      {o === 'emails' && <EmailTracking p={p} />}
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              {rows.map((g) => (g.rows.length === 1 && (threadSizes.get(g.thread) ?? 0) <= 1
+                ? renderItem(g.rows[0]!)
+                : <EmailThread key={`thread-${g.thread}`} threadId={g.thread} rows={g.rows} open={threadOpen(g.thread)} onToggle={() => toggleThread(g.thread)} renderItem={renderItem} />))}
+            </LedgerDay>
+          )) : byDay(items, (x) => x.at).map(({ day, rows }) => (
+            <LedgerDay key={day} day={day}>
+              {rows.map(renderItem)}
             </LedgerDay>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// The thread an email belongs to: its thread_id, or itself when it started one.
+function threadOf(r: CrmRecord): string {
+  const t = r.properties.thread_id;
+  return typeof t === 'string' && t ? t : r.id;
+}
+
+const stripReplyPrefix = (s: string) => s.replace(/^\s*((re|fw|fwd|aw|sv|tr)\s*:\s*)+/i, '').trim();
+// "Ana Li <ana@client.com>" -> "Ana Li"; an address alone stays as it is
+const senderName = (from: unknown) => {
+  const v = typeof from === 'string' ? from.trim() : '';
+  const m = v.match(/^\s*"?([^"<]*?)"?\s*<[^>]+>\s*$/);
+  return (m?.[1] || v).trim();
+};
+
+interface ThreadEmail { id: string; subject: string | null; from_address: string | null; sent_at: string | null; created_at: string; direction: string | null }
+
+// "Stop logging this thread": new emails of the thread are no longer logged
+// automatically, from any mailbox (auth.email_thread_ignores). Emails
+// already logged stay.
+function ThreadIgnoreButton({ threadId, ignored: known, onChange }: { threadId: string; ignored?: boolean; onChange?: (ignored: boolean) => void }) {
+  const { toast } = useApp();
+  const [ignored, setIgnored] = useState<boolean | null>(known ?? null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (known !== undefined) {
+      setIgnored(known);
+      return;
+    }
+    let cancelled = false;
+    api<{ ignored: boolean }>('GET', `/v1/emails/threads/${threadId}`)
+      .then((r) => { if (!cancelled) setIgnored(r.ignored); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [threadId, known]);
+  if (ignored === null) return null;
+  async function flip(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!ignored && !(await confirmDialog('Stop logging this thread? New emails in it are no longer logged from anyone\'s mailbox. Emails already logged stay.', { confirmLabel: 'Stop logging' }))) return;
+    setBusy(true);
+    try {
+      const r = await api<{ ignored: boolean }>(ignored ? 'DELETE' : 'POST', `/v1/emails/threads/${threadId}/ignore`);
+      setIgnored(r.ignored);
+      onChange?.(r.ignored);
+      toast(r.ignored ? 'This thread is no longer logged.' : 'This thread is logged again.');
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button className="btn small" disabled={busy} onClick={flip} title={ignored ? 'Log new emails in this thread again' : 'Stop logging new emails in this thread'}>
+      <BellOff size={14} /> {ignored ? 'Resume logging' : 'Stop logging thread'}
+    </button>
+  );
+}
+
+// Several emails of one thread on the Emails tab: one entry with the newest
+// email's text; opened, every email of the thread here, oldest first, each
+// opening as usual, then the thread's emails linked elsewhere only.
+function EmailThread<T extends { record: CrmRecord; at: string }>({ threadId, rows, open, onToggle, renderItem }: {
+  threadId: string; rows: T[]; open: boolean; onToggle: () => void; renderItem: (row: T) => ReactNode;
+}) {
+  const [all, setAll] = useState<{ ignored: boolean; results: ThreadEmail[] } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api<{ ignored: boolean; results: ThreadEmail[] }>('GET', `/v1/emails/threads/${threadId}`)
+      .then((r) => { if (!cancelled) setAll(r); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [open, threadId]);
+  const latest = rows[0]!;
+  const oldest = rows[rows.length - 1]!;
+  const subject = stripReplyPrefix(String(oldest.record.properties.subject ?? latest.record.properties.subject ?? '')) || 'Email thread';
+  const people = [...new Set(rows.map((x) => senderName(x.record.properties.from_address)).filter(Boolean))];
+  const here = new Set(rows.map((x) => x.record.id));
+  const elsewhere = (all?.results ?? []).filter((e) => !here.has(e.id));
+  const snippet = plain(latest.record.properties.body);
+  return (
+    <div id={`thread-${threadId}`} className={`activity-item email-thread${open ? ' open' : ''}`}
+      onClick={open ? undefined : () => { if (!window.getSelection()?.toString()) onToggle(); }}>
+      <span className="activity-icon"><MessagesSquare size={15} strokeWidth={1.75} /></span>
+      <div className="activity-body">
+        <div className="activity-head">
+          <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+            <ChevronRight size={14} className="activity-chevron" aria-hidden="true" />
+            <strong>{subject}</strong>
+          </button>
+          {open && all ? (
+            <span className="activity-actions push-right"><ThreadIgnoreButton threadId={threadId} ignored={all.ignored} onChange={(ignored) => setAll((a) => (a ? { ...a, ignored } : a))} /></span>
+          ) : (
+            <span className="activity-kind push-right">{rows.length} emails</span>
+          )}
+          <time className="ledger-time" dateTime={latest.at}>{timeOf(latest.at)}</time>
+        </div>
+        {people.length > 0 && <div className="small muted email-thread-people">{people.slice(0, 4).join(', ')}{people.length > 4 ? ` and ${people.length - 4} more` : ''}</div>}
+        {open ? (
+          <div className="email-thread-items" onClick={(e) => e.stopPropagation()}>
+            {[...rows].reverse().map((x) => renderItem(x))}
+            {elsewhere.length > 0 && (
+              <div className="email-thread-elsewhere">
+                <div className="small muted">Also in this thread, linked to other records:</div>
+                {elsewhere.map((e) => (
+                  <Link key={e.id} to={`/objects/emails/${e.id}`} className="email-thread-extra">
+                    <span>{senderName(e.from_address) || 'Email'}</span>
+                    <span className="muted">{e.subject}</span>
+                    <time className="ledger-time" dateTime={e.sent_at ?? e.created_at}>{when(e.sent_at ?? e.created_at)}</time>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          snippet && <div className="activity-text">{snippet.length > 300 ? `${snippet.slice(0, 300)}…` : snippet}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1356,6 +1554,8 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
   const isHtmlBody = /<[a-z][\s\S]*>/i.test(body);
   const bodyEditable = canEdit && !!bodyProp && isEditable(bodyProp) && !isHtmlBody && object !== 'form_submissions';
   const [editing, setEditing] = useState(false);
+  // bumped when fetched attachments add links, so the links list reloads
+  const [linksKey, setLinksKey] = useState(0);
 
   async function saveBody(text: string) {
     const r = await api<CrmRecord>('PATCH', `/v1/objects/${object}/${id}`, { properties: { body: text || null } });
@@ -1397,14 +1597,81 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
           ))}
         </dl>
       )}
+      {object === 'emails' && p.logged_via === 'autolog' && !restricted && (
+        <LoggedAttachments emailId={id} onFetched={async () => { setLinksKey((n) => n + 1); await onPageLinkChanged(); }} />
+      )}
       {COMMENT_TARGETS.includes(object) && (
         <Comments object={object} id={id} readOnly={record.record_status === 'archived'} onCount={onCommentCount} highlight={highlightComment} />
       )}
       {!restricted && (
         <div className="activity-foot">
-          <ActivityLinks object={object} id={id} page={page} onPageLinkChanged={onPageLinkChanged} />
+          <ActivityLinks key={linksKey} object={object} id={id} page={page} onPageLinkChanged={onPageLinkChanged} />
         </div>
       )}
+    </div>
+  );
+}
+
+// An auto-logged email's attachments: their names, and a button that fetches
+// them from the mailbox it was logged from (only on request, once), saving
+// them as files linked to the email and its records.
+interface MailboxSource {
+  attachments: string[];
+  fetched_at: string | null;
+  files: { id: string; name: string | null; size_bytes: number | null }[];
+  can_fetch: boolean;
+}
+
+function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched: () => Promise<void> }) {
+  const { toast } = useApp();
+  const [source, setSource] = useState<MailboxSource | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ source: MailboxSource | null }>('GET', `/v1/emails/${emailId}/mailbox-source`)
+      .then((r) => { if (!cancelled) setSource(r.source); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [emailId]);
+  if (!source || (!source.attachments.length && !source.fetched_at)) return null;
+
+  async function fetchNow() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api<{ source: MailboxSource }>('POST', `/v1/emails/${emailId}/fetch-attachments`);
+      setSource(r.source);
+      toast(r.source.files.length ? `${r.source.files.length} attachment${r.source.files.length === 1 ? '' : 's'} saved` : 'No attachments found in the mailbox');
+      await onFetched();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="email-attachments">
+      {source.fetched_at ? (
+        source.files.length ? (
+          <div className="email-attachment-files">
+            <Paperclip size={14} aria-hidden />
+            {source.files.map((f) => <Link key={f.id} to={`/objects/files/${f.id}`}>{f.name ?? f.id}</Link>)}
+          </div>
+        ) : <div className="small muted">No attachments were found in the mailbox.</div>
+      ) : (
+        <div className="email-attachment-files">
+          <Paperclip size={14} aria-hidden />
+          <span className="small muted">{source.attachments.join(', ')}</span>
+          {source.can_fetch && (
+            <button className="btn small" disabled={busy} onClick={fetchNow}>
+              {busy ? <Spinner /> : null} {busy ? 'Fetching attachments' : 'Fetch attachments'}
+            </button>
+          )}
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
     </div>
   );
 }

@@ -647,3 +647,26 @@ a.comment-author:hover { color: var(--primary); }
 .mentioned-activity .activity-head { display: flex; align-items: baseline; gap: 10px; }
 .mentioned-activity .ledger-time { font-size: 12px; color: var(--muted-text); }
 .activity > .mentioned-activity { margin-bottom: 12px; }
+
+/* Email threads (Emails tab, grouped): one entry per thread, its emails inside when open */
+.email-thread-tag {
+  display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; padding: 1px 6px; border: 1px solid var(--border);
+  border-radius: 999px; background: none; color: var(--primary); font: inherit; font-size: 12px; cursor: pointer;
+}
+.email-thread-tag:hover { background: var(--primary-soft); }
+.email-autolog-tag { margin-right: 6px; padding: 1px 6px; border-radius: 999px; background: var(--surface); font-size: 11.5px; }
+.email-thread-people { margin-top: 2px; }
+.email-thread-items { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--primary-soft); }
+.email-thread-items .activity-item:not(.open) .activity-chevron { transform: none; }
+.email-thread-elsewhere { display: grid; gap: 4px; margin: 8px 0 2px 8px; }
+.email-thread-extra {
+  display: flex; gap: 8px; align-items: baseline; min-width: 0; padding: 4px 6px; border-radius: var(--radius);
+  color: inherit; text-decoration: none; font-size: 13px;
+}
+.email-thread-extra > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.email-thread-extra:hover { background: var(--surface); }
+
+/* Attachments of an auto-logged email, fetched from the mailbox on request */
+.email-attachments { margin: 8px 0; }
+.email-attachment-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.email-attachment-files > svg { color: var(--muted-text); }

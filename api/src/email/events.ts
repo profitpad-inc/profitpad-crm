@@ -190,6 +190,15 @@ export async function handleEvent(p: Payload, traceId: string | undefined): Prom
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const textToHtml = (s: string) => `<p>${escapeHtml(s).replace(/\r?\n/g, '<br>')}</p>`;
 
+// The reply's own Message-ID header, so mailbox logging (mailbox/sync.ts)
+// does not log it a second time.
+function rfcMessageId(p: Payload): string | null {
+  const headers = (Array.isArray(p.Headers) ? p.Headers : []) as Payload[];
+  const h = headers.find((x) => typeof x?.Name === 'string' && x.Name.toLowerCase() === 'message-id');
+  const v = typeof h?.Value === 'string' ? h.Value.trim() : '';
+  return v && v.length <= 900 ? v : null;
+}
+
 function replyToken(p: Payload): string | null {
   const all = [p.MailboxHash, ...((Array.isArray(p.ToFull) ? p.ToFull : []) as Payload[]).map((t) => t?.MailboxHash)];
   for (const h of all) if (typeof h === 'string' && REPLY_TOKEN_RE.test(h)) return h;
@@ -221,10 +230,13 @@ export async function handleInbound(p: Payload, traceId: string | undefined): Pr
     const body = html ? sanitizeHtml(html, SIGNATURE_OPTIONS).trim() : textToHtml(str(p.StrippedTextReply) ?? str(p.TextBody) ?? '');
     const subject = str(p.Subject) ?? `Re: ${original.subject ?? ''}`;
     const { rows: made } = await c.query(
-      `insert into crm.pc_0031 (name, subject, body, from_address, to_addresses, cc_addresses, direction, status, sent_at, thread_id, owner)
-       values ($1, $1, $2, $3, $4, $5, '{inbound}', '{received}', $6, $7, $8) returning pc_0031_id as id`,
-      [subject.slice(0, 500), body, from, str(p.To), str(p.Cc), time(p.Date), original.thread_id ?? original.id, original.owner]
+      `insert into crm.pc_0031 (name, subject, body, from_address, to_addresses, cc_addresses, direction, status, sent_at, thread_id, owner, message_id, logged_via)
+       values ($1, $1, $2, $3, $4, $5, '{inbound}', '{received}', $6, $7, $8, $9, '{postmark}')
+       on conflict do nothing returning pc_0031_id as id`,
+      [subject.slice(0, 500), body, from, str(p.To), str(p.Cc), time(p.Date), original.thread_id ?? original.id, original.owner, rfcMessageId(p)]
     );
+    // already logged from a mailbox (the reply went to a person too)
+    if (!made[0]) return 'duplicate' as const;
     const replyId = made[0].id as string;
     if (!original.thread_id) await c.query('update crm.pc_0031 set thread_id = $2 where pc_0031_id = $1', [original.id, original.id]);
     await c.query('update crm.pc_0031 set replied_at = coalesce(replied_at, now()) where pc_0031_id = $1', [original.id]);

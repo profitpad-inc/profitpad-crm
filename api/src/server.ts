@@ -37,6 +37,7 @@ import { currencyRoutes, startCurrencyScheduler } from './currency.js';
 import { liveRoutes, startLiveListener } from './live.js';
 import { mailboxRoutes } from './mailbox/routes.js';
 import { startMailWorker } from './mailbox/send.js';
+import { startMailSyncWorker } from './mailbox/sync.js';
 import { notificationRoutes } from './notifications/routes.js';
 import { startNotificationEmailWorker } from './notifications/emails.js';
 import { emailRoutes } from './routes/email.js';
@@ -267,6 +268,7 @@ const stopWebhooks = startWebhookWorker(app.log);
 const stopCurrencies = startCurrencyScheduler(app.log);
 const stopLive = startLiveListener(app.log);
 const stopMail = startMailWorker(app.log);
+const stopMailSync = startMailSyncWorker(app.log);
 const stopNotificationEmails = startNotificationEmailWorker(app.log);
 const stopEmail = startEmailWorker(app.log);
 const shutdown = async () => {
@@ -276,6 +278,7 @@ const shutdown = async () => {
   stopCurrencies();
   stopLive();
   stopMail();
+  stopMailSync();
   stopNotificationEmails();
   stopEmail();
   await app.close();

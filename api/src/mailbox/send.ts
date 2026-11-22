@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import { pool, quoteIdent, withTx, type Db } from '../db.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
@@ -7,7 +8,7 @@ import { assertAccessible, createRecord } from '../records.js';
 import { fileSummaries, readFileBytes } from '../files.js';
 import { cleanEmailHtml, htmlToText, MAX_BODY, tightParagraphs, withSignature } from './html.js';
 import { buildMime } from './mime.js';
-import { loadProviders, MailAuthError, MailSendError, sendMessage, type MailProvider, type OutgoingMessage } from './providers.js';
+import { domainOf, loadProviders, MailAuthError, MailSendError, sendMessage, type MailProvider, type OutgoingMessage } from './providers.js';
 import { resolveSender, userName } from './senders.js';
 
 // Writing and sending an email from a record page (POST /v1/mailboxes/send).
@@ -196,7 +197,11 @@ interface SendRow {
 
 const split = (s: unknown) => (typeof s === 'string' ? s.split(',').map((x) => x.trim()).filter(Boolean) : []);
 
-async function setOutcome(row: SendRow, emails: ObjectDef, outcome: { status: 'sent' | 'failed' | 'scheduled' | 'cancelled'; error?: string | null; messageId?: string | null; nextAt?: Date | null }) {
+// The Message-ID header a composed email goes out with (Gmail keeps ours).
+export const newMessageId = (emailId: string, from: string) =>
+  `<${emailId}.${randomBytes(8).toString('hex')}@${domainOf(from) || 'crm.invalid'}>`;
+
+async function setOutcome(row: SendRow, emails: ObjectDef, outcome: { status: 'sent' | 'failed' | 'scheduled' | 'cancelled'; error?: string | null; messageId?: string | null; rfcMessageId?: string | null; nextAt?: Date | null }) {
   await withTx({ actor: `user:${row.user_id}`, source: SOURCE }, async (client: pg.PoolClient) => {
     await client.query(
       `update auth.mailbox_sends set status = $2, last_error = $3, provider_message_id = coalesce($4, provider_message_id),
@@ -208,9 +213,11 @@ async function setOutcome(row: SendRow, emails: ObjectDef, outcome: { status: 's
     const emailStatus = outcome.status === 'scheduled' ? 'sending' : outcome.status;
     await client.query(
       `update crm.${quoteIdent(emails.object_type_id)} set status = array[$2::text],
-         sent_at = case when $2 = 'sent' then now() else sent_at end
+         sent_at = case when $2 = 'sent' then now() else sent_at end,
+         message_id = case when $2 = 'sent' then coalesce($3, message_id) else message_id end,
+         logged_via = '{composer}'
        where ${quoteIdent(emails.id_column)} = $1`,
-      [row.email_id, emailStatus]
+      [row.email_id, emailStatus, outcome.rfcMessageId ?? null]
     );
   });
 }
@@ -257,10 +264,11 @@ export async function deliver(emailId: string, opts: { retry: boolean }): Promis
       subject: String(rec.subject ?? ''),
       html,
       text: htmlToText(html),
-      attachments
+      attachments,
+      ...(cfg.provider === 'google' ? { messageId: newMessageId(emailId, row.from_address) } : {})
     };
     const messageId = await sendMessage(cfg, msg, () => buildMime(msg));
-    await setOutcome(row, emails, { status: 'sent', messageId });
+    await setOutcome(row, emails, { status: 'sent', messageId, rfcMessageId: msg.messageId ?? null });
     return { ok: true, error: null };
   } catch (err) {
     const message = (err as Error).message || 'sending failed';

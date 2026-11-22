@@ -13,6 +13,7 @@ export function buildMime(msg: OutgoingMessage): Promise<Buffer> {
     bcc: msg.bcc.length ? msg.bcc : undefined,
     replyTo: msg.replyTo ?? undefined,
     subject: msg.subject,
+    ...(msg.messageId ? { messageId: msg.messageId } : {}),
     html: msg.html,
     text: msg.text,
     attachments: msg.attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, content: a.content }))

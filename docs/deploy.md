@@ -279,6 +279,14 @@ Users send email from record pages as themselves through the organization's Goog
    6. Settings → Mailboxes → Microsoft: tenant ID, client ID, secret, domains, turn Sending on, press Test.
 5. Shared mailboxes (sales@, support@): Settings → Mailboxes → Add shared mailbox, then pick who may send from it. On Google it must be a real user mailbox (or use a group address as a send-as alias of someone's mailbox).
 
+### 23a. Logging email automatically (migration 0106)
+
+1. Apply `0106_email_autolog.sql` (`./db/migrate.sh`), then deploy the API and UI.
+2. Google: in Google Admin, Domain-wide delegation, edit the CRM's client ID and add `https://www.googleapis.com/auth/gmail.readonly` to its scopes (keep the two sending scopes).
+3. Microsoft: on the app registration, add the Microsoft Graph **Application** permission `Mail.Read` and grant admin consent. It lets the app read every mailbox it may reach: limit it with Exchange Online RBAC for Applications (or an application access policy) to the people who use the CRM.
+4. Settings → Mailboxes → (provider) → Log emails automatically: turn Logging on, pick the default for users and how often to check. Mailboxes appear in the table within a minute; a "Needs permission" row means step 2 or 3 is missing.
+5. Not verified against a real Google Workspace or Microsoft 365 tenant yet (fake servers only). On Microsoft, the delta query's `receivedDateTime` filter and reading `internetMessageHeaders` per message are unverified with a real tenant.
+
 ## 23. Email through Postmark (migration 0094)
 
 1. Apply `0094_email_postmark.sql` (`./db/migrate.sh` through the tunnel, or `./db.sh migrate` on the server) before deploying the API: the email worker starts with the API and reads the new tables.

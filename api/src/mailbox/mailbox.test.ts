@@ -32,6 +32,7 @@ const message = (over: Partial<OutgoingMessage> = {}): OutgoingMessage => ({
 const row = (over: Partial<ProviderRow>): ProviderRow => ({
   provider: 'google', enabled: true, domains: ['example.com'], google_key: null, google_client_id: null, google_client_email: null,
   ms_tenant_id: null, ms_client_id: null, ms_client_secret: null, secret_hint: null, ms_send_from_aliases: false,
+  autolog_enabled: true, autolog_default: 'all', autolog_exclude: [], autolog_interval_min: 3,
   status: 'ok', last_error: null, last_checked_at: null, ...over
 });
 

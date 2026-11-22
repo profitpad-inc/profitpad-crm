@@ -150,8 +150,74 @@ function Account() {
         </SettingRow>
       </div>
       {me.user && <NotificationPrefs />}
+      {me.user && <EmailLoggingPrefs />}
       {me.user && <EmailSignature userId={me.user.id} initial={me.user.email_signature ?? null} canWrite={me.is_admin || me.scopes.includes('write') || me.scopes.includes('admin')} />}
     </SettingsPage>
+  );
+}
+
+// Your own automatic email logging (users.email_autolog, migration 0106),
+// through /v1/me/email-logging. Shown only when your sign-in address is on a
+// provider set up in Settings, Mailboxes.
+interface EmailLogging {
+  setting: 'default' | 'all' | 'replies' | 'off';
+  mailboxes: { mailbox: string; provider: 'google' | 'microsoft'; org_enabled: boolean; org_default: string; mode: string; last_ok_at: string | null; last_error: string | null; logged_count: number }[];
+}
+const MODE_LABEL: Record<string, string> = { all: 'All emails with contacts', replies: 'Only replies to logged threads', off: 'Off' };
+
+function EmailLoggingPrefs() {
+  const { toast } = useApp();
+  const [state, setState] = useState<EmailLogging | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<EmailLogging>('GET', '/v1/me/email-logging').then(setState).catch((e) => setError((e as Error).message));
+  }, []);
+
+  if (!state || !state.mailboxes.length) return error ? <div className="error">{error}</div> : null;
+  const orgOn = state.mailboxes.some((m) => m.org_enabled);
+  const orgDefault = state.mailboxes.find((m) => m.org_enabled)?.org_default ?? 'off';
+
+  async function save(setting: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      setState(await api<EmailLogging>('PUT', '/v1/me/email-logging', { setting }));
+      toast('Email logging saved.');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SettingsSection title="Email logging" description="Email you exchange with contacts can be logged to the CRM from your mailbox automatically, on those contacts and their companies. Email among colleagues only is never logged.">
+      {error && <div className="error">{error}</div>}
+      {!orgOn && <div className="callout">An admin has not turned on automatic logging yet, so nothing is logged for now.</div>}
+      <div className="setting-rows">
+        <SettingRow label="Log automatically" htmlFor="email-autolog" hint="Only replies to logged threads: an email is logged only when it answers one already in the CRM (one you sent from the CRM, for example).">
+          <Select
+            id="email-autolog"
+            value={state.setting}
+            disabled={busy}
+            options={[
+              { value: 'default', label: `Organization default (${MODE_LABEL[orgDefault] ?? orgDefault})` },
+              { value: 'all', label: MODE_LABEL.all },
+              { value: 'replies', label: MODE_LABEL.replies },
+              { value: 'off', label: MODE_LABEL.off }
+            ]}
+            onChange={save}
+          />
+        </SettingRow>
+        {state.mailboxes.map((m) => (
+          <SettingRow key={m.mailbox} label={m.mailbox} hint={m.last_error ? m.last_error : m.last_ok_at ? `Last checked ${new Date(m.last_ok_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}, ${m.logged_count} logged so far.` : undefined}>
+            <span>{MODE_LABEL[m.mode] ?? m.mode}</span>
+          </SettingRow>
+        ))}
+      </div>
+    </SettingsSection>
   );
 }
 

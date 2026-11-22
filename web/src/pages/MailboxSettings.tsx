@@ -31,6 +31,26 @@ interface ProviderState {
   last_error: string | null;
   last_checked_at: string | null;
   scopes: string[];
+  autolog_enabled: boolean;
+  autolog_default: AutologMode;
+  autolog_exclude: string[];
+  autolog_interval_min: number;
+  read_scopes: string[];
+}
+
+type AutologMode = 'all' | 'replies' | 'off';
+
+interface SyncRow {
+  provider: Provider;
+  mailbox: string;
+  user_id: string;
+  user_name: string | null;
+  started_at: string;
+  last_run_at: string | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+  needs_reconsent: boolean;
+  logged_count: number;
 }
 
 interface SharedMailbox {
@@ -48,6 +68,7 @@ interface State {
   providers: ProviderState[];
   shared_mailboxes: SharedMailbox[];
   users: UserOption[];
+  sync: SyncRow[];
   secrets_ready: boolean;
 }
 
@@ -57,6 +78,21 @@ const PROVIDER_LABEL: Record<Provider, string> = { google: 'Google Workspace (Gm
 const TAB_LABEL: Record<Provider, string> = { google: 'Google Workspace', microsoft: 'Microsoft 365' };
 const domainText =(d: string[]) => d.join(', ');
 const domainList = (t: string) => t.split(/[\s,;]+/).map((s) => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
+export const AUTOLOG_OPTIONS = [
+  { value: 'all', label: 'All emails with contacts' },
+  { value: 'replies', label: 'Only replies to logged threads' },
+  { value: 'off', label: 'Off' }
+];
+const INTERVAL_OPTIONS = [
+  { value: '1', label: '1 min' },
+  { value: '2', label: '2 min' },
+  { value: '3', label: '3 min' },
+  { value: '5', label: '5 min' },
+  { value: '15', label: '15 min' },
+  { value: '30', label: '30 min' },
+  { value: '60', label: '1 hr' }
+];
 const userLabel = (u: UserOption) => (u.name ? `${u.name}${u.email ? ` (${u.email})` : ''}` : u.email ?? u.id);
 
 function statusPill(p: ProviderState) {
@@ -76,7 +112,7 @@ export function MailboxSettings() {
     api<State>('GET', '/v1/mailboxes/settings').then(setState).catch((err) => setError((err as Error).message));
   }, []);
 
-  const description = 'Let everyone send email from contact, company, deal and ticket pages as themselves, through your Google Workspace or Microsoft 365. An admin sets it up once here; users do not link their own inboxes. Each email is saved on the record it was written on. Replies are not brought back into the CRM.';
+  const description = 'Let everyone send email from contact, company, deal and ticket pages as themselves, through your Google Workspace or Microsoft 365, and log the email they exchange with contacts automatically. An admin sets it up once here; users do not link their own inboxes.';
   if (!state) {
     return <SettingsPage title="Mailboxes" description={description}>{error ? <div className="error">{error}</div> : <TableSkeleton rows={3} />}</SettingsPage>;
   }
@@ -115,6 +151,7 @@ export function MailboxSettings() {
       {state.providers.map((p) => (
         <div key={p.provider} role="tabpanel" hidden={activeTab !== p.provider}>
           <ProviderCard p={p} canStore={state.secrets_ready} onSaved={setState} />
+          <AutologCard p={p} sync={state.sync.filter((r) => r.provider === p.provider)} onSaved={setState} />
         </div>
       ))}
 
@@ -311,6 +348,87 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
             </div>
           ) : <div className="callout warn">{test.error}</div>)}
         </SettingRow>
+      )}
+    </SettingsSection>
+  );
+}
+
+// Logging email with contacts automatically (api/src/mailbox/sync.ts): the
+// switch, what users on the default get, how often, who is never logged, and
+// how each mailbox is doing.
+function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; onSaved: (s: State) => void }) {
+  const { toast } = useApp();
+  const [exclude, setExclude] = useState(p.autolog_exclude.join(', '));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setExclude(p.autolog_exclude.join(', ')), [p.autolog_exclude.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function put(body: Record<string, unknown>, done: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await api<State>('PUT', `/v1/mailboxes/settings/${p.provider}/autolog`, body));
+      toast(done);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const excludeDirty = domainList(exclude).join(',') !== p.autolog_exclude.join(',');
+  const reconsent = sync.some((r) => r.needs_reconsent);
+  const who = p.provider === 'google' ? 'Google' : 'Microsoft';
+  return (
+    <SettingsSection
+      title="Log emails automatically"
+      description={`Reads each user's own ${p.provider === 'google' ? 'Gmail' : 'Outlook'} mailbox and logs email to or from existing contacts on those contacts and their companies. Email among colleagues only is never logged. Logging starts when it is turned on: older email is not brought in. Each user can choose differently in Settings, Account.`}
+    >
+      {error && <div className="error">{error}</div>}
+      {reconsent && (
+        <div className="callout warn">
+          {who} will not let the {p.provider === 'google' ? 'service account' : 'app'} read mail yet. Add {p.read_scopes.join(', ')} {p.provider === 'google' ? 'to its scopes under Domain-wide delegation' : 'as an application permission with admin consent'}. Sending is not affected.
+        </div>
+      )}
+      <SettingRow label="Logging" hint={p.ready ? 'Turn off to stop reading every mailbox on this provider.' : 'Set up sending above first.'}>
+        <label><input type="checkbox" role="switch" checked={p.autolog_enabled} disabled={busy || (!p.autolog_enabled && !p.ready)} onChange={(e) => put({ autolog_enabled: e.target.checked }, e.target.checked ? 'Automatic logging turned on.' : 'Automatic logging turned off.')} /> {p.autolog_enabled ? 'On' : 'Off'}</label>
+      </SettingRow>
+      <SettingRow label={p.provider === 'google' ? 'Extra scope for Google Admin' : 'Extra application permission'} hint={p.provider === 'google' ? 'Add it to the same client ID, next to the sending scopes.' : 'Microsoft Graph, Application type, with admin consent. It allows reading every mailbox the app may reach, so limit the app to the mailboxes that need it.'}>
+        <CopyField value={p.read_scopes.join(',')} label={p.provider === 'google' ? 'OAuth scope' : 'Permission'} />
+      </SettingRow>
+      <SettingRow label="Default for users" htmlFor={`${p.provider}-autolog-default`} hint="What users who keep the organization default get.">
+        <Select id={`${p.provider}-autolog-default`} value={p.autolog_default} disabled={busy} options={AUTOLOG_OPTIONS} onChange={(v) => put({ autolog_default: v }, 'Default saved.')} />
+      </SettingRow>
+      <SettingRow label="Check for new email every" htmlFor={`${p.provider}-autolog-interval`}>
+        <Select id={`${p.provider}-autolog-interval`} value={String(p.autolog_interval_min)} disabled={busy} options={INTERVAL_OPTIONS} onChange={(v) => put({ autolog_interval_min: Number(v) }, 'Saved.')} />
+      </SettingRow>
+      <SettingRow label="Never log" htmlFor={`${p.provider}-autolog-exclude`} hint="Addresses or domains, separated with commas. Email with any of them on it is not logged.">
+        <div className="key-row">
+          <input id={`${p.provider}-autolog-exclude`} value={exclude} placeholder="lawyer@firm.com, gmail.com" onChange={(e) => setExclude(e.target.value)} />
+          <button className="btn" disabled={busy || !excludeDirty} onClick={() => put({ autolog_exclude: domainList(exclude) }, 'Saved.')}>Save</button>
+        </div>
+      </SettingRow>
+      {p.autolog_enabled && (
+        sync.length === 0 ? (
+          <EmptyState compact title="No mailboxes read yet">Mailboxes appear here within a minute for users who sign in with an address in the domains above.</EmptyState>
+        ) : (
+          <div className="access-table">
+            <table className="grid">
+              <thead><tr><th>Mailbox</th><th>Last checked</th><th>Logged</th><th>Status</th></tr></thead>
+              <tbody>
+                {sync.map((r) => (
+                  <tr key={r.mailbox}>
+                    <td><div>{r.mailbox}</div>{r.user_name && <div className="sub">{r.user_name}</div>}</td>
+                    <td>{when(r.last_ok_at) || <span className="muted">Not yet</span>}</td>
+                    <td>{r.logged_count}</td>
+                    <td>{r.needs_reconsent ? <StatusPill tone="failed">Needs permission</StatusPill> : r.last_error && !r.last_ok_at ? <StatusPill tone="failed">Failing</StatusPill> : r.last_ok_at ? <StatusPill tone="on">Working</StatusPill> : <StatusPill tone="pending">Starting</StatusPill>}
+                      {r.last_error && <div className="sub">{r.last_error}</div>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
     </SettingsSection>
   );

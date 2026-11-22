@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { pool, quoteIdent } from '../db.js';
+import { pool, quoteIdent, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { requireRecentSignIn, requireScope, type Principal } from '../auth.js';
+import { recordFilter, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { isAdmin } from '../routes/ui.js';
 import { getObject } from '../registry.js';
@@ -9,9 +9,10 @@ import { assertAccessible } from '../records.js';
 import { seal, secretBoxReady } from '../secret-box.js';
 import { renderSnippet } from '../snippets.js';
 import {
-  forgetProvider, GOOGLE_SCOPES, listAliases, loadProviders, MAIL_PROVIDERS, MICROSOFT_PERMISSIONS, parseGoogleKey, providerFor,
-  providerReady, type MailProvider, type ProviderRow
+  forgetProvider, GOOGLE_READ_SCOPES, GOOGLE_SCOPES, listAliases, loadProviders, MAIL_PROVIDERS, MICROSOFT_PERMISSIONS,
+  MICROSOFT_READ_PERMISSIONS, parseGoogleKey, providerFor, providerReady, type MailProvider, type ProviderRow
 } from './providers.js';
+import { effectiveMode, fetchLoggedAttachments, loggedSource } from './sync.js';
 import { listSenders } from './senders.js';
 import { cancelSend, cleanAddresses, createSend, retrySend, sendStatus, type SendInput } from './send.js';
 import { cleanEmailHtml } from './html.js';
@@ -48,8 +49,71 @@ function providerOut(p: MailProvider, r: ProviderRow | undefined) {
     status: r?.status ?? 'unchecked',
     last_error: r?.last_error ?? null,
     last_checked_at: r?.last_checked_at ?? null,
-    scopes: p === 'google' ? GOOGLE_SCOPES : MICROSOFT_PERMISSIONS
+    scopes: p === 'google' ? GOOGLE_SCOPES : MICROSOFT_PERMISSIONS,
+    autolog_enabled: r?.autolog_enabled ?? false,
+    autolog_default: r?.autolog_default ?? 'all',
+    autolog_exclude: r?.autolog_exclude ?? [],
+    autolog_interval_min: r?.autolog_interval_min ?? 3,
+    read_scopes: p === 'google' ? GOOGLE_READ_SCOPES : MICROSOFT_READ_PERMISSIONS
   };
+}
+
+const AUTOLOG_MODES = ['all', 'replies', 'off'] as const;
+const USER_AUTOLOG = ['default', 'all', 'replies', 'off'] as const;
+const INTERVALS = [1, 2, 3, 5, 15, 30, 60];
+
+// The mailboxes being read for automatic logging and how each is doing.
+async function syncList(userId?: string) {
+  const { rows } = await pool.query(
+    `select s.provider, s.mailbox, s.user_id, trim(concat_ws(' ', u.first_name, u.last_name)) as user_name,
+       s.started_at, s.last_run_at, s.last_ok_at, s.last_error, s.needs_reconsent, s.logged_count
+     from auth.mailbox_sync s left join crm.pc_0000 u on u.pc_0000_id = s.user_id
+     where $1::text is null or s.user_id = $1 order by s.mailbox`,
+    [userId ?? null]
+  );
+  return rows;
+}
+
+function cleanExclude(v: unknown): string[] {
+  if (!Array.isArray(v) || v.length > 200 || !v.every((x) => typeof x === 'string')) throw badRequest('autolog_exclude must be a list of up to 200 addresses or domains', { property: 'autolog_exclude' });
+  const out: string[] = [];
+  for (const raw of v as string[]) {
+    const x = raw.trim().toLowerCase().replace(/^@/, '');
+    if (!x) continue;
+    if (x.includes('@')) cleanAddresses([x], 'autolog_exclude');
+    else if (!DOMAIN_RE.test(x)) throw badRequest(`"${raw.trim()}" is not an address or a domain`, { property: 'autolog_exclude' });
+    if (!out.includes(x)) out.push(x);
+  }
+  return out;
+}
+
+// What the signed-in user's own mailboxes do: their setting, the mode it
+// comes to for each mailbox, and how reading it is going.
+async function myLogging(userId: string) {
+  const providers = await loadProviders();
+  const { rows } = await pool.query(`select email_autolog[1] as setting from crm.pc_0000 where pc_0000_id = $1`, [userId]);
+  const setting = (rows[0]?.setting as string | null) ?? 'default';
+  const own = await pool.query<{ email: string }>(
+    `select distinct lower(email) as email from auth.identities where user_id = $1 and provider in ('google', 'microsoft') and email is not null order by 1`,
+    [userId]
+  );
+  const sync = await syncList(userId);
+  const mailboxes = own.rows.flatMap((r) => {
+    const cfg = providerFor(providers, r.email);
+    if (!cfg) return [];
+    const s = sync.find((x) => x.mailbox === r.email);
+    return [{
+      mailbox: r.email,
+      provider: cfg.provider,
+      org_enabled: cfg.autolog_enabled,
+      org_default: cfg.autolog_default,
+      mode: effectiveMode(setting, cfg),
+      last_ok_at: s?.last_ok_at ?? null,
+      last_error: s?.last_error ?? null,
+      logged_count: s?.logged_count ?? 0
+    }];
+  });
+  return { setting, mailboxes };
 }
 
 async function activeUsers() {
@@ -78,6 +142,7 @@ async function settingsOut() {
     providers: MAIL_PROVIDERS.map((p) => providerOut(p, rows.get(p))),
     shared_mailboxes: await sharedList(),
     users: await activeUsers(),
+    sync: await syncList(),
     secrets_ready: secretBoxReady()
   };
 }
@@ -253,6 +318,43 @@ export async function mailboxRoutes(app: FastifyInstance) {
     }
   });
 
+  // Automatic logging for one provider: autolog_enabled, autolog_default
+  // (all, replies, off), autolog_exclude (addresses or domains),
+  // autolog_interval_min (1, 2, 3, 5, 15, 30 or 60).
+  app.put<{ Params: { provider: string }; Body: Record<string, unknown> }>('/v1/mailboxes/settings/:provider/autolog', async (req) => {
+    const p = req.principal!;
+    requireAdmin(p);
+    const prov = provider(req.params.provider);
+    const b = req.body ?? {};
+    const sets: string[] = [];
+    const params: unknown[] = [prov];
+    const changed: Record<string, unknown> = {};
+    const set = (col: string, v: unknown) => {
+      params.push(v);
+      sets.push(`${col} = $${params.length}`);
+      changed[col] = v;
+    };
+    if (b.autolog_enabled !== undefined) {
+      if (typeof b.autolog_enabled !== 'boolean') throw badRequest('autolog_enabled must be true or false', { property: 'autolog_enabled' });
+      set('autolog_enabled', b.autolog_enabled);
+    }
+    if (b.autolog_default !== undefined) {
+      if (!AUTOLOG_MODES.includes(b.autolog_default as (typeof AUTOLOG_MODES)[number])) throw badRequest(`autolog_default is one of ${AUTOLOG_MODES.join(', ')}`, { property: 'autolog_default' });
+      set('autolog_default', b.autolog_default);
+    }
+    if (b.autolog_exclude !== undefined) set('autolog_exclude', cleanExclude(b.autolog_exclude));
+    if (b.autolog_interval_min !== undefined) {
+      if (!INTERVALS.includes(b.autolog_interval_min as number)) throw badRequest(`autolog_interval_min is one of ${INTERVALS.join(', ')}`, { property: 'autolog_interval_min' });
+      set('autolog_interval_min', b.autolog_interval_min);
+    }
+    if (sets.length) {
+      await pool.query(`insert into auth.mailbox_providers (provider) values ($1) on conflict do nothing`, [prov]);
+      await pool.query(`update auth.mailbox_providers set ${sets.join(', ')}, updated_by = $${params.length + 1}, updated_at = now() where provider = $1`, [...params, p.actor]);
+      await logEvent(req, 'mailbox.autolog_changed', { target: { type: 'mail_provider', id: prov }, details: changed });
+    }
+    return settingsOut();
+  });
+
   app.post<{ Body: { provider?: unknown; address?: unknown; display_name?: unknown; user_ids?: unknown } }>('/v1/mailboxes/shared', async (req, reply) => {
     const p = req.principal!;
     requireAdmin(p);
@@ -304,6 +406,90 @@ export async function mailboxRoutes(app: FastifyInstance) {
     if (!rows[0]) throw notFound('shared mailbox not found');
     await logEvent(req, 'mailbox.shared_changed', { target: { type: 'shared_mailbox', id: req.params.id }, details: { action: 'removed', address: rows[0].address } });
     return settingsOut();
+  });
+
+  // ---- everyone: automatic logging of their own mailbox ----
+
+  app.get('/v1/me/email-logging', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    if (!p.userId) throw badRequest('only a user has email logging settings');
+    return myLogging(p.userId);
+  });
+
+  // setting: default (the organization's), all, replies or off
+  app.put<{ Body: { setting?: unknown } }>('/v1/me/email-logging', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    if (!p.userId) throw badRequest('only a user has email logging settings');
+    const v = req.body?.setting;
+    if (!USER_AUTOLOG.includes(v as (typeof USER_AUTOLOG)[number])) throw badRequest(`setting is one of ${USER_AUTOLOG.join(', ')}`, { property: 'setting' });
+    await withTx({ principal: p, source: 'email_logging_settings' }, (c) =>
+      c.query(`update crm.pc_0000 set email_autolog = array[$2] where pc_0000_id = $1`, [p.userId, v]));
+    return myLogging(p.userId);
+  });
+
+  // ---- everyone: threads ----
+
+  // The emails of a thread the caller may read, oldest first, and whether
+  // the thread is still logged.
+  app.get<{ Params: { threadId: string } }>('/v1/emails/threads/:threadId', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const threadId = req.params.threadId;
+    if (!/^[0-9a-f]{10}$/.test(threadId)) throw notFound('thread not found');
+    const emails = await getObject('emails');
+    if (p.permissions && !p.permissions.objects.get(emails.object_type_id)?.read) throw notFound('thread not found');
+    const params: unknown[] = [threadId];
+    const access = recordFilter(p, emails, params, 't', 'read');
+    const { rows } = await pool.query(
+      `select t.pc_0031_id as id, t.subject, t.from_address, t.to_addresses, t.cc_addresses, t.direction[1] as direction,
+         t.status[1] as status, t.sent_at, t.created_at, t.logged_via[1] as logged_via, t.body
+       from crm.pc_0031 t
+       where (t.thread_id = $1 or t.pc_0031_id = $1) and t.record_status = 'active' and ${access}
+       order by coalesce(t.sent_at, t.created_at), t.pc_0031_id limit 200`,
+      params
+    );
+    if (!rows.length) throw notFound('thread not found');
+    const ignored = (await pool.query('select 1 from auth.email_thread_ignores where thread_id = $1', [threadId])).rowCount === 1;
+    return { thread_id: threadId, ignored, results: rows };
+  });
+
+  // Stop (or start again) logging new emails of a thread, for every mailbox.
+  // Emails already logged stay.
+  const threadIgnore = async (p: Principal, threadId: string) => {
+    requireScope(p, 'write');
+    if (!/^[0-9a-f]{10}$/.test(threadId)) throw notFound('thread not found');
+    await assertAccessible(pool, await getObject('emails'), p, [threadId]);
+  };
+  app.post<{ Params: { threadId: string } }>('/v1/emails/threads/:threadId/ignore', async (req) => {
+    const p = req.principal!;
+    await threadIgnore(p, req.params.threadId);
+    await pool.query('insert into auth.email_thread_ignores (thread_id, created_by) values ($1, $2) on conflict do nothing', [req.params.threadId, p.actor]);
+    return { thread_id: req.params.threadId, ignored: true };
+  });
+  app.delete<{ Params: { threadId: string } }>('/v1/emails/threads/:threadId/ignore', async (req) => {
+    const p = req.principal!;
+    await threadIgnore(p, req.params.threadId);
+    await pool.query('delete from auth.email_thread_ignores where thread_id = $1', [req.params.threadId]);
+    return { thread_id: req.params.threadId, ignored: false };
+  });
+
+  // ---- everyone: attachments of auto-logged emails ----
+
+  // Where an auto-logged email came from: its attachment names, and the files
+  // they became once fetched. source null: not logged from a mailbox.
+  app.get<{ Params: { emailId: string } }>('/v1/emails/:emailId/mailbox-source', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    return { source: await loggedSource(p, req.params.emailId) };
+  });
+
+  // Fetches the attachments from the mailbox, once, on someone's request.
+  app.post<{ Params: { emailId: string } }>('/v1/emails/:emailId/fetch-attachments', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    return { source: await fetchLoggedAttachments(p, req.params.emailId) };
   });
 
   // ---- everyone: sending ----

@@ -16,6 +16,10 @@ export const MAIL_PROVIDERS: MailProvider[] = ['google', 'microsoft'];
 
 export const GOOGLE_SCOPES = ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.settings.basic'];
 export const MICROSOFT_PERMISSIONS = ['Mail.Send', 'User.Read.All'];
+// Reading mail for automatic logging (mailbox/sync.ts). Asked for with a
+// token of its own, so sending keeps working where the admin has not added it.
+export const GOOGLE_READ_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+export const MICROSOFT_READ_PERMISSIONS = ['Mail.Read'];
 
 const googleTokenUrl = () => process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
 const gmailUrl = () => (process.env.GMAIL_API_URL ?? 'https://gmail.googleapis.com').replace(/\/$/, '');
@@ -34,6 +38,11 @@ export interface ProviderRow {
   ms_client_secret: Buffer | null;
   secret_hint: string | null;
   ms_send_from_aliases: boolean;
+  // automatic logging (0106, mailbox/sync.ts)
+  autolog_enabled: boolean;
+  autolog_default: 'all' | 'replies' | 'off';
+  autolog_exclude: string[];
+  autolog_interval_min: number;
   status: 'unchecked' | 'ok' | 'error';
   last_error: string | null;
   last_checked_at: Date | null;
@@ -62,6 +71,9 @@ export function providerFor(rows: Map<MailProvider, ProviderRow>, address: strin
 // The provider refused the organization's credentials or the mailbox: an
 // admin must fix the setup; retrying will not help.
 export class MailAuthError extends Error {}
+// The provider will not let the service account read this mailbox: the admin
+// must add gmail.readonly (Google) or Mail.Read (Microsoft).
+export class MailReadDenied extends MailAuthError {}
 // Sending failed; retryable says whether trying again later may work.
 export class MailSendError extends Error {
   constructor(message: string, public retryable: boolean) {
@@ -95,13 +107,13 @@ export function parseGoogleKey(text: string): GoogleKey {
 }
 
 // A signed JWT asking for an access token that acts as `subject`.
-export function googleAssertion(key: GoogleKey, subject: string, now = Math.floor(Date.now() / 1000)): string {
+export function googleAssertion(key: GoogleKey, subject: string, now = Math.floor(Date.now() / 1000), scopes = GOOGLE_SCOPES): string {
   const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const header = b64({ alg: 'RS256', typ: 'JWT' });
   const claims = b64({
     iss: key.client_email,
     sub: subject,
-    scope: GOOGLE_SCOPES.join(' '),
+    scope: scopes.join(' '),
     aud: key.token_uri ?? 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600
@@ -123,7 +135,7 @@ export function forgetProvider(): void {
 
 const fingerprint = (b: Buffer | null) => createHash('sha256').update(b ?? Buffer.alloc(0)).digest('hex').slice(0, 16);
 
-async function tokenRequest(url: string, body: URLSearchParams, provider: MailProvider): Promise<{ token: string; expires: number }> {
+async function tokenRequest(url: string, body: URLSearchParams, provider: MailProvider, read = false): Promise<{ token: string; expires: number }> {
   let res: Response;
   try {
     res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body, signal: AbortSignal.timeout(20_000) });
@@ -133,6 +145,9 @@ async function tokenRequest(url: string, body: URLSearchParams, provider: MailPr
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
   if (!res.ok || !data.access_token) {
     if (res.status >= 500 || res.status === 429) throw new MailSendError(`${provider === 'google' ? 'Google' : 'Microsoft'} sign-in is unavailable (HTTP ${res.status})`, true);
+    if (read && provider === 'google' && data.error === 'unauthorized_client') {
+      throw new MailReadDenied(`Google will not let the service account read mail: add ${GOOGLE_READ_SCOPES.join(', ')} to its client ID in Google Admin (Security, API controls, Domain-wide delegation).`);
+    }
     throw new MailAuthError(authMessage(provider, data.error, data.error_description));
   }
   return { token: data.access_token, expires: Date.now() + (data.expires_in ?? 3600) * 1000 };
@@ -148,15 +163,15 @@ function authMessage(provider: MailProvider, error?: string, description?: strin
   return `${provider === 'google' ? 'Google' : 'Microsoft'} refused the organization's credentials: ${detail}`;
 }
 
-export async function accessToken(cfg: ProviderRow, mailbox: string): Promise<string> {
-  const id = cfg.provider === 'google' ? `google:${fingerprint(cfg.google_key)}:${mailbox}` : `microsoft:${cfg.ms_tenant_id}:${cfg.ms_client_id}:${fingerprint(cfg.ms_client_secret)}`;
+export async function accessToken(cfg: ProviderRow, mailbox: string, read = false): Promise<string> {
+  const id = cfg.provider === 'google' ? `google:${read ? 'read' : 'send'}:${fingerprint(cfg.google_key)}:${mailbox}` : `microsoft:${cfg.ms_tenant_id}:${cfg.ms_client_id}:${fingerprint(cfg.ms_client_secret)}`;
   const cached = tokens.get(id);
   if (cached && cached.expires > Date.now() + 60_000) return cached.token;
   let t: { token: string; expires: number };
   if (cfg.provider === 'google') {
     if (!cfg.google_key) throw new MailAuthError('Google sending is not set up');
     const key = parseGoogleKey(open(cfg.google_key));
-    t = await tokenRequest(googleTokenUrl(), new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: googleAssertion(key, mailbox) }), 'google');
+    t = await tokenRequest(googleTokenUrl(), new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: googleAssertion(key, mailbox, undefined, read ? GOOGLE_READ_SCOPES : GOOGLE_SCOPES) }), 'google', read);
   } else {
     if (!cfg.ms_client_secret || !cfg.ms_tenant_id || !cfg.ms_client_id) throw new MailAuthError('Microsoft sending is not set up');
     t = await tokenRequest(
@@ -171,8 +186,8 @@ export async function accessToken(cfg: ProviderRow, mailbox: string): Promise<st
 
 // ---- API calls ------------------------------------------------------------------------
 
-async function call(cfg: ProviderRow, mailbox: string, url: string, init: RequestInit = {}): Promise<Response> {
-  const token = await accessToken(cfg, mailbox);
+async function call(cfg: ProviderRow, mailbox: string, url: string, init: RequestInit = {}, read = false): Promise<Response> {
+  const token = await accessToken(cfg, mailbox, read);
   let res: Response;
   try {
     res = await fetch(url, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) }, signal: AbortSignal.timeout(60_000) });
@@ -187,6 +202,13 @@ async function call(cfg: ProviderRow, mailbox: string, url: string, init: Reques
     tokens.clear();
     throw new MailAuthError(`${who} refused the organization's credentials: ${message}`);
   }
+  if (read && res.status === 403) {
+    throw new MailReadDenied(
+      cfg.provider === 'microsoft'
+        ? `Microsoft will not let the app read ${mailbox}: give it the application permission ${MICROSOFT_READ_PERMISSIONS.join(', ')} with admin consent (and include the mailbox if access is limited). ${message}`
+        : `Gmail will not let the service account read ${mailbox}: ${message}`
+    );
+  }
   if (res.status === 403) {
     throw new MailAuthError(
       cfg.provider === 'microsoft'
@@ -194,9 +216,19 @@ async function call(cfg: ProviderRow, mailbox: string, url: string, init: Reques
         : `Gmail refused: ${message}`
     );
   }
+  if (read && (res.status === 404 || res.status === 410)) return res;
   if (res.status === 404) throw new MailAuthError(`${who} has no mailbox ${mailbox}`);
   throw new MailSendError(`${who}: ${message}`, res.status === 429 || res.status >= 500);
 }
+
+// A GET made with the reading token (mailbox/sync.ts). A 404 comes back as
+// a response (an expired Gmail history id, a message deleted meanwhile).
+export function readCall(cfg: ProviderRow, mailbox: string, url: string, headers: Record<string, string> = {}): Promise<Response> {
+  return call(cfg, mailbox, url, { headers }, true);
+}
+
+export const gmailBase = () => gmailUrl();
+export const graphBase = () => graphUrl();
 
 export interface Alias {
   address: string;
@@ -278,6 +310,9 @@ export interface OutgoingMessage {
   html: string;
   text: string;
   attachments: Attachment[];
+  // our own Message-ID header (Gmail only: Graph makes its own, which the
+  // mailbox sync later finds in Sent Items)
+  messageId?: string;
 }
 
 // Sends the message and returns the provider's id for it (when it gives one).
