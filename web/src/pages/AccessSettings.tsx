@@ -9,7 +9,7 @@ import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSk
 import { Select } from '../components/Select';
 import { Menu } from '../components/ui';
 import { confirmDialog } from '../components/confirm';
-import { CreateUserModal } from '../components/CreateUserModal';
+import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -116,6 +116,7 @@ export function UserSettings() {
   const [show, setShow] = useState<'active' | 'deactivated'>('active');
   const [creating, setCreating] = useState(false);
   const shown = users.filter((u) => (show === 'active') === !u.deactivated);
+  useEffect(() => { preloadCreateUser(); }, []);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);

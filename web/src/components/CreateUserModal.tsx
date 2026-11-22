@@ -19,9 +19,30 @@ const FIELDS: { key: FieldKey; label: string; required: boolean }[] = [
 
 interface RoleOption { id: string; name: string }
 
+// The schema and roles are preloaded by the pages that open this modal
+// (preloadCreateUser on mount), so the form opens fully drawn instead of
+// flashing its loading state. The modal still refreshes them each time it
+// opens, in case roles changed since.
+interface Prefetched { schema: ObjectDef; roles: RoleOption[] }
+let cached: Prefetched | null = null;
+let pending: Promise<Prefetched> | null = null;
+
+function loadCreateUser(): Promise<Prefetched> {
+  if (!pending) {
+    pending = Promise.all([getSchema('users'), api<{ results: RoleOption[] }>('GET', '/v1/roles')])
+      .then(([schema, r]) => (cached = { schema, roles: r.results.map((x) => ({ id: String(x.id), name: x.name })) }))
+      .finally(() => { pending = null; });
+  }
+  return pending;
+}
+
+export function preloadCreateUser(): void {
+  if (!cached) loadCreateUser().catch(() => {});
+}
+
 export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: (record: CrmRecord) => void }) {
-  const [schema, setSchema] = useState<ObjectDef | null>(null);
-  const [roles, setRoles] = useState<RoleOption[] | null>(null);
+  const [schema, setSchema] = useState<ObjectDef | null>(cached?.schema ?? null);
+  const [roles, setRoles] = useState<RoleOption[] | null>(cached?.roles ?? null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [roleId, setRoleId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,11 +50,11 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getSchema('users'), api<{ results: RoleOption[] }>('GET', '/v1/roles')])
-      .then(([s, r]) => {
+    loadCreateUser()
+      .then((d) => {
         if (cancelled) return;
-        setSchema(s);
-        setRoles(r.results.map((x) => ({ id: String(x.id), name: x.name })));
+        setSchema(d.schema);
+        setRoles(d.roles);
       })
       .catch((err) => !cancelled && setError({ message: (err as Error).message }));
     return () => { cancelled = true; };

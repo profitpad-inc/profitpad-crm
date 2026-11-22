@@ -8,7 +8,7 @@ import {
 } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { defaultSortDirection, displayName, displayValue, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
-import { CreateUserModal } from '../components/CreateUserModal';
+import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { AddLineModal } from '../components/AddLineModal';
 import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines';
@@ -70,6 +70,11 @@ function ObjectTableFor({ object }: { object: string }) {
   const viewId = searchParams.get('view');
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
   const activeViewId = activeView?.id;
+
+  // the Create user form opens instantly (admins on the users table)
+  useEffect(() => {
+    if (object === 'users' && me.is_admin) preloadCreateUser();
+  }, [object, me.is_admin]);
 
   // schema, views and labels for this object
   useEffect(() => {
