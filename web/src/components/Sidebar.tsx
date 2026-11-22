@@ -80,7 +80,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
             className={`nav-item${open || holdsActive ? ' active' : ''}`}
             onClick={(e) => toggleFlyout(key, e.currentTarget)}
             onMouseEnter={hoverFlyout(key)}
-            title={expanded ? undefined : item.label}
+            aria-label={expanded ? undefined : item.label}
             aria-expanded={open}
             data-flyout-toggle
           >
@@ -125,7 +125,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         )}
         <div className="sidebar-items">
           {nav.map((item, i) => renderItem(item, String(i)))}
-          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} onMouseEnter={hoverFlyout('more')} title={expanded ? undefined : 'More'} aria-expanded={moreOpen} data-flyout-toggle>
+          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} onMouseEnter={hoverFlyout('more')} aria-label={expanded ? undefined : 'More'} aria-expanded={moreOpen} data-flyout-toggle>
             <Ellipsis size={20} strokeWidth={1.75} />
             {expanded && (
               <>
