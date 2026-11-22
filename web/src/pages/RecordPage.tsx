@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -969,6 +969,8 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : lead && !opened ? lead : 'activity';
   const panel = panels.find((p) => p.key === tab);
   const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes, lead);
+  // opening/closing an activity replaces the history entry; tab clicks push one
+  // (below) so the back button returns to the tab you came from
   const go = (search: string) => navigate({ search }, { replace: true });
   const [search, setSearch] = useUrlSearch();
   const [kind, setKind] = useState('');
@@ -1199,6 +1201,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
               <ChevronRight size={14} className="activity-chevron" aria-hidden="true" />
               <strong>{title}</strong>
             </button>
+            {o === 'emails' && <EmailDirection value={p.direction} />}
             {open ? (
               <span className="activity-actions push-right">
                 {o === 'emails' && p.logged_via === 'autolog' && (threadSizes.get(threadOf(r)) ?? 0) <= 1 && <ThreadIgnoreButton threadId={threadOf(r)} />}
@@ -1248,7 +1251,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
       <div className="tabs" ref={tabsRef}>
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
-            <button onClick={() => go(searchFor(t, opened?.object ?? null, opened?.id))}>
+            <button onClick={() => { if (t !== tab) navigate({ search: searchFor(t, opened?.object ?? null, opened?.id) }); }}>
               {panels.find((p) => p.key === t)?.label ?? (t === 'preview' ? 'Preview' : t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural)}
               {tabCount(t) > 0 && <span className="tab-count">{tabCount(t)}</span>}
             </button>
@@ -1354,6 +1357,19 @@ const senderName = (from: unknown) => {
   const m = v.match(/^\s*"?([^"<]*?)"?\s*<[^>]+>\s*$/);
   return (m?.[1] || v).trim();
 };
+
+// Incoming (green, arrow in) or outgoing (blue, arrow out), so an email's
+// direction shows at a glance next to its subject.
+function EmailDirection({ value }: { value: unknown }) {
+  const d = Array.isArray(value) ? value[0] : value;
+  if (d !== 'inbound' && d !== 'outbound') return null;
+  const Arrow = d === 'inbound' ? ArrowDownLeft : ArrowUpRight;
+  return (
+    <span className={`email-direction ${d}`}>
+      <Arrow size={12} strokeWidth={2} aria-hidden /> {d === 'inbound' ? 'Incoming' : 'Outgoing'}
+    </span>
+  );
+}
 
 interface ThreadEmail { id: string; subject: string | null; from_address: string | null; sent_at: string | null; created_at: string; direction: string | null }
 
@@ -2611,7 +2627,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
               {(close) => (
                 <>
                   <button onClick={() => { close(); openCreate(); }}>Create {label}</button>
-                  <button onClick={() => { close(); setAdding(true); }}>Link an existing {label}</button>
+                  <button onClick={() => { close(); setAdding(true); }}>Associate an existing {label}</button>
                 </>
               )}
             </Menu>
@@ -2674,7 +2690,6 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
       {items.length === 0 && !adding && (
         <div className="card-empty">
           No {meta.label_plural.toLowerCase()} yet.
-          {editable && !(other === 'lines' && self === 'products') && <> Use <Plus size={12} aria-label="the add button" /> to {newLines ? 'add one' : canCreate ? 'create or link one' : 'link one'}.</>}
         </div>
       )}
       {items.map(({ record, labels }) => (
