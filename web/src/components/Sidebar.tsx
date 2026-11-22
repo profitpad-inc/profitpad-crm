@@ -138,7 +138,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
           {drawer && moreOpen && <InlineMore objects={moreObjects} />}
         </div>
         <div className="sidebar-bottom">
-          {me.user && <MentionsButton expanded={expanded} />}
+          {me.user && <MentionsButton expanded={expanded} sheet={drawer} />}
           {(me.is_admin || navCanEdit) && (
             <Link to="/settings/navigation" className="nav-item" title={expanded ? undefined : 'Edit menu'}>
               <Pencil size={18} strokeWidth={1.75} />

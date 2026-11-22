@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { AtSign } from 'lucide-react';
+import { AtSign, ChevronLeft } from 'lucide-react';
 import { api } from '../lib/api';
 import { onFrameFocus } from '../lib/frame-focus';
 import { Loading } from './Loading';
@@ -8,6 +9,8 @@ import { Loading } from './Loading';
 // The sidebar's Mentions button: notes and comments you were tagged in (@Name),
 // with a count of the unread ones. Opening a mention marks it read; "Mark all
 // as read" does the rest. "Unread only" (remembered per browser) hides read ones.
+// In the phone drawer (sheet) the list opens as a full-screen page over it, not a
+// popover beside the sidebar, which would run off the screen.
 
 interface Mention {
   kind: 'note' | 'comment';
@@ -48,7 +51,7 @@ const loadUnreadOnly = () => {
   try { return localStorage.getItem(UNREAD_KEY) === '1'; } catch { return false; }
 };
 
-export function MentionsButton({ expanded }: { expanded: boolean }) {
+export function MentionsButton({ expanded, sheet = false }: { expanded: boolean; sheet?: boolean }) {
   const [unseen, setUnseen] = useState(0);
   const [list, setList] = useState<Mention[] | null>(null);
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -135,9 +138,11 @@ export function MentionsButton({ expanded }: { expanded: boolean }) {
         {expanded && <span>Mentions</span>}
         {unseen > 0 && <span className="nav-count">{unseen > 99 ? '99+' : unseen}</span>}
       </button>
-      {anchor !== null && (
-        <div className="mentions-menu" ref={ref} style={{ bottom: Math.max(8, window.innerHeight - anchor) }} role="dialog" aria-label="Mentions">
+      {anchor !== null && (() => {
+        const panel = (
+        <div className={`mentions-menu${sheet ? ' sheet' : ''}`} ref={ref} style={sheet ? undefined : { bottom: Math.max(8, window.innerHeight - anchor) }} role="dialog" aria-label="Mentions">
           <div className="mentions-head">
+            {sheet && <button type="button" className="mentions-back" onClick={close} aria-label="Back to menu"><ChevronLeft size={22} /></button>}
             <h3>Mentions</h3>
             <button type="button" className="btn ghost small push-right" disabled={unseen === 0} onClick={() => void markAllRead()}>Mark all as read</button>
           </div>
@@ -164,7 +169,9 @@ export function MentionsButton({ expanded }: { expanded: boolean }) {
             </div>
           )}
         </div>
-      )}
+        );
+        return sheet ? createPortal(panel, document.body) : panel;
+      })()}
     </>
   );
 }
