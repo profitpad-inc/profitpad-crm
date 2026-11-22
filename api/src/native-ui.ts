@@ -18,7 +18,7 @@ const CREATE_FIELDS: Record<string, string[]> = {
   ],
   deals: ['name', 'amount', 'currency', 'pipeline', 'stage', 'close_date', 'owner'],
   tasks: ['name', 'task_type', 'status', 'priority', 'due_at', 'owner'],
-  users: ['first_name', 'last_name', 'email', 'status'],
+  users: ['first_name', 'last_name', 'email', 'phone', 'status'],
   // the builder, the link card and Status on the record page do the rest
   forms: ['name', 'description'],
   // the rest is filled in on the record page; they start as drafts

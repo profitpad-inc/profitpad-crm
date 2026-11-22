@@ -247,7 +247,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   server.registerTool('create_record', {
     title: 'Create record',
-    description: 'Creates a record. properties maps property api_names to values (dropdowns take option values). Optionally links it to existing records.',
+    description: 'Creates a record. properties maps property api_names to values (dropdowns take option values). Optionally links it to existing records. A new user (object users) needs first_name, last_name, email and role (a role id or name; admins only).',
     inputSchema: z.object({
       object: objectArg,
       properties: z.record(z.string(), z.unknown()),

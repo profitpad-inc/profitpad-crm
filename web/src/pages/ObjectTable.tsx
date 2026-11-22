@@ -8,6 +8,7 @@ import {
 } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { defaultSortDirection, displayName, displayValue, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
+import { CreateUserModal } from '../components/CreateUserModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { AddLineModal } from '../components/AddLineModal';
 import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines';
@@ -777,7 +778,16 @@ function ObjectTableFor({ object }: { object: string }) {
           }}
         />
       )}
-      {showCreate && object !== 'lines' && (
+      {showCreate && object === 'users' && me.is_admin && (
+        <CreateUserModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(r) => {
+            setShowCreate(false);
+            navigate(`/objects/${object}/${r.id}`);
+          }}
+        />
+      )}
+      {showCreate && object !== 'lines' && !(object === 'users' && me.is_admin) && (
         <CreateRecordModal
           object={schema}
           onClose={() => setShowCreate(false)}

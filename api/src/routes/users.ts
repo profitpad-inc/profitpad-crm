@@ -6,16 +6,56 @@ import { logEvent } from '../audit.js';
 import { getObject } from '../registry.js';
 import { isAdmin } from './ui.js';
 import { cleanSignature } from '../signature.js';
-import { onWrite } from '../records.js';
+import { onCreate, onWrite } from '../records.js';
 
-// Every write to a user (record page, API, MCP, imports): the signature is
-// stored cleaned.
-onWrite('users', async (_client, properties) => {
+// Asked when a user is created, and never cleared afterwards.
+const REQUIRED: { key: string; label: string }[] = [
+  { key: 'first_name', label: 'First name' },
+  { key: 'last_name', label: 'Last name' },
+  { key: 'email', label: 'Email' }
+];
+
+const blank = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+
+// Every write to a user (record page, API, MCP, imports): first name, last
+// name and email are required, and the signature is stored cleaned.
+onWrite('users', async (_client, properties, existing) => {
+  for (const f of REQUIRED) {
+    if (existing ? f.key in properties && blank(properties[f.key]) : blank(properties[f.key])) {
+      throw badRequest(`${f.label} is required`, { property: f.key });
+    }
+  }
   if (!('email_signature' in properties)) return properties;
   const v = properties.email_signature;
   if (v === null || v === undefined || v === '') return { ...properties, email_signature: null };
   if (typeof v !== 'string') throw badRequest('email_signature must be a string of HTML', { property: 'email_signature' });
   return { ...properties, email_signature: cleanSignature(v) };
+});
+
+// Every new user gets a role: "role" in the create properties, a role id or
+// name. Giving a role is an admin change (like POST /v1/roles/:id/assignments),
+// so only admins can create users.
+onCreate('users', {
+  fields: ['role'],
+  run: async (client, principal, id, { role }) => {
+    if (blank(role) || (typeof role !== 'string' && typeof role !== 'number')) {
+      throw badRequest('Role is required: send "role" with a role id or name', { property: 'role' });
+    }
+    requireScope(principal, 'admin');
+    requireRecentSignIn(principal);
+    const wanted = String(role).trim();
+    const { rows } = await client.query<{ id: string; name: string }>(
+      `select id::text as id, name from auth.roles where id::text = $1 or lower(name) = lower($1) order by (id::text = $1) desc limit 1`,
+      [wanted]
+    );
+    if (rows.length === 0) throw badRequest(`no role "${wanted}"`, { property: 'role' });
+    await client.query('insert into auth.role_assignments (role_id, user_id) values ($1, $2)', [rows[0].id, id]);
+    await client.query(
+      `insert into auth.security_events (event, actor, user_id, target_type, target_id, details)
+       values ('role.assigned', $1, $2, 'role', $3, '{}')`,
+      [principal.actor, id, rows[0].id]
+    );
+  }
 });
 
 // A user's own sessions, or anyone's for an admin (with a recent sign-in)

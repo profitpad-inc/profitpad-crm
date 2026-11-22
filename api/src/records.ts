@@ -355,6 +355,19 @@ export function onWrite(objectApiName: string, hook: WriteHook): void {
   writeHooks.set(objectApiName, hook);
 }
 
+// Create-only inputs that are not columns (a new user's role): taken out of
+// the properties before the write and handed to run after the insert, in the
+// same transaction, so a failure there undoes the create.
+type CreateExtra = {
+  fields: string[];
+  run: (client: pg.PoolClient, principal: Principal, id: string, values: Record<string, unknown>) => Promise<void>;
+};
+const createExtras = new Map<string, CreateExtra>();
+
+export function onCreate(objectApiName: string, extra: CreateExtra): void {
+  createExtras.set(objectApiName, extra);
+}
+
 export async function createRecord(
   client: pg.PoolClient,
   obj: ObjectDef,
@@ -366,6 +379,15 @@ export async function createRecord(
   // a comment goes on exactly one record (migration 0085 checks it at commit)
   if (obj.object_type_id === 'pc_0034' && associations.length !== 1) {
     throw badRequest('a comment must be on one record: add it with POST /v1/objects/<object>/<record id>/comments, or the add_comment MCP tool');
+  }
+  const extra = createExtras.get(obj.api_name);
+  const extraValues: Record<string, unknown> = {};
+  if (extra) {
+    properties = { ...(properties ?? {}) };
+    for (const f of extra.fields) {
+      extraValues[f] = properties[f];
+      delete properties[f];
+    }
   }
   const hook = writeHooks.get(obj.api_name);
   if (hook) properties = await hook(client, properties ?? {}, null);
@@ -382,6 +404,7 @@ export async function createRecord(
   for (const a of associations) {
     await client.query('select meta.associate($1, $2, $3, $4, $5)', [obj.object_type_id, id, a.object, a.id, a.label_id ?? null]);
   }
+  if (extra) await extra.run(client, principal, id, extraValues);
   return id;
 }
 

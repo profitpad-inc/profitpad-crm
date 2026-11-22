@@ -9,6 +9,7 @@ import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSk
 import { Select } from '../components/Select';
 import { Menu } from '../components/ui';
 import { confirmDialog } from '../components/confirm';
+import { CreateUserModal } from '../components/CreateUserModal';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access.
@@ -113,6 +114,7 @@ export function UserSettings() {
   const { me, toast } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles, reloadUsers } = useAccessData();
   const [show, setShow] = useState<'active' | 'deactivated'>('active');
+  const [creating, setCreating] = useState(false);
   const shown = users.filter((u) => (show === 'active') === !u.deactivated);
 
   async function run(fn: () => Promise<unknown>) {
@@ -171,7 +173,7 @@ export function UserSettings() {
         People sign in with Google or Microsoft when their email matches a user here whose Status is not Deactivated. What
         they can see comes from their roles; a user with no role sees nothing.
       </>}
-      actions={<Link className="btn primary" to="/objects/users"><Plus size={14} /> Add a user</Link>}
+      actions={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> Add a user</button>}
     >
       {loaded && users.length > 0 && (
         <div className="settings-toolbar">
@@ -184,7 +186,7 @@ export function UserSettings() {
       {error && <div className="error">{error}</div>}
       {!loaded && <TableSkeleton rows={4} />}
       {loaded && users.length === 0 && (
-        <EmptyState icon={<Users size={18} />} title="No users yet" action={<Link className="btn primary" to="/objects/users">Add a user</Link>}>
+        <EmptyState icon={<Users size={18} />} title="No users yet" action={<button className="btn primary" onClick={() => setCreating(true)}>Add a user</button>}>
           Create a user record with someone's email so they can sign in.
         </EmptyState>
       )}
@@ -272,6 +274,16 @@ export function UserSettings() {
             </tbody>
           </table>
         </div>
+      )}
+      {creating && (
+        <CreateUserModal
+          onClose={() => setCreating(false)}
+          onCreated={async () => {
+            setCreating(false);
+            toast('User created');
+            await Promise.all([reloadUsers(), reloadRoles()]).catch((err) => setError((err as Error).message));
+          }}
+        />
       )}
     </SettingsPage>
   );
