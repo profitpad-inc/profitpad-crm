@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { checkManifest, loadManifest, type Manifest } from './packages.js';
+import { checkManifest, fillSettings, loadManifest, readSettings, settingsIn, type Manifest } from './packages.js';
 
 const API_RE = /^[a-z][a-z0-9_]{0,62}$/;
 const OPTION_RE = /^[A-Za-z0-9._]{1,63}$/;
@@ -108,4 +108,47 @@ test('the defense menu points only at its own views, core views and known object
   assert.deepEqual(bottom.slice(1).map((it) => (it.type === 'section' ? it.label : it.type)), ['Business Dev', 'Tools', 'Resources']);
   const bd = bottom[1]?.type === 'section' ? bottom[1].items.map((it) => (it.type === 'custom_view' ? it.slug : it.type)) : [];
   assert.deepEqual(bd.slice(0, 2), ['command-dashboard', 'my-dashboard']);
+});
+
+test('the manifest check covers settings and integrations', () => {
+  const base: Manifest = { name: 'x', label: 'X', version: '1', settings: [{ key: 'n8n_url', label: 'n8n address', type: 'url' }] };
+  const integ = (over: Record<string, unknown> = {}) => ({ key: 'ai-report', label: 'AI report', url: '{{setting:n8n_url}}/webhook/a', secret_header: 'X-PCRM-Secret', ...over });
+  assert.doesNotThrow(() => checkManifest('x', { ...base, integrations: [integ()] }));
+  assert.throws(() => checkManifest('x', { ...base, integrations: [integ({ url: '{{setting:other}}/a' })] }), /not in settings/);
+  assert.throws(() => checkManifest('x', { ...base, integrations: [integ({ key: 'Bad Key' })] }), /needs a key/);
+  assert.throws(() => checkManifest('x', { ...base, integrations: [integ(), integ()] }), /twice/);
+  assert.throws(() => checkManifest('x', { ...base, integrations: [integ({ audience: 'all' })] }), /audience/);
+  assert.throws(() => checkManifest('x', { ...base, integrations: [integ(), integ({ key: 'other', secret_header: 'X-Other' })] }), /same secret_header/);
+  assert.throws(() => checkManifest('x', { ...base, settings: [{ key: 'Bad', label: 'B' }] }), /every setting/);
+  assert.throws(() => checkManifest('x', { ...base, settings: [{ key: 'a', label: 'A', type: 'number' as 'url' }] }), /url or text/);
+});
+
+test('install settings are checked and filled into integration addresses', () => {
+  const m: Manifest = { name: 'x', label: 'X', version: '1', settings: [{ key: 'n8n_url', label: 'n8n address', type: 'url' }, { key: 'region', label: 'Region' }] };
+  assert.deepEqual(readSettings(m, { n8n_url: ' https://n8n.example.com/ ', region: '' }), { n8n_url: 'https://n8n.example.com' });
+  assert.deepEqual(readSettings(m, undefined), {});
+  assert.throws(() => readSettings(m, { other: 'a' }), /no setting "other"/);
+  assert.throws(() => readSettings(m, { n8n_url: 'http://n8n.example.com' }), /n8n address: .*https/);
+  assert.throws(() => readSettings(m, { n8n_url: 'not an address' }), /n8n address/);
+  assert.throws(() => readSettings(m, { n8n_url: 5 }), /must be text/);
+  assert.deepEqual(settingsIn('{{setting:a}}/x/{{setting:b}}/{{setting:a}}'), ['a', 'b']);
+  assert.equal(fillSettings('{{setting:n8n_url}}/webhook/a', { n8n_url: 'https://n8n.example.com' }), 'https://n8n.example.com/webhook/a');
+  assert.equal(fillSettings('{{setting:n8n_url}}/webhook/a', {}), null);
+  assert.equal(fillSettings('https://fixed.example.com/a', {}), 'https://fixed.example.com/a');
+});
+
+test('the defense integrations are the ones its views call, all behind the n8n address', async () => {
+  const m = await loadManifest('defense');
+  const keys = new Set((m.integrations ?? []).map((i) => i.key));
+  const dir = fileURLToPath(new URL('../packages/defense/views/', import.meta.url));
+  const called = new Set<string>();
+  for (const f of (await readdir(dir)).filter((f) => f.endsWith('.tsx'))) {
+    for (const x of (await readFile(dir + f, 'utf8')).matchAll(/callIntegration\(\s*['"]([a-z0-9_-]+)['"]/g)) called.add(x[1]);
+  }
+  assert.deepEqual([...called].sort(), [...keys].sort());
+  for (const i of m.integrations ?? []) {
+    assert.deepEqual(settingsIn(i.url), ['n8n_url'], i.key);
+    assert.equal(i.audience, 'everyone', i.key);
+    assert.equal(i.secret_header, 'X-PCRM-Secret', i.key);
+  }
 });

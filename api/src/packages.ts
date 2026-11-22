@@ -1,8 +1,13 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
+import { randomBytes } from 'node:crypto';
 import { pool, withTx, type TxContext } from './db.js';
 import { badRequest, notFound } from './errors.js';
+import { approveFields, canApprove, requestFields } from './approval.js';
+import type { Principal } from './auth.js';
+import { checkUrl, KEY_RE } from './integrations.js';
+import { open, seal, secretBoxReady } from './secret-box.js';
 import { checkViewOn } from './views.js';
 import { ICON_NAMES } from './icons.js';
 import { HOTBAR_MAX } from './routes/ui.js';
@@ -81,6 +86,35 @@ export interface Manifest {
   // the whole mobile hotbar (Search is added after it): menu or home first, then
   // links and sections, at most HOTBAR_MAX items in all.
   nav?: { items: NavSpec[]; bottom?: NavSpec[] };
+  // values the installer asks for (all optional): the CLI prompts for each,
+  // the API takes them as "settings". {{setting:<key>}} in an integration's url
+  // becomes the value; a url setting is an https address without its final /.
+  settings?: SettingSpec[];
+  // view integrations (migration 0111), matched on key: one that exists is
+  // left alone. Created only when every setting its url uses was given;
+  // otherwise skipped, and a later install with the setting creates it. With
+  // secret_header, the install makes one random secret for all of the
+  // package's integrations (the one already stored, when some exist) and
+  // shows a new one once, for the other end (an n8n workflow) to check.
+  integrations?: IntegrationSpec[];
+}
+
+export interface SettingSpec {
+  key: string;
+  label: string;
+  description?: string;
+  type?: 'url' | 'text';
+  example?: string;
+}
+
+export interface IntegrationSpec {
+  key: string;
+  label: string;
+  url: string;
+  description?: string;
+  audience?: 'admins' | 'everyone';
+  secret_header?: string;
+  data_example?: unknown;
 }
 
 export type NavSpec =
@@ -90,9 +124,10 @@ export type NavSpec =
   | { type: 'card_scanner'; label?: string }
   | { type: 'section'; label: string; icon?: string; items: NavSpec[] };
 
-export type StepAction = 'create' | 'exists' | 'conflict' | 'update';
+// skip: left out because a setting it needs was not given
+export type StepAction = 'create' | 'exists' | 'conflict' | 'update' | 'skip';
 export interface Step {
-  kind: 'object' | 'property' | 'option' | 'option_scope' | 'association_label' | 'record' | 'view' | 'option_list' | 'option_list_link' | 'nav';
+  kind: 'object' | 'property' | 'option' | 'option_scope' | 'association_label' | 'record' | 'view' | 'option_list' | 'option_list_link' | 'nav' | 'integration';
   target: string;
   action: StepAction;
   detail?: string;
@@ -106,6 +141,9 @@ export interface InstallResult {
   previous_version: string | null;
   counts: Record<StepAction, number>;
   steps: Step[];
+  // a secret this install made for its integrations: shown here once, never
+  // again (the CRM keeps it sealed). Put it in the other end's check.
+  secret?: { header: string; value: string; integrations: string[] };
 }
 
 // ---- manifests --------------------------------------------------------------------
@@ -196,6 +234,24 @@ export function checkManifest(name: string, m: Manifest): void {
     if (!v.slug || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(v.slug) || !v.name) fail('every view needs a slug (lowercase letters, digits, dashes) and a name');
     once(`view ${v.slug}`);
   }
+  const settingKeys = new Set<string>();
+  for (const s of m.settings ?? []) {
+    if (!s?.key || !NAME_RE.test(s.key) || !s.label) fail('every setting needs a key (lowercase letters, digits, underscores) and a label');
+    once(`setting ${s.key}`);
+    if (s.type !== undefined && s.type !== 'url' && s.type !== 'text') fail(`setting ${s.key}: type must be url or text`);
+    settingKeys.add(s.key);
+  }
+  for (const i of m.integrations ?? []) {
+    if (!i?.key || !KEY_RE.test(i.key)) fail('every integration needs a key: 2 to 40 lowercase letters, digits, - and _, starting with a letter');
+    once(`integration ${i.key}`);
+    if (!i.label || i.label.length > 100) fail(`integration ${i.key} needs a label (up to 100 characters)`);
+    if (typeof i.url !== 'string' || !i.url) fail(`integration ${i.key} needs a url`);
+    for (const k of settingsIn(i.url)) if (!settingKeys.has(k)) fail(`integration ${i.key}: its url uses {{setting:${k}}}, which is not in settings`);
+    if (i.audience !== undefined && i.audience !== 'admins' && i.audience !== 'everyone') fail(`integration ${i.key}: audience must be admins or everyone`);
+    if (i.secret_header !== undefined && !/^[A-Za-z0-9-]{1,64}$/.test(i.secret_header)) fail(`integration ${i.key}: secret_header must be a header name like X-Webhook-Secret`);
+  }
+  const headers = new Set((m.integrations ?? []).map((i) => i.secret_header).filter(Boolean));
+  if (headers.size > 1) fail('the integrations share one secret, so they must use the same secret_header');
   if (m.nav !== undefined) {
     if (!m.nav || !Array.isArray(m.nav.items)) fail('nav needs items');
     checkNav(m.nav.items, fail, 0);
@@ -234,6 +290,48 @@ function checkNav(items: NavSpec[], fail: (msg: string) => never, depth: number)
   }
 }
 
+// ---- settings ---------------------------------------------------------------------
+
+const SETTING_RE = /\{\{setting:([a-z][a-z0-9_]{0,62})\}\}/g;
+
+// The setting keys a text uses, in order, once each.
+export function settingsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(SETTING_RE)].map((x) => x[1]))];
+}
+
+// The values given for an install, checked against the manifest's settings:
+// unknown keys are refused, blank ones dropped, url ones must be https
+// addresses and lose their final /.
+export function readSettings(m: Manifest, given: Record<string, unknown> | undefined): Record<string, string> {
+  const specs = new Map((m.settings ?? []).map((s) => [s.key, s]));
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(given ?? {})) {
+    const spec = specs.get(key);
+    if (!spec) throw badRequest(`package "${m.name}" has no setting "${key}"${specs.size ? ` (settings: ${[...specs.keys()].join(', ')})` : ''}`);
+    if (raw === null || raw === undefined) continue;
+    if (typeof raw !== 'string') throw badRequest(`setting ${key} must be text`);
+    let value = raw.trim();
+    if (!value) continue;
+    if (spec.type === 'url') {
+      value = value.replace(/\/+$/, '');
+      try {
+        checkUrl(value);
+      } catch (err) {
+        throw badRequest(`${spec.label}: ${(err as Error).message.replace(/^url /, 'the address ')}`);
+      }
+    }
+    if (value.length > 1000) throw badRequest(`setting ${key} is too long`);
+    out[key] = value;
+  }
+  return out;
+}
+
+// text with its {{setting:...}} filled, or null when a setting it uses was not given
+export function fillSettings(text: string, settings: Record<string, string>): string | null {
+  if (settingsIn(text).some((k) => !(k in settings))) return null;
+  return text.replace(SETTING_RE, (_, k: string) => settings[k]);
+}
+
 // A package view's code and queries, from api/packages/<name>/views/.
 export async function loadViewFiles(name: string, slug: string): Promise<{ source: string; queries: unknown }> {
   const dir = `${PACKAGES_DIR}${name}/views/`;
@@ -261,6 +359,12 @@ interface Ctx {
   dryRun: boolean;
   // objects the manifest creates, before they exist (dry runs)
   planned: Map<string, string>;
+  // the install's settings (readSettings), and who runs it: an admin signed in
+  // to the CRM approves the integrations it creates; anyone else leaves them off
+  settings: Record<string, string>;
+  principal?: Principal;
+  actor: string;
+  secret?: InstallResult['secret'];
 }
 
 async function objectCode(ctx: Ctx, api: string): Promise<string | null> {
@@ -523,7 +627,84 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
     ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: made[0].id, created: true });
   }
 
+  if (m.integrations?.length) await installIntegrations(ctx, m);
   if (m.nav) await installNav(ctx, m, m.nav);
+}
+
+// View integrations, matched on key. The secret is one per install for all of
+// the package's integrations: the one already stored on an integration this
+// package made, else a new random one, returned once in the result.
+async function installIntegrations(ctx: Ctx, m: Manifest): Promise<void> {
+  const header = m.integrations!.find((i) => i.secret_header)?.secret_header ?? null;
+  let secret: string | null = null;
+  let secretIsNew = false;
+  const made: string[] = [];
+  for (const spec of m.integrations!) {
+    const target = `${spec.key} (${spec.label})`;
+    const { rows: found } = await ctx.c.query('select key from auth.view_integrations where key = $1', [spec.key]);
+    if (found[0]) {
+      ctx.steps.push({ kind: 'integration', target, action: 'exists', detail: 'kept as it is: change it in Settings, View integrations' });
+      ctx.items.push({ kind: 'integration', object_type_id: 'auth', item_key: spec.key, created: false });
+      continue;
+    }
+    const url = fillSettings(spec.url, ctx.settings);
+    if (url === null) {
+      const missing = settingsIn(spec.url).filter((k) => !(k in ctx.settings));
+      const labels = missing.map((k) => m.settings?.find((s) => s.key === k)?.label ?? k);
+      ctx.steps.push({ kind: 'integration', target, action: 'skip', detail: `no ${labels.join(', ')} given: the views that call it will not work until an install with it creates it` });
+      continue;
+    }
+    const checked = checkUrl(url);
+    if (spec.secret_header && !secretBoxReady()) {
+      ctx.steps.push({ kind: 'integration', target, action: 'conflict', detail: 'the server cannot store secrets: MASTER_ENCRYPTION_KEY is not set' });
+      continue;
+    }
+    if (spec.secret_header && secret === null) {
+      // reuse the secret of an integration this package made before, so the other end keeps working
+      const { rows: mine } = await ctx.c.query(
+        `select v.secret_value from auth.view_integrations v
+         join meta.package_items i on i.package = $1 and i.kind = 'integration' and i.item_key = v.key and i.created
+         where v.secret_header = $2 and v.secret_value is not null order by v.created_at limit 1`, [m.name, spec.secret_header]);
+      if (mine[0]) secret = open(mine[0].secret_value);
+      else {
+        secret = randomBytes(32).toString('base64url');
+        secretIsNew = true;
+      }
+    }
+    const approval = approvalFor(ctx);
+    const state = approval.enabled ? 'on' : 'off until an admin signed in to the CRM turns it on in Settings, View integrations';
+    const secretNote = spec.secret_header ? (secretIsNew ? `, header ${spec.secret_header} with a new secret (shown once below)` : `, header ${spec.secret_header} with the secret from the earlier install`) : '';
+    ctx.steps.push({ kind: 'integration', target, action: 'create', detail: `${new URL(checked).host}, ${state}${secretNote}` });
+    ctx.items.push({ kind: 'integration', object_type_id: 'auth', item_key: spec.key, created: true });
+    if (spec.secret_header) made.push(spec.key);
+    if (ctx.dryRun) continue;
+    const dataExample = spec.data_example === undefined ? null : JSON.stringify(spec.data_example);
+    await ctx.c.query(
+      `insert into auth.view_integrations (key, label, description, url, secret_header, secret_value, audience, data_example, created_by,
+         enabled, awaiting_approval, requested_by, requested_via, requested_at, approved_by, approved_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      [spec.key, spec.label, spec.description ?? null, checked, spec.secret_header ?? null,
+        spec.secret_header ? seal(secret!) : null, spec.audience ?? 'admins', dataExample, ctx.actor,
+        approval.enabled, approval.awaiting_approval, approval.requested_by ?? null, approval.requested_via ?? null, approval.requested_at ?? null,
+        approval.approved_by ?? null, approval.approved_at ?? null]);
+  }
+  // shown once: only a secret this install made, and only when it is kept
+  if (secretIsNew && header && made.length && !ctx.dryRun) ctx.secret = { header, value: secret!, integrations: made };
+}
+
+// On when an admin signed in to the CRM (with a recent sign-in) installs, as
+// when they add one in Settings; otherwise off, waiting for that admin.
+function approvalFor(ctx: Ctx): { enabled: boolean; awaiting_approval: boolean; requested_by?: string; requested_via?: string | null; requested_at?: Date; approved_by?: string; approved_at?: Date } {
+  const p = ctx.principal;
+  if (p && canApprove(p)) {
+    try {
+      return { enabled: true, ...approveFields(p) };
+    } catch {
+      // not signed in recently enough to approve: it waits like any other
+    }
+  }
+  if (p) return { enabled: false, ...requestFields(p) };
+  return { enabled: false, awaiting_approval: true, requested_by: ctx.actor, requested_via: 'package installer', requested_at: new Date() };
 }
 
 // The default sidebar menu, after the views so its custom_view items can point
@@ -624,7 +805,7 @@ async function fillView(ctx: Ctx, source: string, queries: unknown): Promise<{ s
 export async function checkPackageViews(name: string): Promise<{ slug: string; ok: boolean; queries?: number; error?: string }[]> {
   const m = await loadManifest(name);
   return withTx({ actor: 'system:package' }, async (c) => {
-    const ctx: Ctx = { c, steps: [], items: [], dryRun: true, planned: new Map() };
+    const ctx: Ctx = { c, steps: [], items: [], dryRun: true, planned: new Map(), settings: {}, actor: 'system:package' };
     const out = [];
     for (const v of m.views ?? []) {
       try {
@@ -642,14 +823,20 @@ export async function checkPackageViews(name: string): Promise<{ slug: string; o
   });
 }
 
-export async function installPackage(name: string, opts: { dryRun?: boolean; ctx: TxContext }): Promise<InstallResult> {
+// settings: values for the manifest's settings (readSettings); blank or left
+// out means what needs them is skipped
+export async function installPackage(name: string, opts: { dryRun?: boolean; ctx: TxContext; settings?: Record<string, unknown> }): Promise<InstallResult> {
   const m = await loadManifest(name);
   const dryRun = opts.dryRun === true;
+  const settings = readSettings(m, opts.settings);
   return withTx({ ...opts.ctx, source: 'package' }, async (c) => {
     const { rows: prev } = await c.query('select version from meta.packages where name = $1 for update', [m.name]);
-    const ctx: Ctx = { c, steps: [], items: [], dryRun, planned: new Map() };
+    const ctx: Ctx = {
+      c, steps: [], items: [], dryRun, planned: new Map(), settings,
+      principal: opts.ctx.principal, actor: opts.ctx.principal?.actor ?? opts.ctx.actor ?? 'system:package'
+    };
     await runManifest(ctx, m);
-    const counts: Record<StepAction, number> = { create: 0, exists: 0, conflict: 0, update: 0 };
+    const counts: Record<StepAction, number> = { create: 0, exists: 0, conflict: 0, update: 0, skip: 0 };
     for (const s of ctx.steps) counts[s.action]++;
     const result: InstallResult = {
       package: m.name, version: m.version, dry_run: dryRun, installed: false,
@@ -681,6 +868,7 @@ export async function installPackage(name: string, opts: { dryRun?: boolean; ctx
         [m.name, i.kind, i.object_type_id, i.item_key, i.created, m.version]);
     }
     result.installed = true;
+    if (ctx.secret) result.secret = ctx.secret;
     return result;
   });
 }

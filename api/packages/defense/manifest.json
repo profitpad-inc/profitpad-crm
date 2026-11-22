@@ -2,7 +2,7 @@
   "name": "defense",
   "label": "Defense",
   "version": "0.1.0",
-  "description": "Business development for defense, public safety and federal sellers: a defense pipeline with PWIN and BANT scoring, contract vehicles and solicitations, compliance fields on products and quotes, partnerships, OEM integrations, proposals, BOMs, travel, marketing materials and opportunity discovery. Built from defense_crm_handoff.md sections 2.1 and 2.2.",
+  "description": "Business development for defense, public safety and federal sellers: a defense pipeline with PWIN and BANT scoring, contract vehicles and solicitations, compliance fields on products and quotes, partnerships, OEM integrations, proposals, BOMs, travel, marketing materials and opportunity discovery. Details in DEFENSE_HANDOFF.md beside this manifest.",
 
   "objects": [
     { "api_name": "partnerships", "label_singular": "Partnership", "label_plural": "Partnerships", "description": "Teaming partners, VARs, distributors and alliances" },
@@ -388,6 +388,26 @@
     { "object": "opportunity_sources", "values": { "name": "Australian AusTender", "category": "international", "url": "https://www.tenders.gov.au", "description": "Australian Government tenders" } },
     { "object": "opportunity_sources", "values": { "name": "DSCA (FMS)", "category": "international", "url": "https://www.dsca.mil", "description": "Foreign Military Sales notifications" } },
     { "object": "opportunity_sources", "values": { "name": "CanadaBuys", "category": "international", "url": "https://canadabuys.canada.ca", "description": "Canadian government tenders" } }
+  ],
+
+  "settings": [
+    { "key": "n8n_url", "label": "n8n address", "type": "url", "example": "https://n8n.example.com",
+      "description": "Where your n8n runs, with the three Defense CRM workflows (Opportunity evaluator, AI report, BOM reader). Leave blank to skip them: Opp. Evaluator, Reports and the BOM reader in Operations will not work until an install with the address adds them." }
+  ],
+
+  "integrations": [
+    { "key": "opportunity-evaluator", "label": "Opportunity evaluator (Claude)", "audience": "everyone", "secret_header": "X-PCRM-Secret",
+      "url": "{{setting:n8n_url}}/webhook/defense-crm-opportunity-evaluator",
+      "description": "Opp. Evaluator: a product and an RFP or requirements document (PDF as base64, or text) to Claude; answers { ok, evaluation } with a fit score, risk, strengths, gaps and next steps.",
+      "data_example": { "product": { "id": "0000000001", "name": "GOBI", "category": "", "description": "", "specifications": "", "key_features": "", "compliance_standards": "" }, "requirements_text": "", "document": null } },
+    { "key": "ai-report", "label": "AI report (Claude)", "audience": "everyone", "secret_header": "X-PCRM-Secret",
+      "url": "{{setting:n8n_url}}/webhook/defense-crm-ai-report",
+      "description": "Reports: a report type (sales_projection, pipeline_summary, win_loss, customer_segment, trade_show, bd_activity), filters, notes and the filtered pipeline to Claude; answers { ok, report }.",
+      "data_example": { "report_type": "pipeline_summary", "filters": null, "notes": "", "data": null } },
+    { "key": "bom-reader", "label": "BOM reader (Claude)", "audience": "everyone", "secret_header": "X-PCRM-Secret",
+      "url": "{{setting:n8n_url}}/webhook/defense-crm-bom-reader",
+      "description": "Operations: a BOM file (PDF as base64, or CSV text) to Claude; answers { ok, bom } with parts, quantities, costs and total COGS.",
+      "data_example": { "product_name": "", "document": null } }
   ],
 
   "views": [
