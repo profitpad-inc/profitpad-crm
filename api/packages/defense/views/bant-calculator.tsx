@@ -78,8 +78,8 @@ function verdict(total) {
   return { label: 'Monitor', tone: 'muted' as const }
 }
 
-// true on a phone-width frame, where the results bar shrinks to two short lines
-function useNarrow(max = 600) {
+// true on phones and tablets, where the results bar shrinks to two short lines
+function useNarrow(max = 900) {
   const [narrow, setNarrow] = useState(() => window.innerWidth <= max)
   useEffect(() => {
     const update = () => setNarrow(window.innerWidth <= max)
@@ -242,18 +242,18 @@ export default function BantCalculator() {
           <Stack gap={narrow ? 6 : 10}>
             {narrow ? (
               <>
-                <Row gap={10} wrap={false} style={{ justifyContent: 'space-between' }}>
-                  <Row gap={10} wrap={false}>
+                <Row gap={10} style={{ justifyContent: 'space-between' }}>
+                  <Row gap={10}>
                     <span style={{ fontSize: 18, fontWeight: 700 }}>{formatNumber(total)} / 100</span>
                     <span className="small muted">PWIN {formatNumber(total)}%</span>
                   </Row>
                   <Badge tone={v.tone}>{v.label}</Badge>
                 </Row>
-                <Row gap={8} wrap={false} style={{ justifyContent: 'space-between' }}>
-                  <Row gap={8} wrap={false} className="small" style={{ fontWeight: 600 }}>
+                <Row gap={8} style={{ justifyContent: 'space-between' }}>
+                  <Row gap={8} className="small" style={{ fontWeight: 600 }}>
                     {SECTIONS.map((s) => <span key={s.key} title={s.label} style={{ color: s.color }}>{s.label[0]} {scores[s.key]}</span>)}
                   </Row>
-                  <Row gap={6} wrap={false}>
+                  <Row gap={6}>
                     <Button small onClick={() => setAnswers({})} disabled={!answered}>Clear</Button>
                     <Button small variant="primary" disabled={saving || (!creating && !deal) || answered === 0} onClick={save}>
                       {saving ? 'Saving…' : creating ? 'Create' : 'Update'}
