@@ -205,7 +205,7 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
 // (opens the full menu) or home (on the home page it turns into menu), so Settings and Mentions stay reachable
 // on a phone; then links and sections (open a sheet of their links) in any order. Stored with bottom_left 'none';
 // rows from before migration 0103 have bottom_left 'menu' or 'home', meaning that button came first.
-const HOTBAR_MAX = 4;
+export const HOTBAR_MAX = 5;
 const isHotbarLead = (it: NavItem | undefined) => it?.type === 'menu' || it?.type === 'home';
 
 // a stored hotbar not led by menu or home (saved while the hotbar was free) is read with menu first

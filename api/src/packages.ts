@@ -5,6 +5,7 @@ import { pool, withTx, type TxContext } from './db.js';
 import { badRequest, notFound } from './errors.js';
 import { checkViewOn } from './views.js';
 import { ICON_NAMES } from './icons.js';
+import { HOTBAR_MAX } from './routes/ui.js';
 
 // Packages (migration 0091): a niche's setup kept as a manifest in
 // api/packages/<name>/manifest.json and installed into a tenant in one
@@ -76,12 +77,14 @@ export interface Manifest {
   publish_views?: boolean;
   // the default sidebar menu (what everyone without a group or own menu sees),
   // set the first time the package installs; later installs keep the tenant's
-  // menu. A custom_view or object this CRM does not have is left out.
-  nav?: { items: NavSpec[]; bottom_left?: 'menu' | 'home'; bottom?: NavSpec[] };
+  // menu. A custom_view or object this CRM does not have is left out. bottom is
+  // the whole mobile hotbar (Search is added after it): menu or home first, then
+  // links and sections, at most HOTBAR_MAX items in all.
+  nav?: { items: NavSpec[]; bottom?: NavSpec[] };
 }
 
 export type NavSpec =
-  | { type: 'home' | 'divider' }
+  | { type: 'home' | 'divider' | 'menu' }
   | { type: 'object'; object: string; label?: string }
   | { type: 'custom_view'; slug: string; label?: string }
   | { type: 'card_scanner'; label?: string }
@@ -196,11 +199,15 @@ export function checkManifest(name: string, m: Manifest): void {
   if (m.nav !== undefined) {
     if (!m.nav || !Array.isArray(m.nav.items)) fail('nav needs items');
     checkNav(m.nav.items, fail, 0);
-    if (m.nav.bottom_left !== undefined && m.nav.bottom_left !== 'menu' && m.nav.bottom_left !== 'home') fail('nav.bottom_left must be "menu" or "home"');
+    if ((m.nav as { bottom_left?: unknown }).bottom_left !== undefined) fail('nav.bottom_left is gone: put menu or home first in nav.bottom');
     if (m.nav.bottom !== undefined) {
-      if (!Array.isArray(m.nav.bottom) || m.nav.bottom.length > 3) fail('nav.bottom must be a list of at most 3 items');
-      checkNav(m.nav.bottom, fail, 1);
-      if (m.nav.bottom.some((it) => it.type === 'home' || it.type === 'divider')) fail('nav.bottom takes object, custom_view and card_scanner items only');
+      const b = m.nav.bottom;
+      if (!Array.isArray(b) || b.length > HOTBAR_MAX) fail(`nav.bottom must be a list of at most ${HOTBAR_MAX} items`);
+      const lead = (it: NavSpec | undefined) => it?.type === 'menu' || it?.type === 'home';
+      if (!lead(b[0])) fail('nav.bottom must start with menu or home');
+      if (b.slice(1).some(lead)) fail('menu and home can only be the first nav.bottom item');
+      if (b.some((it) => it.type === 'divider')) fail('nav.bottom cannot hold dividers (sections in it can)');
+      checkNav(b.slice(1), fail, 0);
     }
   }
 }
@@ -560,18 +567,18 @@ async function installNav(ctx: Ctx, m: Manifest, nav: NonNullable<Manifest["nav"
   ctx.steps.push({ kind: 'nav', target, action: 'update', detail: notes.join('; ') });
   ctx.items.push({ kind: 'nav', object_type_id: 'ui', item_key: 'default', created: true });
   if (ctx.dryRun) return;
-  // A manifest's hotbar is the older shape: a left button (bottom_left, default "menu") then up to 3 links.
-  // A menu already saved in the free shape (bottom_left 'none', since migration 0103) keeps its hotbar
-  // unless the manifest gives links.
-  const args = [JSON.stringify(items), nav.bottom_left ?? null, bottom && JSON.stringify(bottom)];
+  // A manifest's hotbar is the whole hotbar, stored in the free shape (bottom_left 'none', migration 0103).
+  // Without one the menu keeps the hotbar it has.
+  const args = [JSON.stringify(items), bottom && JSON.stringify(bottom)];
   const { rowCount } = await ctx.c.query(
     `update ui.nav_menus set items = $1,
-       bottom_left = case when $3::jsonb is not null then coalesce($2, 'menu') when bottom_left = 'none' then 'none' else coalesce($2, bottom_left) end,
-       bottom_items = coalesce($3, bottom_items),
+       bottom_left = case when $2::jsonb is not null then 'none' else bottom_left end,
+       bottom_items = coalesce($2, bottom_items),
        updated_at = now(), updated_by = meta.actor() where scope = 'default'`, args);
   if (!rowCount) {
     await ctx.c.query(
-      `insert into ui.nav_menus (scope, items, bottom_left, bottom_items) values ('default', $1, coalesce($2, 'menu'), coalesce($3, '[]'::jsonb))`, args);
+      `insert into ui.nav_menus (scope, items, bottom_left, bottom_items)
+       values ('default', $1, case when $2::jsonb is null then 'menu' else 'none' end, coalesce($2, '[]'::jsonb))`, args);
   }
 }
 

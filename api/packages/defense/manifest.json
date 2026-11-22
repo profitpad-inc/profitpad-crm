@@ -537,6 +537,133 @@
           }
         ]
       }
+    ],
+    "bottom": [
+      {
+        "type": "menu"
+      },
+      {
+        "type": "section",
+        "label": "Business Dev",
+        "icon": "briefcase",
+        "items": [
+          {
+            "type": "custom_view",
+            "slug": "command-dashboard",
+            "label": "Command Dashboard"
+          },
+          {
+            "type": "custom_view",
+            "slug": "my-dashboard",
+            "label": "My Dashboard"
+          },
+          {
+            "type": "custom_view",
+            "slug": "defense-pipeline",
+            "label": "Pipeline"
+          },
+          {
+            "type": "custom_view",
+            "slug": "partnerships",
+            "label": "Partnerships"
+          },
+          {
+            "type": "custom_view",
+            "slug": "quotations",
+            "label": "Quotations"
+          },
+          {
+            "type": "custom_view",
+            "slug": "oem-integrations",
+            "label": "OEM Integrations"
+          },
+          {
+            "type": "custom_view",
+            "slug": "defense-reports",
+            "label": "Reports"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "label": "Tools",
+        "icon": "wrench",
+        "items": [
+          {
+            "type": "custom_view",
+            "slug": "bant-calculator",
+            "label": "BANT Calculator"
+          },
+          {
+            "type": "object",
+            "object": "proposals",
+            "label": "RFP Generator"
+          },
+          {
+            "type": "custom_view",
+            "slug": "scenario-generator",
+            "label": "Scenario Generator"
+          },
+          {
+            "type": "custom_view",
+            "slug": "opportunity-evaluator",
+            "label": "Opp. Evaluator"
+          },
+          {
+            "type": "card_scanner",
+            "label": "Card Scanner"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "label": "Resources",
+        "icon": "book-open",
+        "items": [
+          {
+            "type": "object",
+            "object": "contacts",
+            "label": "Contacts"
+          },
+          {
+            "type": "custom_view",
+            "slug": "product-pricing",
+            "label": "Product Pricing"
+          },
+          {
+            "type": "custom_view",
+            "slug": "materials-library",
+            "label": "Marketing Materials"
+          },
+          {
+            "type": "object",
+            "object": "documents",
+            "label": "Documents"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "label": "Operations",
+        "icon": "factory",
+        "items": [
+          {
+            "type": "custom_view",
+            "slug": "org-chart",
+            "label": "Team Hierarchy"
+          },
+          {
+            "type": "custom_view",
+            "slug": "operations-bom",
+            "label": "Operations"
+          },
+          {
+            "type": "custom_view",
+            "slug": "travel-ops",
+            "label": "Travel Ops"
+          }
+        ]
+      }
     ]
   }
 }

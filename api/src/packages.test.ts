@@ -81,8 +81,15 @@ test('the manifest check covers the default menu', () => {
   assert.throws(() => checkManifest('x', nav([{ type: 'section', label: 'S', icon: 'not-an-icon', items: [] }])), /not a Lucide icon/);
   assert.throws(() => checkManifest('x', nav([{ type: 'link' }])), /unknown nav item/);
   assert.throws(() => checkManifest('x', nav([{ type: 'object', object: 'contacts', label: '' }])), /1 to 63/);
-  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'home' }] })), /bottom takes/);
-  assert.throws(() => checkManifest('x', nav([], { bottom_left: 'left' })), /bottom_left/);
+  const sec = { type: 'section', label: 'S', items: [{ type: 'object', object: 'contacts' }] };
+  assert.doesNotThrow(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, sec, sec, sec, sec] })));
+  assert.doesNotThrow(() => checkManifest('x', nav([], { bottom: [{ type: 'home' }, { type: 'card_scanner' }] })));
+  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, sec, sec, sec, sec, sec] })), /at most 5/);
+  assert.throws(() => checkManifest('x', nav([], { bottom: [sec] })), /start with menu or home/);
+  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, { type: 'home' }] })), /only be the first/);
+  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, { type: 'divider' }] })), /dividers/);
+  assert.throws(() => checkManifest('x', nav([{ type: 'menu' }])), /unknown nav item/);
+  assert.throws(() => checkManifest('x', nav([], { bottom_left: 'menu' })), /bottom_left is gone/);
 });
 
 test('the defense menu points only at its own views, core views and known objects', async () => {
@@ -90,9 +97,15 @@ test('the defense menu points only at its own views, core views and known object
   assert.equal(m.publish_views, true);
   const slugs = new Set((m.views ?? []).map((v) => v.slug));
   const objects = new Set([...(m.objects ?? []).map((o) => o.api_name), 'contacts', 'quotes', 'products']);
-  const flat = (m.nav?.items ?? []).flatMap((it) => (it.type === 'section' ? it.items : [it]));
+  const flat = [...(m.nav?.items ?? []), ...(m.nav?.bottom ?? [])].flatMap((it) => (it.type === 'section' ? it.items : [it]));
   for (const it of flat) {
     if (it.type === 'custom_view') assert.ok(slugs.has(it.slug) || it.slug === 'reporting', it.slug);
     if (it.type === 'object') assert.ok(objects.has(it.object), it.object);
   }
+  // the phone hotbar: Menu, then the sidebar's four sections, Business Dev led by the two dashboards
+  const bottom = m.nav?.bottom ?? [];
+  assert.equal(bottom[0]?.type, 'menu');
+  assert.deepEqual(bottom.slice(1).map((it) => (it.type === 'section' ? it.label : it.type)), ['Business Dev', 'Tools', 'Resources', 'Operations']);
+  const bd = bottom[1]?.type === 'section' ? bottom[1].items.map((it) => (it.type === 'custom_view' ? it.slug : it.type)) : [];
+  assert.deepEqual(bd.slice(0, 2), ['command-dashboard', 'my-dashboard']);
 });
