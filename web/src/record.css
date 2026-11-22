@@ -214,6 +214,10 @@
   display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0; border: 0; background: none;
   color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
+/* the title takes the room left over and wraps inside it, so the kind, tags, actions and time stay on its
+   first line instead of dropping to a line of their own */
+.activity-head > .activity-toggle { flex: 1 1 12ch; }
+.activity-head > .activity-kind, .activity-head > .activity-actions { white-space: nowrap; }
 .activity-chevron { flex-shrink: 0; align-self: center; color: var(--muted-text); transition: transform 0.15s; }
 .activity-item.open .activity-chevron { transform: rotate(90deg); }
 .activity-actions { display: inline-flex; gap: 6px; align-self: center; }
@@ -768,3 +772,11 @@ a.comment-author:hover { color: var(--primary); }
 .attachment-tile-text { display: flex; flex-direction: column; min-width: 0; }
 .attachment-tile-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-tile-meta { font-size: 12px; color: var(--muted-text); }
+
+/* ---- phones: Properties and Associations tabs (RecordPage passes them to the stream) --------- */
+/* the right column's cards, drawn inside a stream tab: same card styles, no column chrome */
+.record-page .record-right.record-tab-panel {
+  display: flex; flex-direction: column; gap: 12px; padding: 0; border: 0; background: transparent; overflow: visible;
+}
+.record-page .record-right.record-tab-panel:empty { display: none; }
+.record-page .stream-panel > .record-tab-panel + .props { margin-top: 12px; }

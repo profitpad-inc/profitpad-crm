@@ -41,6 +41,7 @@ import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
+import { useIsMobile } from '../lib/use-mobile';
 import { Loading, Spinner } from '../components/Loading';
 
 // a contact's additional emails, as stored ("a@x.com; b@y.com")
@@ -388,6 +389,7 @@ export function RecordPage() {
 
   // whether the user on a user record is a Super Admin (from their roles), for "Sign in as"
   const [userSuperAdmin, setUserSuperAdmin] = useState<{ id: string; admin: boolean } | null>(null);
+  const mobile = useIsMobile();
 
   if (mentioned) return <MentionedOnly object={object} id={id} items={mentioned} back={back} />;
   if (error) return <div className="page"><div className="error">{error}</div></div>;
@@ -456,6 +458,34 @@ export function RecordPage() {
     </div>
   );
   const streamProps = { linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, canSend, onCompose: (o: ComposeObject | null, mode?: 'send') => { if (o) void startCompose(o, mode); else { composeDirty.current = false; setCompose(null); } } };
+  const propertyList = <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} flash={flash} changedBy={changedBy} />;
+  // the right column: this object's own cards (public link, signing, file, ...), then the linked records
+  const ownCards = (
+    <>
+      {(object === 'quotes' || object === 'invoices' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
+      {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
+      {object === 'quotes' && <QuoteTemplateCard quoteId={record.id} canEdit={schema.permissions.edit && record.can_edit !== false} />}
+      {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
+      {object === 'files' && <FileCard record={record} />}
+    </>
+  );
+  const linkCards = (
+    <>
+      {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
+      {cards.map((o) => (
+        <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} linked={associated} onChanged={refresh} />
+      ))}
+    </>
+  );
+  // Phones: the properties and the linked records are tabs of the stream (Properties
+  // first and the default) instead of a long stack above and below it. Only the
+  // pages whose middle is the stream alone; editors (forms, views, ...) keep the stack.
+  const tabbed = mobile && !noRight && hasStream && object !== 'email_campaigns';
+  const linkedCount = cards.reduce((n, o) => n + (associated.find((a) => a.object === o)?.records.length ?? 0), 0);
+  const panels: StreamPanel[] = tabbed ? [
+    { key: 'properties', label: 'Properties', content: <><div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
+    { key: 'associations', label: 'Associations', count: linkedCount, content: <div className="record-right record-tab-panel">{linkCards}</div> }
+  ] : [];
 
   return (
     <LiveContext.Provider value={live}>
@@ -538,7 +568,7 @@ export function RecordPage() {
           )}
         </div>
         {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
-        <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} flash={flash} changedBy={changedBy} />
+        {!tabbed && propertyList}
       </aside>
 
       {isUser ? (
@@ -578,21 +608,14 @@ export function RecordPage() {
             ) : (
               <>
                 {commentThread}
-                <ActivityStream {...streamProps} />
+                <ActivityStream {...streamProps} panels={panels} />
               </>
             )}
           </section>
 
-          {!noRight && <aside className="record-right">
-            {(object === 'quotes' || object === 'invoices' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
-            {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
-            {object === 'quotes' && <QuoteTemplateCard quoteId={record.id} canEdit={schema.permissions.edit && record.can_edit !== false} />}
-            {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
-            {object === 'files' && <FileCard record={record} />}
-            {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
-            {cards.map((o) => (
-              <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} linked={associated} onChanged={refresh} />
-            ))}
+          {!noRight && !tabbed && <aside className="record-right">
+            {ownCards}
+            {linkCards}
           </aside>}
         </>
       )}
@@ -842,7 +865,10 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   );
 }
 
-type Tab = 'preview' | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
+type Tab = 'preview' | PanelTab | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
+// On phones the properties and the right column are tabs of the stream (RecordPage passes them in)
+type PanelTab = 'properties' | 'associations';
+interface StreamPanel { key: PanelTab; label: string; count?: number; content: ReactNode }
 
 type HistoryVia = 'crm_ui' | 'api' | 'mcp' | 'calculation' | 'other';
 
@@ -901,11 +927,12 @@ function decodeEntities(text: string): string {
 }
 
 // The tab is in ?tab= and an opened activity in ?pc_<object code>=<record id>,
-// so a copied link brings back both. File records open on Preview, unless the
-// link opens an activity (then Activity); the default tab is left out.
-function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string; id: string } | null, codes: string[], previewFirst = false): string {
+// so a copied link brings back both. File records open on Preview and other
+// records on phones on Properties (lead), unless the link opens an activity
+// (then Activity); the default tab is left out.
+function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string; id: string } | null, codes: string[], lead: Tab | null = null): string {
   const next = new URLSearchParams(params);
-  if (tab === (previewFirst && !open ? 'preview' : 'activity')) next.delete('tab');
+  if (tab === (lead && !open ? lead : 'activity')) next.delete('tab');
   else next.set('tab', tab);
   for (const c of codes) next.delete(c);
   if (open) next.set(open.code, open.id);
@@ -913,10 +940,10 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
   return q ? `?${q}` : '';
 }
 
-function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend }: {
+function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend, panels = [] }: {
   linksLoaded: boolean; object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
   compose: { object: ComposeObject; key: number; mode?: 'send' } | null; onCompose: (o: ComposeObject | null, mode?: 'send') => void; onComposeDirty: (dirty: boolean) => void;
-  canSend: boolean;
+  canSend: boolean; panels?: StreamPanel[];
 }) {
   const { objectByName, toast } = useApp();
   const navigate = useNavigate();
@@ -925,13 +952,15 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const linksTo = objectByName.get(object)?.links_to ?? [];
   // file records lead with a Preview tab holding the file itself
   const previewFirst = object === 'files';
-  const tabs: Tab[] = [...(previewFirst ? ['preview' as const] : []), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
+  const tabs: Tab[] = [...(previewFirst ? ['preview' as const] : []), ...panels.map((p) => p.key), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
   const codeOf = (o: string) => objectByName.get(o)?.object_type_id ?? '';
   const codes = ACTIVITY_OBJECTS.map(codeOf).filter(Boolean);
   const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
   const tabParam = params.get('tab') as Tab | null;
-  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : previewFirst && !opened ? 'preview' : 'activity';
-  const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes, previewFirst);
+  const lead: Tab | null = previewFirst ? 'preview' : panels[0]?.key ?? null;
+  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : lead && !opened ? lead : 'activity';
+  const panel = panels.find((p) => p.key === tab);
+  const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes, lead);
   const go = (search: string) => navigate({ search }, { replace: true });
   const [search, setSearch] = useUrlSearch();
   const [kind, setKind] = useState('');
@@ -1050,6 +1079,11 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   }));
 
   const countOf = (o: string) => associated.find((a) => a.object === o)?.records.length ?? 0;
+  const tabCount = (t: Tab) => {
+    const p = panels.find((x) => x.key === t);
+    if (p) return p.count ?? 0;
+    return t === 'preview' || t === 'activity' || t === 'changes' ? 0 : countOf(t);
+  };
 
   // comments on each listed activity, for the count on collapsed entries
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
@@ -1194,8 +1228,8 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
             <button onClick={() => go(searchFor(t, opened?.object ?? null, opened?.id))}>
-              {t === 'preview' ? 'Preview' : t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural}
-              {t !== 'preview' && t !== 'activity' && t !== 'changes' && countOf(t) > 0 && <span className="tab-count">{countOf(t)}</span>}
+              {panels.find((p) => p.key === t)?.label ?? (t === 'preview' ? 'Preview' : t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural)}
+              {tabCount(t) > 0 && <span className="tab-count">{tabCount(t)}</span>}
             </button>
           </div>
         ))}
@@ -1211,10 +1245,12 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
         <ActivityComposer key={compose.object} hidden={!composing} object={compose.object} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
           onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
       ))}
-      {openedHidden && opened && tab !== 'changes' && tab !== 'preview' && (
+      {openedHidden && opened && tab !== 'changes' && tab !== 'preview' && !panel && (
         <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet pinned />
       )}
-      {tab === 'preview' ? (
+      {panel ? (
+        <div className="stream-panel">{panel.content}</div>
+      ) : tab === 'preview' ? (
         <FileViewer fileId={id} />
       ) : tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
