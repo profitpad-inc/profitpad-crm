@@ -1,7 +1,7 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
-import { fileInfo, fileLink, formatBytes, openFile } from '../lib/files';
+import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
@@ -14,7 +14,7 @@ import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
 import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
-import { FileViewer } from '../components/FileViewer';
+import { FilePreviewModal, FileViewer } from '../components/FileViewer';
 import { ViewCode } from '../components/ViewCode';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
 import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
@@ -577,7 +577,6 @@ export function RecordPage() {
               </>
             ) : (
               <>
-                {object === 'files' && <FileViewer record={record} />}
                 {commentThread}
                 <ActivityStream {...streamProps} />
               </>
@@ -843,7 +842,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   );
 }
 
-type Tab = 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
+type Tab = 'preview' | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
 
 type HistoryVia = 'crm_ui' | 'api' | 'mcp' | 'calculation' | 'other';
 
@@ -902,10 +901,11 @@ function decodeEntities(text: string): string {
 }
 
 // The tab is in ?tab= and an opened activity in ?pc_<object code>=<record id>,
-// so a copied link brings back both.
-function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string; id: string } | null, codes: string[]): string {
+// so a copied link brings back both. File records open on Preview, unless the
+// link opens an activity (then Activity); the default tab is left out.
+function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string; id: string } | null, codes: string[], previewFirst = false): string {
   const next = new URLSearchParams(params);
-  if (tab === 'activity') next.delete('tab');
+  if (tab === (previewFirst && !open ? 'preview' : 'activity')) next.delete('tab');
   else next.set('tab', tab);
   for (const c of codes) next.delete(c);
   if (open) next.set(open.code, open.id);
@@ -923,13 +923,15 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const [params] = useSearchParams();
   const liveStamp = useLiveStamp();
   const linksTo = objectByName.get(object)?.links_to ?? [];
-  const tabs: Tab[] = ['activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
-  const tabParam = params.get('tab') as Tab | null;
-  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : 'activity';
+  // file records lead with a Preview tab holding the file itself
+  const previewFirst = object === 'files';
+  const tabs: Tab[] = [...(previewFirst ? ['preview' as const] : []), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
   const codeOf = (o: string) => objectByName.get(o)?.object_type_id ?? '';
   const codes = ACTIVITY_OBJECTS.map(codeOf).filter(Boolean);
   const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
-  const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes);
+  const tabParam = params.get('tab') as Tab | null;
+  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : previewFirst && !opened ? 'preview' : 'activity';
+  const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes, previewFirst);
   const go = (search: string) => navigate({ search }, { replace: true });
   const [search, setSearch] = useUrlSearch();
   const [kind, setKind] = useState('');
@@ -1192,8 +1194,8 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
             <button onClick={() => go(searchFor(t, opened?.object ?? null, opened?.id))}>
-              {t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural}
-              {t !== 'activity' && t !== 'changes' && countOf(t) > 0 && <span className="tab-count">{countOf(t)}</span>}
+              {t === 'preview' ? 'Preview' : t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural}
+              {t !== 'preview' && t !== 'activity' && t !== 'changes' && countOf(t) > 0 && <span className="tab-count">{countOf(t)}</span>}
             </button>
           </div>
         ))}
@@ -1209,10 +1211,12 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
         <ActivityComposer key={compose.object} hidden={!composing} object={compose.object} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
           onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
       ))}
-      {openedHidden && opened && tab !== 'changes' && (
+      {openedHidden && opened && tab !== 'changes' && tab !== 'preview' && (
         <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet pinned />
       )}
-      {tab === 'changes' ? (
+      {tab === 'preview' ? (
+        <FileViewer fileId={id} />
+      ) : tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
       ) : (
         <div className="timeline">
@@ -1663,9 +1667,9 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
 const ATTACHMENTS_LINE = /<p class="pc-email-attachments">[\s\S]*?<\/p>/;
 
 // An auto-logged email's attachments as tiles under its body. Once fetched
-// from the mailbox each tile opens its file; before that, a click fetches them
-// (only on request, once), saving them as files linked to the email and its
-// records, and opens the one clicked.
+// from the mailbox each tile shows its file in a popup (FilePreviewModal);
+// before that, a click fetches them (only on request, once), saving them as
+// files linked to the email and its records, and shows the one clicked.
 interface MailboxSource {
   attachments: string[];
   fetched_at: string | null;
@@ -1678,6 +1682,8 @@ function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched:
   const [source, setSource] = useState<MailboxSource | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the file shown in the popup
+  const [preview, setPreview] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     api<{ source: MailboxSource | null }>('GET', `/v1/emails/${emailId}/mailbox-source`)
@@ -1687,34 +1693,20 @@ function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched:
   }, [emailId]);
   if (!source || (!source.attachments.length && !source.fetched_at)) return null;
 
-  async function open(id: string) {
-    setError(null);
-    try {
-      await openFile(id);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  // the tab opens before the fetch so pop-up blockers count it as the click's
   async function fetchAndOpen(name: string) {
     setBusy(name);
     setError(null);
-    const tab = window.open('', '_blank');
     try {
       const r = await api<{ source: MailboxSource }>('POST', `/v1/emails/${emailId}/fetch-attachments`);
       setSource(r.source);
       await onFetched();
       const file = r.source.files.find((f) => f.name === name);
-      if (file && tab) {
-        tab.opener = null;
-        tab.location.href = await fileLink(file.id);
+      if (file) {
+        setPreview(file.id);
       } else {
-        tab?.close();
         toast(r.source.files.length ? `${r.source.files.length} attachment${r.source.files.length === 1 ? '' : 's'} saved` : 'No attachments found in the mailbox');
       }
     } catch (err) {
-      tab?.close();
       setError((err as Error).message);
     } finally {
       setBusy(null);
@@ -1740,13 +1732,14 @@ function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched:
       ) : (
         <div className="attachment-tiles">
           {source.fetched_at
-            ? source.files.map((f) => tile(f.id, f.name ?? f.id, formatBytes(f.size_bytes), () => void open(f.id), 'Open'))
+            ? source.files.map((f) => tile(f.id, f.name ?? f.id, formatBytes(f.size_bytes), () => setPreview(f.id), 'Preview'))
             : source.attachments.map((name, i) => tile(`${i}:${name}`, name, source.can_fetch ? 'Click to fetch' : 'Not fetched',
               source.can_fetch ? () => void fetchAndOpen(name) : null,
-              source.can_fetch ? 'Fetch from the mailbox and open' : 'Only the mailbox owner can fetch attachments'))}
+              source.can_fetch ? 'Fetch from the mailbox and preview' : 'Only the mailbox owner can fetch attachments'))}
         </div>
       )}
       {error && <div className="error">{error}</div>}
+      {preview && <FilePreviewModal fileId={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

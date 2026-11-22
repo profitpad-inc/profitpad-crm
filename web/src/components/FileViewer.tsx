@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState, type ComponentType } from 'react';
-import { Download, ExternalLink, File as FileIcon, FileArchive, FileAudio, FileCode, FileImage, FileSpreadsheet, FileText, FileVideo, Presentation } from 'lucide-react';
-import { type CrmRecord } from '../lib/api';
+import { createPortal } from 'react-dom';
+import { Download, ExternalLink, File as FileIcon, FileArchive, FileAudio, FileCode, FileImage, FileSpreadsheet, FileText, FileVideo, Presentation, X } from 'lucide-react';
 import { fileInfo, fileLink, formatBytes, openFile, type FileInfo } from '../lib/files';
 import { Loading } from './Loading';
 
@@ -36,10 +36,11 @@ function iconFor(type: string, name: string): ComponentType<{ size?: number; str
   return FileIcon;
 }
 
-// The file itself, front and centre on a file record: images, video, audio,
-// PDFs and plain text preview in place; anything else gets a large type icon
-// with Open and Download.
-export function FileViewer({ record }: { record: CrmRecord }) {
+// The file itself: the Preview tab of a file record, and the popup that
+// attachment tiles open (FilePreviewModal). Images, video, audio, PDFs and
+// plain text preview in place; anything else gets a large type icon with Open
+// and Download. onClose: shown in the popup, adds the X.
+export function FileViewer({ fileId, onClose }: { fileId: string; onClose?: () => void }) {
   const [file, setFile] = useState<FileInfo | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +53,7 @@ export function FileViewer({ record }: { record: CrmRecord }) {
     setUrl(null);
     setFailed(null);
     setError(null);
-    fileInfo([record.id]).then(async ([f]) => {
+    fileInfo([fileId]).then(async ([f]) => {
       if (!live) return;
       setFile(f ?? null);
       if (f?.status === 'ready' && f.mime_type && kindOf(f.mime_type) !== 'other') {
@@ -63,9 +64,9 @@ export function FileViewer({ record }: { record: CrmRecord }) {
     return () => {
       live = false;
     };
-  }, [record.id]);
+  }, [fileId]);
 
-  const open = (download: boolean) => openFile(record.id, download).catch((err) => setError((err as Error).message));
+  const open = (download: boolean) => openFile(fileId, download).catch((err) => setError((err as Error).message));
   const type = file?.mime_type ?? '';
   const name = file?.name ?? 'Untitled file';
   const kind = failed ? 'other' : kindOf(type);
@@ -74,16 +75,17 @@ export function FileViewer({ record }: { record: CrmRecord }) {
   const details = file ? [type || 'Unknown type', formatBytes(file.size_bytes)].filter(Boolean).join(', ') : '';
 
   return (
-    <div className="card file-viewer">
+    <div className={onClose ? 'file-viewer in-modal' : 'card file-viewer'}>
       <div className="file-viewer-head">
         <div className="file-viewer-title">
-          <h2 title={name}>{file ? name : '\u00a0'}</h2>
+          <h2 title={name}>{file ? name : error ? 'File' : '\u00a0'}</h2>
           <div className="muted small">{details}</div>
         </div>
-        {ready && (
+        {(ready || onClose) && (
           <div className="file-viewer-actions">
-            <button className="btn small" onClick={() => open(false)}><ExternalLink size={14} /> Open</button>
-            <button className="btn small" onClick={() => open(true)}><Download size={14} /> Download</button>
+            {ready && <button className="btn small" onClick={() => open(false)}><ExternalLink size={14} /> Open</button>}
+            {ready && <button className="btn small" onClick={() => open(true)}><Download size={14} /> Download</button>}
+            {onClose && <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>}
           </div>
         )}
       </div>
@@ -128,6 +130,25 @@ export function FileViewer({ record }: { record: CrmRecord }) {
       </div>
       {error && <div className="error">{error}</div>}
     </div>
+  );
+}
+
+// A file in a popup over the page, for attachment tiles. Escape, the X or a
+// click outside closes it. Clicks inside stop here, so the activity the tile
+// sits in does not take them as its own.
+export function FilePreviewModal({ fileId, onClose }: { fileId: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="overlay file-preview-overlay" onMouseDown={onClose} onClick={(e) => e.stopPropagation()}>
+      <div className="modal file-preview-modal" role="dialog" aria-modal="true" aria-label="File preview" onMouseDown={(e) => e.stopPropagation()}>
+        <FileViewer fileId={fileId} onClose={onClose} />
+      </div>
+    </div>,
+    document.body
   );
 }
 
