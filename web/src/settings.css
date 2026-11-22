@@ -192,9 +192,9 @@
 .nav-edit-name { border: 0; background: none; padding: 2px 4px; margin: 0 -4px; font: inherit; color: inherit; text-align: left; border-radius: var(--radius-sm); cursor: text; }
 .nav-edit-name:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .nav-edit-input { flex: 1; max-width: 320px; height: 28px; padding: 2px 8px; margin: 0 -4px; font: inherit; font-weight: inherit; }
-.nav-edit-row.section > .nav-edit-label { font-weight: 600; }
-.nav-edit-row.divider > .nav-edit-label { color: var(--muted-text); font-size: 12px; }
-.nav-edit-row.divider > .nav-edit-label::after { content: ''; flex: 1; border-top: 1px dashed var(--border); margin-left: 4px; }
+.nav-edit-row.is-section > .nav-edit-label { font-weight: 600; }
+.nav-edit-row.is-divider > .nav-edit-label { color: var(--muted-text); font-size: 12px; }
+.nav-edit-row.is-divider > .nav-edit-label::after { content: ''; flex: 1; border-top: 1px dashed var(--border); margin-left: 4px; }
 .nav-edit-row > .icon-btn { opacity: 0; }
 .nav-edit-row:hover > .icon-btn, .nav-edit-row:focus-within > .icon-btn { opacity: 1; }
 .nav-edit-children { flex-basis: 100%; margin: 2px 0 2px 14px; padding-left: 8px; border-left: 2px solid var(--hairline); display: flex; flex-direction: column; gap: 1px; }

@@ -1072,7 +1072,7 @@ function NavSettings() {
     return (
       <div
         key={i}
-        className={`nav-edit-row ${it.type}${child ? ' child' : ''}${dropHere && dropAt.index === i ? ' drop-before' : ''}${dropHere && dropAt.index === list.length && i === list.length - 1 ? ' drop-after' : ''}`}
+        className={`nav-edit-row is-${it.type}${child ? ' child' : ''}${dropHere && dropAt.index === i ? ' drop-before' : ''}${dropHere && dropAt.index === list.length && i === list.length - 1 ? ' drop-after' : ''}`}
         onDragOver={(e) => dragOverRow(e, listKey, i, it)}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(); }}
       >
