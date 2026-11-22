@@ -20,8 +20,10 @@ interface AppState {
   navSource: 'default' | 'group' | 'user';
   // whether this user may change their own menu (Super Admins always; others when their group, or the everyone setting, allows it)
   navCanEdit: boolean;
+  // objects left out of the sidebar's More menu
+  moreHidden: string[];
   // mobile bottom bar: the left button, then the links (Search is always added after them)
-  bottomLeft: 'menu' | 'home';
+  // the mobile hotbar's items, in order (Search is always added after them)
   bottomNav: NavItem[];
   // custom views this user can open (menu items for others are hidden)
   customViews: CustomViewSummary[];
@@ -55,8 +57,8 @@ interface AppState {
 export interface NavPreview {
   label: string;
   items: NavItem[];
-  bottomLeft: 'menu' | 'home';
   bottom: NavItem[];
+  moreHidden: string[];
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -72,8 +74,8 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   const [nav, setNav] = useState<NavItem[]>([]);
   const [navSource, setNavSource] = useState<'default' | 'group' | 'user'>('default');
   const [navCanEdit, setNavCanEdit] = useState(false);
-  const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
   const [bottomNav, setBottomNav] = useState<NavItem[]>([]);
+  const [moreHidden, setMoreHidden] = useState<string[]>([]);
   const [navPreview, setNavPreview] = useState<NavPreview | null>(null);
   const [customViews, setCustomViews] = useState<CustomViewSummary[]>([]);
   const [themes, setThemes] = useState<Themes>({ light: DEFAULT_THEME, dark: DEFAULT_DARK_THEME });
@@ -108,12 +110,12 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
   }, [me]);
 
   const reloadNav = useCallback(async () => {
-    const res = await api<{ source: 'default' | 'group' | 'user'; items: NavItem[]; bottom_left: 'menu' | 'home'; bottom: NavItem[]; can_edit?: boolean }>('GET', '/v1/ui/nav');
+    const res = await api<{ source: 'default' | 'group' | 'user'; items: NavItem[]; bottom: NavItem[]; more_hidden?: string[]; can_edit?: boolean }>('GET', '/v1/ui/nav');
     setNav(res.items);
     setNavSource(res.source);
     setNavCanEdit(res.can_edit === true);
-    setBottomLeft(res.bottom_left ?? 'menu');
     setBottomNav(res.bottom ?? []);
+    setMoreHidden(res.more_hidden ?? []);
   }, []);
 
   const reloadCustomViews = useCallback(async () => {
@@ -153,7 +155,8 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
       value={{
         me, objects, objectByName: new Map(objects.map((o) => [o.api_name, o])),
         nav: navPreview?.items ?? nav, navSource, navCanEdit,
-        bottomLeft: navPreview?.bottomLeft ?? bottomLeft, bottomNav: navPreview?.bottom ?? bottomNav,
+        bottomNav: navPreview?.bottom ?? bottomNav,
+        moreHidden: navPreview?.moreHidden ?? moreHidden,
         navPreview, setNavPreview, customViews, theme: themes[mode], themes, mode, colorMode, setColorMode, setPreviewMode,
         reloadNav, reloadObjects, reloadCustomViews, setThemes, dropdownColors, setDropdownColors, logo, setLogo, signOut, toast
       }}

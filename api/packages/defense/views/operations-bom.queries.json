@@ -1,0 +1,4 @@
+{
+  "boms": "select b.{{id:boms}} as id, b.name, b.product_category, b.product_category__label as category, b.total_cogs, b.target_margin, b.bom_file, b.notes, b.created_at, (select count(*) from associations a where a.object = 'boms' and a.other_object = 'lines' and a.record_id = b.{{id:boms}}) as parts, (select sum(coalesce(l.quantity, 0) * coalesce(l.unit_cost, 0)) from associations a join lines l on l.pc_0020_id = a.other_record_id where a.object = 'boms' and a.other_object = 'lines' and a.record_id = b.{{id:boms}}) as parts_cost from boms b order by b.created_at desc",
+  "categories": "select api_value, label from property_options where object_type_id = '{{code:boms}}' and property = 'product_category' and record_status = 'active' order by display_order"
+}

@@ -1,0 +1,6 @@
+{
+  "products": "select p.pc_0021_id as id, p.name, p.product_category, p.product_category__label as category, p.description, p.specifications, p.key_features, p.compliance_standards, p.spec_documents from products p order by p.name",
+  "categories": "select api_value, label from property_options where object_type_id = 'pc_0021' and property = 'product_category' and record_status = 'active' order by display_order",
+  "inbox": "select l.{{id:leads}} as id, l.name, l.agency, l.solicitation_number, l.due_date, l.raw_text, l.summary from leads l where l.status = 'pushed_to_evaluator' and l.fit_score is null order by l.created_at desc",
+  "history": "select l.{{id:leads}} as id, l.name, l.agency, l.solicitation_number, l.fit_score, l.fit_risk, l.fit_risk__label as fit_risk_label, l.fit_evaluation, l.requirements_document, l.updated_at, (select p.name from associations a join products p on p.pc_0021_id = a.other_record_id where a.object = 'leads' and a.other_object = 'products' and a.record_id = l.{{id:leads}} order by a.created_at desc limit 1) as product from leads l where l.fit_score is not null order by l.updated_at desc"
+}

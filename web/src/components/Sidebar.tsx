@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
-import { MORE_GROUPS, initials, objectIcon } from '../lib/display';
+import { initials, moreGroups, objectIcon } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { onFrameFocus } from '../lib/frame-focus';
@@ -26,7 +26,8 @@ function readExpanded(): boolean {
 // On the rail, More and each section open a flyout beside the sidebar, one at a time.
 type Flyout = { key: string; top: number };
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, navCanEdit, navPreview, objectByName, objects, customViews, logo } = useApp();
+  const { me, nav, navCanEdit, navPreview, objectByName, objects, customViews, logo, moreHidden } = useApp();
+  const moreObjects = objects.map((o) => o.api_name).filter((o) => !moreHidden.includes(o));
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
@@ -134,7 +135,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
               </>
             )}
           </button>
-          {drawer && moreOpen && <InlineMore objects={objects.map((o) => o.api_name)} />}
+          {drawer && moreOpen && <InlineMore objects={moreObjects} />}
         </div>
         <div className="sidebar-bottom">
           {me.user && <MentionsButton expanded={expanded} />}
@@ -157,7 +158,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         </div>
       </nav>
       {!drawer && flyout && (flyout.key === 'more'
-        ? <MoreMenu objects={objects.map((o) => o.api_name)} anchorTop={flyout.top} onClose={closeFlyout} />
+        ? <MoreMenu objects={moreObjects} anchorTop={flyout.top} onClose={closeFlyout} />
         : <SectionMenu section={nav[Number(flyout.key)]} anchorTop={flyout.top} onClose={closeFlyout} />)}
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
     </>
@@ -167,14 +168,6 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
 // Fixed size, top aligned with the More button (kept on screen), so it
 // doesn't jump when hovering between groups of different lengths.
 const MORE_MENU_HEIGHT = 580;
-
-function moreGroups(objects: string[]) {
-  const grouped = new Set(MORE_GROUPS.flatMap((g) => g.objects));
-  return [
-    ...MORE_GROUPS.map((g) => ({ ...g, objects: g.objects.filter((o) => objects.includes(o)) })),
-    { label: 'Custom objects', objects: objects.filter((o) => !grouped.has(o)) }
-  ].filter((g) => g.objects.length > 0);
-}
 
 // Drawer version of More: every group listed in place, no flyout.
 function InlineMore({ objects }: { objects: string[] }) {
@@ -237,6 +230,7 @@ function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTo
     >
       <div className="more-groups">
         <h3>More</h3>
+        {groups.length === 0 && <div className="section-menu-empty">Everything here is hidden</div>}
         {groups.map((g) => (
           <button key={g.label} className={`more-group${g.label === current?.label ? ' active' : ''}`} onMouseEnter={() => setGroup(g.label)} onClick={() => setGroup(g.label)}>
             <span>{g.label}</span>

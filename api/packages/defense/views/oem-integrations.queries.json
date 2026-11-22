@@ -1,0 +1,4 @@
+{
+  "integrations": "select o.{{id:oem_integrations}} as id, o.name, o.integration_type, o.integration_type__label as integration_type_label, o.status, o.status__label as status_label, o.priority, o.priority__label as priority_label, o.contact_name, o.contact_email, o.target_completion, o.go_live_date, o.description, o.value_proposition, o.next_steps, o.notes, o.owner__label as owner_name, o.created_at from oem_integrations o order by o.created_at desc",
+  "options": "select property, api_value, label from property_options where object_type_id = '{{code:oem_integrations}}' and property in ('integration_type', 'status', 'priority') and record_status = 'active' order by property, display_order"
+}

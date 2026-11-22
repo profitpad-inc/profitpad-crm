@@ -560,9 +560,14 @@ async function installNav(ctx: Ctx, m: Manifest, nav: NonNullable<Manifest["nav"
   ctx.steps.push({ kind: 'nav', target, action: 'update', detail: notes.join('; ') });
   ctx.items.push({ kind: 'nav', object_type_id: 'ui', item_key: 'default', created: true });
   if (ctx.dryRun) return;
+  // A manifest's hotbar is the older shape: a left button (bottom_left, default "menu") then up to 3 links.
+  // A menu already saved in the free shape (bottom_left 'none', since migration 0103) keeps its hotbar
+  // unless the manifest gives links.
   const args = [JSON.stringify(items), nav.bottom_left ?? null, bottom && JSON.stringify(bottom)];
   const { rowCount } = await ctx.c.query(
-    `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
+    `update ui.nav_menus set items = $1,
+       bottom_left = case when $3::jsonb is not null then coalesce($2, 'menu') when bottom_left = 'none' then 'none' else coalesce($2, bottom_left) end,
+       bottom_items = coalesce($3, bottom_items),
        updated_at = now(), updated_by = meta.actor() where scope = 'default'`, args);
   if (!rowCount) {
     await ctx.c.query(

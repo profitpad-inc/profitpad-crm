@@ -124,6 +124,10 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .app-loading.inline { display: inline-flex; vertical-align: middle; }
 .spinner { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); border-top-color: var(--primary); animation: spinner-spin 0.8s linear infinite; }
 .app-loading.inline .spinner { width: 18px; height: 18px; border-width: 2.5px; }
+/* the start-up splash shows before the portal theme loads, so its spinner is a fixed neutral grey
+   instead of the default primary (which would flash blue, then switch to the portal's own colour) */
+.splash .spinner { --spinner-grey: #9ca3af; border-color: color-mix(in srgb, var(--spinner-grey) 25%, transparent); border-top-color: var(--spinner-grey); }
+:root[data-mode='dark'] .splash .spinner { --spinner-grey: #6b7280; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 @keyframes spinner-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
@@ -550,6 +554,19 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .mobile-header .avatar { width: 32px; height: 32px; font-size: 12px; }
 .mobile-header-title { font-family: var(--font-title); font-weight: 600; font-size: 17px; }
 .logo.small { width: 30px; height: 30px; margin: 0; color: var(--primary); }
+.hotbar-sheet-backdrop { position: fixed; inset: 0; bottom: calc(56px + env(safe-area-inset-bottom)); z-index: 30; background: rgba(15, 18, 22, 0.3); display: flex; align-items: flex-end; animation: fade-in 0.15s ease; }
+.hotbar-sheet {
+  width: 100%; max-height: 70dvh; overflow-y: auto; background: var(--page-background); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18); padding: 12px 8px 8px; animation: sheet-up 0.18s ease;
+}
+.hotbar-sheet h3 { margin: 0 8px 6px; font-size: 13px; font-weight: 600; color: var(--muted-text); }
+.hotbar-sheet-item { display: flex; align-items: center; gap: 12px; padding: 12px 10px; border-radius: var(--radius); color: var(--text); text-decoration: none !important; }
+.hotbar-sheet-item svg { color: var(--muted-text); flex: none; }
+.hotbar-sheet-item.active, .hotbar-sheet-item.active svg { color: var(--primary); font-weight: 500; }
+.hotbar-sheet-item:active { background: var(--surface); }
+.hotbar-sheet-divider { height: 1px; background: var(--border); margin: 4px 8px; }
+.hotbar-sheet-empty { padding: 12px 10px; color: var(--muted-text); }
+@keyframes sheet-up { from { transform: translateY(100%); } }
 .drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(15, 18, 22, 0.45); animation: fade-in 0.15s ease; }
 .drawer { position: fixed; top: 0; bottom: 0; left: 0; width: min(300px, 85vw); animation: slide-in 0.2s ease; }
 .sidebar.drawer-menu { width: 100%; height: 100%; box-shadow: 0 0 40px rgba(0, 0, 0, 0.3); }

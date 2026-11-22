@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Package, X } from 'lucide-react';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { formatValue } from '../lib/display';
-import { AMOUNT_PARENTS, lineAmount, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
+import { AMOUNT_PARENTS, discountOff, lineAmount, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
 import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable, toInput } from './ui';
 
@@ -183,7 +183,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
           <div className="checks">
             <label>
               <input type="checkbox" checked={updateDeal} onChange={(e) => setUpdateDeal(e.target.checked)} />
-              Update the {parentLabel} amount from {money(deal.amount, deal.currency)} to {money(deal.total + lineAmount(values), deal.currency)}
+              Update the {parentLabel} amount from {money(deal.amount, deal.currency)} to {money(deal.subtotal + lineAmount(values) - discountOff(deal.discount, deal.subtotal + lineAmount(values)), deal.currency)}
             </label>
           </div>
         )}

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Script } from 'node:vm';
 import { transform } from 'sucrase';
 import type pg from 'pg';
 import { pool, withTx, type Db } from './db.js';
@@ -139,6 +140,23 @@ function paramValue(query: string, name: string, type: ParamType, v: unknown): u
 // ---- compile and analyze ---------------------------------------------------------
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
+
+// sucrase only strips types and JSX, so code that is not valid JavaScript
+// (an await inside a plain arrow, an unclosed template) compiles here and
+// only fails in the viewer's frame. Parse it the way the frame runs it
+// (new Function(require, exports, module, code)) without running anything.
+// sucrase keeps line numbers, so the error points at the source line.
+function checkParses(source: string, code: string) {
+  try {
+    new Script(`(function (require, exports, module) {\n${code}\n})`, { filename: 'view.js' });
+  } catch (err) {
+    const e = err as Error;
+    const at = /view\.js:(\d+)/.exec(e.stack ?? '');
+    const line = at ? Number(at[1]) - 1 : 0;
+    const text = line > 0 ? source.split('\n')[line - 1]?.trim() : '';
+    throw badRequest(`the code does not run: ${e.message}${line > 0 ? ` (line ${line}${text ? `: ${text.slice(0, 160)}` : ''})` : ''}`);
+  }
+}
 const compiled = new Map<string, string>();
 
 // TSX -> a CommonJS module whose require() only knows VIEW_MODULES and whose
@@ -160,6 +178,7 @@ export function compileSource(source: string): string {
   } catch (err) {
     throw badRequest(`the code does not compile: ${(err as Error).message}`);
   }
+  checkParses(source, code);
   for (const m of code.matchAll(/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g)) {
     if (!(VIEW_MODULES as readonly string[]).includes(m[2])) {
       throw badRequest(`views can only import ${VIEW_MODULES.filter((x) => x !== 'react/jsx-runtime').join(', ')} (not "${m[2]}")`);

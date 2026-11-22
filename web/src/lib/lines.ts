@@ -8,6 +8,18 @@ import { confirmDialog } from '../components/confirm';
 export const AMOUNT_PARENTS = ['deals', 'quotes', 'invoices', 'carts', 'orders'];
 // line properties that change a line's amount
 export const AMOUNT_FIELDS = ['quantity', 'unit_price', 'discount'];
+// parents with a discount on the whole record (0104): discount_type none,
+// percent or amount and discount_value; the amount is the lines' total less it
+export const DISCOUNT_PARENTS = ['deals', 'quotes', 'invoices'];
+
+export interface ParentDiscount { type: 'percent' | 'amount' | null; value: number }
+
+// what a discount takes off a subtotal (never more than the subtotal)
+export function discountOff(d: ParentDiscount | null | undefined, subtotal: number): number {
+  if (!d || !d.type || !d.value) return 0;
+  const off = d.type === 'percent' ? (subtotal * Math.min(d.value, 100)) / 100 : d.value;
+  return Math.round(Math.min(Math.max(off, 0), Math.max(subtotal, 0)) * 100) / 100;
+}
 
 export interface ParentTotals {
   object: string;
@@ -15,6 +27,9 @@ export interface ParentTotals {
   name: string;
   amount: number | null;
   currency: string;
+  // the lines' total, the record's discount, and what the amount should be (subtotal less the discount)
+  subtotal: number;
+  discount: ParentDiscount;
   total: number;
 }
 
@@ -22,17 +37,24 @@ const num = (v: unknown): number | null => (v === null || v === undefined || v =
 const round = (n: number) => Math.round(n * 100) / 100;
 
 export async function parentTotals(object: string, id: string): Promise<ParentTotals> {
+  const props = DISCOUNT_PARENTS.includes(object) ? 'name,amount,currency,discount_type,discount_value' : 'name,amount,currency';
   const r = await api<CrmRecord & { associations?: Record<string, { properties?: Record<string, unknown> }[]> }>(
-    'GET', `/v1/objects/${object}/${id}?properties=name,amount,currency&associations=lines&association_properties=lines:amount`
+    'GET', `/v1/objects/${object}/${id}?properties=${props}&associations=lines&association_properties=lines:amount`
   );
-  const currency = Array.isArray(r.properties.currency) ? r.properties.currency[0] : r.properties.currency;
+  const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);
+  const currency = one(r.properties.currency);
+  const type = one(r.properties.discount_type);
+  const discount: ParentDiscount = { type: type === 'percent' || type === 'amount' ? type : null, value: num(r.properties.discount_value) ?? 0 };
+  const subtotal = round((r.associations?.lines ?? []).reduce((s, l) => s + (num(l.properties?.amount) ?? 0), 0));
   return {
     object,
     id,
     name: typeof r.properties.name === 'string' && r.properties.name ? r.properties.name : id,
     amount: num(r.properties.amount),
     currency: typeof currency === 'string' && currency ? currency : 'USD',
-    total: round((r.associations?.lines ?? []).reduce((s, l) => s + (num(l.properties?.amount) ?? 0), 0))
+    subtotal,
+    discount,
+    total: round(subtotal - discountOff(discount, subtotal))
   };
 }
 
@@ -66,8 +88,8 @@ export async function offerAmountUpdates(parents: { object: string; id: string }
   if (totals.length === 0) return 0;
   const list = totals.map((t) => `${labelOf(t.object)} ${t.name}: ${money(t.amount, t.currency)} → ${money(t.total, t.currency)}`).join('\n');
   const question = totals.length === 1
-    ? `Update the ${labelOf(totals[0].object).toLowerCase()} amount to match its line items?\n\n${list}`
-    : `Update these amounts to match their line items?\n\n${list}`;
+    ? `Update the ${labelOf(totals[0].object).toLowerCase()} amount to match its line items${totals[0].discount.type ? ' less its discount' : ''}?\n\n${list}`
+    : `Update these amounts to match their line items (less any discount)?\n\n${list}`;
   if (!(await confirmDialog(question, { title: 'Update amounts?', confirmLabel: 'Update' }))) return 0;
   await Promise.all(totals.map((t) => setParentAmount(t.object, t.id, t.total)));
   return totals.length;

@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { Menu, Modal } from '../components/ui';
 import { EmptyState, SettingsPage } from '../components/settings';
 import { useUrlSearch } from '../lib/use-url-search';
+import { Select } from '../components/Select';
 
 // Admin page listing the objects and creating custom ones. Creation goes
 // through POST /v1/schema (meta.create_object), so the database enforces the
@@ -34,14 +35,17 @@ export function ObjectSettings() {
   const navigate = useNavigate();
   const [query, setQuery] = useUrlSearch();
   const [editing, setEditing] = useState<ObjectSummary | 'new' | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<'' | ObjectSummary['kind']>('');
 
   const q = query.trim().toLowerCase();
   const shown = useMemo(
     () => [...objects]
+      .filter((o) => !sourceFilter || o.kind === sourceFilter)
       .filter((o) => !q || o.label_plural.toLowerCase().includes(q) || o.label_singular.toLowerCase().includes(q) || o.api_name.includes(q))
       .sort((a, b) => a.label_plural.localeCompare(b.label_plural)),
-    [objects, q]
+    [objects, q, sourceFilter]
   );
+  const filtered = !!q || !!sourceFilter;
 
   async function saved(message: string) {
     setEditing(null);
@@ -61,11 +65,15 @@ export function ObjectSettings() {
     >
       <div className="settings-toolbar">
         <input type="search" placeholder="Search objects" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search objects" />
+        <Select value={sourceFilter} onChange={(v) => setSourceFilter(v as '' | ObjectSummary['kind'])} aria-label="Source">
+          <option value="">All sources</option>
+          {(['native', 'custom', 'system'] as const).map((k) => <option key={k} value={k}>{SOURCE[k]}</option>)}
+        </Select>
         <span className="muted small">{shown.length} {shown.length === 1 ? 'object' : 'objects'}</span>
       </div>
       {shown.length === 0 ? (
-        <EmptyState icon={<Boxes size={18} />} title={q ? 'No matching objects' : 'No objects'}>
-          {q ? 'Try a different search.' : 'Create an object to start keeping a new kind of record.'}
+        <EmptyState icon={<Boxes size={18} />} title={filtered ? 'No matching objects' : 'No objects'}>
+          {filtered ? 'Try a different search or source.' : 'Create an object to start keeping a new kind of record.'}
         </EmptyState>
       ) : (
         <div className="access-table">

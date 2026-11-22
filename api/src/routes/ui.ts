@@ -150,7 +150,9 @@ type NavItem =
   // the business card scanner page (/scan)
   | { type: 'card_scanner'; label?: string }
   // icon: a Lucide name (kebab case); without one the sidebar draws a folder
-  | { type: 'section'; label: string; icon?: string; items: NavItem[] };
+  | { type: 'section'; label: string; icon?: string; items: NavItem[] }
+  // hotbar only: opens the full menu as a drawer
+  | { type: 'menu' };
 
 async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
   if (!Array.isArray(items) || items.length > 100) throw badRequest('items must be an array of at most 100 menu items');
@@ -199,30 +201,51 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
   return out;
 }
 
-// the mobile bottom bar: the left button, then up to 3 links (Search is always added after them)
-function validateBottomLeft(left: unknown): 'menu' | 'home' {
-  if (left !== 'menu' && left !== 'home') throw badRequest('bottom_left must be "menu" or "home"');
-  return left;
+// The mobile hotbar: up to HOTBAR_MAX items in any order (Search is always added after them): links, home,
+// menu (opens the full menu) and sections (open a sheet of their links). Stored with bottom_left 'none';
+// rows from before migration 0103 have bottom_left 'menu' or 'home', meaning that button came first.
+const HOTBAR_MAX = 4;
+
+function storedHotbar(left: string | null | undefined, items: unknown): NavItem[] {
+  const list = (Array.isArray(items) ? items : []) as NavItem[];
+  return left === 'menu' || left === 'home' ? [{ type: left }, ...list] : list;
 }
 
 async function validateBottom(items: unknown): Promise<NavItem[]> {
-  if (!Array.isArray(items) || items.length > 3) throw badRequest('bottom must be an array of at most 3 items');
-  const out = await validateNav(items);
-  if (out.some((it) => it.type === 'divider' || it.type === 'section')) throw badRequest('the bottom bar takes object, view, custom_view and card_scanner items only');
-  // Home belongs on the left button (bottom_left: "home"), not among the links
-  if (out.some((it) => it.type === 'home')) throw badRequest('the bottom bar takes object, view and custom_view items only; for Home set bottom_left to "home"');
+  if (!Array.isArray(items) || items.length > HOTBAR_MAX) throw badRequest(`bottom must be an array of at most ${HOTBAR_MAX} items`);
+  const out: NavItem[] = [];
+  for (const it of items) {
+    if ((it as { type?: unknown })?.type === 'menu') out.push({ type: 'menu' });
+    else out.push(...(await validateNav([it])));
+  }
+  if (out.some((it) => it.type === 'divider')) throw badRequest('the hotbar cannot hold dividers (sections in it can)');
   return out;
 }
 
 // ---- menu groups and who may change their own menu ----------------------------
 
-type MenuBody = { items: unknown; bottom_left?: unknown; bottom?: unknown };
+type MenuBody = { items: unknown; bottom_left?: unknown; bottom?: unknown; more_hidden?: unknown };
 
+// objects left out of the sidebar's More menu (api_names); they stay reachable everywhere else
+async function validateMoreHidden(list: unknown): Promise<string[]> {
+  if (!Array.isArray(list) || list.length > 500) throw badRequest('more_hidden must be an array of object api_names');
+  const out = new Set<string>();
+  for (const o of list) out.add((await getObject(String(o))).api_name);
+  return [...out];
+}
+
+// bottom is the whole hotbar. Older callers sent bottom_left ("menu" or "home") with up to 3 links in bottom;
+// that still works and becomes the same hotbar with that button first.
 async function validateMenuBody(body: MenuBody | undefined) {
   const items = await validateNav(body?.items);
-  const left = body?.bottom_left === undefined ? null : validateBottomLeft(body.bottom_left);
-  const bottom = body?.bottom === undefined ? null : await validateBottom(body.bottom);
-  return { items, left, bottom };
+  const legacyLeft = body?.bottom_left;
+  if (legacyLeft !== undefined && legacyLeft !== 'menu' && legacyLeft !== 'home') throw badRequest('bottom_left must be "menu" or "home" (or leave it out and send the whole hotbar in bottom)');
+  if (legacyLeft !== undefined && body?.bottom === undefined) throw badRequest('send the whole hotbar in bottom (bottom_left on its own is no longer supported)');
+  const rawBottom = legacyLeft !== undefined && Array.isArray(body?.bottom) ? [{ type: legacyLeft }, ...body.bottom] : body?.bottom;
+  const bottom = rawBottom === undefined ? null : await validateBottom(rawBottom);
+  const left = bottom === null ? null : 'none';
+  const moreHidden = body?.more_hidden === undefined ? null : await validateMoreHidden(body.more_hidden);
+  return { items, left, bottom, moreHidden };
 }
 
 async function everyoneCanCustomize(): Promise<boolean> {
@@ -247,7 +270,7 @@ export async function navAccess(p: Principal): Promise<{ canEdit: boolean; group
 // what a user sees: their own menu (only when they may change it), else their group's, else the default
 async function effectiveMenu(userId: string | null, ownAllowed: boolean) {
   const { rows } = await pool.query(
-    `select scope, items, bottom_left, bottom_items from ui.nav_menus
+    `select scope, items, bottom_left, bottom_items, more_hidden from ui.nav_menus
      where (scope = 'user' and user_id = $1 and $2)
         or (scope = 'group' and group_id = (select group_id from ui.nav_group_members where user_id = $1))
         or scope = 'default'
@@ -255,26 +278,29 @@ async function effectiveMenu(userId: string | null, ownAllowed: boolean) {
     [userId, ownAllowed]
   );
   const m = rows[0];
-  return { source: (m?.scope ?? 'default') as 'default' | 'group' | 'user', items: m?.items ?? [], bottom_left: m?.bottom_left ?? 'menu', bottom: m?.bottom_items ?? [] };
+  return {
+    source: (m?.scope ?? 'default') as 'default' | 'group' | 'user', items: m?.items ?? [],
+    bottom: m ? storedHotbar(m.bottom_left, m.bottom_items) : [{ type: 'menu' }], more_hidden: (m?.more_hidden ?? []) as string[]
+  };
 }
 
-// a new own menu without a bottom bar copies the one the user sees now (their group's or the default)
+// a new own menu without a bottom bar (or More list) copies the one the user sees now (their group's or the default)
 async function saveUserMenu(userId: string, body: MenuBody | undefined, actor: string) {
-  const { items, left, bottom } = await validateMenuBody(body);
-  const fallback = `(select bottom_left, bottom_items from ui.nav_menus
+  const { items, left, bottom, moreHidden } = await validateMenuBody(body);
+  const fallback = `(select bottom_left, bottom_items, more_hidden from ui.nav_menus
      where (scope = 'group' and group_id = (select group_id from ui.nav_group_members where user_id = $1)) or scope = 'default'
      order by (scope = 'group') desc limit 1)`;
   const { rows } = await pool.query(
-    `insert into ui.nav_menus (scope, user_id, items, bottom_left, bottom_items, updated_by)
-     select 'user', $1, $2, coalesce($3, f.bottom_left, 'menu'), coalesce($4, f.bottom_items, '[]'), $5
+    `insert into ui.nav_menus (scope, user_id, items, bottom_left, bottom_items, more_hidden, updated_by)
+     select 'user', $1, $2, coalesce($3, f.bottom_left, 'menu'), coalesce($4, f.bottom_items, '[]'), coalesce($6, f.more_hidden, '[]'), $5
      from (select 1) one left join ${fallback} f on true
      on conflict (user_id) where scope = 'user' do update
        set items = excluded.items, bottom_left = coalesce($3, ui.nav_menus.bottom_left), bottom_items = coalesce($4, ui.nav_menus.bottom_items),
-         updated_at = now(), updated_by = excluded.updated_by
-     returning bottom_left, bottom_items`,
-    [userId, JSON.stringify(items), left, bottom && JSON.stringify(bottom), actor]
+         more_hidden = coalesce($6, ui.nav_menus.more_hidden), updated_at = now(), updated_by = excluded.updated_by
+     returning bottom_left, bottom_items, more_hidden`,
+    [userId, JSON.stringify(items), left, bottom && JSON.stringify(bottom), actor, moreHidden && JSON.stringify(moreHidden)]
   );
-  return { source: 'user' as const, items, bottom_left: rows[0].bottom_left, bottom: rows[0].bottom_items };
+  return { source: 'user' as const, items, bottom: storedHotbar(rows[0].bottom_left, rows[0].bottom_items), more_hidden: rows[0].more_hidden };
 }
 
 function validateGroupName(name: unknown): string {
@@ -294,19 +320,19 @@ function groupNameTaken(err: { code?: string }): never {
 }
 
 // copy_from for a new group: 'default', 'group:<id>' or 'user:<id>' (a user's own menu, else what they see)
-async function menuSource(from: unknown): Promise<{ items: unknown; bottom_left: string; bottom: unknown }> {
+async function menuSource(from: unknown): Promise<{ items: unknown; bottom: NavItem[]; more_hidden: unknown }> {
   const s = String(from);
   let row;
   if (s === 'default') {
-    ({ rows: [row] } = await pool.query("select items, bottom_left, bottom_items from ui.nav_menus where scope = 'default'"));
+    ({ rows: [row] } = await pool.query("select items, bottom_left, bottom_items, more_hidden from ui.nav_menus where scope = 'default'"));
   } else if (/^group:[0-9]{1,18}$/.test(s)) {
-    ({ rows: [row] } = await pool.query("select items, bottom_left, bottom_items from ui.nav_menus where scope = 'group' and group_id = $1", [s.slice(6)]));
+    ({ rows: [row] } = await pool.query("select items, bottom_left, bottom_items, more_hidden from ui.nav_menus where scope = 'group' and group_id = $1", [s.slice(6)]));
   } else if (/^user:[0-9a-f]{10}$/.test(s)) {
     const m = await effectiveMenu(s.slice(5), true);
-    row = { items: m.items, bottom_left: m.bottom_left, bottom_items: m.bottom };
+    row = { items: m.items, bottom_left: 'none', bottom_items: m.bottom, more_hidden: m.more_hidden };
   }
   if (!row) throw badRequest('copy_from must be "default", "group:<id>" or "user:<id>" of an existing menu');
-  return { items: row.items, bottom_left: row.bottom_left, bottom: row.bottom_items };
+  return { items: row.items, bottom: storedHotbar(row.bottom_left, row.bottom_items), more_hidden: row.more_hidden ?? [] };
 }
 
 // ---- views -------------------------------------------------------------------
@@ -463,7 +489,7 @@ export async function uiRoutes(app: FastifyInstance) {
     const access = await navAccess(p);
     const m = await effectiveMenu(p.userId, access.canEdit);
     return {
-      source: m.source, items: m.items, bottom_left: m.bottom_left, bottom: m.bottom,
+      source: m.source, items: m.items, bottom: m.bottom, more_hidden: m.more_hidden,
       can_edit: access.canEdit, group: access.group && { id: access.group.id, name: access.group.name }
     };
   });
@@ -489,7 +515,7 @@ export async function uiRoutes(app: FastifyInstance) {
     requireAdmin(req.principal!);
     const [menus, groups, everyone] = await Promise.all([
       pool.query(
-        `select m.scope, m.user_id, u.name as user_name, m.group_id, m.items, m.bottom_left, m.bottom_items as bottom, m.updated_at, m.updated_by
+        `select m.scope, m.user_id, u.name as user_name, m.group_id, m.items, m.bottom_left, m.bottom_items as bottom, m.more_hidden, m.updated_at, m.updated_by
          from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
       ),
       pool.query(
@@ -500,7 +526,8 @@ export async function uiRoutes(app: FastifyInstance) {
       ),
       everyoneCanCustomize()
     ]);
-    return { results: menus.rows, groups: groups.rows, everyone_can_customize: everyone };
+    const results = menus.rows.map(({ bottom_left, bottom, ...m }) => ({ ...m, bottom: storedHotbar(bottom_left, bottom) }));
+    return { results, groups: groups.rows, everyone_can_customize: everyone };
   });
 
   app.put<{ Body: { everyone_can_customize?: unknown } }>('/v1/ui/nav/access', async (req) => {
@@ -515,21 +542,21 @@ export async function uiRoutes(app: FastifyInstance) {
     return { everyone_can_customize: req.body.everyone_can_customize };
   });
 
-  // bottom_left and bottom are optional; left out, the bottom bar stays as it is
+  // bottom (the whole hotbar) is optional; left out, the hotbar stays as it is
   app.put<{ Body: MenuBody }>('/v1/ui/nav/default', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
-    const { items, left, bottom } = await validateMenuBody(req.body);
+    const { items, left, bottom, moreHidden } = await validateMenuBody(req.body);
     const { rows } = await pool.query(
       `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
-         updated_at = now(), updated_by = $4
-       where scope = 'default' returning bottom_left, bottom_items`,
-      [JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor]
+         more_hidden = coalesce($5, more_hidden), updated_at = now(), updated_by = $4
+       where scope = 'default' returning bottom_left, bottom_items, more_hidden`,
+      [JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor, moreHidden && JSON.stringify(moreHidden)]
     );
-    return { source: 'default', items, bottom_left: rows[0]?.bottom_left ?? 'menu', bottom: rows[0]?.bottom_items ?? [] };
+    return { source: 'default', items, bottom: storedHotbar(rows[0]?.bottom_left, rows[0]?.bottom_items), more_hidden: rows[0]?.more_hidden ?? [] };
   });
 
-  // bottom_left and bottom are optional; left out, a new menu copies the default's bottom bar and an existing one keeps its own
+  // bottom (the whole hotbar) is optional; left out, a new menu copies the hotbar the user sees now and an existing one keeps its own
   app.put<{ Params: { userId: string }; Body: MenuBody }>('/v1/ui/nav/users/:userId', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
@@ -560,8 +587,8 @@ export async function uiRoutes(app: FastifyInstance) {
         [name, canCustomize, p.actor]
       ).catch(groupNameTaken);
       await client.query(
-        `insert into ui.nav_menus (scope, group_id, items, bottom_left, bottom_items, updated_by) values ('group', $1, $2, $3, $4, $5)`,
-        [rows[0].id, JSON.stringify(source.items), source.bottom_left, JSON.stringify(source.bottom), p.actor]
+        `insert into ui.nav_menus (scope, group_id, items, bottom_left, bottom_items, more_hidden, updated_by) values ('group', $1, $2, 'none', $3, $5, $4)`,
+        [rows[0].id, JSON.stringify(source.items), JSON.stringify(source.bottom), p.actor, JSON.stringify(source.more_hidden)]
       );
       await client.query('commit');
       reply.code(201);
@@ -636,15 +663,15 @@ export async function uiRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdmin(p);
     const id = groupId(req.params.id);
-    const { items, left, bottom } = await validateMenuBody(req.body);
+    const { items, left, bottom, moreHidden } = await validateMenuBody(req.body);
     const { rows } = await pool.query(
       `update ui.nav_menus set items = $2, bottom_left = coalesce($3, bottom_left), bottom_items = coalesce($4, bottom_items),
-         updated_at = now(), updated_by = $5
-       where scope = 'group' and group_id = $1 returning bottom_left, bottom_items`,
-      [id, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor]
+         more_hidden = coalesce($6, more_hidden), updated_at = now(), updated_by = $5
+       where scope = 'group' and group_id = $1 returning bottom_left, bottom_items, more_hidden`,
+      [id, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor, moreHidden && JSON.stringify(moreHidden)]
     );
     if (rows.length === 0) throw notFound('group not found');
-    return { source: 'group', items, bottom_left: rows[0].bottom_left, bottom: rows[0].bottom_items };
+    return { source: 'group', items, bottom: storedHotbar(rows[0].bottom_left, rows[0].bottom_items), more_hidden: rows[0].more_hidden };
   });
 
   // views: shared ones plus the caller's own; a default shared view is created on first use

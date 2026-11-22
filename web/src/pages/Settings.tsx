@@ -10,7 +10,7 @@ import { useApp, type Themes } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
 import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type ColorMode, type Mode, type Theme, type ThemeKey } from '../lib/theme';
-import { HomeIcon, displayName, initials } from '../lib/display';
+import { displayName, initials, moreGroups, objectIcon } from '../lib/display';
 import { navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { RoleSettings, UserSettings } from './AccessSettings';
@@ -585,11 +585,12 @@ interface Menu {
   user_id: string | null;
   group_id: string | null;
   items: NavItem[];
-  bottom_left: 'menu' | 'home';
   bottom: NavItem[];
+  more_hidden?: string[];
 }
 
-const BOTTOM_MAX = 3;
+// items in the mobile hotbar before Search, which is always last
+const BOTTOM_MAX = 4;
 
 interface UserOption {
   id: string;
@@ -603,11 +604,12 @@ export interface NavGroup {
   members: string[];
 }
 
-interface MenuSnapshot { items: NavItem[]; bottom_left: 'menu' | 'home'; bottom: NavItem[] }
+interface MenuSnapshot { items: NavItem[]; bottom: NavItem[]; more_hidden?: string[] }
 
 function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: (o: string, id: number) => string, customViewName: (slug: string) => string): string {
   switch (item.type) {
     case 'home': return 'Home';
+    case 'menu': return 'Menu';
     case 'custom_view': return item.label ?? customViewName(item.slug);
     case 'card_scanner': return item.label ?? 'Card scanner';
     case 'divider': return 'Divider';
@@ -664,9 +666,18 @@ function itemKind(item: NavItem): string | null {
   }
 }
 
-// A list in the menu editor: the sidebar's top level, a section (its index in the top level) or the mobile hotbar.
-type ListKey = 'top' | 'bottom' | number;
+// A list in the menu editor: the sidebar's top level ('top'), a sidebar section (its index in the top level),
+// the mobile hotbar ('bottom') or a hotbar section ('b:' and its index in the hotbar).
+type ListKey = 'top' | 'bottom' | number | `b:${number}`;
 interface Spot { list: ListKey; index: number }
+type TreeKey = 'top' | number;
+
+const isHotbar = (k: ListKey) => k === 'bottom' || (typeof k === 'string' && k.startsWith('b:'));
+// the key within its own tree (sidebar or hotbar), as moveNav takes it
+const treeKey = (k: ListKey): TreeKey => (k === 'top' || k === 'bottom' ? 'top' : typeof k === 'number' ? k : Number(k.slice(2)));
+// the key of the section at index i of a tree's top level
+const sectionKey = (root: 'top' | 'bottom', i: number): ListKey => (root === 'top' ? i : `b:${i}`);
+const treeSpot = (s: Spot): { list: TreeKey; index: number } => ({ list: treeKey(s.list), index: s.index });
 
 // moves list[from] so it lands before what is now list[to] (to = length: the end)
 function moveWithin<T>(list: T[], from: number, to: number): T[] {
@@ -676,8 +687,8 @@ function moveWithin<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
-// moves a sidebar item between the top level and sections (never a section into a section; the caller checks)
-function moveNav(all: NavItem[], from: Spot, to: Spot): NavItem[] {
+// moves an item between a tree's top level and its sections (never a section into a section; the caller checks)
+function moveNav(all: NavItem[], from: { list: TreeKey; index: number }, to: { list: TreeKey; index: number }): NavItem[] {
   if (from.list === to.list) {
     if (from.list === 'top') return moveWithin(all, from.index, to.index);
     return all.map((it, i) => (i === from.list && it.type === 'section' ? { ...it, items: moveWithin(it.items, from.index, to.index) } : it));
@@ -705,6 +716,11 @@ function moveNav(all: NavItem[], from: Spot, to: Spot): NavItem[] {
   return next.map((it, i) => (i === section && it.type === 'section' ? { ...it, items: [...it.items.slice(0, to.index), moved, ...it.items.slice(to.index)] } : it));
 }
 
+const ITEM_TYPE_LABELS: Record<string, string> = {
+  object: 'Object', view: 'Saved view', custom_view: 'Custom view', card_scanner: 'Card scanner',
+  divider: 'Divider', section: 'Section', home: 'Home', menu: 'Menu (opens the full menu)'
+};
+
 // Targets: 'me' (the signed-in user's own menu, where the editor opens), 'default' (everyone not in a
 // group), 'group:<id>' and 'user:<id>'. Users who are not admins only get 'me'.
 function NavSettings() {
@@ -722,13 +738,14 @@ function NavSettings() {
   const [loaded, setLoaded] = useState(false);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [items, setItems] = useState<NavItem[]>([]);
-  const [bottomLeft, setBottomLeft] = useState<'menu' | 'home'>('menu');
   const [bottom, setBottom] = useState<NavItem[]>([]);
+  // objects left out of the sidebar's More menu
+  const [moreHidden, setMoreHidden] = useState<string[]>([]);
   // the menu as last loaded or saved, to tell whether there are unsaved changes
   const [savedJson, setSavedJson] = useState('');
   const [views, setViews] = useState<Record<string, View[]>>({});
-  // section: a section's index, null for the sidebar's top level, 'bottom' for the mobile hotbar
-  const [adding, setAdding] = useState<{ section: number | null | 'bottom'; type: string; object: string; view: string; label: string }>({ section: null, type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
+  // where: the list the new item goes into
+  const [adding, setAdding] = useState<{ where: ListKey; type: string; object: string; view: string; label: string }>({ where: 'top', type: 'object', object: objects[0]?.api_name ?? '', view: '', label: '' });
   // which + Add picker is open, under the sidebar or under the hotbar
   const [picker, setPicker] = useState<'sidebar' | 'bottom' | null>(null);
   // a short note by the hotbar's + Add when it is clicked with the hotbar full
@@ -737,8 +754,8 @@ function NavSettings() {
   // the row being dragged and where it would land
   const dragFrom = useRef<Spot | null>(null);
   const [dropAt, setDropAt] = useState<Spot | null>(null);
-  // the top-level section whose icon is being picked
-  const [iconFor, setIconFor] = useState<number | null>(null);
+  // the top-level section (of the sidebar or the hotbar) whose icon is being picked
+  const [iconFor, setIconFor] = useState<{ root: 'top' | 'bottom'; index: number } | null>(null);
   // with unsaved changes: the page or menu the admin asked to go to, held until they discard or keep editing
   const [leaving, setLeaving] = useState<{ to: string } | { target: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -784,21 +801,21 @@ function NavSettings() {
   }, []);
 
   function showMenu(m: MenuSnapshot | undefined) {
-    const next = { items: m?.items ?? [], bottomLeft: m?.bottom_left ?? 'menu', bottom: m?.bottom ?? [] };
+    const next = { items: m?.items ?? [], bottom: m?.bottom ?? [], moreHidden: m?.more_hidden ?? [] };
     setItems(next.items);
-    setBottomLeft(next.bottomLeft);
     setBottom(next.bottom);
+    setMoreHidden(next.moreHidden);
     setSavedJson(JSON.stringify(next));
   }
 
-  const dirty = loaded && JSON.stringify({ items, bottomLeft, bottom }) !== savedJson;
+  const dirty = loaded && JSON.stringify({ items, bottom, moreHidden }) !== savedJson;
 
   // While another menu (Default, a group or a user) is open here, the sidebar and mobile bar show it,
   // unsaved changes included, so the admin sees what those people will see. Leaving the page puts theirs back.
   useEffect(() => {
     if (!loaded || target === 'me') setNavPreview(null);
-    else setNavPreview({ label: targetLabel(target), items, bottomLeft, bottom });
-  }, [loaded, target, items, bottomLeft, bottom, groups, users]);
+    else setNavPreview({ label: targetLabel(target), items, bottom, moreHidden });
+  }, [loaded, target, items, bottom, moreHidden, groups, users]);
   useEffect(() => () => setNavPreview(null), [setNavPreview]);
 
   // With unsaved changes, a click on a link to another page asks first (the same dialog as closing a property),
@@ -829,7 +846,7 @@ function NavSettings() {
     setLeaving(null);
     if (!l) return;
     if ('to' in l) {
-      setSavedJson(JSON.stringify({ items, bottomLeft, bottom }));
+      setSavedJson(JSON.stringify({ items, bottom, moreHidden }));
       navigate(l.to);
     } else showTarget(l.target);
   }
@@ -851,8 +868,8 @@ function NavSettings() {
     const m = menuFor(source);
     if (!m) return;
     setItems(m.items);
-    setBottomLeft(m.bottom_left);
     setBottom(m.bottom);
+    setMoreHidden(m.more_hidden ?? []);
     setCopyOpen(false);
     setError(null);
     setMessage(null);
@@ -867,12 +884,13 @@ function NavSettings() {
   const viewName = (o: string, id: number) => views[o]?.find((v) => v.id === id)?.name ?? `view ${id}`;
   const customViewName = (slug: string) => customViews.find((v) => v.slug === slug)?.name ?? slug;
 
-  function update(section: number | null, fn: (list: NavItem[]) => NavItem[]) {
-    setItems((all) => {
-      if (section === null) return fn(all);
-      return all.map((it, i) => (i === section && it.type === 'section' ? { ...it, items: fn(it.items) } : it));
-    });
+  function updateList(key: ListKey, fn: (list: NavItem[]) => NavItem[]) {
+    const set = isHotbar(key) ? setBottom : setItems;
+    const at = treeKey(key);
+    set((all) => (at === 'top' ? fn(all) : all.map((it, i) => (i === at && it.type === 'section' ? { ...it, items: fn(it.items) } : it))));
   }
+  // the hotbar is full when its top level holds BOTTOM_MAX items; its sections still take more
+  const hotbarFull = bottom.length >= BOTTOM_MAX;
 
   const move = (list: NavItem[], i: number, d: number) => {
     const j = i + d;
@@ -896,44 +914,54 @@ function NavSettings() {
     } else if (adding.type === 'section') {
       if (!adding.label.trim()) return;
       item = { type: 'section', label: adding.label.trim(), items: [] };
-    } else item = { type: adding.type as 'home' | 'divider' };
-    if (adding.section === 'bottom') {
-      if (bottom.length >= BOTTOM_MAX) {
-        setError(`The mobile hotbar holds at most ${BOTTOM_MAX} links between the left button and Search.`);
-        return;
-      }
-      setError(null);
-      setBottom((l) => [...l, item]);
-    } else update(adding.section, (l) => [...l, item]);
+    } else item = { type: adding.type as 'home' | 'divider' | 'menu' };
+    if (adding.where === 'bottom' && hotbarFull) {
+      setError(`The mobile hotbar holds at most ${BOTTOM_MAX} items before Search.`);
+      return;
+    }
+    setError(null);
+    updateList(adding.where, (l) => [...l, item]);
     setAdding((a) => ({ ...a, label: '' }));
     setPicker(null);
   }
 
+  // the item types a list takes: no dividers on the hotbar itself, Menu only there, no sections inside sections
+  function typesFor(key: ListKey): string[] {
+    const links = ['object', 'view', 'custom_view', 'card_scanner'];
+    if (key === 'bottom') return [...links, 'section', 'home', 'menu'];
+    if (key === 'top') return [...links, 'divider', 'section', 'home'];
+    return [...links, 'divider', 'home'];
+  }
+
+  function pickWhere(where: ListKey) {
+    setAdding((a) => ({ ...a, where, type: typesFor(where).includes(a.type) ? a.type : 'object' }));
+  }
+
   function openPicker(where: 'sidebar' | 'bottom') {
     setError(null);
-    // dividers and sections cannot go in the hotbar, nor Home (that is the Left button setting)
-    setAdding((a) => ({
-      ...a,
-      section: where === 'bottom' ? 'bottom' : null,
-      type: where === 'bottom' && (a.type === 'divider' || a.type === 'section' || a.type === 'home') ? 'object' : a.type,
-      label: ''
-    }));
+    // a full hotbar opens on its first section
+    const first = where === 'sidebar' ? 'top' : hotbarFull ? sectionKey('bottom', bottom.findIndex((it) => it.type === 'section')) : 'bottom';
+    pickWhere(first);
+    setAdding((a) => ({ ...a, label: '' }));
     setPicker(where);
   }
 
   const listOf = (key: ListKey): NavItem[] => {
-    if (key === 'bottom') return bottom;
-    if (key === 'top') return items;
-    const s = items[key];
+    const root = isHotbar(key) ? bottom : items;
+    const at = treeKey(key);
+    if (at === 'top') return root;
+    const s = root[at];
     return s?.type === 'section' ? s.items : [];
   };
 
-  // whether the dragged row may land in a list: the hotbar and the sidebar stay apart, and sections do not nest
+  // whether the dragged row may land in a list: the hotbar and the sidebar stay apart, sections do not nest,
+  // and a full hotbar takes nothing more from its own sections
   function canDrop(to: ListKey) {
     const from = dragFrom.current;
     if (!from) return false;
-    if ((from.list === 'bottom') !== (to === 'bottom')) return false;
-    return !(typeof to === 'number' && listOf(from.list)[from.index]?.type === 'section');
+    if (isHotbar(from.list) !== isHotbar(to)) return false;
+    if (to === 'bottom' && from.list !== 'bottom' && hotbarFull) return false;
+    return !(treeKey(to) !== 'top' && listOf(from.list)[from.index]?.type === 'section');
   }
 
   function dragOverRow(e: DragEvent<HTMLDivElement>, list: ListKey, i: number, it: NavItem) {
@@ -943,9 +971,9 @@ function NavSettings() {
     const head = (e.currentTarget.querySelector('.nav-edit-label') as HTMLElement).getBoundingClientRect();
     const below = e.clientY >= head.top + head.height / 2;
     // the lower half of a section's heading drops into the section, at its top
-    if (it.type === 'section' && list === 'top' && below && canDrop(i)) {
+    if (it.type === 'section' && (list === 'top' || list === 'bottom') && below && canDrop(sectionKey(list, i))) {
       e.preventDefault();
-      setDropAt({ list: i, index: 0 });
+      setDropAt({ list: sectionKey(list, i), index: 0 });
       return;
     }
     if (!canDrop(list)) return;
@@ -959,13 +987,12 @@ function NavSettings() {
     dragFrom.current = null;
     setDropAt(null);
     if (!from || !to) return;
-    if (from.list === 'bottom') setBottom((l) => moveWithin(l, from.index, to.index));
-    else setItems((all) => moveNav(all, from, to));
+    (isHotbar(from.list) ? setBottom : setItems)((all) => moveNav(all, treeSpot(from), treeSpot(to)));
   }
 
   async function save() {
     setError(null);
-    const body = { items, bottom_left: bottomLeft, bottom };
+    const body = { items, bottom, more_hidden: moreHidden };
     try {
       if (target === 'me') await api('PUT', '/v1/ui/nav/me', body);
       else if (target === 'default') await api('PUT', '/v1/ui/nav/default', body);
@@ -974,7 +1001,7 @@ function NavSettings() {
       if (isAdmin) await loadMenus();
       else setMySource('user');
       await reloadNav();
-      setSavedJson(JSON.stringify({ items, bottomLeft, bottom }));
+      setSavedJson(JSON.stringify({ items, bottom, moreHidden }));
       setMessage('Menu saved.');
     } catch (err) {
       setError((err as Error).message);
@@ -1066,11 +1093,11 @@ function NavSettings() {
         </span>
         <span className="nav-edit-label">
           {it.type === 'section' && (
-            <button type="button" className="icon-btn nav-edit-icon" title="Change icon" aria-label={`Change the icon of ${label}`} onClick={() => setIconFor(i)}>
+            <button type="button" className="icon-btn nav-edit-icon" title="Change icon" aria-label={`Change the icon of ${label}`} onClick={() => setIconFor({ root: isHotbar(listKey) ? 'bottom' : 'top', index: i })}>
               <ViewIcon icon={it.icon} fallback={Folder} size={16} strokeWidth={1.75} />
             </button>
           )}
-          {it.type === 'home' || it.type === 'divider' ? label : (
+          {it.type === 'home' || it.type === 'divider' || it.type === 'menu' ? label : (
             <EditableLabel
               value={label}
               fallback={it.type === 'section' ? null : itemLabel({ ...it, label: undefined } as NavItem, objectLabel, viewName, customViewName)}
@@ -1087,27 +1114,32 @@ function NavSettings() {
     );
   };
 
-  const renderList = (list: NavItem[], section: number | null): ReactNode[] =>
-    list.map((it, i) => row(it, i, list, section ?? 'top', (fn) => update(section, fn), section !== null,
-      it.type === 'section' && section === null ? (
-        <div
-          className={`nav-edit-children${dropAt?.list === i && it.items.length === 0 ? ' drop-into' : ''}`}
-          // over the gaps or an empty section (rows inside handle their own)
-          onDragOver={(e) => {
-            if (!dragFrom.current) return;
-            e.stopPropagation();
-            if (!canDrop(i)) return;
-            e.preventDefault();
-            setDropAt({ list: i, index: it.items.length });
-          }}
-          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(); }}
-        >
-          {renderList(it.items, i)}
-        </div>
-      ) : undefined));
+  // key: 'top' or 'bottom' for a tree's top level (its sections are drawn inside), else a section's key
+  const renderList = (list: NavItem[], key: ListKey): ReactNode[] =>
+    list.map((it, i) => {
+      const root = key === 'top' || key === 'bottom' ? key : null;
+      const childKey = root && it.type === 'section' ? sectionKey(root, i) : null;
+      return row(it, i, list, key, (fn) => updateList(key, fn), root === null,
+        childKey !== null && it.type === 'section' ? (
+          <div
+            className={`nav-edit-children${dropAt?.list === childKey && it.items.length === 0 ? ' drop-into' : ''}`}
+            // over the gaps or an empty section (rows inside handle their own)
+            onDragOver={(e) => {
+              if (!dragFrom.current) return;
+              e.stopPropagation();
+              if (!canDrop(childKey)) return;
+              e.preventDefault();
+              setDropAt({ list: childKey, index: it.items.length });
+            }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(); }}
+          >
+            {renderList(it.items, childKey)}
+          </div>
+        ) : undefined);
+    });
 
   const addButton = (where: 'sidebar' | 'bottom') => {
-    const full = where === 'bottom' && bottom.length >= BOTTOM_MAX && picker !== where;
+    const full = where === 'bottom' && hotbarFull && !bottom.some((it) => it.type === 'section') && picker !== where;
     // a full hotbar's button stays clickable (looking disabled) so a click can say why nothing opens
     return (
       <span className="nav-add-btn">
@@ -1127,7 +1159,7 @@ function NavSettings() {
         >
           <Plus size={14} /> Add
         </button>
-        {full && fullNote && <span className="nav-add-note" role="status">Max {BOTTOM_MAX} links. Remove one to add another.</span>}
+        {full && fullNote && <span className="nav-add-note" role="status">Max {BOTTOM_MAX} items. Remove one, or add a section, to add another.</span>}
       </span>
     );
   };
@@ -1135,31 +1167,21 @@ function NavSettings() {
   // the selector under a menu's + Add: what to add and, in the sidebar, where
   const addPicker = (where: 'sidebar' | 'bottom') => picker === where && (
     <div className="nav-add">
-      {where === 'sidebar' && items.some((it) => it.type === 'section') && (
+      {(where === 'sidebar' ? items : bottom).some((it) => it.type === 'section') && (
         <label className="field">
           <span>Where</span>
-          <Select
-            value={adding.section === null || adding.section === 'bottom' ? '' : adding.section}
-            onChange={(v) => {
-              const section = v === '' ? null : Number(v);
-              setAdding((a) => ({ ...a, section, type: section !== null && a.type === 'section' ? 'object' : a.type }));
-            }}
-          >
-            <option value="">Top level</option>
-            {items.map((it, i) => it.type === 'section' && <option key={i} value={i}>In section "{it.label}"</option>)}
+          <Select value={String(adding.where)} onChange={(v) => pickWhere(v === 'top' || v === 'bottom' || v.startsWith('b:') ? (v as ListKey) : Number(v))}>
+            {(where === 'sidebar' || !hotbarFull) && <option value={where === 'sidebar' ? 'top' : 'bottom'}>{where === 'sidebar' ? 'Top level' : 'On the hotbar'}</option>}
+            {(where === 'sidebar' ? items : bottom).map((it, i) => it.type === 'section' && (
+              <option key={i} value={String(sectionKey(where === 'sidebar' ? 'top' : 'bottom', i))}>In section "{it.label}"</option>
+            ))}
           </Select>
         </label>
       )}
       <label className="field">
         <span>Type</span>
         <Select value={adding.type} onChange={(v) => setAdding((a) => ({ ...a, type: v, view: '' }))}>
-          <option value="object">Object</option>
-          <option value="view">Saved view</option>
-          <option value="custom_view">Custom view</option>
-          <option value="card_scanner">Card scanner</option>
-          {where !== 'bottom' && <option value="divider">Divider</option>}
-          {adding.section === null && <option value="section">Section</option>}
-          {where !== 'bottom' && <option value="home">Home</option>}
+          {typesFor(adding.where).map((t) => <option key={t} value={t}>{ITEM_TYPE_LABELS[t]}</option>)}
         </Select>
       </label>
       {(adding.type === 'object' || adding.type === 'view') && (
@@ -1202,7 +1224,7 @@ function NavSettings() {
   );
 
 
-  const iconSection = iconFor === null ? undefined : items[iconFor];
+  const iconSection = iconFor === null ? undefined : (iconFor.root === 'top' ? items : bottom)[iconFor.index];
   return (
     <>
     {iconSection?.type === 'section' && (
@@ -1210,8 +1232,9 @@ function NavSettings() {
         value={iconSection.icon ?? null}
         onPick={(name) => {
           const at = iconFor;
-          setItems((all) => all.map((x, j) => {
-            if (j !== at || x.type !== 'section') return x;
+          if (!at) return;
+          (at.root === 'top' ? setItems : setBottom)((all) => all.map((x, j) => {
+            if (j !== at.index || x.type !== 'section') return x;
             const { icon: _old, ...rest } = x;
             return name ? { ...rest, icon: name } : rest;
           }));
@@ -1245,30 +1268,64 @@ function NavSettings() {
       <SettingsSection title="Sidebar" description={sidebarDescription()}>
         {!loaded ? <TableSkeleton rows={5} /> : items.length === 0
           ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections with + Add.</EmptyState>
-          : <div className="nav-tree">{renderList(items, null)}</div>}
+          : <div className="nav-tree">{renderList(items, 'top')}</div>}
         {loaded && addButton('sidebar')}
         {addPicker('sidebar')}
       </SettingsSection>
 
-      <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: the left button, up to ${BOTTOM_MAX} links, then Search.`}>
-        <BottomBarPreview left={bottomLeft} items={bottom} />
-        <div className="setting-rows">
-          <SettingRow label="Left button" htmlFor="bottom-left">
-            <Select id="bottom-left" value={bottomLeft} onChange={(v) => setBottomLeft(v as 'menu' | 'home')}>
-              <option value="menu">Menu (opens the full menu)</option>
-              <option value="home">Home</option>
-            </Select>
-          </SettingRow>
-          <SettingRow label="Links">
-            {bottom.length === 0 ? <span className="muted">No links between the left button and Search.</span> : (
-              <div className="nav-tree stretch">
-                {bottom.map((it, i) => row(it, i, bottom, 'bottom', (fn) => setBottom(fn), false))}
-              </div>
-            )}
-            {addButton('bottom')}
-            {addPicker('bottom')}
-          </SettingRow>
-        </div>
+      <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: up to ${BOTTOM_MAX} items in any order, then Search, which is always last. Menu opens the full menu; a section opens a list of its links.`}>
+        <BottomBarPreview items={bottom} />
+        {loaded && bottom.length === 0
+          ? <p className="muted">Only Search is on the hotbar.</p>
+          : <div className="nav-tree">{renderList(bottom, 'bottom')}</div>}
+        {loaded && !bottom.some((it) => it.type === 'menu') && (
+          <p className="muted small">No Menu button: on a phone, the full menu then opens only from the home page's top bar.</p>
+        )}
+        {loaded && addButton('bottom')}
+        {addPicker('bottom')}
+      </SettingsSection>
+
+      <SettingsSection title="More menu" description="Every object you can open is listed under More in the sidebar. Switch one off to leave it out of More. It still opens from search, links and any sidebar item above.">
+        {!loaded ? <TableSkeleton rows={4} /> : (
+          <div className="nav-more-groups">
+            {moreGroups(objects.map((o) => o.api_name)).map((g) => {
+              const shownCount = g.objects.filter((o) => !moreHidden.includes(o)).length;
+              return (
+                <div key={g.label} className="nav-more-group">
+                  <label className="nav-more-head">
+                    <span>{g.label}</span>
+                    <span className="muted small push-right">{shownCount} of {g.objects.length} shown</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={shownCount > 0}
+                      ref={(el) => { if (el) el.indeterminate = shownCount > 0 && shownCount < g.objects.length; }}
+                      onChange={(e) => setMoreHidden((h) => (e.target.checked ? h.filter((o) => !g.objects.includes(o)) : [...new Set([...h, ...g.objects])]))}
+                      aria-label={`Show all of ${g.label} in More`}
+                    />
+                  </label>
+                  {g.objects.map((o) => {
+                    const Icon = objectIcon(o);
+                    const shown = !moreHidden.includes(o);
+                    return (
+                      <label key={o} className={`nav-more-row${shown ? '' : ' off'}`}>
+                        <Icon size={16} strokeWidth={1.75} />
+                        <span>{objectLabel(o)}</span>
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          checked={shown}
+                          onChange={(e) => setMoreHidden((h) => (e.target.checked ? h.filter((x) => x !== o) : [...h, o]))}
+                          aria-label={`Show ${objectLabel(o)} in More`}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </SettingsSection>
 
       {isAdmin && loaded && (
@@ -1339,7 +1396,7 @@ function CopyMenuModal({ sources, into, onCopy, onClose }: { sources: MenuSource
         </Select>
       </label>
       <p className="muted small">
-        Replaces the sidebar and mobile hotbar of {into} with a copy. For a user without their own menu, this copies the menu they see now.
+        Replaces the sidebar, mobile hotbar and More menu of {into} with a copy. For a user without their own menu, this copies the menu they see now.
         Nothing is saved until you click Save menu.
       </p>
     </Modal>
@@ -1630,16 +1687,20 @@ function MembersModal({ group, groups, users, myId, onSave, onClose }: {
 
 // The mobile hotbar as BottomBar (components/MobileNav.tsx) draws it, with the same classes and links, but not
 // clickable. Like the real bar, links this admin cannot open are left out.
-function BottomBarPreview({ left, items }: { left: 'menu' | 'home'; items: NavItem[] }) {
+function BottomBarPreview({ items }: { items: NavItem[] }) {
   const { objectByName, customViews } = useApp();
   return (
     <div className="bottom-bar-preview" aria-label="Mobile hotbar preview">
       <div className="bottom-bar">
-        <span className="bottom-item">
-          {left === 'menu' ? <MenuIcon size={22} strokeWidth={1.75} /> : <HomeIcon size={22} strokeWidth={1.75} />}
-          <span>{left === 'menu' ? 'Menu' : 'Home'}</span>
-        </span>
         {items.map((item, i) => {
+          if (item.type === 'menu' || item.type === 'section') {
+            return (
+              <span key={i} className="bottom-item">
+                {item.type === 'menu' ? <MenuIcon size={22} strokeWidth={1.75} /> : <ViewIcon icon={item.icon} fallback={Folder} size={22} strokeWidth={1.75} />}
+                <span>{item.type === 'menu' ? 'Menu' : item.label}</span>
+              </span>
+            );
+          }
           const link = navLink(item, objectByName, customViews);
           if (!link) return null;
           return (

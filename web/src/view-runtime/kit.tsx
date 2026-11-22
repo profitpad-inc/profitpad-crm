@@ -112,6 +112,10 @@ export const createRecord = (object: string, properties: Record<string, unknown>
 export const updateRecord = (object: string, id: string, properties: Record<string, unknown>) =>
   call<{ id: string; properties: Record<string, unknown> }>('updateRecord', [object, id, properties]);
 export const linkRecords = (object: string, id: string, toObject: string, toId: string) => call<void>('linkRecords', [object, id, toObject, toId]);
+// Opens the CRM's own line items editor (the record page's Line items +) over
+// the view, for a record with line items (deals, quotes, invoices, ...).
+// Resolves when the viewer closes it: saved says whether lines were saved.
+export const editLineItems = (object: string, id: string) => call<{ saved: boolean }>('editLineItems', [object, id]);
 // Sends data to an integration an admin set up (an n8n webhook, say); the
 // API makes the request and resolves with the endpoint's answer.
 export const callIntegration = <T = unknown>(key: string, data?: unknown) => call<{ status: number; data: T }>('callIntegration', [key, data ?? null]);

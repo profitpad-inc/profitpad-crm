@@ -21,7 +21,7 @@ import { EmailTracking } from '../components/EmailTracking';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
 import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
-import { AMOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
+import { AMOUNT_PARENTS, DISCOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { COMMENT_TARGETS, Comments } from '../components/Comments';
@@ -615,7 +615,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   schema: ObjectDef; record: CrmRecord; lock: RecordLock | null; onSaved: (r: CrmRecord) => void;
   flash?: Set<string> | null; changedBy?: Record<string, string | null>;
 }) {
-  const { toast } = useApp();
+  const { toast, objectByName } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // the value when editing started: if it changes underneath (someone else
@@ -683,6 +683,11 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties: { [p.api_name]: value } }));
       setError(null);
       toast('Saved');
+      // a deal's, quote's or invoice's own discount (0104) changes what its amount should be
+      if (DISCOUNT_PARENTS.includes(schema.api_name) && (p.api_name === 'discount_type' || p.api_name === 'discount_value')) {
+        const updated = await offerAmountUpdates([{ object: schema.api_name, id: record.id }], (o) => objectByName.get(o)?.label_singular ?? o).catch(() => 0);
+        if (updated) onSaved(await api<CrmRecord>('GET', `/v1/objects/${schema.api_name}/${record.id}`));
+      }
     } catch (err) {
       // the message names the property; under the field that is redundant
       const raw = (err as Error).message;
@@ -2253,7 +2258,10 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
           } : undefined}
           startWith={fromDeal ? {
             amount: selfRecord.properties.amount,
-            currency: Array.isArray(selfRecord.properties.currency) ? selfRecord.properties.currency[0] : selfRecord.properties.currency
+            currency: Array.isArray(selfRecord.properties.currency) ? selfRecord.properties.currency[0] : selfRecord.properties.currency,
+            // the deal's own discount (0104) goes with its lines
+            discount_type: Array.isArray(selfRecord.properties.discount_type) ? selfRecord.properties.discount_type[0] : selfRecord.properties.discount_type,
+            discount_value: selfRecord.properties.discount_value
           } : undefined}
           onClose={() => { setDialog(null); onChanged(); }}
           onCreated={(r) => {
@@ -2405,7 +2413,9 @@ function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: stri
       {error && <div className="error">{error}</div>}
       {offer && (
         <div className="line-deal-offer callout">
-          <div className="small">The {label(offer.object)}'s line items now total {money(offer.total, offer.currency)}; its amount is {money(offer.amount, offer.currency)}.</div>
+          <div className="small">{offer.total !== offer.subtotal
+            ? `The ${label(offer.object)}'s line items now total ${money(offer.subtotal, offer.currency)}, ${money(offer.total, offer.currency)} after its discount; its amount is ${money(offer.amount, offer.currency)}.`
+            : `The ${label(offer.object)}'s line items now total ${money(offer.total, offer.currency)}; its amount is ${money(offer.amount, offer.currency)}.`}</div>
           <div className="public-link-actions">
             <button className="btn primary small" onClick={updateDeal}>Update {label(offer.object)} amount</button>
             <button className="btn small" onClick={() => setOffer(null)}>Keep</button>

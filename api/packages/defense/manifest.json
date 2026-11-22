@@ -185,6 +185,8 @@
     { "object": "oem_integrations", "api_name": "next_steps", "label": "Next steps", "type": "text" },
     { "object": "oem_integrations", "api_name": "notes", "label": "Notes", "type": "text" },
     { "object": "oem_integrations", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+    { "object": "oem_integrations", "api_name": "contact_name", "label": "Contact name", "type": "text" },
+    { "object": "oem_integrations", "api_name": "contact_email", "label": "Contact email", "type": "text" },
 
     { "object": "proposals", "api_name": "solicitation_number", "label": "Solicitation number", "type": "text", "options": { "single_line": true } },
     { "object": "proposals", "api_name": "contract_type", "label": "Type", "type": "dropdown", "options": { "single_value": true, "default_value": "rfp" },
@@ -310,6 +312,11 @@
     { "object": "leads", "api_name": "raw_text", "label": "Original text", "type": "text" },
     { "object": "leads", "api_name": "summary", "label": "Summary", "type": "text", "options": { "display": "markdown" } },
     { "object": "leads", "api_name": "owner", "label": "Owner", "type": "dropdown", "options": { "single_value": true, "auto_append_users": true } },
+    { "object": "leads", "api_name": "fit_score", "label": "Fit score", "type": "number", "description": "Product fit from the Opportunity evaluator, 0 to 100." },
+    { "object": "leads", "api_name": "fit_risk", "label": "Fit risk", "type": "dropdown", "options": { "single_value": true }, "description": "Risk level from the Opportunity evaluator.",
+      "dropdown_options": [{ "api_value": "low", "label": "Low" }, { "api_value": "medium", "label": "Medium" }, { "api_value": "high", "label": "High" }] },
+    { "object": "leads", "api_name": "fit_evaluation", "label": "Fit evaluation", "type": "text", "description": "The Opportunity evaluator's full answer (JSON: summary, strengths, gaps, risks, recommendation)." },
+    { "object": "leads", "api_name": "requirements_document", "label": "Requirements document", "type": "file", "options": { "max_files": 1 } },
 
     { "object": "intel_topics", "api_name": "topic_type", "label": "Type", "type": "dropdown", "options": { "single_value": true, "default_value": "topic" },
       "dropdown_options": [
@@ -396,7 +403,12 @@
     { "slug": "trade-show-follow-up", "name": "Trade show follow-up", "icon": "ticket", "description": "People met at events, hottest first, with their follow-up status." },
     { "slug": "travel-ops", "name": "Travel ops", "icon": "plane", "description": "Trips with itinerary, budget and approval; expenses with receipts." },
     { "slug": "product-pricing", "name": "Product pricing", "icon": "tags", "description": "MSRP, GSA and distributor prices by product, margins and expiring price lists." },
-    { "slug": "materials-library", "name": "Materials library", "icon": "book-open", "description": "Marketing materials and business documents by folder and type, with upload." }
+    { "slug": "materials-library", "name": "Materials library", "icon": "book-open", "description": "Marketing materials and business documents by folder and type, with upload." },
+    { "slug": "quotations", "name": "Quotations", "icon": "file-text", "description": "Quote Tracker by period with totals, and a New Quote builder with the CRM's line items editor." },
+    { "slug": "oem-integrations", "name": "OEM Integrations", "icon": "link", "description": "Integration status with OEM partners: counters by status, cards by status, and a two-column form to add or edit one." },
+    { "slug": "opportunity-evaluator", "name": "Opportunity Evaluator", "icon": "sparkles", "description": "Product catalog by category, product upkeep, and a Claude fit check of a product against an uploaded RFP, with history." },
+    { "slug": "defense-reports", "name": "Reports", "icon": "chart-column", "description": "Six AI quick reports from the filtered pipeline, and the trade show follow-up plan." },
+    { "slug": "operations-bom", "name": "Operations", "icon": "factory", "description": "Product BOMs with COGS and a margin projection matrix; Claude can read a BOM file for its COGS and parts." }
   ],
 
   "publish_views": true,
@@ -429,18 +441,18 @@
             "label": "Partnerships"
           },
           {
-            "type": "object",
-            "object": "quotes",
+            "type": "custom_view",
+            "slug": "quotations",
             "label": "Quotations"
           },
           {
-            "type": "object",
-            "object": "oem_integrations",
+            "type": "custom_view",
+            "slug": "oem-integrations",
             "label": "OEM Integrations"
           },
           {
             "type": "custom_view",
-            "slug": "reporting",
+            "slug": "defense-reports",
             "label": "Reports"
           }
         ]
@@ -466,8 +478,8 @@
             "label": "Scenario Generator"
           },
           {
-            "type": "object",
-            "object": "products",
+            "type": "custom_view",
+            "slug": "opportunity-evaluator",
             "label": "Opp. Evaluator"
           },
           {
@@ -514,8 +526,8 @@
             "label": "Team Hierarchy"
           },
           {
-            "type": "object",
-            "object": "boms",
+            "type": "custom_view",
+            "slug": "operations-bom",
             "label": "Operations"
           },
           {

@@ -1,0 +1,21 @@
+{
+  "quotes": "select q.pc_0022_id as id, q.name, q.status, q.status__label as status_label, q.amount, q.currency, q.amount_base, q.expiration_date, q.created_at, q.customer_type__label as customer_type, (select c.name from associations a join companies c on c.pc_0011_id = a.other_record_id where a.object = 'quotes' and a.other_object = 'companies' and a.record_id = q.pc_0022_id order by c.name limit 1) as customer, (select ct.name from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'quotes' and a.other_object = 'contacts' and a.record_id = q.pc_0022_id order by ct.name limit 1) as contact, (select count(*) from associations a where a.object = 'quotes' and a.other_object = 'lines' and a.record_id = q.pc_0022_id) as line_count from quotes q order by q.created_at desc",
+  "quote": {
+    "sql": "select q.pc_0022_id as id, q.name, q.status, q.currency, q.expiration_date, q.created_at, q.amount, q.customer_type, q.price_list, q.payment_terms, q.lead_time, q.berry_compliant, q.country_of_origin, q.shipping_address, q.ship_length, q.ship_width, q.ship_height, q.ship_weight, q.ship_units, q.est_freight, q.notes_terms, q.discount_type, q.discount_value, (select a.other_record_id from associations a where a.object = 'quotes' and a.other_object = 'companies' and a.record_id = q.pc_0022_id order by a.created_at limit 1) as company_id, (select a.other_record_id from associations a where a.object = 'quotes' and a.other_object = 'contacts' and a.record_id = q.pc_0022_id order by a.created_at limit 1) as contact_id, (select a.other_record_id from associations a where a.object = 'quotes' and a.other_object = 'partnerships' and a.record_id = q.pc_0022_id order by a.created_at limit 1) as partnership_id, (select a.other_record_id from associations a where a.object = 'quotes' and a.other_object = 'boms' and a.record_id = q.pc_0022_id order by a.created_at limit 1) as bom_id, (select a.other_record_id from associations a where a.object = 'quotes' and a.other_object = 'deals' and a.record_id = q.pc_0022_id order by a.created_at limit 1) as deal_id from quotes q where q.pc_0022_id = :id",
+    "params": {
+      "id": "text"
+    }
+  },
+  "lines": {
+    "sql": "select l.pc_0020_id as id, l.name, l.sku, l.quantity, l.unit_price, l.discount, l.amount, l.uom__label as uom, l.line_type, l.berry_compliant__label as berry, l.lead_time, l.country_of_origin from associations a join lines l on l.pc_0020_id = a.other_record_id where a.object = 'quotes' and a.other_object = 'lines' and a.record_id = :id order by l.created_at, l.pc_0020_id",
+    "params": {
+      "id": "text"
+    }
+  },
+  "companies": "select c.pc_0011_id as id, c.name, c.customer_type from companies c where c.name is not null order by c.name",
+  "contacts": "select ct.pc_0010_id as id, ct.name, ct.first_name, ct.last_name, ct.job_title, ct.email, ct.phone, (select a.other_record_id from associations a where a.object = 'contacts' and a.other_object = 'companies' and a.record_id = ct.pc_0010_id order by a.created_at limit 1) as company_id from contacts ct order by ct.name",
+  "partners": "select p.{{id:partnerships}} as id, p.name, p.partner_type__label as partner_type from partnerships p order by p.name",
+  "boms": "select b.{{id:boms}} as id, b.name, b.total_cogs from boms b order by b.name",
+  "deals": "select d.pc_0012_id as id, d.name, d.stage__label as stage from deals d order by d.created_at desc",
+  "options": "select property, api_value, label from property_options where object_type_id = 'pc_0022' and property in ('status', 'currency', 'customer_type', 'price_list', 'payment_terms', 'berry_compliant', 'ship_units', 'discount_type') and record_status = 'active' order by property, display_order"
+}

@@ -13,6 +13,7 @@ import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewFile, 
 import { checkExternalUrl } from '../view-runtime/external-url';
 import { confirmDialog } from '../components/confirm';
 import { loadSnippets, renderSnippet } from '../lib/snippets';
+import { LineItemsEditor } from '../components/LineItemsEditor';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
 // sandboxed iframe (public/view-frame, opaque origin, no network); this page
@@ -52,7 +53,7 @@ function parseHash(hash: string): { slug: string; params: Params } {
 type Ask = { title: string; lines: string[] };
 
 // What a view asks to change, in words for the confirmation (values cut short)
-function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'uploadFile', args: unknown[]): Ask {
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'uploadFile' | 'editLineItems', args: unknown[]): Ask {
   const short = (v: unknown) => {
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 79) + '…' : s;
@@ -66,6 +67,7 @@ function describeChange(label: (o: string) => string, method: 'createRecord' | '
     return { title: 'Upload a file', lines: [`${String(args[1] ?? '') || (blob as File).name || 'file'} (${formatBytes(blob.size)})`] };
   }
   const obj = String(args[0] ?? '');
+  if (method === 'editLineItems') return { title: `Edit the line items of ${label(obj)} record ${String(args[1] ?? '')}`, lines: ['in the line items editor, where you see each change before saving'] };
   if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
   if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
   return { title: 'Link two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `to ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
@@ -139,6 +141,11 @@ export function CustomView() {
   // a file the view asked to open when the browser blocked the new tab: the
   // viewer opens it with a click of their own
   const [blockedOpen, setBlockedOpen] = useState<string | null>(null);
+  // the line items editor a view opened (editLineItems); resolve answers the
+  // frame when the viewer closes it
+  const [lineEditor, setLineEditor] = useState<{ object: string; id: string; resolve: (v: { saved: boolean }) => void } | null>(null);
+  const lineEditorRef = useRef(lineEditor);
+  lineEditorRef.current = lineEditor;
   const [leaving, setLeaving] = useState<LinkAsk | null>(null);
   const [dontAskAgain, setDontAskAgain] = useState(false);
   const leavingRef = useRef<LinkAsk | null>(null);
@@ -180,6 +187,8 @@ export function CustomView() {
     leavingRef.current?.resolve(false);
     leavingRef.current = null;
     setLeaving(null);
+    lineEditorRef.current?.resolve({ saved: false });
+    setLineEditor(null);
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
@@ -394,6 +403,16 @@ export function CustomView() {
         navigate({ pathname: location.pathname, search: location.search, hash: buildHash(s, next) }, { replace: true });
         return null;
       }
+      case 'editLineItems': {
+        const object = String(args[0] ?? '');
+        const id = String(args[1] ?? '');
+        const obj = objectByName.get(object);
+        if (!obj) throw new Error(`no object called ${object}`);
+        if (!/^[0-9a-f]{10}$/.test(id)) throw new Error('editLineItems takes a record id (10 characters, 0-9 and a-f)');
+        if (lineEditorRef.current) throw new Error('The line items editor is already open');
+        if (!(await confirmWrite(describeChange((o) => objectByName.get(o)?.label_plural ?? o, method, args)))) throw new Error('The viewer did not allow this change');
+        return new Promise<{ saved: boolean }>((resolve) => setLineEditor({ object, id, resolve }));
+      }
       // an upload is a change like the others (it creates a file record)
       case 'uploadFile':
       case 'createRecord':
@@ -545,6 +564,22 @@ export function CustomView() {
           />
         )}
       </div>
+      {lineEditor && (
+        <LineItemsEditor
+          parent={{ object: lineEditor.object, id: lineEditor.id }}
+          onSaved={() => {
+            const e = lineEditorRef.current;
+            setLineEditor(null);
+            e?.resolve({ saved: true });
+            toast();
+          }}
+          onClose={() => {
+            const e = lineEditorRef.current;
+            setLineEditor(null);
+            e?.resolve({ saved: false });
+          }}
+        />
+      )}
       {blockedOpen && (
         <Modal
           title="Open the file?"

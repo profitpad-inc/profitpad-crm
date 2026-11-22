@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { api, type CrmRecord, type SearchResult } from '../lib/api';
-import { AMOUNT_PARENTS, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
+import { AMOUNT_PARENTS, discountOff, money, parentTotals, setParentAmount, type ParentTotals } from '../lib/lines';
 import { useApp } from '../lib/app-context';
 import { Modal } from './ui';
 import { Loading } from './Loading';
@@ -139,7 +139,10 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
 
   const all = rows ?? [];
   const real = all.filter((r) => !isBlank(r));
-  const total = Math.round(real.reduce((s, r) => s + ext(r), 0) * 100) / 100;
+  const subtotal = Math.round(real.reduce((s, r) => s + ext(r), 0) * 100) / 100;
+  // the parent's own discount (deals, quotes, invoices) comes off the lines' total
+  const off = discountOff(totals?.discount, subtotal);
+  const total = Math.round((subtotal - off) * 100) / 100;
   const cost = Math.round(real.reduce((s, r) => s + (num(r.qty) ?? 0) * (num(r.cost) ?? 0), 0) * 100) / 100;
   const currency = totals?.currency ?? 'USD';
   const dirty = removed.length > 0 || real.some((r) => !r.id || snapshot(r) !== r.saved);
@@ -430,6 +433,11 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
                 <button className="btn le-pill" onClick={() => setCustom({ key: null })}>+ Custom line</button>
               </div>
               <div className="le-sum">
+                {off > 0 && (
+                  <span className="small le-sum-discount">
+                    {`Subtotal ${money(subtotal, currency)} · Discount${totals?.discount.type === 'percent' ? ` ${totals.discount.value}%` : ''} −${money(off, currency)}`}
+                  </span>
+                )}
                 <span className="le-sum-label">Total</span>
                 <span className="le-sum-figs">
                   <strong>{money(total, currency)}</strong>

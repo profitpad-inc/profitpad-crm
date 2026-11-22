@@ -171,6 +171,15 @@
 .origin-add { display: flex; gap: 8px; max-width: 560px; }
 
 /* Navigation menus */
+.nav-more-groups { max-width: 920px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.nav-more-group { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+.nav-more-head, .nav-more-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius); cursor: pointer; }
+.nav-more-head { font-weight: 600; border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; margin-bottom: 2px; }
+.nav-more-head .push-right, .nav-more-row span { margin-left: auto; }
+.nav-more-row span { margin-left: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-more-row svg { color: var(--muted-text); flex: none; }
+.nav-more-row:hover { background: var(--surface); }
+.nav-more-row.off span { color: var(--muted-text); }
 .nav-tree { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px; display: flex; flex-direction: column; gap: 1px; }
 .nav-edit-row { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 4px 6px 4px 2px; border-radius: var(--radius); min-height: 36px; }
 .nav-edit-row.drop-before { box-shadow: 0 -2px 0 var(--primary); }

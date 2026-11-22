@@ -58,6 +58,16 @@ export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'document_templates', 'object_events', 'object_event_occurrences'] }
 ];
 
+// The More menu's groups for the given objects (in that menu's order), with
+// objects outside MORE_GROUPS under "Custom objects"; empty groups are dropped.
+export function moreGroups(objects: string[]) {
+  const grouped = new Set(MORE_GROUPS.flatMap((g) => g.objects));
+  return [
+    ...MORE_GROUPS.map((g) => ({ ...g, objects: g.objects.filter((o) => objects.includes(o)) })),
+    { label: 'Custom objects', objects: objects.filter((o) => !grouped.has(o)) }
+  ].filter((g) => g.objects.length > 0);
+}
+
 // The best human name for a record: name, else first + last, else email,
 // domain or subject, else its id.
 export function displayName(props: Record<string, unknown> | undefined, id: string): string {

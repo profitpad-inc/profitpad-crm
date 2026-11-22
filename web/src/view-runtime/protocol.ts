@@ -25,7 +25,9 @@ type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'cre
   // snippets for the # menu in text boxes (read only, never asked)
   | 'snippets' | 'renderSnippet'
   // the viewer's own settings in this view (never asked: their preferences, not CRM data)
-  | 'getSettings' | 'setSetting';
+  | 'getSettings' | 'setSetting'
+  // the CRM's own line items editor over a deal, quote, invoice, ... (a change: asked like createRecord)
+  | 'editLineItems';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

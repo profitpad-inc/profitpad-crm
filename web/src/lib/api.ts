@@ -194,7 +194,9 @@ export type NavItem =
   | { type: 'view'; object: string; view_id: number; label?: string }
   | { type: 'custom_view'; slug: string; label?: string }
   | { type: 'card_scanner'; label?: string }
-  | { type: 'section'; label: string; icon?: string; items: NavItem[] };
+  | { type: 'section'; label: string; icon?: string; items: NavItem[] }
+  // mobile hotbar only: opens the full menu as a drawer
+  | { type: 'menu' };
 
 // A custom view the user can open (GET /v1/views), for menus
 export interface CustomViewSummary {

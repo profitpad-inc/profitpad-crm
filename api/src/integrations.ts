@@ -20,9 +20,11 @@ export const KEY_RE = /^[a-z][a-z0-9_-]{1,39}$/;
 const HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
 // headers an admin cannot set as the secret one (we set them ourselves)
 const RESERVED_HEADERS = new Set(['host', 'content-type', 'content-length', 'user-agent', 'connection', 'transfer-encoding', 'x-pcrm-integration']);
-const MAX_BODY = 256_000;
+// room for an uploaded document sent as base64 (an RFP PDF for an AI check)
+const MAX_BODY = 10_000_000;
 const MAX_RESPONSE = 1_000_000;
-const TIMEOUT_MS = 15_000;
+// AI workflows (a fit evaluation reading a PDF) can take most of a minute
+const TIMEOUT_MS = 60_000;
 const CALLS_PER_MINUTE = 30;
 // interactive integrations (0060) are called while the viewer types
 const INTERACTIVE_CALLS_PER_MINUTE = 120;
@@ -399,7 +401,7 @@ async function payloadFor(p: Principal, key: string | null, data: unknown, view:
     sent_at: new Date().toISOString(),
     ...(dryRun ? { dry_run: true } : {})
   });
-  if (Buffer.byteLength(payload) > MAX_BODY) throw badRequest('data is too large (up to 250 KB)');
+  if (Buffer.byteLength(payload) > MAX_BODY) throw badRequest('data is too large (up to 10 MB)');
   return payload;
 }
 
