@@ -36,6 +36,69 @@ function validateTheme(value: unknown): Record<string, string> {
   return value as Record<string, string>;
 }
 
+// Defaults, kept in step with web/src/lib/theme.ts (DEFAULT_THEME,
+// DEFAULT_DARK_THEME, DEFAULT_DROPDOWN_COLORS). Saved settings hold only what
+// the admin changed on top of these.
+export const DEFAULT_THEME: Record<string, string> = {
+  primary: '#1d4ed8', sidebar_background: '#0f172a', sidebar_text: '#f1f5f9', sidebar_active: '#26344d',
+  page_background: '#ffffff', surface: '#eef1f5', text: '#0b1220', muted_text: '#475467', border: '#cfd6df'
+};
+export const DEFAULT_DARK_THEME: Record<string, string> = {
+  primary: '#3b76ef', sidebar_background: '#0a0f1a', sidebar_text: '#e2e8f0', sidebar_active: '#1e2a40',
+  page_background: '#161b26', surface: '#0f131c', text: '#e6eaf0', muted_text: '#9aa4b4', border: '#2e3646'
+};
+export const DEFAULT_DROPDOWN_COLORS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981', '#14b8a6',
+  '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899', '#6b7280'
+];
+
+export interface ThemeState {
+  light: Record<string, string>;
+  dark: Record<string, string>;
+  dropdown_colors: string[];
+  has_logo: boolean;
+}
+
+// the colours in use (saved settings over the defaults), as Settings, Theme shows them
+export async function loadTheme(): Promise<ThemeState> {
+  const { rows } = await pool.query<{ key: string; value: any }>(
+    "select key, value from ui.settings where key in ('theme', 'theme_dark', 'dropdown_colors', 'logo')"
+  );
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return {
+    light: { ...DEFAULT_THEME, ...(s.theme ?? {}) },
+    dark: { ...DEFAULT_DARK_THEME, ...(s.theme_dark ?? {}) },
+    dropdown_colors: s.dropdown_colors?.colors ?? [...DEFAULT_DROPDOWN_COLORS],
+    has_logo: !!s.logo?.image
+  };
+}
+
+export interface ThemeChanges {
+  light?: Record<string, string>;
+  dark?: Record<string, string>;
+  dropdown_colors?: string[];
+  reset?: ('light' | 'dark' | 'dropdown_colors')[];
+}
+
+// Changes some colours, keeping the rest. reset puts a palette back to the
+// defaults first, so reset plus colours gives the defaults with those changes.
+export async function updateTheme(p: Principal, changes: ThemeChanges, req?: FastifyRequest): Promise<ThemeState> {
+  requireAdmin(p);
+  const current = await loadTheme();
+  const reset = new Set(changes.reset ?? []);
+  const lower = (o: Record<string, string>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? v.toLowerCase() : v]));
+  if (reset.has('light') || changes.light) {
+    await saveSetting(p, 'theme', { ...(reset.has('light') ? DEFAULT_THEME : current.light), ...lower(changes.light ?? {}) }, req);
+  }
+  if (reset.has('dark') || changes.dark) {
+    await saveSetting(p, 'theme_dark', { ...(reset.has('dark') ? DEFAULT_DARK_THEME : current.dark), ...lower(changes.dark ?? {}) }, req);
+  }
+  if (reset.has('dropdown_colors') || changes.dropdown_colors) {
+    await saveSetting(p, 'dropdown_colors', { colors: changes.dropdown_colors ?? DEFAULT_DROPDOWN_COLORS }, req);
+  }
+  return loadTheme();
+}
+
 // ---- dropdown colours --------------------------------------------------------
 
 // The 16 colours offered when picking a dropdown choice's colour, in order.
@@ -61,6 +124,25 @@ function validateLogo(value: unknown): { image: string | null } {
   }
   if (raw.length > LOGO_MAX) throw badRequest('the logo is too large (300 KB at most)');
   return { image: raw };
+}
+
+// Saves one portal setting (theme, theme_dark, dropdown_colors, logo) after
+// checking it. req, when there is one, records the change in the security log.
+export async function saveSetting(p: Principal, key: string, body: unknown, req?: FastifyRequest): Promise<unknown> {
+  requireAdmin(p);
+  const validators: Record<string, (v: unknown) => unknown> = {
+    theme: validateTheme, theme_dark: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo
+  };
+  const validate = validators[key];
+  if (!validate) throw badRequest('unknown setting (supported: theme, theme_dark, dropdown_colors, logo, forms)');
+  const value = await validate(body);
+  await pool.query(
+    `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)
+     on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
+    [key, JSON.stringify(value), p.actor]
+  );
+  if (req) await logEvent(req, 'settings.updated', { target: { type: 'setting', id: key } });
+  return value;
 }
 
 // ---- forms -------------------------------------------------------------------
@@ -474,19 +556,7 @@ export async function uiRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdmin(p);
     if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
-    const validators: Record<string, (v: unknown) => unknown> = {
-      theme: validateTheme, theme_dark: validateTheme, dropdown_colors: validateDropdownColors, logo: validateLogo
-    };
-    const validate = validators[req.params.key];
-    if (!validate) throw badRequest('unknown setting (supported: theme, theme_dark, dropdown_colors, logo, forms)');
-    const value = await validate(req.body);
-    await pool.query(
-      `insert into ui.settings (key, value, updated_by) values ($1, $2, $3)
-       on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = excluded.updated_by`,
-      [req.params.key, JSON.stringify(value), p.actor]
-    );
-    await logEvent(req, 'settings.updated', { target: { type: 'setting', id: req.params.key } });
-    return value;
+    return saveSetting(p, req.params.key, req.body, req);
   });
 
   // the caller's sidebar: see effectiveMenu (own menu, group menu or the default)

@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createMcpHandler, McpServer, requireScopes, type AuthInfo, type CallToolResult } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { pool, withTx } from './db.js';
@@ -37,7 +37,7 @@ import {
 } from './integrations.js';
 import { describeCreateForm, listConfig } from './native-ui.js';
 import { approvalNextStep } from './approval.js';
-import { loadFormsSettings, saveEmbedDomains } from './routes/ui.js';
+import { loadFormsSettings, loadTheme, saveEmbedDomains, THEME_KEYS, updateTheme } from './routes/ui.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
   updateEndpoint, updateSubscription
@@ -107,7 +107,7 @@ const filterGroupsArg = z.array(z.object({
   }))
 })).optional().describe('Filters within a group are ANDed; groups are ORed. between uses values [low, high]; in/not_in use values.');
 
-export function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[]): McpServer {
+export function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[], req?: FastifyRequest): McpServer {
   const server = new McpServer(
     { name: 'profitpad-crm', title: 'ProfitPad CRM', version: VERSION, icons, websiteUrl: process.env.UI_URL || undefined },
     { instructions: INSTRUCTIONS + (p.scopes.has('schema') ? ADMIN_INSTRUCTIONS : '') }
@@ -364,8 +364,19 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     return { deleted: comment_id };
   }));
 
+  // ---- theme (routes/ui.ts) ----
+
+  server.registerTool('get_theme', {
+    title: 'Get theme',
+    description: 'The portal colours in use (Settings, Theme): the light and dark palettes (primary, sidebar_background, sidebar_text, sidebar_active, page_background, surface, text, muted_text, border) as #rrggbb, the 16 colours offered for dropdown choices, and whether a logo is set. Saved colours are shown over the defaults.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => {
+    requireScope(p, 'read');
+    return loadTheme();
+  }));
+
   registerEmailTools(server, p);
-  if (p.scopes.has('schema')) registerAdminTools(server, p);
+  if (p.scopes.has('schema')) registerAdminTools(server, p, req);
   return server;
 }
 
@@ -389,7 +400,7 @@ const editsArg = z.array(z.object({ old_str: z.string(), new_str: z.string() }))
 // Custom views and property changes, for connections with the schema scope
 // (admins who allowed it on the consent page). Every change goes through the
 // same functions as the REST API (views.ts, routes/schema.ts).
-function registerAdminTools(server: McpServer, p: Principal) {
+function registerAdminTools(server: McpServer, p: Principal, req?: FastifyRequest) {
   const schemaChallenge = requireScopes('schema');
 
   server.registerTool('view_guide', {
@@ -1104,6 +1115,28 @@ function registerAdminTools(server: McpServer, p: Principal) {
     return { deleted: subscription_id };
   }));
 
+  // ---- theme ----
+
+  const hexArg = z.string().regex(/^#[0-9A-Fa-f]{6}$/).describe('#rrggbb');
+  const paletteArg = z.object(Object.fromEntries(THEME_KEYS.map((k) => [k, hexArg.optional()])) as Record<(typeof THEME_KEYS)[number], z.ZodOptional<typeof hexArg>>).strict();
+
+  server.registerTool('update_theme', {
+    title: 'Update theme',
+    description: 'Changes the portal colours everyone sees (Settings, Theme). Give only the colours to change; the rest stay. light and dark are the two palettes (each person picks light or dark for themselves). dropdown_colors replaces the 16 colours offered for dropdown choices. reset puts a palette back to the defaults before applying any colours given. Call get_theme first, keep text readable on its background (and sidebar_text on sidebar_background) in both palettes, and confirm the colours with the admin before saving. Returns the theme now in use.',
+    inputSchema: z.object({
+      light: paletteArg.optional().describe('Light palette colours to change'),
+      dark: paletteArg.optional().describe('Dark palette colours to change'),
+      dropdown_colors: z.array(hexArg).length(16).optional().describe('All 16 dropdown choice colours, in order'),
+      reset: z.array(z.enum(['light', 'dark', 'dropdown_colors'])).optional().describe('Palettes to put back to the defaults first')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async (b) => run(async () => {
+    requireScope(p, 'schema');
+    if (!b.light && !b.dark && !b.dropdown_colors && !b.reset?.length) throw badRequest('give light, dark, dropdown_colors or reset');
+    return updateTheme(p, b as Parameters<typeof updateTheme>[1], req);
+  }));
+
   // ---- embed domains ----
 
   server.registerTool('list_embed_domains', {
@@ -1154,7 +1187,9 @@ function registerAdminTools(server: McpServer, p: Principal) {
   }, async ({ object, ...b }) => run(() => testCalculation(p, object, b)));
 }
 
-const handler = createMcpHandler((ctx) => buildServer(ctx.authInfo!.extra!.principal as Principal, ctx.authInfo!.extra!.icons as ReturnType<typeof brandIcons>), {
+const handler = createMcpHandler((ctx) => buildServer(
+  ctx.authInfo!.extra!.principal as Principal, ctx.authInfo!.extra!.icons as ReturnType<typeof brandIcons>, ctx.authInfo!.extra!.req as FastifyRequest
+), {
   legacy: 'stateless',
   onerror: (err) => console.error('mcp error', err)
 });
@@ -1192,7 +1227,7 @@ export async function mcpRoutes(app: FastifyInstance) {
         expiresAt: Math.floor(p.oauth.expiresAt.getTime() / 1000),
         resource: new URL(mcpResourceUrl(req)),
         resourceMetadataUrl: mcpResourceMetadataUrl(req),
-        extra: { principal: p, icons: brandIcons(req) }
+        extra: { principal: p, icons: brandIcons(req), req }
       };
 
       // hand the request to the SDK as a web Request; abort it if the client goes away
