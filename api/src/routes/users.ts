@@ -49,10 +49,28 @@ onCreate('users', {
       [wanted]
     );
     if (rows.length === 0) throw badRequest(`no role "${wanted}"`, { property: 'role' });
-    await client.query('insert into auth.role_assignments (role_id, user_id) values ($1, $2)', [rows[0].id, id]);
+    // The new user already has the default role ("View Only", from the trigger
+    // on crm.pc_0000). The role picked here is the one they get: picking the
+    // default keeps it, picking another replaces it.
+    const added = await client.query(
+      'insert into auth.role_assignments (role_id, user_id) values ($1, $2) on conflict do nothing',
+      [rows[0].id, id]
+    );
+    if (added.rowCount) {
+      await client.query(
+        `insert into auth.security_events (event, actor, user_id, target_type, target_id, details)
+         values ('role.assigned', $1, $2, 'role', $3, '{}')`,
+        [principal.actor, id, rows[0].id]
+      );
+    }
     await client.query(
-      `insert into auth.security_events (event, actor, user_id, target_type, target_id, details)
-       values ('role.assigned', $1, $2, 'role', $3, '{}')`,
+      `with gone as (
+         delete from auth.role_assignments a using auth.roles d
+         where a.role_id = d.id and d.is_default and a.user_id = $2 and a.role_id <> $3
+         returning a.role_id
+       )
+       insert into auth.security_events (event, actor, user_id, target_type, target_id, details)
+       select 'role.unassigned', $1, $2, 'role', role_id::text, '{}' from gone`,
       [principal.actor, id, rows[0].id]
     );
   }

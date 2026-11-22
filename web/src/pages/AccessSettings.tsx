@@ -117,6 +117,16 @@ export function UserSettings() {
   const [creating, setCreating] = useState(false);
   const shown = users.filter((u) => (show === 'active') === !u.deactivated);
   useEffect(() => { preloadCreateUser(); }, []);
+  // the sign-in options this CRM has set up, named in the description
+  const [signIn, setSignIn] = useState('Google or Microsoft');
+  useEffect(() => {
+    api<{ google?: boolean; microsoft?: boolean }>('GET', '/v1/auth/config', undefined, null)
+      .then((c) => {
+        if (c.google && !c.microsoft) setSignIn('Google');
+        else if (c.microsoft && !c.google) setSignIn('Microsoft');
+      })
+      .catch(() => undefined);
+  }, []);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -171,7 +181,7 @@ export function UserSettings() {
     <SettingsPage
       title="Users"
       description={<>
-        People sign in with Google or Microsoft when their email matches a user here whose Status is not Deactivated. What
+        People sign in with {signIn} when their email matches a user here whose Status is not Deactivated. What
         they can see comes from their roles; a user with no role sees nothing.
       </>}
       actions={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> Add a user</button>}

@@ -66,12 +66,24 @@ set local crm.source = 'setup';
 insert into crm.pc_0000 (name, first_name, last_name, email)
 select :'first' || ' ' || :'last', :'first', :'last', :'email'
 where not exists (select 1 from crm.pc_0000 where lower(email) = lower(:'email') and record_status = 'active');
--- the admin role (a fresh install has one, "Super Admin"); the user also gets the default "View Only" role when created, which the admin role outranks
+-- the admin role (a fresh install has one, "Super Admin")
 insert into auth.role_assignments (role_id, user_id)
 select r.id, u.pc_0000_id
 from (select id from auth.roles where is_admin order by id limit 1) r
 cross join (select pc_0000_id from crm.pc_0000 where lower(email) = lower(:'email') and record_status = 'active') u
 where not exists (select 1 from auth.role_assignments a where a.role_id = r.id and a.user_id = u.pc_0000_id);
+-- the admin role is all they need: drop the default role ("View Only") that every new user is given
+with gone as (
+  delete from auth.role_assignments a
+  using auth.roles d, crm.pc_0000 u
+  where a.role_id = d.id and d.is_default and not d.is_admin and a.team_id is null
+    and a.user_id = u.pc_0000_id and lower(u.email) = lower(:'email') and u.record_status = 'active'
+    and exists (select 1 from auth.role_assignments x join auth.roles r on r.id = x.role_id
+                where x.user_id = u.pc_0000_id and r.is_admin)
+  returning a.user_id, a.role_id
+)
+insert into auth.security_events (event, actor, user_id, target_type, target_id, details)
+select 'role.unassigned', meta.actor(), user_id, 'role', role_id::text, '{}' from gone;
 select format('%s is an admin (user %s); sign in with Google or Microsoft using that email', email, pc_0000_id)
 from crm.pc_0000 where lower(email) = lower(:'email') and record_status = 'active' \gset msg_
 \echo :msg_format
