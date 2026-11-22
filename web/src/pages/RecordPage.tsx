@@ -490,7 +490,7 @@ export function RecordPage() {
   return (
     <LiveContext.Provider value={live}>
     <SnippetRecordProvider object={object} id={id}>
-    <div className={`record-page${noRight ? ' two-col' : ''}`}>
+    <div className={`record-page${noRight ? ' two-col' : ''}${tabbed ? ' tabbed' : ''}`}>
       <aside className="record-left">
         <div className="record-head">
           <div className="record-head-bar">
@@ -1122,6 +1122,19 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
     document.getElementById(`activity-${openedKey}`)?.scrollIntoView({ block: 'center' });
   }, [openedKey, openedListed]);
 
+  // the tab strip scrolls sideways on narrow screens: keep the open tab in view
+  // (a Call, Email, Note or Task button can open one that is off to the right)
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bar = tabsRef.current;
+    const active = bar?.querySelector<HTMLElement>('.tab.active');
+    if (!bar || !active || bar.scrollWidth <= bar.clientWidth) return;
+    const b = bar.getBoundingClientRect();
+    const a = active.getBoundingClientRect();
+    if (a.left < b.left) bar.scrollBy({ left: a.left - b.left - 16 });
+    else if (a.right > b.right) bar.scrollBy({ left: a.right - b.right + 16 });
+  }, [tab]);
+
   // a copied link opens the activity in its own tab, whichever tab it was copied from
   async function copyLink(o: string, rid: string) {
     try {
@@ -1224,7 +1237,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
 
   return (
     <div className="activity">
-      <div className="tabs">
+      <div className="tabs" ref={tabsRef}>
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
             <button onClick={() => go(searchFor(t, opened?.object ?? null, opened?.id))}>

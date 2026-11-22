@@ -776,7 +776,17 @@ a.comment-author:hover { color: var(--primary); }
 /* ---- phones: Properties and Associations tabs (RecordPage passes them to the stream) --------- */
 /* the right column's cards, drawn inside a stream tab: same card styles, no column chrome */
 .record-page .record-right.record-tab-panel {
-  display: flex; flex-direction: column; gap: 12px; padding: 0; border: 0; background: transparent; overflow: visible;
+  display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 0; border: 0; background: transparent; overflow: visible;
 }
 .record-page .record-right.record-tab-panel:empty { display: none; }
 .record-page .stream-panel > .record-tab-panel + .props { margin-top: 12px; }
+/* with the properties in a tab, the header tile is all the left column holds: it sits on the same white page
+   as the tabs (no grey band or divider around it), with the tab strip just under it */
+@media (max-width: 767px) {
+  /* one white surface; the columns are see-through so the column below does not paint over the tile's shadow */
+  .record-page.tabbed { background: var(--page-background); }
+  .record-page.tabbed .record-left, .record-page.tabbed .record-middle { background: transparent; }
+  .record-page.tabbed .record-left { border-bottom: 0; padding-bottom: 0; }
+  .record-page.tabbed .record-head { margin-bottom: 0; }
+  .record-page.tabbed .record-middle { padding-top: 12px; }
+}
