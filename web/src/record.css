@@ -790,3 +790,11 @@ a.comment-author:hover { color: var(--primary); }
   .record-page.tabbed .record-head { margin-bottom: 0; }
   .record-page.tabbed .record-middle { padding-top: 12px; }
 }
+/* tablets: the object's own cards (public link, signing, ...) sit above the properties in the left column */
+.record-page .record-left > .record-tab-panel { margin-bottom: 12px; }
+/* tablets: the Associations tab has room for cards side by side, as the row under the columns had */
+@media (min-width: 768px) {
+  .record-page .stream-panel > .record-right.record-tab-panel {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: start;
+  }
+}

@@ -41,7 +41,7 @@ import '../record.css';
 import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
-import { useIsMobile } from '../lib/use-mobile';
+import { useIsMobile, useMediaQuery } from '../lib/use-mobile';
 import { Loading, Spinner } from '../components/Loading';
 
 // a contact's additional emails, as stored ("a@x.com; b@y.com")
@@ -390,6 +390,8 @@ export function RecordPage() {
   // whether the user on a user record is a Super Admin (from their roles), for "Sign in as"
   const [userSuperAdmin, setUserSuperAdmin] = useState<{ id: string; admin: boolean } | null>(null);
   const mobile = useIsMobile();
+  // tablets: where the right column would otherwise drop below both columns (styles.css)
+  const narrow = useMediaQuery('(max-width: 1100px)');
 
   if (mentioned) return <MentionedOnly object={object} id={id} items={mentioned} back={back} />;
   if (error) return <div className="page"><div className="error">{error}</div></div>;
@@ -478,14 +480,19 @@ export function RecordPage() {
     </>
   );
   // Phones: the properties and the linked records are tabs of the stream (Properties
-  // first and the default) instead of a long stack above and below it. Only the
-  // pages whose middle is the stream alone; editors (forms, views, ...) keep the stack.
-  const tabbed = mobile && !noRight && hasStream && object !== 'email_campaigns';
+  // first and the default) instead of a long stack above and below it. Tablets keep
+  // the properties on the left, and the linked records are the first tab instead of a
+  // row below both columns. Only the pages whose middle is the stream alone; editors
+  // (forms, views, ...) keep the stack.
+  const streamOnly = !noRight && hasStream && object !== 'email_campaigns';
+  const tabbed = mobile && streamOnly;
+  const assocTab = narrow && streamOnly;
   const linkedCount = cards.reduce((n, o) => n + (associated.find((a) => a.object === o)?.records.length ?? 0), 0);
+  const associationsPanel: StreamPanel = { key: 'associations', label: 'Associations', count: linkedCount, content: <div className="record-right record-tab-panel">{linkCards}</div> };
   const panels: StreamPanel[] = tabbed ? [
     { key: 'properties', label: 'Properties', content: <><div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
-    { key: 'associations', label: 'Associations', count: linkedCount, content: <div className="record-right record-tab-panel">{linkCards}</div> }
-  ] : [];
+    associationsPanel
+  ] : assocTab ? [associationsPanel] : [];
 
   return (
     <LiveContext.Provider value={live}>
@@ -568,6 +575,7 @@ export function RecordPage() {
           )}
         </div>
         {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
+        {assocTab && !tabbed && <div className="record-right record-tab-panel">{ownCards}</div>}
         {!tabbed && propertyList}
       </aside>
 
@@ -613,7 +621,7 @@ export function RecordPage() {
             )}
           </section>
 
-          {!noRight && !tabbed && <aside className="record-right">
+          {!noRight && !assocTab && <aside className="record-right">
             {ownCards}
             {linkCards}
           </aside>}
