@@ -151,17 +151,61 @@ export async function recordRoutes(app: FastifyInstance) {
     reply.code(204);
   });
 
-  app.post<{ Params: ObjParams; Body: { winner_id: string; loser_id: string } }>('/v1/objects/:object/merge', async (req) => {
+  // properties: values the merged record ends up with, picked per property in
+  // the merge dialog; the rest keep the winner's value, else the loser's
+  app.post<{ Params: ObjParams; Body: { winner_id: string; loser_id: string; properties?: Record<string, unknown> } }>('/v1/objects/:object/merge', async (req) => {
     const p = req.principal!;
     requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'edit');
-    const { winner_id, loser_id } = req.body ?? ({} as { winner_id: string; loser_id: string });
+    const { winner_id, loser_id, properties } = req.body ?? ({} as { winner_id: string; loser_id: string });
     if (!winner_id || !loser_id) throw badRequest('winner_id and loser_id are required');
+    if (properties !== undefined && (typeof properties !== 'object' || properties === null || Array.isArray(properties))) throw badRequest('properties must be an object');
     await assertAccessible(pool, obj, p, [winner_id, loser_id], 'delete');
-    await withTx({ principal: p, source: 'merge' }, (c) => c.query('select meta.merge_records($1, $2, $3)', [obj.object_type_id, winner_id, loser_id]));
+    await withTx({ principal: p, source: 'merge' }, async (c) => {
+      await c.query('select meta.merge_records($1, $2, $3)', [obj.object_type_id, winner_id, loser_id]);
+      // the loser is merged by now, so its unique values (email, ...) are free for the winner
+      if (properties && Object.keys(properties).length > 0) await updateRecord(c, obj, p, winner_id, properties);
+    });
     await drainCalcQueue();
     return getRecord(pool, obj, p, winner_id);
+  });
+
+  // properties kept unique by a trigger rather than options.unique
+  const CLONE_SKIP: Record<string, string[]> = { contacts: ['additional_emails'] };
+
+  // A new record with the same values, leaving out unique properties (email,
+  // domain, page address...), calculations, files, read-only and system ones.
+  // Associations are not copied.
+  app.post<{ Params: RecParams }>('/v1/objects/:object/:id/clone', async (req, reply) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
+    const obj = await objectForWrite(req.params.object);
+    requireObjectPermission(p, obj, 'create');
+    if (obj.api_name === 'users' || obj.api_name === 'comments') throw badRequest(`${obj.label_plural.toLowerCase()} can't be cloned`);
+    const source = await getRecord(pool, obj, p, req.params.id);
+    if (source.record_status !== 'active') throw badRequest('only active records can be cloned');
+    const properties: Record<string, unknown> = {};
+    for (const prop of obj.properties) {
+      if (prop.record_status !== 'active' || prop.type === 'calculation' || prop.type === 'file' || prop.type === 'actor') continue;
+      if (prop.is_base ? prop.api_name !== 'name' : prop.read_only) continue;
+      if (prop.options.unique === true || CLONE_SKIP[obj.api_name]?.includes(prop.api_name)) continue;
+      let v = source.properties[prop.api_name];
+      if (v === null || v === undefined || v === '') continue;
+      if (prop.type === 'dropdown') {
+        // archived choices can't be set on a new record
+        const live = new Set(prop.dropdown_options.filter((o) => o.record_status === 'active').map((o) => o.api_value));
+        if (Array.isArray(v)) {
+          v = v.filter((x) => live.has(String(x)));
+          if ((v as unknown[]).length === 0) continue;
+        } else if (!live.has(String(v))) continue;
+      }
+      properties[prop.api_name] = v;
+    }
+    const id = await withTx({ principal: p, source: 'clone' }, (c) => createRecord(c, obj, p, properties));
+    await drainCalcQueue();
+    reply.code(201);
+    return getRecord(pool, obj, p, id);
   });
 
   // Up to 100 records in one all-or-nothing transaction.

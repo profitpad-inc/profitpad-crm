@@ -54,9 +54,9 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'snippets', label: 'Snippets', icon: <Hash size={16} />, gate: 'all', element: <SnippetSettings /> }
   ] },
   { label: 'Workspace', links: [
-    { path: 'knowledge', label: 'Knowledge base', icon: <BookOpen size={16} />, gate: 'knowledge', element: <KnowledgeSettings /> },
-    { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
     { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'nav', element: <NavSettings /> },
+    { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
+    { path: 'knowledge', label: 'Knowledge base', icon: <BookOpen size={16} />, gate: 'knowledge', element: <KnowledgeSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> },
     { path: 'option-lists', label: 'Option lists', icon: <ListChecks size={16} />, gate: 'admin', element: <OptionListSettings /> },

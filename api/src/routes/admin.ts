@@ -10,7 +10,8 @@ import {
 } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord, upsertProperties } from '../records.js';
-import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
+import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
+import { matchDropdownInput } from '../values.js';
 import { compileFilterGroups, type FilterGroup, type SearchRequest } from '../search.js';
 
 const SCOPES: Scope[] = ['read', 'write', 'schema', 'admin'];
@@ -507,16 +508,24 @@ export async function adminRoutes(app: FastifyInstance) {
   // ---- Import / export ------------------------------------------------------
   // Each row runs in its own savepoint, so bad rows are reported without
   // stopping the import. Synchronous; meant for up to ~10k rows per call.
+  // Dropdown cells match a choice by internal value, then by label
+  // (matchOption). new_options adds choices first (Settings permission, or a
+  // dropdown that allows added choices). Upserts create a record when the
+  // row has no value to match on. dry_run checks every row and saves nothing.
   app.post<{
     Params: { object: string };
-    Body: { format: 'csv' | 'json'; data: string | Record<string, unknown>[]; mode?: 'create' | 'upsert'; id_property?: string };
+    Body: {
+      format: 'csv' | 'json'; data: string | Record<string, unknown>[]; mode?: 'create' | 'upsert'; id_property?: string;
+      new_options?: Record<string, { api_value: string; label: string }[]>; dry_run?: boolean;
+    };
   }>('/v1/objects/:object/imports', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'write');
-    const obj = await objectForWrite(req.params.object);
-    requireObjectPermission(p, obj, 'create');
+    const baseObj = await objectForWrite(req.params.object);
+    requireObjectPermission(p, baseObj, 'create');
     const b = req.body ?? ({} as never);
     const mode = b.mode ?? 'create';
+    const dryRun = b.dry_run === true;
     if (mode === 'upsert' && !b.id_property) throw badRequest('upsert needs id_property');
     let rows: Record<string, unknown>[];
     if (b.format === 'csv') {
@@ -529,19 +538,79 @@ export async function adminRoutes(app: FastifyInstance) {
       throw badRequest('format must be csv or json');
     }
     if (rows.length === 0 || rows.length > 10000) throw badRequest('imports take 1 to 10000 rows');
+    if (!rows.every((r) => r && typeof r === 'object' && !Array.isArray(r))) throw badRequest('every row must be an object');
 
-    const { rows: jobRows } = await pool.query(
-      `insert into meta.import_jobs (object_type_id, status, format, match_property, total_rows, created_by)
-       values ($1, 'running', $2, $3, $4, $5) returning id`,
-      [obj.object_type_id, b.format, b.id_property ?? null, rows.length, p.actor]
-    );
-    const jobId = jobRows[0].id;
+    // choices to add, checked before anything is written
+    const additions: { prop: PropertyDef; api_value: string; label: string }[] = [];
+    for (const [name, list] of Object.entries(b.new_options ?? {})) {
+      const prop = getProperty(baseObj, name);
+      if (!prop || prop.type !== 'dropdown' || prop.record_status !== 'active') throw badRequest(`new_options: "${name}" is not a dropdown`);
+      if (!Array.isArray(list)) throw badRequest(`new_options.${name} must be a list`);
+      if (prop.options.auto_append_users === true) throw badRequest(`new_options: ${prop.label} lists users; choices cannot be added`);
+      if (!p.scopes.has('schema') && prop.options.allow_user_add !== true) {
+        throw badRequest(`new_options: you cannot add choices to ${prop.label}`, { property: prop.api_name });
+      }
+      for (const o of list) {
+        if (!o || typeof o.api_value !== 'string' || !/^[A-Za-z0-9._]{1,63}$/.test(o.api_value)) {
+          throw badRequest(`new_options.${name}: api_value must be 1 to 63 letters, digits, dots or underscores`);
+        }
+        const label = typeof o.label === 'string' && o.label.trim() !== '' ? o.label.trim() : o.api_value;
+        if (prop.dropdown_options.some((x) => x.api_value === o.api_value)) continue;
+        additions.push({ prop, api_value: o.api_value, label });
+      }
+    }
+
+    // the registry only learns of added choices after commit, so the rows are
+    // written against a copy that already has them
+    let obj = baseObj;
+    if (additions.length > 0) {
+      const byName = new Map(baseObj.byName);
+      for (const a of additions) {
+        const cur = byName.get(a.prop.api_name.toLowerCase())!;
+        const next: PropertyDef = {
+          ...cur,
+          dropdown_options: [...cur.dropdown_options, {
+            api_value: a.api_value, label: a.label, display_order: cur.dropdown_options.length, record_status: 'active',
+            parent_values: [], is_closed: false, is_won: false, probability: null, color: null
+          }]
+        };
+        byName.set(cur.api_name.toLowerCase(), next);
+      }
+      obj = { ...baseObj, byName, properties: baseObj.properties.map((x) => byName.get(x.api_name.toLowerCase()) ?? x) };
+    }
+
+    // dropdown cells: match typed values to choices
+    const dropdowns = new Map<string, PropertyDef>();
+    for (const row of rows) {
+      for (const [k, v] of Object.entries(row)) {
+        const prop = dropdowns.get(k) ?? getProperty(obj, k);
+        if (!prop || prop.type !== 'dropdown') continue;
+        dropdowns.set(k, prop);
+        row[k] = matchDropdownInput(prop, v);
+      }
+    }
+
+    let jobId: string | null = null;
+    if (!dryRun) {
+      const { rows: jobRows } = await pool.query(
+        `insert into meta.import_jobs (object_type_id, status, format, match_property, total_rows, created_by)
+         values ($1, 'running', $2, $3, $4, $5) returning id`,
+        [obj.object_type_id, b.format, b.id_property ?? null, rows.length, p.actor]
+      );
+      jobId = jobRows[0].id;
+    }
     const counts = { created: 0, updated: 0, errors: [] as { row: number; error: string }[] };
+    const DRY_RUN_DONE = new Error('dry run');
     await withTx({ principal: p, source: 'import' }, async (c) => {
+      for (const a of additions) {
+        await c.query('select meta.add_option($1, $2, $3, $4)', [obj.object_type_id, a.prop.api_name, a.api_value, a.label]);
+      }
       for (const [i, row] of rows.entries()) {
         await c.query('savepoint import_row');
         try {
-          const id = mode === 'upsert' ? await findIdByUnique(c, obj, b.id_property!, row[b.id_property!]) : null;
+          const key = mode === 'upsert' ? row[b.id_property!] : undefined;
+          const blankKey = key === undefined || key === null || (typeof key === 'string' && key.trim() === '');
+          const id = mode === 'upsert' && !blankKey ? await findIdByUnique(c, obj, b.id_property!, key) : null;
           if (id) {
             await updateRecord(c, obj, p, id, await upsertProperties(c, obj, b.id_property!, id, row));
             counts.updated++;
@@ -555,17 +624,27 @@ export async function adminRoutes(app: FastifyInstance) {
           counts.errors.push({ row: i + 1, error: (err as Error).message });
         }
       }
+      if (dryRun) throw DRY_RUN_DONE;
       await c.query(
         `update meta.import_jobs set status = 'completed', created_rows = $2, updated_rows = $3, error_rows = $4,
            errors = $5, finished_at = now() where id = $1`,
         [jobId, counts.created, counts.updated, counts.errors.length, JSON.stringify(counts.errors.slice(0, 1000))]
       );
     }).catch(async (err) => {
-      await pool.query("update meta.import_jobs set status = 'failed', errors = $2, finished_at = now() where id = $1", [
-        jobId, JSON.stringify([{ error: (err as Error).message }])
-      ]);
+      if (err === DRY_RUN_DONE) return;
+      if (jobId) {
+        await pool.query("update meta.import_jobs set status = 'failed', errors = $2, finished_at = now() where id = $1", [
+          jobId, JSON.stringify([{ error: (err as Error).message }])
+        ]);
+      }
       throw err;
     });
+    if (dryRun) {
+      return {
+        dry_run: true, total_rows: rows.length, created_rows: counts.created, updated_rows: counts.updated,
+        error_rows: counts.errors.length, errors: counts.errors.slice(0, 1000)
+      };
+    }
     await drainCalcQueue(20);
     reply.code(201);
     const { rows: job } = await pool.query('select * from meta.import_jobs where id = $1', [jobId]);

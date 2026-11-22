@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
 import { moreGroups, objectIcon } from '../lib/display';
@@ -27,7 +27,7 @@ function readExpanded(): boolean {
 // On the rail, More and each section open a flyout beside the sidebar, one at a time.
 type Flyout = { key: string; top: number };
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, navCanEdit, navPreview, objectByName, objects, customViews, logo, moreHidden } = useApp();
+  const { me, nav, navPreview, objectByName, objects, customViews, logo, moreHidden } = useApp();
   const moreObjects = objects.map((o) => o.api_name).filter((o) => !moreHidden.includes(o));
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
@@ -140,12 +140,6 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         </div>
         <div className="sidebar-bottom">
           {me.user && <MentionsButton expanded={expanded} sheet={drawer} />}
-          {(me.is_admin || navCanEdit) && (
-            <Link to="/settings/navigation" className="nav-item" title={expanded ? undefined : 'Edit menu'}>
-              <Pencil size={18} strokeWidth={1.75} />
-              {expanded && <span>Edit menu</span>}
-            </Link>
-          )}
           {!drawer && (
             <button className="nav-item" onClick={() => setExpanded((v) => !v)} title={expanded ? 'Collapse' : 'Expand'}>
               {expanded ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}

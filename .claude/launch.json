@@ -4,44 +4,156 @@
     {
       "name": "api-local-copy",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5499", "PGUSER=pc_migrator", "PGDATABASE=profitpad_crm_db", "PORT=3001", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5499",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_db",
+        "PORT=3001",
+        "DOCS_PUBLIC=true",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
       "port": 3001
     },
     {
       "name": "web-local-copy",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["API_URL=http://127.0.0.1:3001", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3001",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
       "port": 5174
     },
     {
       "name": "api-payments-sandbox",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5498", "PGUSER=pc_migrator", "PGDATABASE=profitpad_crm_db", "PORT=3003", "UI_URL=http://localhost:5176", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5498",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_db",
+        "PORT=3003",
+        "UI_URL=http://localhost:5176",
+        "DOCS_PUBLIC=true",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
       "port": 3003
     },
     {
       "name": "web-payments-sandbox",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["API_URL=http://127.0.0.1:3003", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5176", "--strictPort"],
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3003",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5176",
+        "--strictPort"
+      ],
       "port": 5176
     },
     {
       "name": "web-local-copy-2",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["API_URL=http://127.0.0.1:3001", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5175", "--strictPort"],
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3001",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
       "port": 5175
     },
     {
       "name": "api-theme-preview",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["PGHOST=127.0.0.1", "PGPORT=5499", "PGUSER=pc_migrator", "PGDATABASE=profitpad_crm_db", "PORT=3005", "DOCS_PUBLIC=true", "npm", "--prefix", "api", "start"],
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5499",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_db",
+        "PORT=3005",
+        "DOCS_PUBLIC=true",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
       "port": 3005
     },
     {
       "name": "web-theme-preview",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["API_URL=http://127.0.0.1:3005", "npm", "--prefix", "web", "run", "dev", "--", "--port", "5177", "--strictPort"],
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3005",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5177",
+        "--strictPort"
+      ],
       "port": 5177
+    },
+    {
+      "name": "api-merge-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5497",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_db",
+        "PORT=3007",
+        "DOCS_PUBLIC=true",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
+      "port": 3007
+    },
+    {
+      "name": "web-merge-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3007",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5179",
+        "--strictPort"
+      ],
+      "port": 5179
     }
   ]
 }

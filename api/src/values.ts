@@ -93,6 +93,36 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
   throw fail('this property cannot be written');
 }
 
+// Imports: finds the choice a typed value means. The internal value wins
+// (exactly, then ignoring case), then the label (ignoring case and spaces at
+// the ends). Archived choices count, as they do for API writes. null: none.
+export function matchOption(prop: PropertyDef, input: string): string | null {
+  const v = input.trim();
+  if (v === '') return null;
+  const opts = prop.dropdown_options;
+  const lower = v.toLowerCase();
+  return (
+    opts.find((o) => o.api_value === v) ??
+    opts.find((o) => o.api_value.toLowerCase() === lower) ??
+    opts.find((o) => o.label.trim().toLowerCase() === lower)
+  )?.api_value ?? null;
+}
+
+// Imports: a dropdown cell with its choices matched (matchOption). Multi-value
+// dropdowns take "a;b" or a list. Values with no match are left as typed, so
+// the write reports them.
+export function matchDropdownInput(prop: PropertyDef, input: unknown): unknown {
+  if (prop.type !== 'dropdown') return input;
+  const parts = Array.isArray(input)
+    ? input
+    : typeof input === 'string' && !isSingleValue(prop) ? input.split(';') : typeof input === 'string' ? [input] : null;
+  if (!parts) return input;
+  const out = parts
+    .map((v) => (typeof v === 'string' ? (matchOption(prop, v) ?? v.trim()) : v))
+    .filter((v) => v !== '');
+  return isSingleValue(prop) ? (out[0] ?? null) : out;
+}
+
 // Converts a stored value into its API shape.
 export function fromDb(prop: PropertyDef, raw: unknown): unknown {
   if (raw === null || raw === undefined) return null;

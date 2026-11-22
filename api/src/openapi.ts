@@ -437,8 +437,16 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
     [`${base}/merge`]: {
       post: {
         tags: [tag], summary: 'Merge two records', operationId: `merge_${o.api_name}`,
-        requestBody: body({ type: 'object', required: ['winner_id', 'loser_id'], properties: { winner_id: { type: 'string' }, loser_id: { type: 'string' } } }),
+        description: 'The loser is marked merged into the winner (reads of its id return the winner) and its associations move to the winner. Each property keeps the winner\'s value, else the loser\'s; properties overrides chosen values on the merged record.',
+        requestBody: body({ type: 'object', required: ['winner_id', 'loser_id'], properties: { winner_id: { type: 'string' }, loser_id: { type: 'string' }, properties: { type: 'object', additionalProperties: true, description: 'Values the merged record ends up with, by property api_name' } } }),
         responses: { 200: json(rec), ...errors }
+      }
+    },
+    [`${base}/{id}/clone`]: {
+      post: {
+        tags: [tag], summary: `Clone a ${o.label_singular.toLowerCase()}`, operationId: `clone_${o.api_name}`, parameters: [idParam],
+        description: 'Creates a new record with the same values, leaving out unique properties, calculations, files, read-only and system properties, and archived dropdown choices. Associations are not copied.',
+        responses: { 201: json(rec), ...errors }
       }
     },
     [`${base}/{id}`]: {
@@ -482,7 +490,7 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
       delete: { tags: [tag], summary: 'Remove association', description: 'Removes one label (label_id query parameter) or every label between the two records.', operationId: `dissociate_${o.api_name}`, parameters: [idParam, toObjectParam, toIdParam, { name: 'label_id', in: 'query', schema: { type: 'string' } }], responses: { 200: json({ type: 'object' }), ...errors } }
     },
     [`${base}/imports`]: {
-      post: { tags: [tag], summary: 'Import', description: 'CSV or JSON, create or upsert. Bad rows are reported without stopping the import.', operationId: `import_${o.api_name}`, requestBody: body({ type: 'object', required: ['format', 'data'], properties: { format: { type: 'string', enum: ['csv', 'json'] }, data: {}, mode: { type: 'string', enum: ['create', 'upsert'] }, id_property: { type: 'string' } } }), responses: { 201: json({ type: 'object' }), ...errors } }
+      post: { tags: [tag], summary: 'Import', description: 'CSV or JSON, create or upsert (id_property: a unique text property; rows without a value for it are created). Dropdown cells match a choice by internal value, then by label. new_options adds dropdown choices first (needs the schema scope, or a dropdown that allows added choices). dry_run checks every row and saves nothing. Bad rows are reported without stopping the import.', operationId: `import_${o.api_name}`, requestBody: body({ type: 'object', required: ['format', 'data'], properties: { format: { type: 'string', enum: ['csv', 'json'] }, data: {}, mode: { type: 'string', enum: ['create', 'upsert'] }, id_property: { type: 'string' }, new_options: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', required: ['api_value'], properties: { api_value: { type: 'string' }, label: { type: 'string' } } } } }, dry_run: { type: 'boolean' } } }), responses: { 201: json({ type: 'object' }), ...errors } }
     },
     [`${base}/exports`]: {
       post: { tags: [tag], summary: 'Export a search as CSV', operationId: `export_${o.api_name}`, requestBody: body(ref('SearchRequest')), responses: { 200: { description: 'CSV', content: { 'text/csv': { schema: { type: 'string' } } } }, ...errors } }

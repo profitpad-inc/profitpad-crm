@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
   api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -10,6 +10,7 @@ import { useApp } from '../lib/app-context';
 import { defaultSortDirection, displayName, displayValue, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
 import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { ImportModal } from '../components/ImportModal';
 import { AddLineModal } from '../components/AddLineModal';
 import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines';
 import { FileUploadButton } from '../components/FileUploadButton';
@@ -26,6 +27,8 @@ const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
 const MIN_WIDTH = 60;
 const MAX_WIDTH = 1000;
+// created another way (uploads, a parent record, a linked activity, the user form)
+const NO_IMPORT = ['files', 'lines', 'comments', 'users'];
 
 // Keyed by object so switching tables starts fresh instead of sending one
 // search with the previous object's schema, columns and sorts.
@@ -55,6 +58,7 @@ function ObjectTableFor({ object }: { object: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [viewDialog, setViewDialog] = useState<null | { mode: 'create' | 'rename'; name: string }>(null);
   const [editing, setEditing] = useState<null | { record: CrmRecord; property: Property; rect: DOMRect }>(null);
@@ -497,6 +501,9 @@ function ObjectTableFor({ object }: { object: string }) {
         </div>
         <div className="table-head-actions">
           {object === 'contacts' && <Link className="btn" to="/scan"><IdCard size={16} /> Scan card</Link>}
+          {schema.permissions.create && !NO_IMPORT.includes(object) && (
+            <button className="btn" onClick={() => setShowImport(true)}><Upload size={16} /> Import</button>
+          )}
           {createButton}
         </div>
       </header>
@@ -801,6 +808,9 @@ function ObjectTableFor({ object }: { object: string }) {
             navigate(`/objects/${object}/${r.id}`);
           }}
         />
+      )}
+      {showImport && (
+        <ImportModal object={schema} onClose={() => setShowImport(false)} onImported={() => fetchPage()} />
       )}
       {showColumns && (
         <ColumnPicker

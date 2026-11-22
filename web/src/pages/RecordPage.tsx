@@ -25,6 +25,7 @@ import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import { AMOUNT_PARENTS, DISCOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
 import { CreateRecordModal } from '../components/CreateRecordModal';
+import { MergeRecordsModal } from '../components/MergeRecordsModal';
 import { COMMENT_TARGETS, Comments } from '../components/Comments';
 import { ActivityComposer, COMPOSE_OBJECTS, COMPOSE_VERB, type ComposeObject } from '../components/ActivityComposer';
 import type { Attachable, Recipient } from '../components/EmailComposer';
@@ -213,6 +214,7 @@ export function RecordPage() {
   const [stamp, setStamp] = useState(0);
   const [flash, setFlash] = useState<Set<string> | null>(null);
   const [changedBy, setChangedBy] = useState<Record<string, string | null>>({});
+  const [merging, setMerging] = useState(false);
   const [gone, setGone] = useState(false);
   const recordRef = useRef<CrmRecord | null>(null);
   recordRef.current = record;
@@ -299,6 +301,17 @@ export function RecordPage() {
   function saved(r: CrmRecord) {
     if (object === 'lines' && String(r.properties.amount ?? '') !== String(record?.properties.amount ?? '')) setLineSaves((n) => n + 1);
     setRecord(r);
+  }
+
+  // a new record with the same values, without unique ones (the API leaves them out)
+  async function cloneRecord() {
+    try {
+      const copy = await api<CrmRecord>('POST', `/v1/objects/${object}/${id}/clone`);
+      toast('Cloned');
+      navigate(`/objects/${object}/${copy.id}`);
+    } catch (err) {
+      await alertDialog((err as Error).message, { title: 'Could not clone this record' });
+    }
   }
 
   async function archive() {
@@ -423,6 +436,9 @@ export function RecordPage() {
   // (the API checks all of this again)
   const canSignInAs = isUser && me?.is_admin && !me.signed_in_as_by && record.record_status === 'active'
     && record.id !== me.user?.id && userSuperAdmin?.id === record.id && !userSuperAdmin.admin;
+  // users and comments are neither merged nor cloned here
+  const canClone = schema.permissions.create && !isUser && object !== 'comments';
+  const canMerge = schema.permissions.edit && !isUser && object !== 'comments';
   const recordId = record.id;
   async function signInAs() {
     if (!(await confirmDialog('Until you go back to your own account you will see and do everything as them, with their permissions, and every change is recorded as theirs.', { title: `Sign in as ${name}?`, confirmLabel: 'Sign in as them' }))) return;
@@ -501,6 +517,20 @@ export function RecordPage() {
     <LiveContext.Provider value={live}>
     <SnippetRecordProvider object={object} id={id}>
     <div className={`record-page${noRight ? ' two-col' : ''}${tabbed ? ' tabbed' : ''}`}>
+      {merging && (
+        <MergeRecordsModal
+          object={object}
+          schema={schema}
+          record={record}
+          onClose={() => setMerging(false)}
+          onMerged={(merged) => {
+            setMerging(false);
+            toast('Merged');
+            if (merged.id !== id) navigate(`/objects/${object}/${merged.id}`);
+            else void refresh();
+          }}
+        />
+      )}
       <aside className="record-left">
         <div className="record-head">
           <div className="record-head-bar">
@@ -526,6 +556,8 @@ export function RecordPage() {
                   : (
                     <>
                       {canSignInAs && <button onClick={() => { close(); signInAs(); }}>Sign in as {name}</button>}
+                      {canClone && <button onClick={() => { close(); void cloneRecord(); }}>Clone</button>}
+                      {canMerge && <button onClick={() => { close(); setMerging(true); }}>Merge</button>}
                       {archiveLocked
                         ? <button disabled title="Only a Super Admin can archive an accepted or signed quote">Archive (Super Admin only)</button>
                         : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>}

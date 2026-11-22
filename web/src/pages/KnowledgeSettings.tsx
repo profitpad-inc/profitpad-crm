@@ -6,6 +6,7 @@ import { useUrlSearch } from '../lib/use-url-search';
 import { confirmDialog } from '../components/confirm';
 import { Modal } from '../components/ui';
 import { ShowMore } from '../components/ShowMore';
+import { Markdown } from '../components/Markdown';
 import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 
 // Settings → Knowledge base (api/src/knowledge.ts): articles the business
@@ -205,7 +206,7 @@ export function KnowledgeSettings() {
               )}
             </div>
             {a.body.trim()
-              ? <ShowMore as="div" lines={10} className="knowledge-body">{a.body}</ShowMore>
+              ? <ShowMore as="div" lines={10} className="knowledge-body"><Markdown>{a.body}</Markdown></ShowMore>
               : <p className="muted small">No text yet.</p>}
             <div className="sub knowledge-meta">
               Updated {when(a.updated_at)} by {a.updated_by} {VIA[a.updated_via]}
@@ -272,7 +273,7 @@ function HistoryModal({ article, canAdminsOnly, onClose, onRestored }: { article
           {sel && (
             <div className="knowledge-history-view">
               <h3>{sel.title}{sel.admins_only && <> <StatusPill tone="info">Admins only</StatusPill></>}</h3>
-              <div className="knowledge-body">{sel.body || <span className="muted">No text.</span>}</div>
+              <div className="knowledge-body">{sel.body.trim() ? <Markdown>{sel.body}</Markdown> : <span className="muted">No text.</span>}</div>
             </div>
           )}
         </div>
