@@ -826,6 +826,9 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .icon-cell span { font-size: 11px; color: var(--muted-text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-cell:hover { background: var(--surface); }
 .icon-cell.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
+/* an object's icon (Settings, Objects) */
+.object-icon-field { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.object-name-link { display: inline-flex; align-items: center; gap: 8px; }
 
 /* dropdown choice colours (ColorPicker, displayValue) */
 .color-swatch { width: 22px; height: 22px; flex: none; padding: 0; border: 1px solid rgb(0 0 0 / 0.12); border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }

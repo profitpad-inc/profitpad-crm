@@ -44,6 +44,8 @@ async function settingsOut() {
         ready: providerReady(r),
         domains: r?.domains ?? [],
         calendar_enabled: r?.calendar_enabled ?? false,
+        // The service account's client ID, for Google Admin's Domain-wide delegation.
+        client_id: p === 'google' ? r?.google_client_id ?? null : null,
         calendar_scopes: p === 'google' ? GOOGLE_CALENDAR_SCOPES : MICROSOFT_CALENDAR_PERMISSIONS,
         meeting_scopes: p === 'google' ? GOOGLE_MEET_SCOPES : MICROSOFT_MEETING_PERMISSIONS
       };

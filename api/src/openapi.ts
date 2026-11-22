@@ -584,13 +584,13 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       get: { tags: ['Schema'], summary: 'List objects', operationId: 'list_objects', responses: { 200: json({ type: 'object' }), ...errors } },
       post: {
         tags: ['Schema'], summary: 'Create an object', description: 'Creates a custom object; it gets the next free pc_2xxx code.', operationId: 'create_object',
-        requestBody: body({ type: 'object', required: ['api_name', 'label_singular', 'label_plural'], properties: { api_name: { type: 'string', pattern: '^[a-z][a-z0-9_]{0,62}$' }, label_singular: { type: 'string' }, label_plural: { type: 'string' }, description: { type: 'string' } } }),
+        requestBody: body({ type: 'object', required: ['api_name', 'label_singular', 'label_plural'], properties: { api_name: { type: 'string', pattern: '^[a-z][a-z0-9_]{0,62}$' }, label_singular: { type: 'string' }, label_plural: { type: 'string' }, description: { type: 'string' }, icon: { type: 'string', description: 'Lucide icon name for menus, like handshake' } } }),
         responses: { 201: json({ type: 'object' }, 'Created'), ...errors }
       }
     },
     '/v1/schema/{object}': {
       get: { tags: ['Schema'], summary: 'Get an object with its properties', description: 'Includes `permissions` ({create, edit, delete}) for the caller, from their roles and the key\'s scopes; each property\'s `read_only` also covers properties the caller\'s roles make read-only. Record-level access can still refuse a single record; a single record read returns `can_edit` for that.', operationId: 'get_object', parameters: [objectParam], responses: { 200: json({ type: 'object' }), ...errors } },
-      patch: { tags: ['Schema'], summary: 'Relabel an object', operationId: 'update_object', parameters: [objectParam], requestBody: body({ type: 'object' }), responses: { 200: json({ type: 'object' }), ...errors } }
+      patch: { tags: ['Schema'], summary: 'Relabel an object or change its icon', operationId: 'update_object', parameters: [objectParam], requestBody: body({ type: 'object', properties: { label_singular: { type: 'string' }, label_plural: { type: 'string' }, description: { type: 'string' }, icon: { type: 'string', nullable: true, description: 'Lucide icon name for menus, like handshake; null goes back to the default; left out, it stays' } } }), responses: { 200: json({ type: 'object' }), ...errors } }
     },
     '/v1/schema/{object}/properties': {
       get: { tags: ['Schema'], summary: 'List properties', operationId: 'list_properties', parameters: [objectParam], responses: { 200: json({ type: 'object' }), ...errors } },

@@ -531,7 +531,8 @@ export async function bookingRoutes(app: FastifyInstance) {
             pageUrl,
             origin,
             ip: req.ip,
-            userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null
+            userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null,
+            links: [{ object: 'booking_pages', id: page.id }]
           });
           contact ??= r.contact;
           submissions.push(r.submission);

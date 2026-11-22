@@ -4,6 +4,14 @@ import { badRequest, notFound } from '../errors.js';
 import { propertyAccess, requireScope, type Principal } from '../auth.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
 import { createForm } from '../native-ui.js';
+import { ICON_NAMES } from '../icons.js';
+
+// An object icon from a request: a Lucide name, or null (also for "") to use the default.
+function iconArg(v: unknown): string | null {
+  if (v === null || v === '') return null;
+  if (typeof v !== 'string' || !ICON_NAMES.has(v)) throw badRequest(`icon "${String(v)}" is not a Lucide icon name`);
+  return v;
+}
 
 // Schema changes always go through the meta.* functions, which enforce the
 // naming, typing and dependency rules and log to meta.schema_changes.
@@ -16,6 +24,7 @@ function objectOut(o: ObjectDef) {
     label_plural: o.label_plural,
     kind: o.kind,
     description: o.description,
+    icon: o.icon,
     search_properties: o.search_properties,
     id_property: o.id_column,
     links_to: o.links_to,
@@ -208,12 +217,14 @@ export async function schemaRoutes(app: FastifyInstance) {
     };
   });
 
-  app.post<{ Body: { api_name: string; label_singular: string; label_plural: string; description?: string } }>('/v1/schema', async (req, reply) => {
+  app.post<{ Body: { api_name: string; label_singular: string; label_plural: string; description?: string; icon?: string | null } }>('/v1/schema', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'schema');
     const b = req.body ?? ({} as never);
+    const icon = b.icon === undefined ? null : iconArg(b.icon);
     const code = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query('select meta.create_object($1, $2, $3, $4) as code', [b.api_name, b.label_singular, b.label_plural, b.description ?? null]);
+      if (icon) await c.query('select meta.set_object_icon($1, $2)', [rows[0].code, icon]);
       return rows[0].code as string;
     });
     reply.code(201);
@@ -229,16 +240,19 @@ export async function schemaRoutes(app: FastifyInstance) {
     return objectOut(await getObject(obj.object_type_id));
   });
 
-  app.patch<{ Params: { object: string }; Body: { label_singular?: string; label_plural?: string; description?: string } }>(
+  // icon: a Lucide name, or null to go back to the default; left out, it stays
+  app.patch<{ Params: { object: string }; Body: { label_singular?: string; label_plural?: string; description?: string; icon?: string | null } }>(
     '/v1/schema/:object',
     async (req) => {
       const p = req.principal!;
       requireScope(p, 'schema');
       const obj = await getObject(req.params.object);
       const b = req.body ?? {};
-      await withTx({ principal: p }, (c) =>
-        c.query('select meta.update_object($1, $2, $3, $4)', [obj.object_type_id, b.label_singular ?? null, b.label_plural ?? null, b.description ?? null])
-      );
+      const icon = b.icon === undefined ? undefined : iconArg(b.icon);
+      await withTx({ principal: p }, async (c) => {
+        await c.query('select meta.update_object($1, $2, $3, $4)', [obj.object_type_id, b.label_singular ?? null, b.label_plural ?? null, b.description ?? null]);
+        if (icon !== undefined) await c.query('select meta.set_object_icon($1, $2)', [obj.object_type_id, icon]);
+      });
       return objectOut(await getObject(obj.object_type_id));
     }
   );

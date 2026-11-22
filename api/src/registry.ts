@@ -16,6 +16,8 @@ export interface ObjectDef {
   system_links: string[];
   // other names people use for it (0047)
   aliases: string[];
+  // Lucide icon name for menus (0116); null means the UI's default
+  icon: string | null;
   id_column: string;
   properties: PropertyDef[];
   byName: Map<string, PropertyDef>;
@@ -76,7 +78,7 @@ export async function getRegistry(): Promise<Registry> {
 
   // user renames reach the registry through sync_user_options, which logs a schema change
   const [objects, properties, options, users, lists] = await Promise.all([
-    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties, o.aliases,
+    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties, o.aliases, o.icon,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
                                and meta.association_allowed(o.object_type_id, x.object_type_id) order by x.object_type_id) as links_to,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'

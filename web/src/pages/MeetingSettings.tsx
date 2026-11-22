@@ -16,6 +16,7 @@ interface ProviderState {
   ready: boolean;
   domains: string[];
   calendar_enabled: boolean;
+  client_id: string | null;
   calendar_scopes: string[];
   meeting_scopes: string[];
 }
@@ -114,7 +115,7 @@ export function MeetingSettings() {
             </SettingRow>
             <SettingRow
               label={p.provider === 'google' ? 'Extra scopes for Google Admin' : 'Extra application permission'}
-              hint={p.provider === 'google' ? <>Add them to the same client ID under <GoogleDelegationLink />, next to the mail scopes.</> : 'Microsoft Graph, Application type, with admin consent. Limit the app to the mailboxes that need it.'}
+              hint={p.provider === 'google' ? <>Add them to {p.client_id ? <>client ID <code>{p.client_id}</code></> : 'the same client ID'} under <GoogleDelegationLink />, next to the mail scopes.</> : 'Microsoft Graph, Application type, with admin consent. Limit the app to the mailboxes that need it.'}
             >
               <CopyField value={p.calendar_scopes.join(',')} label={p.provider === 'google' ? 'OAuth scopes' : 'Permission'} />
             </SettingRow>
@@ -142,7 +143,7 @@ export function MeetingSettings() {
           <label><input type="checkbox" role="switch" checked={m.recordings_enabled} disabled={busy} onChange={(e) => put('meetings', { recordings_enabled: e.target.checked }, e.target.checked ? 'Recordings and transcripts will be fetched.' : 'Turned off.')} /> {m.recordings_enabled ? 'On' : 'Off'}</label>
         </SettingRow>
         {google && (
-          <SettingRow label="Google Meet" hint={google.ready ? <>Add this scope to the Google client ID under <GoogleDelegationLink />. Recordings are linked from Drive; transcripts are copied.</> : 'Set up Google in Settings, Mailboxes first.'}>
+          <SettingRow label="Google Meet" hint={google.ready ? <>Add this scope to {google.client_id ? <>client ID <code>{google.client_id}</code></> : 'the Google client ID'} under <GoogleDelegationLink />. Recordings are linked from Drive; transcripts are copied.</> : 'Set up Google in Settings, Mailboxes first.'}>
             <CopyField value={google.meeting_scopes.join(',')} label="OAuth scope" />
           </SettingRow>
         )}

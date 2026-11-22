@@ -402,8 +402,10 @@ export function RecordPage() {
   // every object that can hold line items (custom ones too) shows the card
   const lineCard = object !== 'products' && object !== 'lines' && linksTo.includes('lines') ? ['lines'] : [];
   const cards = [...new Set([...(DEFAULT_CARDS_FOR[object] ?? DEFAULT_CARDS).filter((o) => o !== object && objectByName.has(o) && linksTo.includes(o)), ...lineCard, ...associated.map((a) => a.object)])]
-    // a form lists its submissions and a booking page its meetings as a card; elsewhere they are activities
-    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions') || (object === 'booking_pages' && o === 'calls') || object === 'comments')
+    // a form lists its submissions, a booking page its meetings and a booking's submission its meeting
+    // as a card; elsewhere they are activities
+    .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions')
+      || ((object === 'booking_pages' || object === 'form_submissions') && o === 'calls') || object === 'comments')
     // comments show in the thread on the record they are on
     .filter((o) => o !== 'comments')
     .filter((o) => object !== 'lines' || o === 'products')
@@ -465,6 +467,7 @@ export function RecordPage() {
   const ownCards = (
     <>
       {(object === 'quotes' || object === 'invoices' || object === 'forms' || object === 'booking_pages') && <PublicLinkCard object={object} record={record} onChanged={setRecord} />}
+      {object === 'forms' && <FormBookingPagesCard formId={record.id} />}
       {object === 'payments' && <PaymentConfirmCard record={record} onChanged={setRecord} />}
       {object === 'quotes' && <QuoteTemplateCard quoteId={record.id} canEdit={schema.permissions.edit && record.can_edit !== false} />}
       {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
@@ -2714,6 +2717,53 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// A form's booking pages: the pages that ask it before or after the visitor picks
+// a time (booking_pages.form_before_id / form_after_id hold the form's id).
+function FormBookingPagesCard({ formId }: { formId: string }) {
+  const { objectByName } = useApp();
+  const [pages, setPages] = useState<CrmRecord[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPages(null);
+    api<SearchResult>('POST', '/v1/objects/booking_pages/search', {
+      limit: 100,
+      properties: ['name', 'form_before_id', 'form_after_id'],
+      filter_groups: [
+        { filters: [{ property: 'form_before_id', operator: 'eq', value: formId }] },
+        { filters: [{ property: 'form_after_id', operator: 'eq', value: formId }] }
+      ]
+    }).then((res) => { if (live) setPages(res.results); }).catch(() => { if (live) setPages([]); });
+    return () => { live = false; };
+  }, [formId]);
+  const meta = objectByName.get('booking_pages');
+  if (!meta || pages === null) return null;
+  const Icon = objectIcon('booking_pages');
+  return (
+    <div className="card assoc-card">
+      <div className="card-head">
+        <span className="card-icon"><Icon size={15} strokeWidth={1.75} /></span>
+        <h3>{meta.label_plural}</h3>
+        <span className="card-count" aria-label={`${pages.length} using this form`}>{pages.length}</span>
+      </div>
+      {pages.length === 0 && <div className="card-empty">No {meta.label_plural.toLowerCase()} use this form.</div>}
+      {pages.map((r) => {
+        const when = [
+          r.properties.form_before_id === formId && 'Before picking a time',
+          r.properties.form_after_id === formId && 'After picking a time'
+        ].filter(Boolean).join(', ');
+        return (
+          <div key={r.id} className="card-row">
+            <div className="card-row-main">
+              <Link to={`/objects/booking_pages/${r.id}`}>{recordName(r)}</Link>
+              {when && <div className="small muted">{when}</div>}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

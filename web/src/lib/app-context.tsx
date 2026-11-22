@@ -63,6 +63,11 @@ export interface NavPreview {
 
 const Ctx = createContext<AppState | null>(null);
 
+// The app state, or null outside AppProvider (for pieces public pages may share).
+export function useAppMaybe(): AppState | null {
+  return useContext(Ctx);
+}
+
 export function useApp(): AppState {
   const v = useContext(Ctx);
   if (!v) throw new Error('useApp outside AppProvider');

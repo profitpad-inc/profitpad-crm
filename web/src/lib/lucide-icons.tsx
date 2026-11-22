@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { LayoutDashboard, type LucideIcon, type LucideProps } from 'lucide-react';
 import { api } from './api';
 
@@ -30,7 +30,7 @@ function useIconSet(enabled: boolean): IconSet | null {
   return set;
 }
 
-export function ViewIcon({ icon, fallback = DEFAULT_VIEW_ICON, ...props }: Omit<LucideProps, 'name'> & { icon: string | null | undefined; fallback?: LucideIcon }) {
+export function ViewIcon({ icon, fallback = DEFAULT_VIEW_ICON, ...props }: Omit<LucideProps, 'name'> & { icon: string | null | undefined; fallback?: ComponentType<Omit<LucideProps, 'name'>> }) {
   const set = useIconSet(!!icon);
   const Icon = (icon && set?.[toPascal(icon)]) || fallback;
   return <Icon {...props} />;

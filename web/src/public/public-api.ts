@@ -228,6 +228,17 @@ export function queryParamsFromLocation(): URLSearchParams {
   return combined;
 }
 
+// The page the visitor is on, for a submission's page_url: the address with the
+// query parameters gathered (including any after the hash) and the hash's own
+// part kept (#chris on /p/book/#chris?utm_source=x), so the link opens the same
+// booking page or form.
+export function pageUrlWith(query: URLSearchParams): string {
+  const base = window.location.href.split('#')[0].split('?')[0];
+  const hash = window.location.hash.replace(/^#/, '').split('?')[0];
+  const q = query.toString();
+  return `${base}${q ? `?${q}` : ''}${hash ? `#${hash}` : ''}`;
+}
+
 // Small DOM helper: el('div', {class: 'x'}, 'text', child). Text is always set
 // as text, never as HTML.
 export function el<K extends keyof HTMLElementTagNameMap>(

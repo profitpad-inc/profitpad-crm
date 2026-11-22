@@ -39,7 +39,7 @@ export interface Manifest {
   label: string;
   version: string;
   description?: string;
-  objects?: { api_name: string; label_singular: string; label_plural: string; description?: string }[];
+  objects?: { api_name: string; label_singular: string; label_plural: string; description?: string; icon?: string }[];
   properties?: {
     object: string;
     api_name: string;
@@ -200,6 +200,7 @@ export function checkManifest(name: string, m: Manifest): void {
   for (const o of m.objects ?? []) {
     if (!o.api_name || !o.label_singular || !o.label_plural) fail('every object needs api_name, label_singular and label_plural');
     once(`object ${o.api_name}`);
+    if (o.icon !== undefined && !ICON_NAMES.has(o.icon)) fail(`object ${o.api_name}: "${o.icon}" is not a Lucide icon name`);
   }
   for (const p of m.properties ?? []) {
     if (!p.object || !p.api_name || !p.label || !p.type) fail('every property needs object, api_name, label and type');
@@ -419,6 +420,10 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
     if (code) {
       ctx.steps.push({ kind: 'object', target: o.api_name, action: 'exists' });
       ctx.items.push({ kind: 'object', object_type_id: code, item_key: o.api_name, created: false });
+      // an object made before icons existed gets the package's; one already chosen stays
+      if (o.icon && !ctx.dryRun) {
+        await ctx.c.query('select meta.set_object_icon(object_type_id, $2) from meta.pc_0001 where object_type_id = $1 and icon is null', [code, o.icon]);
+      }
       continue;
     }
     ctx.steps.push({ kind: 'object', target: o.api_name, action: 'create', detail: `${o.label_singular} / ${o.label_plural}` });
@@ -426,6 +431,7 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
     if (!ctx.dryRun) {
       const { rows } = await ctx.c.query('select meta.create_object($1, $2, $3, $4) as code', [o.api_name, o.label_singular, o.label_plural, o.description ?? null]);
       newCode = rows[0].code;
+      if (o.icon) await ctx.c.query('select meta.set_object_icon($1, $2)', [newCode, o.icon]);
     } else {
       ctx.planned.set(o.api_name.toLowerCase(), newCode);
     }

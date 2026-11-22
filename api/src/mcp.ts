@@ -29,7 +29,7 @@ import {
   createTemplate, listTemplates, loadTemplate, pdfPages, publishTemplate, renderPdf, renderScreenshot, renderTemplate, requireTemplateAdmin,
   sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut
 } from './templates.js';
-import { findIcons } from './icons.js';
+import { findIcons, ICON_NAMES } from './icons.js';
 import { createOptionList, deleteOptionList, linkDropdown, listOptionLists, unlinkDropdown, updateOptionList } from './option-lists.js';
 import { registerEmailTools } from './email/mcp-tools.js';
 import {
@@ -142,6 +142,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
         api_name: o.api_name,
         label: o.label_plural,
         description: o.description,
+        ...(o.icon ? { icon: o.icon } : {}),
         ...(o.aliases.length ? { aliases: o.aliases } : {}),
         ...(linked.length === 0 ? { links_to: [] } : not.length === 0 ? { links_to: 'all' } : not.length < linked.length ? { links_to_all_except: not } : { links_to: linked }),
         ...(system.length ? { linked_only_by_crm: system } : {})
@@ -172,6 +173,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
       ...(changes[0] ? { schema_changed_at: changes[0].last_change } : {}),
       ...(renames.length ? { recent_renames: renames } : {}),
       label: obj.label_singular,
+      ...(obj.icon ? { icon: obj.icon } : {}),
       ...(obj.aliases.length ? { aliases: obj.aliases } : {}),
       links_to: obj.links_to,
       ...(obj.system_links.length ? { linked_only_by_crm: obj.system_links } : {}),
@@ -1000,6 +1002,21 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_object_aliases($1, $2)', [obj.object_type_id, aliases]));
     const reg = await getRegistry();
     return { object: obj.api_name, aliases: reg.byKey.get(obj.object_type_id)?.aliases ?? [] };
+  }));
+
+  server.registerTool('set_object_icon', {
+    title: 'Set object icon',
+    description: 'Sets the icon an object shows in the menus, the More menu and its pages: a Lucide icon name like handshake (find one with find_icons), or "" for the default (built-in objects have their own, custom objects a box). Ask the admin first.',
+    inputSchema: z.object({ object: objectArg, icon: z.string() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ object, icon }) => run(async () => {
+    requireScope(p, 'schema');
+    const obj = await readableObject(p, object);
+    if (icon && !ICON_NAMES.has(icon)) throw badRequest(`"${icon}" is not a Lucide icon name; find one with find_icons`);
+    await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_object_icon($1, $2)', [obj.object_type_id, icon || null]));
+    const reg = await getRegistry();
+    return { object: obj.api_name, icon: reg.byKey.get(obj.object_type_id)?.icon ?? null };
   }));
 
   server.registerTool('add_dropdown_option', {

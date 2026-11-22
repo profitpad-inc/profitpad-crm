@@ -1,13 +1,13 @@
 import type { Location } from 'react-router-dom';
 import { IdCard, type LucideIcon } from 'lucide-react';
 import type { CustomViewSummary, NavItem, ObjectSummary } from './api';
-import { HomeIcon, objectIcon } from './display';
+import { HomeIcon, objectIcon, type ObjectIconComponent } from './display';
 import { DEFAULT_VIEW_ICON } from './lucide-icons';
 
 export interface NavLinkTarget {
   to: string;
   label: string;
-  Icon: LucideIcon;
+  Icon: LucideIcon | ObjectIconComponent;
   // a custom view's Lucide icon name; draw it with ViewIcon (Icon is the fallback)
   iconName?: string | null;
 }

@@ -1,4 +1,4 @@
-import { el, publicApi, PublicApiError, queryParamsFromLocation, type FormField, type PhoneResult, type PublicForm } from './public-api';
+import { el, publicApi, PublicApiError, pageUrlWith, queryParamsFromLocation, type FormField, type PhoneResult, type PublicForm } from './public-api';
 import { visibleFields } from './conditions';
 import { CARET, composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegion } from './phone-regions';
 import { DROPDOWN_CSS, enhanceSelect, type Dropdown } from './dropdown';
@@ -468,9 +468,7 @@ export function renderForm(container: HTMLElement, opts: {
         if (submit) submit.disabled = false;
         return;
       }
-      const query = params.toString();
-      const baseUrl = window.location.href.split('#')[0].split('?')[0];
-      const pageUrl = query ? `${baseUrl}?${query}` : baseUrl;
+      const pageUrl = pageUrlWith(params);
       const res = await api.submit(opts.key, {
         values,
         page_url: pageUrl,

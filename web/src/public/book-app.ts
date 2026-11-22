@@ -1,4 +1,4 @@
-import { el, publicApi, queryParamsFromLocation, PublicApiError, type BookingResult, type ManagedMeeting, type PublicBookingPage } from './public-api';
+import { el, publicApi, pageUrlWith, queryParamsFromLocation, PublicApiError, type BookingResult, type ManagedMeeting, type PublicBookingPage } from './public-api';
 import { injectFormCss, renderForm } from './form-renderer';
 import { enhanceSelect } from './dropdown';
 
@@ -65,9 +65,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
 
   // the page the visitor is on: the hosted page, or the website embedding it
   function pageUrl(): string {
-    const query = queryParamsFromLocation().toString();
-    const base = window.location.href.split('#')[0].split('?')[0];
-    return query ? `${base}?${query}` : base;
+    return pageUrlWith(queryParamsFromLocation());
   }
 
   function message(text: string): void {

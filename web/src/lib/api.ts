@@ -74,6 +74,8 @@ export interface ObjectSummary {
   label_plural: string;
   kind: 'system' | 'native' | 'custom';
   description: string | null;
+  // Lucide icon name for menus (Settings, Objects); null uses the built-in icon or a box
+  icon: string | null;
   search_properties: string[];
   id_property: string;
   // objects this one may be linked to; system_links are linked only by the system

@@ -1,10 +1,12 @@
 import {
   Box, Building2, CalendarClock, FileCode2, CalendarDays, CircleDollarSign, ClipboardList, Contact, CreditCard, File, FileText, Handshake, Home, IdCard,
   ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
-  Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, MessageSquare, type LucideIcon
+  Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, MessageSquare, type LucideIcon, type LucideProps
 } from 'lucide-react';
 import { Send } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
+import { useAppMaybe } from './app-context';
+import { ViewIcon } from './lucide-icons';
 import type { CrmRecord, Property } from './api';
 import { ColorPill } from '../components/ColorPicker';
 
@@ -43,7 +45,29 @@ const OBJECT_ICONS: Record<string, LucideIcon> = {
   comments: MessageSquare
 };
 
-export function objectIcon(apiName: string): LucideIcon {
+export type ObjectIconComponent = ComponentType<Omit<LucideProps, 'name'>>;
+
+// One component per object, made once so it never remounts.
+const objectIconComponents = new Map<string, ObjectIconComponent>();
+
+// An object's icon as a component: the icon an admin chose for it (Settings,
+// Objects; ObjectSummary.icon, a Lucide name), else the built-in one above,
+// else a box. Reads the object list from the app, so a new choice shows at once.
+export function objectIcon(apiName: string): ObjectIconComponent {
+  let Icon = objectIconComponents.get(apiName);
+  if (!Icon) {
+    const fallback = OBJECT_ICONS[apiName] ?? Box;
+    Icon = function ObjectIcon(props: Omit<LucideProps, 'name'>) {
+      const chosen = useAppMaybe()?.objectByName.get(apiName)?.icon;
+      return <ViewIcon icon={chosen} fallback={fallback} {...props} />;
+    };
+    objectIconComponents.set(apiName, Icon);
+  }
+  return Icon;
+}
+
+// The icon an object has without a chosen one (shown as the default in the picker).
+export function builtInObjectIcon(apiName: string): LucideIcon {
   return OBJECT_ICONS[apiName] ?? Box;
 }
 

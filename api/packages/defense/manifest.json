@@ -5,18 +5,18 @@
   "description": "Business development for defense, public safety and federal sellers: a defense pipeline with PWIN and BANT scoring, contract vehicles and solicitations, compliance fields on products and quotes, partnerships, OEM integrations, proposals, BOMs, travel, marketing materials and opportunity discovery. Details in DEFENSE_HANDOFF.md beside this manifest.",
 
   "objects": [
-    { "api_name": "partnerships", "label_singular": "Partnership", "label_plural": "Partnerships", "description": "Teaming partners, VARs, distributors and alliances" },
-    { "api_name": "oem_integrations", "label_singular": "OEM integration", "label_plural": "OEM integrations", "description": "Integration work with OEM partners" },
-    { "api_name": "proposals", "label_singular": "Proposal", "label_plural": "Proposals", "description": "RFP, RFQ and RFI responses" },
-    { "api_name": "boms", "label_singular": "BOM", "label_plural": "BOMs", "description": "Bills of materials: a product's components (as line items), cost and target margin" },
-    { "api_name": "trips", "label_singular": "Trip", "label_plural": "Trips", "description": "Business travel: itinerary, budget and approval" },
-    { "api_name": "expenses", "label_singular": "Expense", "label_plural": "Expenses", "description": "Travel and business expenses, with receipts" },
-    { "api_name": "marketing_materials", "label_singular": "Marketing material", "label_plural": "Marketing materials", "description": "Slick sheets, presentations, posts and event materials" },
-    { "api_name": "documents", "label_singular": "Document", "label_plural": "Documents", "description": "Business documents, tagged by type and section" },
-    { "api_name": "opportunity_sources", "label_singular": "Opportunity source", "label_plural": "Opportunity sources", "description": "Where to look for solicitations and market intelligence" },
-    { "api_name": "leads", "label_singular": "Lead", "label_plural": "Leads", "description": "Possible opportunities waiting for review: from tender emails, alerts or by hand" },
-    { "api_name": "intel_topics", "label_singular": "Intel topic", "label_plural": "Intel topics", "description": "Topics, competitors and tenders to follow" },
-    { "api_name": "escalations", "label_singular": "Escalation", "label_plural": "Escalations", "description": "Red Star alerts: roadblocks on a deal that need the team now" }
+    { "api_name": "partnerships", "label_singular": "Partnership", "label_plural": "Partnerships", "description": "Teaming partners, VARs, distributors and alliances", "icon": "network" },
+    { "api_name": "oem_integrations", "label_singular": "OEM integration", "label_plural": "OEM integrations", "description": "Integration work with OEM partners", "icon": "plug" },
+    { "api_name": "proposals", "label_singular": "Proposal", "label_plural": "Proposals", "description": "RFP, RFQ and RFI responses", "icon": "file-pen-line" },
+    { "api_name": "boms", "label_singular": "BOM", "label_plural": "BOMs", "description": "Bills of materials: a product's components (as line items), cost and target margin", "icon": "list-tree" },
+    { "api_name": "trips", "label_singular": "Trip", "label_plural": "Trips", "description": "Business travel: itinerary, budget and approval", "icon": "plane" },
+    { "api_name": "expenses", "label_singular": "Expense", "label_plural": "Expenses", "description": "Travel and business expenses, with receipts", "icon": "receipt" },
+    { "api_name": "marketing_materials", "label_singular": "Marketing material", "label_plural": "Marketing materials", "description": "Slick sheets, presentations, posts and event materials", "icon": "presentation" },
+    { "api_name": "documents", "label_singular": "Document", "label_plural": "Documents", "description": "Business documents, tagged by type and section", "icon": "folder-open" },
+    { "api_name": "opportunity_sources", "label_singular": "Opportunity source", "label_plural": "Opportunity sources", "description": "Where to look for solicitations and market intelligence", "icon": "radar" },
+    { "api_name": "leads", "label_singular": "Lead", "label_plural": "Leads", "description": "Possible opportunities waiting for review: from tender emails, alerts or by hand", "icon": "funnel" },
+    { "api_name": "intel_topics", "label_singular": "Intel topic", "label_plural": "Intel topics", "description": "Topics, competitors and tenders to follow", "icon": "binoculars" },
+    { "api_name": "escalations", "label_singular": "Escalation", "label_plural": "Escalations", "description": "Red Star alerts: roadblocks on a deal that need the team now", "icon": "siren" }
   ],
 
   "properties": [

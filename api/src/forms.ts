@@ -438,6 +438,8 @@ export interface SubmissionMeta {
   origin: string;
   ip: string;
   userAgent: string | null;
+  // more records the submission is linked to (a booking's booking page)
+  links?: { object: string; id: string }[];
 }
 
 // Stores a submission and applies it: upserts the contact (by email), creates
@@ -488,7 +490,8 @@ export async function applySubmission(
   }, [
     { object: 'forms', id: meta.form.id },
     ...(contact ? [{ object: 'contacts', id: contact }] : []),
-    ...(ticket ? [{ object: 'tickets', id: ticket }] : [])
+    ...(ticket ? [{ object: 'tickets', id: ticket }] : []),
+    ...(meta.links ?? [])
   ]);
   return { submission, contact, ticket };
 }

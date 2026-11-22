@@ -7,6 +7,9 @@ import { Menu, Modal } from '../components/ui';
 import { EmptyState, SettingsPage } from '../components/settings';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Select } from '../components/Select';
+import { IconPicker } from '../components/IconPicker';
+import { builtInObjectIcon, objectIcon } from '../lib/display';
+import { ViewIcon } from '../lib/lucide-icons';
 
 // Admin page listing the objects and creating custom ones. Creation goes
 // through POST /v1/schema (meta.create_object), so the database enforces the
@@ -82,9 +85,13 @@ export function ObjectSettings() {
               <tr><th>Name</th><th>One record is a</th><th>Internal name</th><th>Source</th><th /></tr>
             </thead>
             <tbody>
-              {shown.map((o) => (
+              {shown.map((o) => {
+                const Icon = objectIcon(o.api_name);
+                return (
                 <tr key={o.object_type_id}>
-                  <td className="primary-cell"><Link to={`/objects/${o.api_name}`}>{o.label_plural}</Link></td>
+                  <td className="primary-cell">
+                    <Link to={`/objects/${o.api_name}`} className="object-name-link"><Icon size={16} strokeWidth={1.75} /> {o.label_plural}</Link>
+                  </td>
                   <td>{o.label_singular}</td>
                   <td><code className="muted">{o.api_name}</code></td>
                   <td>{SOURCE[o.kind] ?? o.kind}</td>
@@ -94,13 +101,14 @@ export function ObjectSettings() {
                         <>
                           <button onClick={() => { close(); navigate(`/objects/${o.api_name}`); }}>Open records</button>
                           <button onClick={() => { close(); navigate(`/settings/properties?object=${encodeURIComponent(o.api_name)}`); }}>Edit properties</button>
-                          {o.kind === 'custom' && <button onClick={() => { close(); setEditing(o); }}>Rename</button>}
+                          {o.kind === 'custom' && <button onClick={() => { close(); setEditing(o); }}>Edit name and icon</button>}
                         </>
                       )}
                     </Menu>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -125,6 +133,8 @@ function ObjectEditor({ object, onClose, onSaved }: {
   const [plural, setPlural] = useState(object?.label_plural ?? '');
   const [apiName, setApiName] = useState(object?.api_name ?? '');
   const [description, setDescription] = useState(object?.description ?? '');
+  const [icon, setIcon] = useState<string | null>(object?.icon ?? null);
+  const [pickingIcon, setPickingIcon] = useState(false);
   // the plural and internal name follow the labels until edited (new objects only)
   const [autoPlural, setAutoPlural] = useState(isNew);
   const [autoName, setAutoName] = useState(isNew);
@@ -132,8 +142,8 @@ function ObjectEditor({ object, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty = isNew
-    ? !!(singular || plural || apiName || description)
-    : singular !== object.label_singular || plural !== object.label_plural || description !== (object.description ?? '');
+    ? !!(singular || plural || apiName || description || icon)
+    : singular !== object.label_singular || plural !== object.label_plural || description !== (object.description ?? '') || icon !== (object.icon ?? null);
 
   function onSingular(v: string) {
     setSingular(v);
@@ -159,7 +169,8 @@ function ObjectEditor({ object, onClose, onSaved }: {
           api_name: apiName.trim(),
           label_singular: singular.trim(),
           label_plural: plural.trim(),
-          description: description.trim() || undefined
+          description: description.trim() || undefined,
+          icon: icon ?? undefined
         });
         let note = '';
         if (addToMenu) {
@@ -178,7 +189,8 @@ function ObjectEditor({ object, onClose, onSaved }: {
         await api('PATCH', `/v1/schema/${object.api_name}`, {
           label_singular: singular.trim(),
           label_plural: plural.trim(),
-          description: description.trim()
+          description: description.trim(),
+          icon
         });
         await onSaved(`${plural.trim()} saved`);
       }
@@ -191,7 +203,7 @@ function ObjectEditor({ object, onClose, onSaved }: {
   return (
     <Modal
       locked={dirty || busy}
-      title={isNew ? 'Create object' : `Rename ${object.label_plural}`}
+      title={isNew ? 'Create object' : `Edit ${object.label_plural}`}
       onClose={onClose}
       footer={
         <>
@@ -227,6 +239,16 @@ function ObjectEditor({ object, onClose, onSaved }: {
             The internal name is used by the API, imports and reports: lowercase letters, digits and underscores. It cannot be changed later.
           </p>
         )}
+        <div className="field">
+          <span>Icon</span>
+          <div className="object-icon-field">
+            <button type="button" className="btn" onClick={() => setPickingIcon(true)} aria-label="Choose an icon">
+              <ViewIcon icon={icon} fallback={builtInObjectIcon(apiName.trim())} size={16} strokeWidth={1.75} />
+              {icon ?? 'Default'}
+            </button>
+            <span className="muted small">Shown in the menus and on its pages.</span>
+          </div>
+        </div>
         <label className="field">
           <span>Description</span>
           <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -244,6 +266,13 @@ function ObjectEditor({ object, onClose, onSaved }: {
         )}
         {error && <div className="error">{error}</div>}
       </div>
+      {pickingIcon && (
+        <IconPicker
+          value={icon}
+          onPick={(name) => { setIcon(name); setPickingIcon(false); }}
+          onClose={() => setPickingIcon(false)}
+        />
+      )}
     </Modal>
   );
 }
