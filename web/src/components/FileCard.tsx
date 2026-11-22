@@ -1,31 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Copy, Download, ExternalLink, File as FileIcon, Globe } from 'lucide-react';
+import { Copy, ExternalLink, Globe } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { StatusPill } from './settings';
-import { fileInfo, fileLink, formatBytes, openFile, type FileInfo } from '../lib/files';
+import { fileInfo, type FileInfo } from '../lib/files';
 import { confirmDialog } from './confirm';
 
-const PREVIEW = /^(image\/(png|jpeg|gif|webp|avif)|video\/|audio\/)/;
-
-// Record page card for a file: a preview for images, video and audio, open
-// and download buttons, and the public link (on, copy, off).
+// Record page card for a file: the public link (on, copy, off). The file
+// itself, with Open and Download, is in the middle column (FileViewer.tsx).
 export function FileCard({ record }: { record: CrmRecord }) {
   const { toast } = useApp();
   const [file, setFile] = useState<FileInfo | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
-    fileInfo([record.id]).then(async ([f]) => {
-      if (!live) return;
-      setFile(f ?? null);
-      if (f?.status === 'ready' && f.mime_type && PREVIEW.test(f.mime_type)) {
-        const url = await fileLink(f.id);
-        if (live) setPreview(url);
-      }
+    fileInfo([record.id]).then(([f]) => {
+      if (live) setFile(f ?? null);
     }).catch((err) => live && setError((err as Error).message));
     return () => {
       live = false;
@@ -55,33 +47,18 @@ export function FileCard({ record }: { record: CrmRecord }) {
     }
   }
 
-  const open = (download: boolean) => openFile(record.id, download).catch((err) => setError((err as Error).message));
-  const type = file?.mime_type ?? '';
+  if (file && file.status !== 'ready') return null;
 
   return (
     <div className="card file-card">
       <div className="card-head">
-        <span className="card-icon"><FileIcon size={15} strokeWidth={1.75} /></span>
-        <h3>File</h3>
+        <span className="card-icon"><Globe size={15} strokeWidth={1.75} /></span>
+        <h3>Public link</h3>
+        <span className="push-right">{file && <StatusPill tone={file.public_url ? 'on' : 'off'}>{file.public_url ? 'On' : 'Off'}</StatusPill>}</span>
       </div>
-      {!file && !error && <div className="file-preview-skeleton" aria-busy="true" aria-label="Loading file" />}
-      {file && file.status !== 'ready' && <div className="muted small">This file has not finished uploading.</div>}
-      {preview && type.startsWith('image/') && <img className="file-preview" src={preview} alt={file?.name ?? ''} />}
-      {preview && type.startsWith('video/') && <video className="file-preview" src={preview} controls preload="metadata" />}
-      {preview && type.startsWith('audio/') && <audio src={preview} controls preload="metadata" />}
+      {!file && !error && <div className="file-preview-skeleton short" aria-busy="true" aria-label="Loading public link" />}
       {file && (
-        <div className="muted small">{[type || 'Unknown type', formatBytes(file.size_bytes)].filter(Boolean).join(', ')}</div>
-      )}
-      {file?.status === 'ready' && (
         <>
-          <div className="public-link-actions">
-            <button className="btn small" onClick={() => open(false)}><ExternalLink size={14} /> Open</button>
-            <button className="btn small" onClick={() => open(true)}><Download size={14} /> Download</button>
-          </div>
-          <div className="file-public-head">
-            <Globe size={13} aria-hidden /> Public link
-            <span className="push-right"><StatusPill tone={file.public_url ? 'on' : 'off'}>{file.public_url ? 'On' : 'Off'}</StatusPill></span>
-          </div>
           {file.public_url ? (
             <>
               <div className="public-link-row url">

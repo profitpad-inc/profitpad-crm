@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, MessagesSquare, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo, fileLink, formatBytes, openFile } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -14,6 +14,7 @@ import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
 import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
+import { FileViewer } from '../components/FileViewer';
 import { ViewCode } from '../components/ViewCode';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
 import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
@@ -576,6 +577,7 @@ export function RecordPage() {
               </>
             ) : (
               <>
+                {object === 'files' && <FileViewer record={record} />}
                 {commentThread}
                 <ActivityStream {...streamProps} />
               </>
@@ -885,7 +887,18 @@ function searchText(object: string, r: CrmRecord): string {
 function plain(text: unknown): string {
   if (typeof text !== 'string') return '';
   // email bodies are HTML; show text only (never inject it as markup)
-  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const stripped = text
+    .replace(/<(style|script|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return decodeEntities(stripped).replace(/\s+/g, ' ').trim();
+}
+
+// &gt;, &amp;, &nbsp;, &#39; and the rest back to characters. The tags are
+// already gone, and DOMParser runs no scripts and loads nothing; the result
+// is only ever used as text.
+function decodeEntities(text: string): string {
+  if (!text.includes('&')) return text;
+  return new DOMParser().parseFromString(text, 'text/html').documentElement.textContent ?? text;
 }
 
 // The tab is in ?tab= and an opened activity in ?pc_<object code>=<record id>,
@@ -1142,7 +1155,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                 {o === 'emails' && !grouped && (threadSizes.get(threadOf(r)) ?? 0) > 1 && (
                   <button type="button" className="email-thread-tag" title="Show the whole thread"
                     onClick={(e) => { e.stopPropagation(); showThread(threadOf(r)); }}>
-                    <MessagesSquare size={12} strokeWidth={1.75} aria-hidden /> Thread ({threadSizes.get(threadOf(r))})
+                    <Mails size={12} strokeWidth={1.75} aria-hidden /> Thread ({threadSizes.get(threadOf(r))})
                   </button>
                 )}
                 {o === 'emails' && p.logged_via === 'autolog' && <span className="email-autolog-tag">Auto-logged</span>}
@@ -1349,7 +1362,7 @@ function EmailThread<T extends { record: CrmRecord; at: string }>({ threadId, ro
   return (
     <div id={`thread-${threadId}`} className={`activity-item email-thread${open ? ' open' : ''}`}
       onClick={open ? undefined : () => { if (!window.getSelection()?.toString()) onToggle(); }}>
-      <span className="activity-icon"><MessagesSquare size={15} strokeWidth={1.75} /></span>
+      <span className="activity-icon"><Mails size={15} strokeWidth={1.75} /></span>
       <div className="activity-body">
         <div className="activity-head">
           <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); onToggle(); }}>

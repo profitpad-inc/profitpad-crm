@@ -438,12 +438,76 @@
 }
 .payment-confirm .card-icon { background: color-mix(in srgb, var(--warn) 12%, var(--page-background)); color: var(--warn); }
 
-.record-right .file-preview { width: 100%; object-fit: contain; border-radius: var(--radius); border: 1px solid var(--hairline); }
+/* ---- middle: the file viewer on file records (FileViewer.tsx, PdfPages.tsx) ---------------- */
+.file-viewer.card { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; margin-bottom: 16px; }
+.file-viewer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.file-viewer-title { min-width: 0; flex: 1 1 200px; }
+.file-viewer-title h2 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-viewer-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.file-viewer-actions .btn { display: inline-flex; align-items: center; gap: 5px; }
+/* the stage: one quiet frame for every kind of file, the file scaled to fit, never cropped */
+.file-stage {
+  display: flex; align-items: center; justify-content: center; min-height: 240px; overflow: hidden;
+  border: 1px solid var(--hairline); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 60%, var(--page-background));
+}
+.file-stage > .app-loading { padding: 40px 0; }
+.file-stage .file-stage-skeleton { width: 100%; height: 320px; border-radius: 0; }
+.file-stage-note { padding: 40px 16px; text-align: center; }
+/* images on a checkerboard so transparent parts show; click opens it in a new tab */
+.file-stage.image {
+  background-color: var(--page-background);
+  background-image:
+    linear-gradient(45deg, var(--surface) 25%, transparent 25%, transparent 75%, var(--surface) 75%),
+    linear-gradient(45deg, var(--surface) 25%, transparent 25%, transparent 75%, var(--surface) 75%);
+  background-size: 20px 20px; background-position: 0 0, 10px 10px;
+}
+.file-stage-image { display: flex; padding: 0; border: 0; background: none; cursor: zoom-in; max-width: 100%; }
+.file-stage-image:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.file-stage-image img, .file-stage.video video { display: block; max-width: 100%; max-height: 75vh; object-fit: contain; }
+.file-stage.video { background: #000; }
+.file-stage.video video { width: 100%; }
+.file-stage-audio, .file-stage-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; padding: 36px 20px; text-align: center;
+}
+.file-stage-audio audio { width: 100%; max-width: 520px; }
+.file-stage-icon {
+  display: grid; place-items: center; width: 96px; height: 96px; border-radius: 20px;
+  background: var(--page-background); border: 1px solid var(--hairline); color: var(--muted-text);
+}
+.file-stage-name { font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+.file-stage-tile .file-viewer-actions { margin-top: 6px; justify-content: center; }
+/* plain text */
+.file-stage.text { align-items: stretch; }
+.file-stage-text { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+.file-stage-text pre {
+  margin: 0; padding: 14px 16px; max-height: 75vh; overflow: auto; background: var(--page-background);
+  font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.file-stage-text-more { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--hairline); }
+/* PDF pages, drawn on canvases */
+.file-stage.pdf { align-items: stretch; }
+.pdf-viewer { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+.pdf-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--hairline); background: var(--page-background);
+}
+.pdf-zoom { display: flex; align-items: center; gap: 2px; }
+.pdf-zoom-value { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted-text); }
+.pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; height: 75vh; overflow: auto; }
+.pdf-pages > .app-loading { margin: auto; }
+.pdf-page { flex: none; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+.pdf-page canvas { display: block; width: 100%; height: 100%; }
+@media (max-width: 760px) {
+  .pdf-pages { height: 65vh; padding: 10px; }
+  .file-stage-image img, .file-stage.video video, .file-stage-text pre { max-height: 65vh; }
+}
 .file-preview-skeleton {
   height: 140px; border-radius: var(--radius);
   background: linear-gradient(90deg, var(--page-background), var(--surface), var(--page-background)) 0 0 / 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
+.file-preview-skeleton.short { height: 60px; }
 .record-right .file-public-head {
   display: flex; align-items: center; gap: 6px; margin-top: 2px; padding-top: 12px;
   border-top: 1px solid var(--hairline); font-size: 13px; font-weight: 500; color: var(--text);

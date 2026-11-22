@@ -20,6 +20,7 @@
     "@tiptap/starter-kit": "3.34.0",
     "flatpickr": "4.6.13",
     "lucide-react": "1.74.0",
+    "pdfjs-dist": "6.5.438",
     "react": "19.3.1",
     "react-colorful": "5.8.1",
     "react-dom": "19.3.1",
