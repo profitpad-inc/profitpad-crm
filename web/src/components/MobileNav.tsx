@@ -3,11 +3,9 @@ import { Link, useLocation } from 'react-router-dom';
 import { Folder, Menu as MenuIcon, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
-import { initials } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { SearchPalette } from './SearchPalette';
-import { BrandMark } from './Logo';
 import { Sidebar } from './Sidebar';
 
 export function userDisplayName(me: ReturnType<typeof useApp>['me']): string {
@@ -15,7 +13,9 @@ export function userDisplayName(me: ReturnType<typeof useApp>['me']): string {
 }
 
 // The mobile hotbar: the menu's items in order (links this user cannot open are skipped), then Search,
-// which is always last. Menu opens the full menu as a drawer; a section opens a sheet of its links above the bar.
+// which is always last. The first item is Menu or Home: Menu opens the full menu as a drawer, and Home turns
+// into Menu while the home page is open, so Settings and Mentions are always one or two taps away.
+// A section opens a sheet of its links above the bar.
 export function BottomBar() {
   const { bottomNav, objectByName, customViews } = useApp();
   const location = useLocation();
@@ -28,7 +28,7 @@ export function BottomBar() {
     <>
       <nav className="bottom-bar">
         {bottomNav.map((item, i) => {
-          if (item.type === 'menu') {
+          if (item.type === 'menu' || (item.type === 'home' && location.pathname === '/')) {
             return (
               <button key={i} className={`bottom-item${drawerOpen ? ' active' : ''}`} onClick={() => setDrawerOpen(true)}>
                 <MenuIcon size={22} strokeWidth={1.75} />
@@ -106,29 +106,6 @@ function SectionSheet({ section, onClose }: { section: Extract<NavItem, { type: 
         {links.some(Boolean) ? links : <div className="hotbar-sheet-empty">Nothing in this section yet</div>}
       </div>
     </div>
-  );
-}
-
-// Top bar for the phone home page: hamburger opens the full menu as a drawer.
-export function MobileHeader() {
-  const { me, logo } = useApp();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const userName = userDisplayName(me);
-
-  return (
-    <>
-      <header className="mobile-header">
-        <button className="icon-btn" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
-          <MenuIcon size={24} />
-        </button>
-        <Link to="/" className="logo small" aria-label="ProfitPad CRM"><BrandMark src={logo} size={24} /></Link>
-        <span className="mobile-header-title">ProfitPad</span>
-        <Link to="/settings" className="push-right" aria-label="Settings">
-          <span className="avatar">{initials(userName)}</span>
-        </Link>
-      </header>
-      {drawerOpen && <Drawer onClose={() => setDrawerOpen(false)} />}
-    </>
   );
 }
 

@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, API_BASE, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
-import { MobileHeader } from '../components/MobileNav';
 import { Modal } from '../components/ui';
 import { Loading } from '../components/Loading';
 import { useAddToMenu } from '../lib/use-add-to-menu';
@@ -516,14 +515,14 @@ export function CustomView() {
 
   return (
     <>
-      {mobile && <MobileHeader />}
       <div className="custom-view">
         {view?.can_edit && (
           <div className="custom-view-bar">
             <span className="muted">{view.name}</span>
             {view.draft && <span className="pill">Draft</span>}
             <span className="spacer" />
-            {view.draft && view.unpublished_changes && (
+            {/* on a phone the bar keeps only the name and the draft/published switch */}
+            {!mobile && view.draft && view.unpublished_changes && (
               <>
                 {view.status === 'published' && (
                   <button className="btn small" disabled={busy} onClick={() => draftAction('revert')}>Revert to published</button>
@@ -534,12 +533,12 @@ export function CustomView() {
             {view.status === 'published' && (
               <Link to={{ pathname: '/view/', search: draft ? '' : '?draft=1', hash: location.hash }}>{draft ? 'See published' : 'See draft'}</Link>
             )}
-            {menu && (
+            {!mobile && menu && (
               menu.inMenu
                 ? <Link to="/settings/navigation">In menu</Link>
                 : <button className="link-btn" disabled={menu.busy} onClick={menu.add}>Add to menu</button>
             )}
-            <Link to={`/objects/views/${view.id}`}>Code</Link>
+            {!mobile && <Link to={`/objects/views/${view.id}`}>Code</Link>}
           </div>
         )}
         {!slug && <div className="page"><p className="muted">No view picked. Admins can see every view under <Link to="/objects/views">Views</Link>.</p></div>}

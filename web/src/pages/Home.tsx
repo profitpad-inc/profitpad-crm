@@ -5,7 +5,6 @@ import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { objectIcon } from '../lib/display';
 import { useIsMobile } from '../lib/use-mobile';
-import { MobileHeader } from '../components/MobileNav';
 
 // Placeholder home: record counts for the objects in the user's menu.
 export function Home() {
@@ -28,7 +27,6 @@ export function Home() {
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   return (
     <>
-      {mobile && <MobileHeader />}
       <div className="page home">
         <header className="home-head">
           <div className="home-date">{today}</div>

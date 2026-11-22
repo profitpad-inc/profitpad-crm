@@ -9,7 +9,6 @@ import { forOcr, insetQuad, loadPhoto, straighten, toBase64, toBlob, type Point,
 import { PropertyInput } from '../components/ui';
 import { Select } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
-import { MobileHeader } from '../components/MobileNav';
 import '../scanner.css';
 import { TextArea } from '../lib/snippets';
 
@@ -365,14 +364,14 @@ export function CardScanner() {
   // ---- render ----
   if (setup && !setup.can_create_contacts) {
     return (
-      <Shell mobile={mobile}>
+      <Shell>
         <div className="callout">You can't add contacts, so the card scanner is not available to you. Ask an admin for access.</div>
       </Shell>
     );
   }
 
   return (
-    <Shell mobile={mobile}>
+    <Shell>
       {error && step.kind !== 'review' && <div className="error" role="alert">{error}</div>}
 
       {step.kind === 'capture' && (
@@ -557,10 +556,9 @@ export function CardScanner() {
   );
 }
 
-function Shell({ mobile, children }: { mobile: boolean; children: ReactNode }) {
+function Shell({ children }: { children: ReactNode }) {
   return (
     <>
-      {mobile && <MobileHeader />}
       <div className="page scan-page">
         <header className="scan-head">
           <h1 className="page-title">Card scanner</h1>

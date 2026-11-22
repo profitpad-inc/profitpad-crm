@@ -589,8 +589,10 @@ interface Menu {
   more_hidden?: string[];
 }
 
-// items in the mobile hotbar before Search, which is always last
+// items in the mobile hotbar before Search, which is always last; the first is always Menu or Home
 const BOTTOM_MAX = 4;
+// a hotbar always starts with Menu or Home (the API reads one saved without it with Menu first)
+const withLead = (bottom: NavItem[]): NavItem[] => (bottom[0]?.type === 'menu' || bottom[0]?.type === 'home' ? bottom : [{ type: 'menu' }, ...bottom]);
 
 interface UserOption {
   id: string;
@@ -801,7 +803,7 @@ function NavSettings() {
   }, []);
 
   function showMenu(m: MenuSnapshot | undefined) {
-    const next = { items: m?.items ?? [], bottom: m?.bottom ?? [], moreHidden: m?.more_hidden ?? [] };
+    const next = { items: m?.items ?? [], bottom: withLead(m?.bottom ?? []), moreHidden: m?.more_hidden ?? [] };
     setItems(next.items);
     setBottom(next.bottom);
     setMoreHidden(next.moreHidden);
@@ -868,7 +870,7 @@ function NavSettings() {
     const m = menuFor(source);
     if (!m) return;
     setItems(m.items);
-    setBottom(m.bottom);
+    setBottom(withLead(m.bottom));
     setMoreHidden(m.more_hidden ?? []);
     setCopyOpen(false);
     setError(null);
@@ -925,10 +927,11 @@ function NavSettings() {
     setPicker(null);
   }
 
-  // the item types a list takes: no dividers on the hotbar itself, Menu only there, no sections inside sections
+  // the item types a list takes: no dividers on the hotbar itself (its Menu or Home is the fixed first row),
+  // no sections inside sections
   function typesFor(key: ListKey): string[] {
     const links = ['object', 'view', 'custom_view', 'card_scanner'];
-    if (key === 'bottom') return [...links, 'section', 'home', 'menu'];
+    if (key === 'bottom') return [...links, 'section'];
     if (key === 'top') return [...links, 'divider', 'section', 'home'];
     return [...links, 'divider', 'home'];
   }
@@ -978,7 +981,8 @@ function NavSettings() {
     }
     if (!canDrop(list)) return;
     e.preventDefault();
-    setDropAt({ list, index: below ? i + 1 : i });
+    // nothing goes before the hotbar's fixed Menu or Home
+    setDropAt({ list, index: Math.max(below ? i + 1 : i, list === 'bottom' ? 1 : 0) });
   }
 
   function drop() {
@@ -1069,6 +1073,8 @@ function NavSettings() {
     const label = itemLabel(it, objectLabel, viewName, customViewName);
     const kind = itemKind(it);
     const dropHere = dropAt?.list === listKey;
+    // the hotbar's first row is fixed: Menu or Home, picked here, never moved or removed
+    const lead = listKey === 'bottom' && i === 0;
     return (
       <div
         key={i}
@@ -1076,7 +1082,7 @@ function NavSettings() {
         onDragOver={(e) => dragOverRow(e, listKey, i, it)}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(); }}
       >
-        <span
+        {lead ? <span className="nav-grip fixed" aria-hidden="true"><GripVertical size={14} /></span> : <span
           className="nav-grip"
           draggable
           title="Drag to reorder"
@@ -1090,14 +1096,24 @@ function NavSettings() {
           onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
         >
           <GripVertical size={14} />
-        </span>
+        </span>}
         <span className="nav-edit-label">
+          {lead && (
+            <Select
+              value={it.type}
+              onChange={(v) => change((ls) => ls.map((x, j) => (j === 0 ? ({ type: v } as NavItem) : x)))}
+              aria-label="First hotbar button"
+            >
+              <option value="menu">Menu</option>
+              <option value="home">Home (Menu while on the home page)</option>
+            </Select>
+          )}
           {it.type === 'section' && (
             <button type="button" className="icon-btn nav-edit-icon" title="Change icon" aria-label={`Change the icon of ${label}`} onClick={() => setIconFor({ root: isHotbar(listKey) ? 'bottom' : 'top', index: i })}>
               <ViewIcon icon={it.icon} fallback={Folder} size={16} strokeWidth={1.75} />
             </button>
           )}
-          {it.type === 'home' || it.type === 'divider' || it.type === 'menu' ? label : (
+          {lead ? null : it.type === 'home' || it.type === 'divider' || it.type === 'menu' ? label : (
             <EditableLabel
               value={label}
               fallback={it.type === 'section' ? null : itemLabel({ ...it, label: undefined } as NavItem, objectLabel, viewName, customViewName)}
@@ -1106,9 +1122,13 @@ function NavSettings() {
           )}
           {kind && it.type !== 'section' && <span className="kind">{kind}</span>}
         </span>
-        <button className="icon-btn" onClick={() => change((l) => move(l, i, -1))} disabled={i === 0} aria-label={`Move ${label} up`}><ArrowUp size={14} /></button>
-        <button className="icon-btn" onClick={() => change((l) => move(l, i, 1))} disabled={i === list.length - 1} aria-label={`Move ${label} down`}><ArrowDown size={14} /></button>
-        <button className="icon-btn" onClick={() => change((l) => l.filter((_, j) => j !== i))} aria-label={`Remove ${label}`}><Trash2 size={14} /></button>
+        {!lead && (
+          <>
+            <button className="icon-btn" onClick={() => change((l) => move(l, i, -1))} disabled={i === (listKey === 'bottom' ? 1 : 0)} aria-label={`Move ${label} up`}><ArrowUp size={14} /></button>
+            <button className="icon-btn" onClick={() => change((l) => move(l, i, 1))} disabled={i === list.length - 1} aria-label={`Move ${label} down`}><ArrowDown size={14} /></button>
+            <button className="icon-btn" onClick={() => change((l) => l.filter((_, j) => j !== i))} aria-label={`Remove ${label}`}><Trash2 size={14} /></button>
+          </>
+        )}
         {children}
       </div>
     );
@@ -1273,14 +1293,11 @@ function NavSettings() {
         {addPicker('sidebar')}
       </SettingsSection>
 
-      <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: up to ${BOTTOM_MAX} items in any order, then Search, which is always last. Menu opens the full menu; a section opens a list of its links.`}>
+      <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: Menu or Home first, so Settings and Mentions stay reachable (Home turns into Menu on the home page), then up to ${BOTTOM_MAX - 1} items in any order, then Search, which is always last. A section opens a list of its links.`}>
         <BottomBarPreview items={bottom} />
         {loaded && bottom.length === 0
           ? <p className="muted">Only Search is on the hotbar.</p>
           : <div className="nav-tree">{renderList(bottom, 'bottom')}</div>}
-        {loaded && !bottom.some((it) => it.type === 'menu') && (
-          <p className="muted small">No Menu button: on a phone, the full menu then opens only from the home page's top bar.</p>
-        )}
         {loaded && addButton('bottom')}
         {addPicker('bottom')}
       </SettingsSection>

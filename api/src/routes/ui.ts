@@ -201,14 +201,18 @@ async function validateNav(items: unknown, depth = 0): Promise<NavItem[]> {
   return out;
 }
 
-// The mobile hotbar: up to HOTBAR_MAX items in any order (Search is always added after them): links, home,
-// menu (opens the full menu) and sections (open a sheet of their links). Stored with bottom_left 'none';
+// The mobile hotbar: up to HOTBAR_MAX items (Search is always added after them). The first is always menu
+// (opens the full menu) or home (on the home page it turns into menu), so Settings and Mentions stay reachable
+// on a phone; then links and sections (open a sheet of their links) in any order. Stored with bottom_left 'none';
 // rows from before migration 0103 have bottom_left 'menu' or 'home', meaning that button came first.
 const HOTBAR_MAX = 4;
+const isHotbarLead = (it: NavItem | undefined) => it?.type === 'menu' || it?.type === 'home';
 
+// a stored hotbar not led by menu or home (saved while the hotbar was free) is read with menu first
 function storedHotbar(left: string | null | undefined, items: unknown): NavItem[] {
   const list = (Array.isArray(items) ? items : []) as NavItem[];
-  return left === 'menu' || left === 'home' ? [{ type: left }, ...list] : list;
+  const full = left === 'menu' || left === 'home' ? [{ type: left } as NavItem, ...list] : list;
+  return isHotbarLead(full[0]) ? full : [{ type: 'menu' }, ...full];
 }
 
 async function validateBottom(items: unknown): Promise<NavItem[]> {
@@ -219,6 +223,8 @@ async function validateBottom(items: unknown): Promise<NavItem[]> {
     else out.push(...(await validateNav([it])));
   }
   if (out.some((it) => it.type === 'divider')) throw badRequest('the hotbar cannot hold dividers (sections in it can)');
+  if (!isHotbarLead(out[0])) throw badRequest('the hotbar must start with menu or home');
+  if (out.slice(1).some(isHotbarLead)) throw badRequest('menu and home can only be the first hotbar item');
   return out;
 }
 
