@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { EllipsisVertical, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react';
+import { EllipsisVertical, Plus, ShieldCheck, Table2, Trash2, Users, X } from 'lucide-react';
 import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, initials } from '../lib/display';
@@ -184,7 +184,10 @@ export function UserSettings() {
         People sign in with {signIn} when their email matches a user here whose Status is not Deactivated. What
         they can see comes from their roles; a user with no role sees nothing.
       </>}
-      actions={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> Add a user</button>}
+      actions={<>
+        <Link className="btn" to="/objects/users"><Table2 size={14} /> View table</Link>
+        <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> Add a user</button>
+      </>}
     >
       {loaded && users.length > 0 && (
         <div className="settings-toolbar">

@@ -656,7 +656,7 @@ interface Menu {
 }
 
 // items in the mobile hotbar before Search, which is always last; the first is always Menu or Home
-const BOTTOM_MAX = 5;
+const BOTTOM_MAX = 4;
 // a hotbar always starts with Menu or Home (the API reads one saved without it with Menu first)
 const withLead = (bottom: NavItem[]): NavItem[] => (bottom[0]?.type === 'menu' || bottom[0]?.type === 'home' ? bottom : [{ type: 'menu' }, ...bottom]);
 

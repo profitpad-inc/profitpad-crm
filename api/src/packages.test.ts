@@ -82,9 +82,9 @@ test('the manifest check covers the default menu', () => {
   assert.throws(() => checkManifest('x', nav([{ type: 'link' }])), /unknown nav item/);
   assert.throws(() => checkManifest('x', nav([{ type: 'object', object: 'contacts', label: '' }])), /1 to 63/);
   const sec = { type: 'section', label: 'S', items: [{ type: 'object', object: 'contacts' }] };
-  assert.doesNotThrow(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, sec, sec, sec, sec] })));
+  assert.doesNotThrow(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, sec, sec, sec] })));
   assert.doesNotThrow(() => checkManifest('x', nav([], { bottom: [{ type: 'home' }, { type: 'card_scanner' }] })));
-  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, sec, sec, sec, sec, sec] })), /at most 5/);
+  assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, sec, sec, sec, sec] })), /at most 4/);
   assert.throws(() => checkManifest('x', nav([], { bottom: [sec] })), /start with menu or home/);
   assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, { type: 'home' }] })), /only be the first/);
   assert.throws(() => checkManifest('x', nav([], { bottom: [{ type: 'menu' }, { type: 'divider' }] })), /dividers/);
@@ -102,10 +102,10 @@ test('the defense menu points only at its own views, core views and known object
     if (it.type === 'custom_view') assert.ok(slugs.has(it.slug) || it.slug === 'reporting', it.slug);
     if (it.type === 'object') assert.ok(objects.has(it.object), it.object);
   }
-  // the phone hotbar: Menu, then the sidebar's four sections, Business Dev led by the two dashboards
+  // the phone hotbar: Menu, then Business Dev, Tools and Resources (Operations stays in the sidebar), Business Dev led by the two dashboards
   const bottom = m.nav?.bottom ?? [];
   assert.equal(bottom[0]?.type, 'menu');
-  assert.deepEqual(bottom.slice(1).map((it) => (it.type === 'section' ? it.label : it.type)), ['Business Dev', 'Tools', 'Resources', 'Operations']);
+  assert.deepEqual(bottom.slice(1).map((it) => (it.type === 'section' ? it.label : it.type)), ['Business Dev', 'Tools', 'Resources']);
   const bd = bottom[1]?.type === 'section' ? bottom[1].items.map((it) => (it.type === 'custom_view' ? it.slug : it.type)) : [];
   assert.deepEqual(bd.slice(0, 2), ['command-dashboard', 'my-dashboard']);
 });

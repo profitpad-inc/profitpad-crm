@@ -641,28 +641,6 @@
             "label": "Documents"
           }
         ]
-      },
-      {
-        "type": "section",
-        "label": "Operations",
-        "icon": "factory",
-        "items": [
-          {
-            "type": "custom_view",
-            "slug": "org-chart",
-            "label": "Team Hierarchy"
-          },
-          {
-            "type": "custom_view",
-            "slug": "operations-bom",
-            "label": "Operations"
-          },
-          {
-            "type": "custom_view",
-            "slug": "travel-ops",
-            "label": "Travel Ops"
-          }
-        ]
       }
     ]
   }
