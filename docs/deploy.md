@@ -267,7 +267,7 @@ Users send email from record pages as themselves through the organization's Goog
 2. Rebuild and restart the API (`npm ci` picks up nodemailer, used only to build MIME), then deploy the UI (`npm ci` picks up TipTap).
 3. Google Workspace (for each domain whose people sign in with Google):
    1. Google Cloud console: in any project, enable the Gmail API, create a service account (no roles needed) and a JSON key for it.
-   2. Google Admin (admin.google.com): Security → Access and data control → API controls → Manage Domain-wide delegation → Add new. Client ID: the service account's (Settings → Mailboxes shows it after the key is saved). Scopes: `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.settings.basic` (the second lists each person's send-as aliases).
+   2. Google Admin (admin.google.com): Security → Access and data control → API controls → Manage Domain-wide delegation (https://admin.google.com/ac/owl/domainwidedelegation) → Add new. Client ID: the service account's (Settings → Mailboxes shows it after the key is saved). Scopes: `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.settings.basic` (the second lists each person's send-as aliases).
    3. Settings → Mailboxes → Google: paste the JSON key, enter the domains (e.g. `profitpad.com`), turn Sending on, press Test. Google can take a few minutes to apply a new delegation.
    4. Your organization may block service account key creation (the `iam.disableServiceAccountKeyCreation` policy); an org admin can make an exception for this project.
 4. Microsoft 365 (for each domain whose people use Outlook):

@@ -37,7 +37,8 @@ import {
 } from './integrations.js';
 import { describeCreateForm, listConfig } from './native-ui.js';
 import { approvalNextStep } from './approval.js';
-import { loadFormsSettings, loadTheme, saveEmbedDomains, THEME_KEYS, updateTheme } from './routes/ui.js';
+import { isAdmin, loadFormsSettings, loadTheme, saveEmbedDomains, THEME_KEYS, updateTheme } from './routes/ui.js';
+import { BODY_MAX, createArticle, deleteArticle, getArticle, knowledgeAccess, listArticles, TITLE_MAX, updateArticle } from './knowledge.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
   updateEndpoint, updateSubscription
@@ -60,6 +61,14 @@ const INSTRUCTIONS = `ProfitPad CRM: records (contacts, companies, deals, ticket
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
 Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.
 Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.`;
+
+// for connections whose user's roles let them read the knowledge base
+const KNOWLEDGE_INSTRUCTIONS = `
+The company's knowledge base (its ideal customer profile, revenue, sales team, products, competitors, sales process and more) is in get_knowledge: read it for context before answering questions about the business itself or how it sells.`;
+
+// and for those whose roles let them change it
+const KNOWLEDGE_WRITE_INSTRUCTIONS = `
+You can also add and change knowledge base articles. When the user tells you a lasting fact about their business (a new revenue figure, a change to the sales team, a new competitor), offer to save it there, updating the existing article on that topic rather than adding a new one.`;
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
@@ -110,7 +119,7 @@ const filterGroupsArg = z.array(z.object({
 export function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[], req?: FastifyRequest): McpServer {
   const server = new McpServer(
     { name: 'profitpad-crm', title: 'ProfitPad CRM', version: VERSION, icons, websiteUrl: process.env.UI_URL || undefined },
-    { instructions: INSTRUCTIONS + (p.scopes.has('schema') ? ADMIN_INSTRUCTIONS : '') }
+    { instructions: INSTRUCTIONS + (knowledgeAccess(p) !== 'none' ? KNOWLEDGE_INSTRUCTIONS : '') + (knowledgeAccess(p) === 'edit' ? KNOWLEDGE_WRITE_INSTRUCTIONS : '') + (p.scopes.has('schema') ? ADMIN_INSTRUCTIONS : '') }
   );
   const writeChallenge = requireScopes('read', 'write');
 
@@ -374,6 +383,80 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     requireScope(p, 'read');
     return loadTheme();
   }));
+
+  // ---- knowledge base (knowledge.ts): only for roles that may read it ----
+
+  if (knowledgeAccess(p) !== 'none') server.registerTool('get_knowledge', {
+    title: 'Get knowledge base',
+    description: 'The business\'s knowledge base (Settings, Knowledge base): articles the company wrote about itself, such as its ideal customer profile (ICP), revenue and goals, sales team, products and pricing, competitors and sales process. Read it for context whenever a question is about the business itself, its strategy, who to target or how to sell. With no arguments, returns every article you may read in full. id returns one; query keeps those whose title or text has every word.',
+    inputSchema: z.object({
+      id: z.string().optional().describe('One article\'s id'),
+      query: z.string().optional().describe('Words to look for in titles and text, any case')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ id, query }) => run(async () => {
+    requireScope(p, 'read');
+    if (id) return getArticle(p, id);
+    const results = await listArticles(p, query);
+    return {
+      results: results.map(({ can_edit: _c, can_set_admins_only: _s, ...a }) => a),
+      total: results.length,
+      can_edit: knowledgeAccess(p) === 'edit',
+      ...(results.length === 0 && !query ? { note: 'The knowledge base is empty.' } : {})
+    };
+  }));
+
+  if (knowledgeAccess(p) === 'edit') {
+    const titleArg = z.string().min(1).max(TITLE_MAX).describe('Short heading, e.g. "Ideal customer profile"');
+    const adminsOnlyArg = z.boolean().optional().describe(isAdmin(p)
+      ? 'true: only admins can read it (for figures like revenue that not everyone should see). Default false.'
+      : 'Only admins can set this; leave it out.');
+
+    server.registerTool('create_knowledge_article', {
+      title: 'Add knowledge base article',
+      description: 'Adds an article to the knowledge base. Before adding, call get_knowledge: if an article on the topic exists, change it with update_knowledge_article instead. Write plain text or simple Markdown, with facts stated plainly and dated when they change over time (e.g. "Revenue (Nov 2026): $2.4M ARR").',
+      inputSchema: z.object({
+        title: titleArg,
+        body: z.string().max(BODY_MAX).describe('The article\'s text'),
+        admins_only: adminsOnlyArg
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      scopeChallenge: writeChallenge
+    }, async ({ title, body, admins_only }) => run(async () => {
+      requireScope(p, 'write');
+      return createArticle(p, { title, body, admins_only }, 'mcp');
+    }));
+
+    server.registerTool('update_knowledge_article', {
+      title: 'Update knowledge base article',
+      description: 'Changes a knowledge base article. Change the text one way per call: edits (find-and-replace, best for updating one fact), append (adds to the end) or body (replaces all of it). Every version is kept, and admins can restore an earlier one in Settings, Knowledge base.',
+      inputSchema: z.object({
+        id: z.string().describe('The article\'s id from get_knowledge'),
+        title: titleArg.optional(),
+        edits: z.array(z.object({ old_str: z.string(), new_str: z.string() })).optional()
+          .describe('Applied in order; each old_str must match exactly one place in the current text (copy it from get_knowledge)'),
+        append: z.string().optional().describe('Text added at the end, after a blank line'),
+        body: z.string().max(BODY_MAX).optional().describe('The whole new text'),
+        admins_only: adminsOnlyArg
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+      scopeChallenge: writeChallenge
+    }, async ({ id, ...change }) => run(async () => {
+      requireScope(p, 'write');
+      return updateArticle(p, id, change, 'mcp');
+    }));
+
+    server.registerTool('delete_knowledge_article', {
+      title: 'Delete knowledge base article',
+      description: 'Deletes a knowledge base article and its saved versions, for good. Confirm with the user first.',
+      inputSchema: z.object({ id: z.string().describe('The article\'s id from get_knowledge') }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+      scopeChallenge: writeChallenge
+    }, async ({ id }) => run(async () => {
+      requireScope(p, 'write');
+      return deleteArticle(p, id);
+    }));
+  }
 
   registerEmailTools(server, p);
   if (p.scopes.has('schema')) registerAdminTools(server, p, req);

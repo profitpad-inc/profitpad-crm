@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { EllipsisVertical, Plus, ShieldCheck, Table2, Trash2, Users, X } from 'lucide-react';
 import { api, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { displayName, initials } from '../lib/display';
+import { displayName } from '../lib/display';
+import { UserAvatar } from '../components/UserAvatar';
 import { SharingRules } from '../components/SharingRules';
 import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
@@ -29,6 +30,7 @@ interface Role {
   description: string | null;
   is_admin: boolean;
   record_access: 'own' | 'team' | 'all';
+  knowledge_access: 'none' | 'read' | 'edit';
   object_permissions: ObjectPermission[];
   assignments: { id: string; user_id: string | null; team_id: string | null }[];
 }
@@ -72,6 +74,12 @@ function ColumnCheck({ label, checked, partial, onChange }: { label: string; che
     </label>
   );
 }
+
+const KNOWLEDGE_ACCESS: { value: Role['knowledge_access']; label: string }[] = [
+  { value: 'none', label: 'No access' },
+  { value: 'read', label: 'Read' },
+  { value: 'edit', label: 'Read and edit (add, change, delete articles)' }
+];
 
 const RECORD_ACCESS: { value: Role['record_access']; label: string }[] = [
   { value: 'own', label: 'Only records they own' },
@@ -225,7 +233,7 @@ export function UserSettings() {
                   <tr key={u.id}>
                     <td className="primary-cell">
                       <span className="person">
-                        <span className="person-avatar">{initials(u.name)}</span>
+                        <UserAvatar userId={u.id} name={u.name} className="person-avatar" />
                         <Link to={`/objects/users/${u.id}`}>{u.name}</Link>
                         {isMe && <span className="muted small">You</span>}
                       </span>
@@ -307,8 +315,8 @@ export function RoleSettings() {
   const { objects } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles } = useAccessData();
   const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ name: string; description: string; is_admin: boolean; record_access: Role['record_access'] }>({
-    name: '', description: '', is_admin: false, record_access: 'all'
+  const [draft, setDraft] = useState<{ name: string; description: string; is_admin: boolean; record_access: Role['record_access']; knowledge_access: Role['knowledge_access'] }>({
+    name: '', description: '', is_admin: false, record_access: 'all', knowledge_access: 'read'
   });
   const [message, setMessage] = useState<string | null>(null);
 
@@ -317,7 +325,7 @@ export function RoleSettings() {
   // unsaved changes to the role's details (permissions and sharing rules save as they change)
   const dirty = selected === 'new'
     ? draft.name.trim() !== '' || draft.description.trim() !== '' || draft.is_admin
-    : !!role && (draft.name !== role.name || draft.description !== (role.description ?? '') || draft.is_admin !== role.is_admin || draft.record_access !== role.record_access);
+    : !!role && (draft.name !== role.name || draft.description !== (role.description ?? '') || draft.is_admin !== role.is_admin || draft.record_access !== role.record_access || draft.knowledge_access !== role.knowledge_access);
 
   // id is a role id or 'new'
   async function pick(id: string, list = roles) {
@@ -331,8 +339,8 @@ export function RoleSettings() {
     setError(null);
     const r = list.find((x) => x.id === id);
     setDraft(r
-      ? { name: r.name, description: r.description ?? '', is_admin: r.is_admin, record_access: r.record_access }
-      : { name: '', description: '', is_admin: false, record_access: 'all' });
+      ? { name: r.name, description: r.description ?? '', is_admin: r.is_admin, record_access: r.record_access, knowledge_access: r.knowledge_access }
+      : { name: '', description: '', is_admin: false, record_access: 'all', knowledge_access: 'read' });
   }
 
   useEffect(() => {
@@ -356,13 +364,13 @@ export function RoleSettings() {
   async function save(e?: FormEvent) {
     e?.preventDefault();
     if (!dirty) return;
-    const body = { name: draft.name.trim(), description: draft.description.trim() || null, is_admin: draft.is_admin, record_access: draft.record_access };
+    const body = { name: draft.name.trim(), description: draft.description.trim() || null, is_admin: draft.is_admin, record_access: draft.record_access, knowledge_access: draft.knowledge_access };
     if (!body.name) return setError('A role needs a name.');
     if (selected === 'new') {
       const created = (await run(() => api<Role>('POST', '/v1/roles', body), 'Role created.')) as Role | undefined;
       if (created) {
         setSelected(created.id);
-        setDraft({ name: created.name, description: created.description ?? '', is_admin: created.is_admin, record_access: created.record_access });
+        setDraft({ name: created.name, description: created.description ?? '', is_admin: created.is_admin, record_access: created.record_access, knowledge_access: created.knowledge_access });
         setMessage('Role created. Now choose which objects it can use.');
       }
     } else if (role) {
@@ -463,6 +471,17 @@ export function RoleSettings() {
                       {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
                     </label>
                   )}
+                  {!draft.is_admin && (
+                    <label className="field">
+                      <span>Knowledge base</span>
+                      <Select value={draft.knowledge_access} onChange={(v) => setDraft({ ...draft, knowledge_access: v as Role['knowledge_access'] })}>
+                        {KNOWLEDGE_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </Select>
+                      <span className="muted small">
+                        Also what their AI agents can do with it over MCP. Articles marked admins only stay with Super Admins.
+                      </span>
+                    </label>
+                  )}
                   {role && (
                     <div className="actions">
                       <button type="button" className="btn ghost danger-text" onClick={remove}><Trash2 size={14} /> Delete role</button>
@@ -478,7 +497,7 @@ export function RoleSettings() {
                   {members.length > 0 && (
                     <div className="member-list">
                       {members.map((m) => (
-                        <span key={m.id} className="person"><span className="person-avatar">{initials(m.name)}</span>{m.name}</span>
+                        <span key={m.id} className="person"><UserAvatar userId={m.id} name={m.name} className="person-avatar" />{m.name}</span>
                       ))}
                     </div>
                   )}
@@ -544,7 +563,7 @@ export function RoleSettings() {
         <SaveBar dirty={dirty} message={message}>
           <button className="btn" disabled={!dirty} onClick={() => {
             if (selected === 'new') { setSelected(null); if (roles.length) load(roles[0].id); return; }
-            if (role) setDraft({ name: role.name, description: role.description ?? '', is_admin: role.is_admin, record_access: role.record_access });
+            if (role) setDraft({ name: role.name, description: role.description ?? '', is_admin: role.is_admin, record_access: role.record_access, knowledge_access: role.knowledge_access });
           }}>{selected === 'new' ? 'Cancel' : 'Discard'}</button>
           <button className="btn primary" disabled={!dirty} onClick={() => void save()}>{selected === 'new' ? 'Create role' : 'Save role'}</button>
         </SaveBar>

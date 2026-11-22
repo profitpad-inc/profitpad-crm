@@ -3,13 +3,14 @@ import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
-import { initials, moreGroups, objectIcon } from '../lib/display';
+import { moreGroups, objectIcon } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { onFrameFocus } from '../lib/frame-focus';
 import { SearchPalette } from './SearchPalette';
 import { BrandMark } from './Logo';
 import { MentionsButton } from './MentionsMenu';
+import { UserAvatar } from './UserAvatar';
 
 const EXPANDED_KEY = 'pcrm.sidebarExpanded';
 
@@ -152,7 +153,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
             </button>
           )}
           <Link to="/settings" className="avatar-btn" title={`${userName} · Settings`}>
-            <span className="avatar">{initials(userName)}</span>
+            <UserAvatar userId={me.user?.id} name={userName} className="avatar" />
             {expanded && <span className="avatar-name">{userName}</span>}
           </Link>
         </div>

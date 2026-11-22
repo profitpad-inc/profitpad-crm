@@ -5,6 +5,7 @@ import { getObject, type ObjectDef, type PropertyDef } from './registry.js';
 import { cleanSlug, createRecord, findIdByUnique, onWrite, updateRecord, upsertProperties } from './records.js';
 import sanitizeHtml from 'sanitize-html';
 import { checkPhone } from './phone.js';
+import { trackingFromUrl } from './form-tracking.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
 
 // Forms (crm.pc_0052): the `definition` property holds the form as JSON.
@@ -478,6 +479,7 @@ export async function applySubmission(
     form_id: meta.form.id,
     submitted_at: new Date().toISOString(),
     page_url: meta.pageUrl,
+    ...trackingFromUrl(meta.pageUrl),
     submission_values: JSON.stringify(values),
     summary: JSON.stringify(summarize(def, values)),
     origin: meta.origin,

@@ -10,7 +10,8 @@ import { useApp, type Themes } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
 import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type ColorMode, type Mode, type Theme, type ThemeKey } from '../lib/theme';
-import { displayName, initials, moreGroups, objectIcon } from '../lib/display';
+import { displayName, moreGroups, objectIcon } from '../lib/display';
+import { UserAvatar, refreshUserPhotos } from '../components/UserAvatar';
 import { navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { RoleSettings, UserSettings } from './AccessSettings';
@@ -27,8 +28,9 @@ import { CurrencySettings } from './CurrencySettings';
 import { OptionListSettings } from './OptionListSettings';
 import { AddressSettings } from './AddressSettings';
 import { EmailSettings } from './EmailSettings';
-import { ListChecks, Send, Video } from 'lucide-react';
+import { BookOpen, ListChecks, Send, Video } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
+import { KnowledgeSettings } from './KnowledgeSettings';
 import { MailboxSettings } from './MailboxSettings';
 import { MeetingSettings } from './MeetingSettings';
 import { NotificationEmailSettings } from './NotificationEmailSettings';
@@ -41,7 +43,7 @@ import { confirmDialog } from '../components/confirm';
 
 // who sees a page: everyone, signed-in users (not bare API keys), admins, or
 // those who may edit a menu (admins, and users allowed to change their own)
-type Gate = 'all' | 'user' | 'admin' | 'nav';
+type Gate = 'all' | 'user' | 'admin' | 'nav' | 'knowledge';
 interface SettingsLink { path: string; label: string; icon: ReactNode; gate: Gate; element: ReactNode }
 
 const GROUPS: { label: string; links: SettingsLink[] }[] = [
@@ -52,6 +54,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'snippets', label: 'Snippets', icon: <Hash size={16} />, gate: 'all', element: <SnippetSettings /> }
   ] },
   { label: 'Workspace', links: [
+    { path: 'knowledge', label: 'Knowledge base', icon: <BookOpen size={16} />, gate: 'knowledge', element: <KnowledgeSettings /> },
     { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
     { path: 'navigation', label: 'Navigation menus', icon: <PanelLeft size={16} />, gate: 'nav', element: <NavSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
@@ -83,7 +86,8 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
 
 export function Settings() {
   const { me, navCanEdit } = useApp();
-  const allowed = (g: Gate) => g === 'all' || (g === 'user' ? !!me.user : g === 'nav' ? me.is_admin || navCanEdit : me.is_admin);
+  const allowed = (g: Gate) => g === 'all' || (g === 'user' ? !!me.user : g === 'nav' ? me.is_admin || navCanEdit
+    : g === 'knowledge' ? me.is_admin || (me.knowledge_access ?? 'read') !== 'none' : me.is_admin);
   return (
     <div className="page settings">
       <div className="settings-layout">
@@ -124,16 +128,77 @@ const COLOR_MODES: { value: ColorMode; label: string }[] = [
   { value: 'system', label: 'Match device' }
 ];
 
+// Your profile photo: an uploaded one, else the Google or Microsoft account's
+// (copied at each sign-in), else initials. Uploads are cropped to a centred
+// square and shrunk to 256px before sending.
+type PhotoState = { photo_url: string | null; photo_source: 'upload' | 'google' | 'microsoft' | null; account_photo: boolean };
+const PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+async function photoFromFile(file: File): Promise<string> {
+  if (!PHOTO_TYPES.includes(file.type)) throw new Error('Pick a PNG, JPEG, WebP or GIF image.');
+  const url = await readFileAsDataUrl(file);
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Could not open that image.'));
+    img.src = url;
+  });
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const out = Math.max(1, Math.min(256, side));
+  const canvas = document.createElement('canvas');
+  canvas.width = out;
+  canvas.height = out;
+  canvas.getContext('2d')!.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, out, out);
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
+
 function Account() {
-  const { me, signOut, colorMode, setColorMode } = useApp();
+  const { me, signOut, colorMode, setColorMode, toast } = useApp();
   const name = me.user?.name || [me.user?.first_name, me.user?.last_name].filter(Boolean).join(' ') || me.key_name;
+  const [photo, setPhoto] = useState<PhotoState>({
+    photo_url: me.user?.photo_url ?? null, photo_source: me.user?.photo_source ?? null, account_photo: Boolean(me.user?.account_photo)
+  });
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  async function savePhoto(run: () => Promise<PhotoState>, done: string) {
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      setPhoto(await run());
+      await refreshUserPhotos();
+      toast(done);
+    } catch (err) {
+      setPhotoError((err as Error).message);
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+  const pickPhoto = (file: File | undefined) => {
+    if (file) void savePhoto(async () => api<PhotoState>('PUT', '/v1/me/photo', { image: await photoFromFile(file) }), 'Photo saved');
+  };
+  const removePhoto = () => void savePhoto(() => api<PhotoState>('DELETE', '/v1/me/photo'), 'Photo removed');
   return (
     <SettingsPage title="Account" description="Who you are signed in as and what you can do in this portal.">
       <div className="profile">
-        <span className="person-avatar large">{initials(name)}</span>
+        <UserAvatar userId={me.user?.id} name={name} className="person-avatar large" src={me.user ? photo.photo_url ?? null : undefined} />
         <div>
           <h2>{name}</h2>
           {me.user?.email && <div className="muted">{me.user.email}</div>}
+          {me.user && (
+            <div className="profile-photo-actions">
+              <label className={`btn small${photoBusy ? ' disabled' : ''}`}>
+                <Upload size={14} /> {photo.photo_source === 'upload' ? 'Change photo' : 'Upload a photo'}
+                <input type="file" accept={PHOTO_TYPES.join(',')} hidden disabled={photoBusy} onChange={(e) => { pickPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+              </label>
+              {photo.photo_source === 'upload' && (
+                <button className="btn small" disabled={photoBusy} onClick={removePhoto}>
+                  {photo.account_photo ? 'Use my account photo' : 'Remove photo'}
+                </button>
+              )}
+            </div>
+          )}
+          {photoError && <div className="error">{photoError}</div>}
         </div>
       </div>
       <div className="setting-rows">

@@ -35,6 +35,10 @@
 .ed-notices { display: flex; flex-direction: column; gap: 6px; padding: 0 20px 14px; }
 .ed-notices .error { margin: 0; }
 .ed-note { font-size: 13px; color: var(--muted-text); line-height: 1.5; }
+/* the tracking parameters every form keeps (Fields section) */
+.ed-tracking { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0; }
+.ed-tracking > span { flex-basis: 100%; }
+.ed-tracking code { font-size: 12px; }
 
 /* a one-line strip under the header (the form's HTML source) */
 .ed-strip {

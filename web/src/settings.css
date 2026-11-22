@@ -110,6 +110,8 @@
 .profile { display: flex; align-items: center; gap: 16px; }
 .profile h2 { font-size: 18px; }
 .profile .muted { margin-top: 2px; }
+.profile-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.profile-photo-actions .btn.disabled { opacity: .6; pointer-events: none; }
 
 /* Theme */
 .theme-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; align-items: start; max-width: 1180px; }
@@ -369,3 +371,23 @@
 .option-list-member { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; line-height: 18px; }
 .option-list-member .icon-btn { width: 18px; height: 18px; padding: 0; }
 .shared-list-note { margin: 4px 0 0; }
+
+/* Settings → Knowledge base (KnowledgeSettings.tsx) */
+.knowledge-topics { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.knowledge-topics > .muted { display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; }
+.knowledge-list { display: flex; flex-direction: column; gap: 12px; }
+.knowledge-card .card-head { flex-wrap: wrap; }
+.knowledge-card .push-right { margin-left: auto; }
+.knowledge-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.knowledge-meta { margin-top: 8px; }
+.knowledge-history { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 16px; min-height: 280px; }
+.knowledge-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow: auto; }
+.knowledge-history-list button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: var(--radius-sm); color: inherit; cursor: pointer; }
+.knowledge-history-list button:hover { background: var(--surface); }
+.knowledge-history-list button.active { background: var(--surface); box-shadow: inset 2px 0 0 var(--primary); }
+.knowledge-history-view { min-width: 0; max-height: 60vh; overflow: auto; }
+.knowledge-history-view h3 { margin: 0 0 8px; }
+@media (max-width: 767px) {
+  .knowledge-history { grid-template-columns: 1fr; }
+  .knowledge-history-list { max-height: 30vh; }
+}

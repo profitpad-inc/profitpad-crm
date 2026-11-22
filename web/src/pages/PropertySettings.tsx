@@ -39,7 +39,8 @@ const TEXT_DISPLAYS = [
   { value: 'markdown', label: 'Markdown' },
   { value: 'json', label: 'JSON' },
   { value: 'html', label: 'HTML' },
-  { value: 'code', label: 'Code' }
+  { value: 'code', label: 'Code' },
+  { value: 'button', label: 'Button (opens the link)' }
 ];
 
 const NUMBER_FORMATS = [
@@ -403,13 +404,13 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   // the options the chosen type accepts, so switching types never sends stale keys
   function optionsFor(t: PropType): Options {
     const keep: Record<PropType, string[]> = {
-      text: ['single_line', 'display', 'regex', 'regex_scope', 'json_only', 'unique', 'case_insensitive'],
+      text: ['single_line', 'display', 'button_label', 'regex', 'regex_scope', 'json_only', 'unique', 'case_insensitive'],
       number: ['format', 'prefix', 'suffix', 'decimals', 'min', 'max', 'currency_code', 'currency_property'],
       dropdown: ['single_value', 'allow_form_add', 'allow_user_add', 'auto_append_users', 'default_value', 'parent_property', 'color_display'],
       date: [],
       datetime: ['timezone'],
       file: ['max_files'],
-      calculation: ['display', 'format', 'prefix', 'suffix', 'decimals', 'timezone']
+      calculation: ['display', 'button_label', 'format', 'prefix', 'suffix', 'decimals', 'timezone']
     };
     const out: Options = {};
     for (const k of keep[t]) if (k in options) out[k] = options[k];
@@ -417,6 +418,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
     if (!out.regex) delete out.regex_scope;
     if (out.format !== 'currency') delete out.currency_code;
     if (!out.single_value) delete out.parent_property;
+    // a button display only for text and text calculations; its label only with it
+    if (t === 'calculation' && calcType !== 'text' && out.display === 'button') delete out.display;
+    if (out.display !== 'button') delete out.button_label;
     // unset means no colour; a dot is for single-choice dropdowns only
     if (out.color_display === 'none') delete out.color_display;
     if (out.color_display === 'dot' && !out.single_value) out.color_display = 'pill';
@@ -521,6 +525,17 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       setBusy(false);
     }
   }
+
+  // display "button": the value is a link and records show a button opening it
+  const buttonOptions = str('display') === 'button' && (
+    <>
+      <label className="field">
+        <span>Button text (optional, the property's label when empty)</span>
+        <input value={str('button_label')} maxLength={63} onChange={(e) => set('button_label', e.target.value)} placeholder={label || 'Open'} />
+      </label>
+      <p className="muted small">Values must be links (https://, http://, mailto: or tel:). Other values show as plain text.</p>
+    </>
+  );
 
   const numberOptions = (
     <>
@@ -630,6 +645,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
                 {TEXT_DISPLAYS.filter((d) => d.value !== 'plain').map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
               </Select>
             </label>
+            {buttonOptions}
             <div className="checks">
               <label><input type="checkbox" checked={bool('single_line')} onChange={(e) => set('single_line', e.target.checked)} /> Single line (no line breaks)</label>
               <label><input type="checkbox" checked={bool('unique')} onChange={(e) => set('unique', e.target.checked)} /> Unique: no two records may share a value</label>
@@ -688,6 +704,18 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
             </label>
             {property?.calc_last_error && <div className="error">Last run failed: {property.calc_last_error}</div>}
             <CalcTester object={object} sql={calcSql} outputType={calcType} />
+            {calcType === 'text' && !nameProp && (
+              <>
+                <label className="field">
+                  <span>Shown as</span>
+                  <Select value={str('display') === 'button' ? 'button' : ''} onChange={(v) => set('display', v || undefined)}>
+                    <option value="">Text</option>
+                    <option value="button">Button (opens the link)</option>
+                  </Select>
+                </label>
+                {buttonOptions}
+              </>
+            )}
             {calcType === 'number' && numberOptions}
             {calcType === 'datetime' && (
               <label className="field">

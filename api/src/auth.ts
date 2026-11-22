@@ -31,7 +31,15 @@ export interface Permissions {
   recordAccess: 'own' | 'team' | 'all';
   teamUserIds: string[];
   sharingRules: SharingRule[];
+  // the knowledge base (knowledge.ts): the most any of their roles gives
+  knowledgeAccess: KnowledgeAccess;
 }
+
+export type KnowledgeAccess = 'none' | 'read' | 'edit';
+const KNOWLEDGE_RANK: Record<KnowledgeAccess, number> = { none: 0, read: 1, edit: 2 };
+export const strongestKnowledgeAccess = (levels: string[]): KnowledgeAccess =>
+  levels.filter((l): l is KnowledgeAccess => l in KNOWLEDGE_RANK)
+    .reduce<KnowledgeAccess>((best, l) => (KNOWLEDGE_RANK[l] > KNOWLEDGE_RANK[best] ? l : best), 'none');
 
 export interface Principal {
   // null for a browser session (signed in with Google)
@@ -317,7 +325,7 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
   );
   const teamIds: string[] = teams.map((t) => t.team_id);
   const { rows: roles } = await db.query(
-    `select distinct r.id, r.is_admin, r.record_access from auth.roles r
+    `select distinct r.id, r.is_admin, r.record_access, r.knowledge_access from auth.roles r
      join auth.role_assignments a on a.role_id = r.id
      where a.user_id = $1 or a.team_id = any ($2)`,
     [userId, teamIds]
@@ -362,7 +370,8 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
     teamUserIds = [userId, ...rows.map((r) => r.user_id)];
   }
   const sharingRules = recordAccess === 'all' ? [] : await loadSharingRules(db, roleIds);
-  return { objects, propertyAccess, recordAccess, teamUserIds, sharingRules };
+  const knowledgeAccess = strongestKnowledgeAccess(roles.map((r) => r.knowledge_access));
+  return { objects, propertyAccess, recordAccess, teamUserIds, sharingRules, knowledgeAccess };
 }
 
 async function loadSharingRules(db: Db, roleIds: unknown[]): Promise<SharingRule[]> {

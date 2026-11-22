@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { CopyField, EmptyState, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { CopyField, EmptyState, GoogleDelegationLink, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
 
@@ -114,7 +114,7 @@ export function MeetingSettings() {
             </SettingRow>
             <SettingRow
               label={p.provider === 'google' ? 'Extra scopes for Google Admin' : 'Extra application permission'}
-              hint={p.provider === 'google' ? 'Add them to the same client ID under Domain-wide delegation, next to the mail scopes.' : 'Microsoft Graph, Application type, with admin consent. Limit the app to the mailboxes that need it.'}
+              hint={p.provider === 'google' ? <>Add them to the same client ID under <GoogleDelegationLink />, next to the mail scopes.</> : 'Microsoft Graph, Application type, with admin consent. Limit the app to the mailboxes that need it.'}
             >
               <CopyField value={p.calendar_scopes.join(',')} label={p.provider === 'google' ? 'OAuth scopes' : 'Permission'} />
             </SettingRow>
@@ -142,7 +142,7 @@ export function MeetingSettings() {
           <label><input type="checkbox" role="switch" checked={m.recordings_enabled} disabled={busy} onChange={(e) => put('meetings', { recordings_enabled: e.target.checked }, e.target.checked ? 'Recordings and transcripts will be fetched.' : 'Turned off.')} /> {m.recordings_enabled ? 'On' : 'Off'}</label>
         </SettingRow>
         {google && (
-          <SettingRow label="Google Meet" hint={google.ready ? 'Add this scope to the Google client ID under Domain-wide delegation. Recordings are linked from Drive; transcripts are copied.' : 'Set up Google in Settings, Mailboxes first.'}>
+          <SettingRow label="Google Meet" hint={google.ready ? <>Add this scope to the Google client ID under <GoogleDelegationLink />. Recordings are linked from Drive; transcripts are copied.</> : 'Set up Google in Settings, Mailboxes first.'}>
             <CopyField value={google.meeting_scopes.join(',')} label="OAuth scope" />
           </SettingRow>
         )}

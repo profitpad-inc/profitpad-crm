@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageSquare, Pencil, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
-import { initials } from '../lib/display';
+import { UserAvatar } from './UserAvatar';
 import { RichTextBox, type RichTextBoxHandle } from './RichTextBox';
 import { MentionText } from './MentionText';
 import { confirmDialog, alertDialog } from './confirm';
@@ -118,7 +118,7 @@ function CommentItem({ comment: c, highlighted, onSaved, onDelete }: { comment: 
   const name = authorName(c);
   return (
     <li id={`comment-${c.id}`} className={`comment${highlighted ? ' highlighted' : ''}`}>
-      <span className="comment-avatar" aria-hidden>{initials(name)}</span>
+      <UserAvatar userId={c.author?.id} name={name} className="comment-avatar" />
       <div className="comment-main">
         <div className="comment-head">
           {c.author ? <Link to={`/objects/users/${c.author.id}`} className="comment-author">{name}</Link> : <strong className="comment-author">{name}</strong>}

@@ -161,10 +161,35 @@ export function formatValue(p: Property, value: unknown): string {
   return String(value);
 }
 
+// Text and text calculations with display "button": a link value (http,
+// https, mailto, tel) shows as a button labelled button_label (the property's
+// label when unset) that opens it; any other value shows as text.
+const BUTTON_LINK = /^(https?:\/\/\S+|mailto:\S+|tel:\S+)$/i;
+
+export function isButton(p: Property): boolean {
+  return p.options.display === 'button' && (p.type === 'text' || (p.type === 'calculation' && (p.calc_output_type ?? 'text') === 'text'));
+}
+
+function PropertyButton({ p, href }: { p: Property; href: string }) {
+  const label = typeof p.options.button_label === 'string' && p.options.button_label.trim() ? p.options.button_label : p.label;
+  const web = /^https?:/i.test(href);
+  return (
+    <a
+      className="btn small property-button" href={href} title={href}
+      {...(web ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      // the row or cell around it opens the editor on click
+      onClick={(e) => e.stopPropagation()}
+    >
+      {label}
+    </a>
+  );
+}
+
 // formatValue for showing on screen: dropdown choices with a colour get a
 // large dot or a pill, as the property's color_display says ('' when empty,
 // like formatValue).
 export function displayValue(p: Property, value: unknown): ReactNode {
+  if (isButton(p) && typeof value === 'string' && BUTTON_LINK.test(value.trim())) return <PropertyButton p={p} href={value.trim()} />;
   const style = p.options.color_display;
   if (p.type !== 'dropdown' || (style !== 'dot' && style !== 'pill') || value === null || value === undefined || value === '') return formatValue(p, value);
   const values = (Array.isArray(value) ? value : [value]).map(String);

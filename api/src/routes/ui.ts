@@ -7,6 +7,7 @@ import { approveFields, approveUrl, canApprove, requestFields } from '../approva
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
 import { clearAllowedOriginsCache, normalizeOrigin } from './public.js';
 import { ICON_NAMES } from '../icons.js';
+import { photoInfo } from '../user-photos.js';
 
 // Admins: keys with the admin scope, or user keys whose roles include an admin role.
 export function isAdmin(p: Principal): boolean {
@@ -526,7 +527,7 @@ export async function uiRoutes(app: FastifyInstance) {
         'select pc_0000_id as id, name, first_name, last_name, email, email_signature from crm.pc_0000 where pc_0000_id = $1',
         [p.userId]
       );
-      user = rows[0] ?? null;
+      user = rows[0] ? { ...rows[0], ...(await photoInfo(p.userId)) } : null;
     }
     // the Super Admin behind a "Sign in as" session (the UI shows a banner)
     let signedInAsBy = null;
@@ -539,6 +540,8 @@ export async function uiRoutes(app: FastifyInstance) {
       key_name: p.name,
       scopes: [...p.scopes],
       is_admin: isAdmin(p),
+      // the knowledge base (knowledge.ts): none, read or edit
+      knowledge_access: p.permissions === null ? 'edit' : p.permissions.knowledgeAccess,
       user,
       signed_in_as_by: signedInAsBy,
       readable_objects: reg.objects.filter((o) => o.record_status === 'active' && canRead(p, o)).map((o) => o.api_name)

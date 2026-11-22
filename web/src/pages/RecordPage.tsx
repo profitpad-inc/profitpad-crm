@@ -4,7 +4,7 @@ import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Chev
 import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { displayName, displayValue, formatValue, initials, nameProperties, objectIcon, recordName } from '../lib/display';
+import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { useAddressGroups, withAddressesTogether } from '../components/AddressInput';
 import { PublicLinkCard } from '../components/PublicLinkCard';
@@ -1218,7 +1218,6 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                     <Mails size={12} strokeWidth={1.75} aria-hidden /> Thread ({threadSizes.get(threadOf(r))})
                   </button>
                 )}
-                {o === 'emails' && p.logged_via === 'autolog' && <span className="email-autolog-tag">Auto-logged</span>}
                 {(commentCounts[key] ?? 0) > 0 && (
                   <span className="activity-comment-count" title={`${commentCounts[key]} comment${commentCounts[key] === 1 ? '' : 's'}`}>
                     <MessageSquare size={12} strokeWidth={1.75} aria-hidden /> {commentCounts[key]}
@@ -2111,7 +2110,8 @@ function changeBatches(entries: ChangeEntry[]): ChangeEntry[][] {
 // A value as the property shows it elsewhere; JSON only for shapes no property type explains.
 function historyValue(p: Property | undefined, value: unknown): ReactNode {
   if (p) {
-    const shown = displayValue(p, value);
+    // a button property's history shows the link itself
+    const shown = isButton(p) ? formatValue(p, value) : displayValue(p, value);
     if (shown !== '') return shown;
   }
   if (typeof value === 'string' || typeof value === 'number') return String(value);

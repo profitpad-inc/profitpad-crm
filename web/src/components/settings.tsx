@@ -170,3 +170,10 @@ export function CopyField({ value, label, secret }: { value: string; label: stri
     </div>
   );
 }
+
+// Google Admin's Domain-wide delegation page, where the service account's client ID and scopes go.
+export const GOOGLE_DELEGATION_URL = 'https://admin.google.com/ac/owl/domainwidedelegation';
+
+export function GoogleDelegationLink({ children = 'Domain-wide delegation' }: { children?: ReactNode }) {
+  return <a href={GOOGLE_DELEGATION_URL} target="_blank" rel="noreferrer">{children}</a>;
+}

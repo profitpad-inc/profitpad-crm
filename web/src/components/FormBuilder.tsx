@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import { OPERATORS, type Condition, type FieldType } from '../public/conditions';
 import { formHtml, injectFormCss, renderForm } from '../public/form-renderer';
 import { parseQueryParams } from '../public/public-api';
+import { TRACKING_PARAMS } from '../lib/form-tracking';
 import { EmptyState, StatusPill } from './settings';
 import { Select } from './Select';
 import '../editors.css';
@@ -372,6 +373,10 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
                 ))}
               </ol>
             )}
+            <p className="ed-note ed-tracking">
+              <span>Every form also keeps these from the page URL, with no field needed, and saves them on the submission:</span>{' '}
+              {TRACKING_PARAMS.map((p) => <code key={p}>{p}</code>)}
+            </p>
           </section>
 
           <section className="ed-section">

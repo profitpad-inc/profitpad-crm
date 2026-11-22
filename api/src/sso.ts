@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pool } from './db.js';
 import { hashKey, readCookie, readSessionToken, SESSION_COOKIE, SESSION_POLICY, sessionCookie, setCookie, USER_CAN_SIGN_IN } from './auth.js';
 import { logEvent } from './audit.js';
+import { syncAccountPhoto } from './user-photos.js';
 
 // Google & Microsoft sign-in: OpenID Connect authorization code flow with PKCE.
 // The UI sends the browser to /v1/auth/{google|microsoft}/start, the provider
@@ -224,6 +225,7 @@ export async function ssoRoutes(app: FastifyInstance) {
       await refused(req, 'google', found.error, email);
       return toUi(req, reply, '/', found.error);
     }
+    await syncAccountPhoto(req.log, found.userId, 'google', { picture: claims.picture });
     reply.header('set-cookie', [clearFlow, await startSession(req, 'google', found.userId, claims.sub as string, email)]);
     return toUi(req, reply, flow.returnTo);
   });
@@ -237,7 +239,8 @@ export async function ssoRoutes(app: FastifyInstance) {
       redirect_uri: (publicApiUrl || origin(req)) + MS_CALLBACK_PATH,
       response_type: 'code',
       response_mode: 'query',
-      scope: 'openid email profile',
+      // User.Read: the access token reads the account photo from Graph
+      scope: 'openid email profile User.Read',
       state: flow.state,
       nonce: flow.nonce,
       code_challenge: createHash('sha256').update(flow.verifier).digest('base64url'),
@@ -276,6 +279,7 @@ export async function ssoRoutes(app: FastifyInstance) {
     }
 
     let claims: Record<string, unknown>;
+    let msAccessToken: string | null = null;
     try {
       const res = await fetch(msTokenUrl, {
         method: 'POST',
@@ -289,12 +293,13 @@ export async function ssoRoutes(app: FastifyInstance) {
           code_verifier: flow.verifier
         })
       });
-      const body = (await res.json()) as { id_token?: string; error?: string; error_description?: string };
+      const body = (await res.json()) as { id_token?: string; access_token?: string; error?: string; error_description?: string };
       if (!res.ok || !body.id_token) {
         req.log.warn({ status: res.status, error: body.error, description: body.error_description }, 'microsoft token exchange failed');
         return toUi(req, reply, '/', 'microsoft_failed', body.error_description || body.error || `HTTP ${res.status}`);
       }
       claims = idTokenClaims(body.id_token);
+      msAccessToken = body.access_token ?? null;
     } catch (err) {
       req.log.warn({ err }, 'microsoft sign-in failed');
       return toUi(req, reply, '/', 'microsoft_failed', (err as Error).message);
@@ -343,6 +348,7 @@ export async function ssoRoutes(app: FastifyInstance) {
       await refused(req, 'microsoft', found.error, email);
       return toUi(req, reply, '/', found.error);
     }
+    await syncAccountPhoto(req.log, found.userId, 'microsoft', { accessToken: msAccessToken });
     reply.header('set-cookie', [clearFlow, await startSession(req, 'microsoft', found.userId, sub, email)]);
     return toUi(req, reply, flow.returnTo);
   });

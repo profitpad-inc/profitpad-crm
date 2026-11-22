@@ -288,6 +288,13 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // ---- Roles and permissions ---------------------------------------------
+  // knowledge_access: what the role's users may do with the knowledge base
+  // (knowledge.ts): none, read, or edit (add, change and delete articles)
+  const checkKnowledgeAccess = (v: unknown) => {
+    if (v !== undefined && v !== null && !['none', 'read', 'edit'].includes(v as string)) {
+      throw badRequest('knowledge_access must be none, read or edit', { property: 'knowledge_access' });
+    }
+  };
   app.get('/v1/roles', async (req) => {
     requireScope(req.principal!, 'admin');
     const { rows } = await pool.query(
@@ -301,26 +308,29 @@ export async function adminRoutes(app: FastifyInstance) {
     return { results: rows };
   });
 
-  app.post<{ Body: { name: string; description?: string; is_admin?: boolean; record_access?: 'own' | 'team' | 'all' } }>('/v1/roles', async (req, reply) => {
+  app.post<{ Body: { name: string; description?: string; is_admin?: boolean; record_access?: 'own' | 'team' | 'all'; knowledge_access?: string } }>('/v1/roles', async (req, reply) => {
     const p = req.principal!;
     requireAdminChange(p);
     const b = req.body ?? ({} as never);
+    checkKnowledgeAccess(b.knowledge_access);
     const { rows } = await pool.query(
-      'insert into auth.roles (name, description, is_admin, record_access, created_by) values ($1, $2, $3, $4, $5) returning *',
-      [b.name, b.description ?? null, b.is_admin ?? false, b.record_access ?? 'all', p.actor]
+      'insert into auth.roles (name, description, is_admin, record_access, knowledge_access, created_by) values ($1, $2, $3, $4, $5, $6) returning *',
+      [b.name, b.description ?? null, b.is_admin ?? false, b.record_access ?? 'all', b.knowledge_access ?? 'read', p.actor]
     );
-    await logEvent(req, 'role.created', { target: { type: 'role', id: rows[0].id }, details: { name: rows[0].name, is_admin: rows[0].is_admin, record_access: rows[0].record_access } });
+    await logEvent(req, 'role.created', { target: { type: 'role', id: rows[0].id }, details: { name: rows[0].name, is_admin: rows[0].is_admin, record_access: rows[0].record_access, knowledge_access: rows[0].knowledge_access } });
     reply.code(201);
     return rows[0];
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; is_admin?: boolean; record_access?: string } }>('/v1/roles/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; is_admin?: boolean; record_access?: string; knowledge_access?: string } }>('/v1/roles/:id', async (req) => {
     requireAdminChange(req.principal!);
     const b = req.body ?? {};
+    checkKnowledgeAccess(b.knowledge_access);
     const { rows } = await keepingAnAdmin(req.principal!.actor, (client) => client.query(
       `update auth.roles set name = coalesce($2, name), description = coalesce($3, description),
-         is_admin = coalesce($4, is_admin), record_access = coalesce($5, record_access) where id = $1 returning *`,
-      [req.params.id, b.name ?? null, b.description ?? null, b.is_admin ?? null, b.record_access ?? null]
+         is_admin = coalesce($4, is_admin), record_access = coalesce($5, record_access),
+         knowledge_access = coalesce($6, knowledge_access) where id = $1 returning *`,
+      [req.params.id, b.name ?? null, b.description ?? null, b.is_admin ?? null, b.record_access ?? null, b.knowledge_access ?? null]
     ));
     if (rows.length === 0) throw notFound('role not found');
     await logEvent(req, 'role.updated', { target: { type: 'role', id: req.params.id }, details: { changes: b } });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { CopyField, EmptyState, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { CopyField, EmptyState, GoogleDelegationLink, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import { confirmDialog } from '../components/confirm';
@@ -259,7 +259,7 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
       title={PROVIDER_LABEL[p.provider]}
       actions={statusPill(p)}
       description={p.provider === 'google'
-        ? 'A Google Cloud service account with domain-wide delegation sends as each user. In Google Cloud, create a service account and a JSON key. Then in Google Admin, go to Security, API controls, Domain-wide delegation, and add the service account\'s client ID with the scopes below.'
+        ? <>A Google Cloud service account with domain-wide delegation sends as each user. In Google Cloud, create a service account and a JSON key. Then in Google Admin, go to Security, API controls, <GoogleDelegationLink />, and add the service account's client ID with the scopes below.</>
         : 'An app registration in Microsoft Entra sends as each user. Give it the application permissions below (Microsoft Graph, Application permissions, not Delegated), grant admin consent, and create a client secret. Microsoft recommends limiting such an app to the mailboxes that need it (Exchange application access policy or RBAC for Applications).'}
     >
       {error && <div className="error">{error}</div>}
@@ -298,11 +298,11 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
             )}
           </SettingRow>
           {p.google_client_id && (
-            <SettingRow label="Client ID for Google Admin" hint="Add this under Domain-wide delegation.">
+            <SettingRow label="Client ID for Google Admin" hint={<>Add this under <GoogleDelegationLink />.</>}>
               <CopyField value={p.google_client_id} label="Client ID" />
             </SettingRow>
           )}
-          <SettingRow label="Scopes for Google Admin" hint="Paste these, comma separated, when you add the client ID.">
+          <SettingRow label="Scopes for Google Admin" hint={<>Paste these, comma separated, when you add the client ID in <GoogleDelegationLink />.</>}>
             <CopyField value={p.scopes.join(',')} label="OAuth scopes" />
           </SettingRow>
         </>
@@ -387,7 +387,7 @@ function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; 
       {error && <div className="error">{error}</div>}
       {reconsent && (
         <div className="callout warn">
-          {who} will not let the {p.provider === 'google' ? 'service account' : 'app'} read mail yet. Add {p.read_scopes.join(', ')} {p.provider === 'google' ? 'to its scopes under Domain-wide delegation' : 'as an application permission with admin consent'}. Sending is not affected.
+          {who} will not let the {p.provider === 'google' ? 'service account' : 'app'} read mail yet. Add {p.read_scopes.join(', ')} {p.provider === 'google' ? <>to its scopes under <GoogleDelegationLink /></> : 'as an application permission with admin consent'}. Sending is not affected.
         </div>
       )}
       <SettingRow label="Logging" hint={p.ready ? 'Turn off to stop reading every mailbox on this provider.' : 'Set up sending above first.'}>

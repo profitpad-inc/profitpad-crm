@@ -33,7 +33,8 @@ const PUBLIC_PRINCIPAL: Principal = {
     propertyAccess: new Map(),
     recordAccess: 'all',
     teamUserIds: [],
-    sharingRules: []
+    sharingRules: [],
+    knowledgeAccess: 'none'
   }
 };
 
