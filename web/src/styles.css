@@ -116,6 +116,16 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
    fields inside it keep their brand border but drop their own focus ring */
 :is(.prop-row.editing, .edit-panel, .rule-card.editing, td.editing) :is(input:not([type='checkbox']):not([type='radio']), textarea, .select-face, .rich-box):focus { outline: none; box-shadow: none; }
 :is(.prop-row.editing, .edit-panel, .rule-card.editing, td.editing) :is(.rte, .ed-address, .code-editor, .hex-picker-input, .public-link-row.slug):focus-within { outline: none; box-shadow: none; }
+/* a property being edited on a record page is one field in one frame: the
+   field itself has no box of its own and lines up with the label */
+.record-page .prop-row.editing :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, .select-face, .rich-box),
+.record-page .prop-row.editing :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, .select-face, .rich-box):focus {
+  border-color: transparent; background-color: transparent; box-shadow: none; outline: none; padding-left: 0;
+}
+.record-page .prop-row.editing :is(.rte, .code-editor, .ed-address, .hex-picker-input),
+.record-page .prop-row.editing :is(.rte, .code-editor, .ed-address, .hex-picker-input):focus-within {
+  border-color: transparent; background-color: transparent; box-shadow: none; outline: none;
+}
 .muted { color: var(--muted-text); }
 .faint { color: var(--muted-text); opacity: 0.6; }
 .empty-value { font-variant-numeric: normal; } /* "--" placeholder for empty values: tabular figures make Inter's hyphens figure-wide */
