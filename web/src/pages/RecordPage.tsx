@@ -5,7 +5,7 @@ import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, can, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName } from '../lib/display';
-import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
+import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { useAddressGroups, withAddressesTogether } from '../components/AddressInput';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteTemplateCard } from '../components/QuoteTemplateCard';
@@ -623,9 +623,11 @@ export function RecordPage() {
     ...(noRight ? [] : [associationsPanel])
   ] : [];
   const propsInTab = tabbed || viewTabbed || phoneTabbed;
-  // Tablets, editor pages (forms, booking pages, ...): the right column would drop to a row below
-  // both columns, out of reach under the editor's own scroll, so its cards join the left column
-  const cardsLeft = narrow && !mobile && !noRight && !streamOnly && !isUser && !isView;
+  // Tablets, editor pages (forms, booking pages, ...): as on phones, the editor and the linked
+  // records are tabs of the middle column instead of a row below both columns; the properties
+  // stay on the left
+  const editorTabbed = narrow && !mobile && !noRight && !assocTab && !!editorPanel;
+  const editorPanels: StreamPanel[] = editorTabbed && editorPanel ? [{ key: 'editor', ...editorPanel }, associationsPanel] : [];
   const viewPanels: StreamPanel[] = isView ? [
     ...(viewTabbed ? [{ key: 'properties' as const, label: 'Properties', content: propertyList }] : []),
     {
@@ -734,14 +736,13 @@ export function RecordPage() {
           )}
         </div>
         {!phoneTabbed && userRoles}
-        {((assocTab && !tabbed) || cardsLeft) && <div className="record-right record-tab-panel">{ownCards}</div>}
+        {((assocTab && !tabbed) || editorTabbed) && <div className="record-right record-tab-panel">{ownCards}</div>}
         {!propsInTab && propertyList}
-        {cardsLeft && <div className="record-right record-tab-panel record-left-links">{linkCards}</div>}
       </aside>
 
-      {phoneTabbed ? (
+      {phoneTabbed || editorTabbed ? (
         <section className="record-middle">
-          <ActivityStream {...streamProps} panels={phonePanels} bare={!hasStream} />
+          <ActivityStream {...streamProps} panels={phoneTabbed ? phonePanels : editorPanels} bare={!hasStream} />
         </section>
       ) : isUser ? (
         <section className="record-middle">
@@ -787,7 +788,7 @@ export function RecordPage() {
             )}
           </section>
 
-          {!noRight && !assocTab && !phoneTabbed && !cardsLeft && <aside className="record-right">
+          {!noRight && !assocTab && !phoneTabbed && <aside className="record-right">
             {ownCards}
             {linkCards}
           </aside>}
@@ -836,6 +837,18 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   // an HTML property (display "html": email signatures, template bodies) open
   // in the editor with its preview
   const [htmlEditing, setHtmlEditing] = useState<Property | null>(null);
+  const [historyOf, setHistoryOf] = useState<Property | null>(null);
+  async function copyValue(p: Property) {
+    const value = record.properties[p.api_name];
+    // HTML and code copy as written; everything else as it reads on the page
+    const text = typeof value === 'string' && (isHtml(p) || isCode(p)) ? value : formatValue(p, value);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(`${p.label} copied`);
+    } catch {
+      toast('Could not copy');
+    }
+  }
   const addressGroups = useAddressGroups(schema.api_name);
   const shown = schema.properties.filter((p) => p.record_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   // each address group's properties together, in order (Settings → Address autocomplete)
@@ -972,7 +985,17 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}${flash?.has(p.api_name) && editing !== p.api_name ? ' live-changed' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
       <div className="prop-label">
         <span>{p.label}</span>
-        {editable(p) && editing !== p.api_name && <Pencil className="prop-hint" size={12} aria-hidden />}
+        {editing !== p.api_name && (
+          <span className="prop-tools" onClick={(e) => e.stopPropagation()}>
+            {editable(p) && (
+              <button type="button" className="prop-tool" onClick={() => start(p)} aria-label={`Edit ${p.label}`} title="Edit"><Pencil size={13} /></button>
+            )}
+            <button type="button" className="prop-tool" onClick={() => setHistoryOf(p)} aria-label={`History of ${p.label}`} title="History"><History size={13} /></button>
+            {formatValue(p, record.properties[p.api_name]) !== '' && (
+              <button type="button" className="prop-tool" onClick={() => void copyValue(p)} aria-label={`Copy ${p.label}`} title="Copy"><Copy size={13} /></button>
+            )}
+          </span>
+        )}
         {showLock && !editable(p) && p.type !== 'file' && (
           locked(p)
             ? <span className="prop-lock" title={lock!.reason}><Lock size={12} aria-label={lock!.reason} /></span>
@@ -1022,6 +1045,11 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       {section('main', `About this ${schema.label_singular.toLowerCase()}`, main)}
       {extraSections.map((sec) => <Fragment key={sec.key}>{section(sec.key, sec.title, sec.list)}</Fragment>)}
       {section('system', 'System', system)}
+      {historyOf && (
+        <Modal title={`${historyOf.label} history`} onClose={() => setHistoryOf(null)} wide>
+          <ChangeHistory object={schema.api_name} id={record.id} schema={schema} fixedProperty={historyOf.api_name} />
+        </Modal>
+      )}
       {htmlEditing && (
         <HtmlEditorModal
           title={`Edit ${htmlEditing.label.toLowerCase()}`}
@@ -2337,10 +2365,12 @@ function actorName(h: HistoryRow): { name: string; key: boolean } {
   return { name: h.changed_by ?? 'Unknown', key: false };
 }
 
-function ChangeHistory({ object, id, schema }: { object: string; id: string; schema: ObjectDef }) {
+// fixedProperty: the history of that one property only (the property row's
+// history icon), without the property filter
+function ChangeHistory({ object, id, schema, fixedProperty }: { object: string; id: string; schema: ObjectDef; fixedProperty?: string }) {
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [facets, setFacets] = useState<HistoryFacets | null>(null);
-  const [property, setProperty] = useState('');
+  const [property, setProperty] = useState(fixedProperty ?? '');
   const [changedBy, setChangedBy] = useState('');
   const [via, setVia] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -2383,10 +2413,10 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
   }, [history, byCode]);
 
   useEffect(() => {
-    setProperty('');
+    setProperty(fixedProperty ?? '');
     setChangedBy('');
     setVia('');
-  }, [object, id]);
+  }, [object, id, fixedProperty]);
 
   // a live change loads it again in place; other changes start from empty
   const version = useLiveVersion(object, id);
@@ -2410,15 +2440,17 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
   const propLabel = (name: string) => (name === 'association' ? 'Association' : schema.properties.find((p) => p.api_name === name)?.label ?? (name === 'merged_into_id' ? 'Merged into' : name));
   // associations, then merges (on the record kept and the one merged away), then the rest A to Z
   const propRank = (name: string) => (name === 'association' ? 0 : name === 'merged_ids' || name === 'merged_into_id' ? 1 : 2);
-  const filtered = !!(property || changedBy || via);
+  const filtered = !!((property && !fixedProperty) || changedBy || via);
   return (
     <div className="timeline">
       {facets && (
         <div className="field-row history-filters">
-          <Select value={property} onChange={(v) => setProperty(v)} aria-label="Property or association">
-            <option value="">Every property and association</option>
-            {[...facets.properties].sort((a, b) => propRank(a) - propRank(b) || propLabel(a).localeCompare(propLabel(b))).map((name) => <option key={name} value={name}>{propLabel(name)}</option>)}
-          </Select>
+          {!fixedProperty && (
+            <Select value={property} onChange={(v) => setProperty(v)} aria-label="Property or association">
+              <option value="">Every property and association</option>
+              {[...facets.properties].sort((a, b) => propRank(a) - propRank(b) || propLabel(a).localeCompare(propLabel(b))).map((name) => <option key={name} value={name}>{propLabel(name)}</option>)}
+            </Select>
+          )}
           <Select value={changedBy} onChange={(v) => setChangedBy(v)} aria-label="Changed by">
             <option value="">Anyone</option>
             {facets.changed_by.map((c) => <option key={c.changed_by} value={c.changed_by}>{c.name ? `${c.name} (${c.changed_by})` : c.changed_by}</option>)}
@@ -2435,9 +2467,9 @@ function ChangeHistory({ object, id, schema }: { object: string; id: string; sch
         <EmptyState
           icon={<History size={18} />}
           title={filtered ? 'No changes match these filters' : 'No changes recorded'}
-          action={filtered ? <button className="btn small" onClick={() => { setProperty(''); setChangedBy(''); setVia(''); }}>Clear filters</button> : undefined}
+          action={filtered ? <button className="btn small" onClick={() => { setProperty(fixedProperty ?? ''); setChangedBy(''); setVia(''); }}>Clear filters</button> : undefined}
         >
-          {filtered ? 'Try another property, person or way.' : 'Edits to properties and associations show here, with who made them and how.'}
+          {filtered ? (fixedProperty ? 'Try another person or way.' : 'Try another property, person or way.') : fixedProperty ? 'Edits to this property show here, with who made them and how.' : 'Edits to properties and associations show here, with who made them and how.'}
         </EmptyState>
       )}
       {history && byDay(changeBatches(changeEntries(history)), (b) => b[0].row.changed_at).map(({ day, rows: batches }) => (

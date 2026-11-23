@@ -58,6 +58,8 @@ const FORMATS: { value: Format | ''; label: string }[] = [
 ];
 const OBJECT_LABEL: Record<FormObject, string> = { contacts: 'Contact', tickets: 'Ticket' };
 
+const textOf = (v: unknown) => (typeof v === 'string' ? v : '');
+
 function parse(raw: unknown): Definition {
   try {
     const d = typeof raw === 'string' ? JSON.parse(raw) : null;
@@ -120,6 +122,12 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const html = typeof record.properties.html === 'string' && record.properties.html.trim() ? record.properties.html : null;
+  // the public name and description show above the form on its page; saved with the form
+  const savedPublicName = textOf(record.properties.public_name);
+  const savedDescription = textOf(record.properties.description);
+  const [publicName, setPublicName] = useState(savedPublicName);
+  const [description, setDescription] = useState(savedDescription);
+  const pageDirty = publicName !== savedPublicName || description !== savedDescription;
 
   useEffect(() => {
     Promise.all([getSchema('contacts'), getSchema('tickets')])
@@ -130,6 +138,17 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   useEffect(() => {
     if (!dirty) setDef(parse(record.properties.definition));
   }, [record.properties.definition, dirty]);
+  // edits made elsewhere (the properties on the left) come in when there is nothing unsaved here
+  useEffect(() => {
+    if (!dirty) { setPublicName(savedPublicName); setDescription(savedDescription); }
+  }, [savedPublicName, savedDescription, dirty]);
+
+  function changePage(next: { publicName?: string; description?: string }) {
+    if (next.publicName !== undefined) setPublicName(next.publicName);
+    if (next.description !== undefined) setDescription(next.description);
+    setDirty(true);
+    setSaved(null);
+  }
 
   const propOf = (f: Field) => (f.property ? schemas[f.property.object]?.properties.find((p) => p.api_name === f.property!.name) : undefined);
   // dropdown property options come from the property itself
@@ -219,11 +238,17 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
     setSaving(true);
     setError(null);
     try {
+      let base = record;
+      if (pageDirty) {
+        base = await api<CrmRecord>('PATCH', `/v1/objects/forms/${record.id}`, {
+          properties: { public_name: publicName.trim() || null, description: description.trim() || null }
+        });
+      }
       const out = await api<Definition>('PUT', `/v1/objects/forms/${record.id}/definition`, def);
       setDef(parse(JSON.stringify(out)));
       setDirty(false);
       setSaved('Saved. The live form uses it right away.');
-      onSaved({ ...record, properties: { ...record.properties, definition: JSON.stringify(out) } });
+      onSaved({ ...base, properties: { ...base.properties, definition: JSON.stringify(out) } });
       toast('Saved');
     } catch (err) {
       setError((err as Error).message);
@@ -306,11 +331,33 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
         <Preview
           def={{ ...def, fields: def.fields.filter((f) => !f.hidden).map(resolved) }}
           html={dirty ? null : html}
-          name={String(record.properties.public_name || record.properties.name || '')}
+          name={publicName.trim() || textOf(record.properties.name)}
+          description={description.trim() || null}
           primary={theme.primary}
         />
       ) : (
         <>
+          <section className="ed-section">
+            <div className="ed-section-head">
+              <h3>Page</h3>
+              <p>Shown above the form on its page. Embedded forms show the fields only.</p>
+            </div>
+            <div className="ed-rows">
+              <div className="ed-row">
+                <label className="ed-row-label" htmlFor="fb-public-name">Public name</label>
+                <div className="ed-row-control">
+                  <input id="fb-public-name" value={publicName} placeholder={textOf(record.properties.name)} onChange={(e) => changePage({ publicName: e.target.value })} />
+                </div>
+              </div>
+              <div className="ed-row">
+                <label className="ed-row-label" htmlFor="fb-description">Description</label>
+                <div className="ed-row-control">
+                  <textarea id="fb-description" rows={3} value={description} onChange={(e) => changePage({ description: e.target.value })} />
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="ed-section">
             <div className="ed-section-head">
               <h3>Fields</h3>
@@ -731,7 +778,7 @@ function ConditionRow({ condition: c, sources, onChange, onRemove }: {
 
 // The real renderer, fed the unsaved definition (and the saved custom HTML,
 // when the definition has no unsaved changes); nothing is sent.
-function Preview({ def, html, name, primary }: { def: Definition; html: string | null; name: string; primary: string }) {
+function Preview({ def, html, name, description, primary }: { def: Definition; html: string | null; name: string; description: string | null; primary: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState('');
   const [run, setRun] = useState(0);
@@ -759,6 +806,7 @@ function Preview({ def, html, name, primary }: { def: Definition; html: string |
         <div className="ed-browser-page">
           <div className="ed-browser-form">
             <h3 className="ed-preview-title">{name}</h3>
+            {description && <p className="ed-preview-intro">{description}</p>}
             <div ref={ref} />
           </div>
         </div>

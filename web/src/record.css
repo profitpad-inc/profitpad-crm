@@ -64,9 +64,18 @@
 .record-page .prop-row.editable:hover { background: var(--surface); }
 .record-page .prop-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; margin-bottom: 3px; }
 .record-page .prop-label > span { min-width: 0; overflow-wrap: anywhere; }
-.prop-hint, .prop-lock { flex: none; margin-left: auto; color: var(--muted-text); }
-.prop-hint { opacity: 0; }
-.prop-row.editable:hover .prop-hint { opacity: 1; }
+.prop-tools, .prop-lock { flex: none; margin-left: auto; color: var(--muted-text); }
+.prop-tools + .prop-lock { margin-left: 0; }
+/* edit, history and copy, top right of a property on hover */
+.prop-tools { display: inline-flex; align-items: center; gap: 2px; margin-block: -4px; opacity: 0; transition: opacity 80ms; }
+.prop-row:hover .prop-tools, .prop-tools:focus-within { opacity: 1; }
+.prop-tool {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted-text); cursor: pointer;
+}
+.prop-tool:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+.prop-tool:focus-visible { outline-offset: 0; }
+@media (hover: none) { .prop-tools { opacity: 0.7; } }
 .prop-lock { opacity: 0.55; }
 .record-page .prop-value { font-size: 14px; line-height: 1.45; }
 .record-page .prop-value .empty-value { opacity: 0.7; }
@@ -802,10 +811,7 @@ a.comment-author:hover { color: var(--primary); }
   .record-page.tabbed .record-middle { padding-top: 12px; }
 }
 /* tablets: the object's own cards (public link, signing, ...) sit above the properties in the left column */
-.record-page .record-left > .record-tab-panel { margin-bottom: 12px; }
-/* tablets, editor pages (forms, booking pages, ...): the association cards follow the properties */
-.record-page .record-left > .record-left-links { margin: 12px 0 0; }
-/* tablets: the Associations tab has room for cards side by side, as the row under the columns had */
+.record-page .record-left > .record-tab-panel { margin-bottom: 12px; }/* tablets: the Associations tab has room for cards side by side, as the row under the columns had */
 @media (min-width: 768px) {
   .record-page .stream-panel > .record-right.record-tab-panel {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: start;

@@ -164,6 +164,9 @@
 .ed-browser-page { padding: 32px 24px 40px; display: flex; justify-content: center; }
 .ed-browser-form { width: 100%; max-width: 560px; min-width: 0; }
 .ed-preview-title { margin: 0 0 16px; font-size: 18px; letter-spacing: -0.015em; }
+/* the form's description, as on its public page (public/form.ts) */
+.ed-preview-title:has(+ .ed-preview-intro) { margin-bottom: 6px; }
+.ed-preview-intro { margin: 0 0 16px; max-width: 60ch; color: var(--muted-text); }
 .ed-preview > .ed-hint { padding: 0 4px; }
 
 /* save footer for a section with its own Save (booking hours): sticks to the bottom only while there is something
