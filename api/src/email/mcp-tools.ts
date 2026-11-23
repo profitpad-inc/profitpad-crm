@@ -16,7 +16,7 @@ import { sendEmail } from './send.js';
 // sends a campaign: only an admin in the CRM can do that.
 
 export const EMAIL_GUIDE = `Email campaigns (object email_campaigns) send a marketing email to contacts through Postmark.
-- The email is an email_templates record linked to the campaign (associate, at most one): subject and body (HTML, Liquid).
+- The email is an email_templates record associated with the campaign (at most one): subject and body (HTML, Liquid).
 - Liquid fields: {{ contact.first_name }}, {{ contact.email }} or any contact property, {{ company.name }}, {{ owner.first_name }}, {{ owner.email }}, {{ campaign.name }}, {{ today }}. Use filters like {{ contact.first_name | default: "there" }}.
 - Write email HTML for mail apps: tables for layout, inline styles, a 600px wide main column, web fonts with fallbacks, images as https links (no scripts, forms or CSS files).
 - The CRM adds a footer with the sender's mailing address and an unsubscribe link, unless the body places {{ unsubscribe_url }} itself.

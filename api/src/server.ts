@@ -26,6 +26,7 @@ import { mcpOriginAllowed, mcpRoutes } from './mcp.js';
 import { BRAND_PATHS, brandRoutes } from './brand.js';
 import { fileRoutes, startFileSweeper } from './files.js';
 import { viewRoutes } from './routes/views.js';
+import { landingPageRoutes } from './routes/landing-pages.js';
 import { packageRoutes } from './routes/packages.js';
 import { optionListRoutes } from './routes/option-lists.js';
 import { templateRoutes } from './routes/templates.js';
@@ -124,7 +125,8 @@ export async function buildApp() {
     // pages that post forms to themselves set their own (oauth.ts): under
     // no-referrer browsers send Origin: null on a form POST
     if (!reply.hasHeader('referrer-policy')) reply.header('referrer-policy', 'no-referrer');
-    reply.header('x-frame-options', 'DENY');
+    // landing pages may be framed (their own frame-ancestors, landing-pages.ts)
+    if (!req.url.startsWith('/v1/public/pages/')) reply.header('x-frame-options', 'DENY');
     const type = String(reply.getHeader('content-type') ?? '');
     // stored files set their own (a sandbox, files.ts)
     if (!reply.hasHeader('content-security-policy')) {
@@ -234,6 +236,7 @@ export async function buildApp() {
   await app.register(brandRoutes);
   await app.register(fileRoutes);
   await app.register(viewRoutes);
+  await app.register(landingPageRoutes);
   await app.register(packageRoutes);
   await app.register(optionListRoutes);
   await app.register(templateRoutes);

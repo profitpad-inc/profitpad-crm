@@ -15,6 +15,11 @@ import bookCss from './book.css?inline';
 // the submission. Forms are rendered in the page itself (not an iframe) so the
 // API can see which website sent them.
 //
+// Inside the CRM's own landing pages (/p/page/) the page's helper script loads
+// this file and passes its API calls to the page shell, which makes them on
+// the CRM's origin (api/src/landing-pages.ts, src/public/page.ts), so those
+// need no Embed domains entry.
+//
 // Booking pages work the same way, on the same list of websites:
 //
 //   <div data-pcrm-booking="intro-call"></div>

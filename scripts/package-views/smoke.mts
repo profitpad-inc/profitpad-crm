@@ -54,7 +54,7 @@ const kit: any = {
   useViewSetting: (_k: string, fallback: any) => [fallback, () => {}, { loading: false, error: null }],
   useFileUrl: () => ({ url: null, type: null, loading: true, error: null }),
   setParams: async () => {}, navigate: async () => {}, openRecord: async () => {}, openUrl: async () => ({ opened: false }),
-  createRecord: async () => ({ id: 'x' }), updateRecord: async () => ({ id: 'x' }), linkRecords: async () => {}, editLineItems: async () => ({ saved: false }), callIntegration: async () => ({}),
+  createRecord: async () => ({ id: 'x' }), updateRecord: async () => ({ id: 'x' }), associateRecords: async () => {}, linkRecords: async () => {}, editLineItems: async () => ({ saved: false }), callIntegration: async () => ({}),
   uploadFile: async () => ({}), getFiles: async () => [], getFileBlob: async () => null, openFile: async () => {}, getViewSettings: async () => ({}), setViewSetting: async () => ({}),
   formatNumber: (v: any, d?: number) => (v == null || v === '' || Number.isNaN(Number(v)) ? '--' : Number(v).toLocaleString('en-US', { maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? 0 })),
   formatMoney: (v: any, c = 'USD') => (v == null || v === '' ? '--' : new Intl.NumberFormat('en-US', { style: 'currency', currency: c }).format(Number(v))),

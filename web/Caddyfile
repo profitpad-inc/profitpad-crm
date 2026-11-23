@@ -111,7 +111,7 @@ http://web {
 
 	# The UI. HTML is checked on every load so a new release shows up at once;
 	# the hashed files under /assets/ never change. Public pages (/p/quote/,
-	# /p/form/, /p/book/, /p/invoice/, /p/unsubscribe/) are folders with their
+	# /p/form/, /p/book/, /p/invoice/, /p/unsubscribe/, /p/page/) are folders with their
 	# own index.html; every other path is the app, which routes in the browser.
 	handle /assets/* {
 		root * /srv/www

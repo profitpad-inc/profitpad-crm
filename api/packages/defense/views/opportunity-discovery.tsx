@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Page, Grid, Stack, Row, Card, Table, Tabs, Badge, Button, Select, TextInput, TextArea, Loading, ErrorBox, Empty, RecordLink, ExternalLink,
-  useQuery, useParams, setParams, useMe, createRecord, updateRecord, linkRecords, openRecord, navigate,
+  useQuery, useParams, setParams, useMe, createRecord, updateRecord, associateRecords, openRecord, navigate,
   formatDate, formatNumber, type BadgeTone
 } from '@pcrm/view'
 
@@ -86,7 +86,7 @@ function LeadPanel({ lead, firstStage, onChanged }) {
         solicitation_number: lead.solicitation_number || null, description: lead.summary || null,
         ...(lead.due_date ? { next_step: 'Respond to the solicitation', next_step_date: lead.due_date } : {})
       })
-      await linkRecords('leads', lead.id, 'deals', deal.id)
+      await associateRecords('leads', lead.id, 'deals', deal.id)
       await updateRecord('leads', lead.id, { status: 'pushed_to_pipeline' })
       onChanged()
       openRecord('deals', deal.id)

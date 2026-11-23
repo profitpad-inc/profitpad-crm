@@ -16,6 +16,7 @@ import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
 import { FilePreviewModal, FileViewer } from '../components/FileViewer';
 import { ViewCode } from '../components/ViewCode';
+import { LandingPageCard } from '../components/LandingPageCard';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
 import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
 import { EmailTracking } from '../components/EmailTracking';
@@ -303,8 +304,24 @@ export function RecordPage() {
     setRecord(r);
   }
 
-  // a new record with the same values, without unique ones (the API leaves them out)
+  // a new record with the same values, without unique ones (the API leaves them
+  // out); the confirmation lists the filled ones that stay behind
   async function cloneRecord() {
+    if (!schema || !record) return;
+    const skipped = schema.properties.filter((p) => p.record_status === 'active'
+      && (p.options.unique === true || (object === 'contacts' && p.api_name === 'additional_emails'))
+      && formatValue(p, record.properties[p.api_name]) !== '');
+    const singular = schema.label_singular.toLowerCase();
+    const details = skipped.length > 0 && (
+      <>
+        <p className="muted">These are unique, so they won{'\u2019'}t be copied:</p>
+        <ul>
+          {skipped.map((p) => <li key={p.api_name}><span>{p.label}</span><span>{formatValue(p, record.properties[p.api_name])}</span></li>)}
+        </ul>
+      </>
+    );
+    if (!(await confirmDialog(`Creates a new ${singular} with the same property values as ${recordName(record)}. Associations, activities and files are not copied.`,
+      { title: `Clone this ${singular}?`, confirmLabel: 'Clone', details }))) return;
     try {
       const copy = await api<CrmRecord>('POST', `/v1/objects/${object}/${id}/clone`);
       toast('Cloned');
@@ -453,7 +470,7 @@ export function RecordPage() {
   // views link to nothing, so they have no association cards: no right column.
   // Document templates use the room for their code and preview (the quotes
   // using a template show it on their own pages).
-  const noRight = isUser || object === 'views' || object === 'document_templates';
+  const noRight = isUser || object === 'views' || object === 'document_templates' || object === 'landing_pages';
   // the pages with an activity stream get the name card's Call, Email, Note and Task buttons
   const hasStream = !isUser && !['forms', 'booking_pages', 'form_submissions'].includes(object);
   const composable = hasStream && record.record_status !== 'archived'
@@ -556,8 +573,8 @@ export function RecordPage() {
                   : (
                     <>
                       {canSignInAs && <button onClick={() => { close(); signInAs(); }}>Sign in as {name}</button>}
-                      {canClone && <button onClick={() => { close(); void cloneRecord(); }}>Clone</button>}
                       {canMerge && <button onClick={() => { close(); setMerging(true); }}>Merge</button>}
+                      {canClone && <button onClick={() => { close(); void cloneRecord(); }}>Clone</button>}
                       {archiveLocked
                         ? <button disabled title="Only a Super Admin can archive an accepted or signed quote">Archive (Super Admin only)</button>
                         : <button className="danger" onClick={() => { close(); archive(); }}>Archive</button>}
@@ -639,6 +656,13 @@ export function RecordPage() {
                 {record.record_status === 'archived'
                   ? <div className="card muted">Archived templates are not used. Restore this template to see its code.</div>
                   : <DocumentTemplateEditor record={record} onChanged={setRecord} />}
+                <ActivityStream {...streamProps} />
+              </>
+            ) : object === 'landing_pages' ? (
+              <>
+                {record.record_status === 'archived'
+                  ? <div className="card muted">Archived landing pages do not open. Restore this page to see it.</div>
+                  : <LandingPageCard record={record} onChanged={setRecord} />}
                 <ActivityStream {...streamProps} />
               </>
             ) : object === 'views' ? (

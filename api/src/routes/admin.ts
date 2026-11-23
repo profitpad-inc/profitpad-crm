@@ -9,10 +9,11 @@ import {
   type Principal, type Scope, type SharingRule
 } from '../auth.js';
 import { logEvent } from '../audit.js';
-import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord, upsertProperties } from '../records.js';
+import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord, upsertProperties, visibleProperties } from '../records.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
-import { matchDropdownInput } from '../values.js';
+import { importValueProblem, matchDropdownInput } from '../values.js';
 import { compileFilterGroups, type FilterGroup, type SearchRequest } from '../search.js';
+import { isAdmin } from './ui.js';
 
 const SCOPES: Scope[] = ['read', 'write', 'schema', 'admin'];
 
@@ -512,11 +513,16 @@ export async function adminRoutes(app: FastifyInstance) {
   // (matchOption). new_options adds choices first (Settings permission, or a
   // dropdown that allows added choices). Upserts create a record when the
   // row has no value to match on. dry_run checks every row and saves nothing.
+  // History (migration 0120): batch_id ties the calls of one import together,
+  // file_name is shown in the history, row_numbers (one per row) puts the
+  // sheet's row numbers in errors, and skipped lists rows the caller left out
+  // with why, so the history counts them.
   app.post<{
     Params: { object: string };
     Body: {
       format: 'csv' | 'json'; data: string | Record<string, unknown>[]; mode?: 'create' | 'upsert'; id_property?: string;
       new_options?: Record<string, { api_value: string; label: string }[]>; dry_run?: boolean;
+      batch_id?: string; file_name?: string; row_numbers?: number[]; skipped?: { row: number; error: string }[];
     };
   }>('/v1/objects/:object/imports', async (req, reply) => {
     const p = req.principal!;
@@ -539,6 +545,21 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     if (rows.length === 0 || rows.length > 10000) throw badRequest('imports take 1 to 10000 rows');
     if (!rows.every((r) => r && typeof r === 'object' && !Array.isArray(r))) throw badRequest('every row must be an object');
+    if (b.batch_id !== undefined && (typeof b.batch_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(b.batch_id))) {
+      throw badRequest('batch_id must be a UUID');
+    }
+    if (b.file_name !== undefined && b.file_name !== null && (typeof b.file_name !== 'string' || b.file_name.length > 255)) {
+      throw badRequest('file_name must be text of at most 255 characters');
+    }
+    const isRowNo = (n: unknown) => Number.isInteger(n) && (n as number) > 0;
+    if (b.row_numbers !== undefined && (!Array.isArray(b.row_numbers) || b.row_numbers.length !== rows.length || !b.row_numbers.every(isRowNo))) {
+      throw badRequest('row_numbers must have one positive whole number per row');
+    }
+    const skipped = b.skipped ?? [];
+    if (!Array.isArray(skipped) || skipped.length > 10000 || !skipped.every((x) => x && isRowNo(x.row) && typeof x.error === 'string')) {
+      throw badRequest('skipped must be a list of { row, error }');
+    }
+    const rowNo = (i: number) => b.row_numbers?.[i] ?? i + 1;
 
     // choices to add, checked before anything is written
     const additions: { prop: PropertyDef; api_value: string; label: string }[] = [];
@@ -593,13 +614,14 @@ export async function adminRoutes(app: FastifyInstance) {
     let jobId: string | null = null;
     if (!dryRun) {
       const { rows: jobRows } = await pool.query(
-        `insert into meta.import_jobs (object_type_id, status, format, match_property, total_rows, created_by)
-         values ($1, 'running', $2, $3, $4, $5) returning id`,
-        [obj.object_type_id, b.format, b.id_property ?? null, rows.length, p.actor]
+        `insert into meta.import_jobs (object_type_id, status, format, match_property, total_rows, created_by, batch_id, file_name, mode, user_id)
+         values ($1, 'running', $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+        [obj.object_type_id, b.format, b.id_property ?? null, rows.length + skipped.length, p.actor, b.batch_id ?? null,
+          b.file_name?.trim() || null, mode, p.userId]
       );
       jobId = jobRows[0].id;
     }
-    const counts = { created: 0, updated: 0, errors: [] as { row: number; error: string }[] };
+    const counts = { created: 0, updated: 0, errors: skipped.map((x) => ({ row: x.row, error: x.error.slice(0, 1000) })) };
     const DRY_RUN_DONE = new Error('dry run');
     await withTx({ principal: p, source: 'import' }, async (c) => {
       for (const a of additions) {
@@ -621,7 +643,7 @@ export async function adminRoutes(app: FastifyInstance) {
           await c.query('release savepoint import_row');
         } catch (err) {
           await c.query('rollback to savepoint import_row');
-          counts.errors.push({ row: i + 1, error: (err as Error).message });
+          counts.errors.push({ row: rowNo(i), error: (err as Error).message });
         }
       }
       if (dryRun) throw DRY_RUN_DONE;
@@ -641,7 +663,7 @@ export async function adminRoutes(app: FastifyInstance) {
     });
     if (dryRun) {
       return {
-        dry_run: true, total_rows: rows.length, created_rows: counts.created, updated_rows: counts.updated,
+        dry_run: true, total_rows: rows.length + skipped.length, created_rows: counts.created, updated_rows: counts.updated,
         error_rows: counts.errors.length, errors: counts.errors.slice(0, 1000)
       };
     }
@@ -651,32 +673,189 @@ export async function adminRoutes(app: FastifyInstance) {
     return job[0];
   });
 
+  // ---- Import and export history (migration 0120) ----------------------------
+  // Everyone sees their own (by user, else by actor for a userless key);
+  // Super Admins see everyone's. Newest first; page with before=<id>.
+  const historyScope = (p: Principal, params: unknown[], alias: string): string => {
+    if (isAdmin(p)) return 'true';
+    if (p.userId) { params.push(p.userId); return `${alias}.user_id = $${params.length}`; }
+    params.push(p.actor);
+    return `${alias}.created_by = $${params.length}`;
+  };
+  const objectLabels = async () => new Map((await getRegistry()).objects.map((o) => [o.object_type_id, { api_name: o.api_name, label: o.label_plural }]));
+  const pageArgs = (q: { limit?: string; before?: string }) => ({
+    limit: Math.min(Math.max(Number(q.limit ?? 50) || 50, 1), 200),
+    before: q.before && /^\d+$/.test(q.before) ? q.before : null
+  });
+
+  // one entry per import: the calls sharing a batch_id are added up
+  app.get<{ Querystring: { limit?: string; before?: string; object?: string } }>('/v1/imports', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const { limit, before } = pageArgs(req.query);
+    const params: unknown[] = [];
+    const where = [historyScope(p, params, 'j')];
+    if (req.query.object) { params.push((await getObject(req.query.object)).object_type_id); where.push(`j.object_type_id = $${params.length}`); }
+    const having = before ? (params.push(before), `having min(j.id) < $${params.length}`) : '';
+    params.push(limit);
+    const { rows } = await pool.query(
+      `select coalesce(j.batch_id::text, j.id::text) as key, min(j.id)::text as id, min(j.object_type_id) as object_type_id,
+              max(j.file_name) as file_name, max(j.mode) as mode, max(j.match_property) as match_property, max(j.format) as format,
+              sum(j.total_rows)::int as total_rows, sum(j.created_rows)::int as created_rows, sum(j.updated_rows)::int as updated_rows,
+              sum(j.error_rows)::int as error_rows, count(*)::int as batches,
+              case when bool_or(j.status = 'failed') then 'failed' when bool_or(j.status in ('pending', 'running')) then 'running' else 'completed' end as status,
+              min(j.created_at) as started_at, max(j.finished_at) as finished_at, min(j.created_by) as created_by, min(j.user_id) as user_id,
+              min(u.name) as user_name
+       from meta.import_jobs j
+       left join crm.pc_0000 u on u.pc_0000_id = j.user_id
+       where ${where.join(' and ')}
+       group by 1 ${having}
+       order by min(j.id) desc limit $${params.length}`,
+      params
+    );
+    const labels = await objectLabels();
+    const results = rows.map((r) => ({ ...r, object: labels.get(r.object_type_id) ?? null }));
+    return { results, next: rows.length === limit ? rows[rows.length - 1].id : null };
+  });
+
+  // one import's problems, from all of its calls, by row
+  app.get<{ Params: { key: string } }>('/v1/imports/history/:key/errors', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const key = req.params.key;
+    const params: unknown[] = [];
+    const scope = historyScope(p, params, 'j');
+    let match: string;
+    if (/^\d+$/.test(key)) { params.push(key); match = `j.id = $${params.length} and j.batch_id is null`; }
+    else if (/^[0-9a-f-]{36}$/i.test(key)) { params.push(key); match = `j.batch_id = $${params.length}::uuid`; }
+    else throw notFound('import not found');
+    const { rows } = await pool.query(`select j.errors from meta.import_jobs j where ${match} and ${scope} order by j.id`, params);
+    if (rows.length === 0) throw notFound('import not found');
+    const errors = rows.flatMap((r) => (Array.isArray(r.errors) ? r.errors : [])) as { row?: number; error: string }[];
+    errors.sort((a, b) => (a.row ?? 0) - (b.row ?? 0));
+    return { results: errors };
+  });
+
+  app.get<{ Querystring: { limit?: string; before?: string; object?: string } }>('/v1/exports', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const { limit, before } = pageArgs(req.query);
+    const params: unknown[] = [];
+    const where = [historyScope(p, params, 'x')];
+    if (req.query.object) { params.push((await getObject(req.query.object)).object_type_id); where.push(`x.object_type_id = $${params.length}`); }
+    if (before) { params.push(before); where.push(`x.id < $${params.length}`); }
+    params.push(limit);
+    const { rows } = await pool.query(
+      `select x.id::text as id, x.object_type_id, x.format, x.row_count, x.filters, x.created_by, x.user_id, x.created_at, u.name as user_name
+       from meta.export_jobs x
+       left join crm.pc_0000 u on u.pc_0000_id = x.user_id
+       where ${where.join(' and ')}
+       order by x.id desc limit $${params.length}`,
+      params
+    );
+    const labels = await objectLabels();
+    const results = rows.map((r) => ({ ...r, object: labels.get(r.object_type_id) ?? null }));
+    return { results, next: rows.length === limit ? rows[rows.length - 1].id : null };
+  });
+
   app.get<{ Params: { id: string } }>('/v1/imports/:id', async (req) => {
-    requireScope(req.principal!, 'read');
-    const { rows } = await pool.query('select * from meta.import_jobs where id = $1', [req.params.id]);
+    const p = req.principal!;
+    requireScope(p, 'read');
+    if (!/^\d+$/.test(req.params.id)) throw notFound('import not found');
+    const params: unknown[] = [req.params.id];
+    const { rows } = await pool.query(`select * from meta.import_jobs j where j.id = $1 and ${historyScope(p, params, 'j')}`, params);
     if (rows.length === 0) throw notFound('import not found');
     return rows[0];
   });
 
-  // Same body as search; returns CSV of up to 10000 records.
-  app.post<{ Params: { object: string }; Body: SearchRequest }>('/v1/objects/:object/exports', async (req, reply) => {
-    requireScope(req.principal!, 'read');
+  // Imports check text cells right after columns are matched, before the dry
+  // run: { values: { property: [distinct cell texts] } } gives back the ones
+  // a write would refuse (phone numbers, patterns) or that are not usable
+  // email addresses (importValueProblem), with why.
+  app.post<{ Params: { object: string }; Body: { values?: Record<string, unknown> } }>('/v1/objects/:object/imports/check-values', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
-    const body = { ...(req.body ?? {}), limit: 200 };
-    const records: Record<string, unknown>[] = [];
-    let after: string | undefined;
-    do {
-      const page = await searchRecords(obj, req.principal!, { ...body, after });
-      for (const r of page.results) {
-        const flat: Record<string, unknown> = { id: r.id };
-        for (const [k, v] of Object.entries(r.properties)) flat[k] = Array.isArray(v) ? v.join(';') : v;
-        records.push(flat);
+    requireObjectPermission(p, obj, 'create');
+    const input = req.body?.values;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw badRequest('values must be an object of property: [texts]');
+    let total = 0;
+    const problems: Record<string, { value: string; error: string }[]> = {};
+    for (const [name, list] of Object.entries(input)) {
+      const prop = getProperty(obj, name);
+      if (!prop || prop.record_status !== 'active') throw badRequest(`unknown property "${name}"`);
+      if (!Array.isArray(list) || !list.every((v) => typeof v === 'string')) throw badRequest(`values.${name} must be a list of texts`);
+      total += list.length;
+      if (total > 50000) throw badRequest('check at most 50000 values at once');
+      if (prop.type !== 'text') continue;
+      const values = [...new Set(list as string[])].filter((v) => v.trim() !== '');
+      const out: { value: string; error: string }[] = [];
+      const pattern = typeof prop.options.regex === 'string' && prop.options.regex_scope !== 'ui' ? prop.options.regex : null;
+      const failsPattern = new Set<string>();
+      if (pattern && values.length > 0) {
+        const { rows } = await pool.query<{ v: string }>('select v from unnest($1::text[]) v where not (v ~ $2)', [values, pattern]);
+        for (const r of rows) failsPattern.add(r.v);
       }
-      after = page.next ?? undefined;
-    } while (after && records.length < 10000);
-    await logEvent(req, 'export', { target: { type: 'object', id: obj.api_name }, details: { rows: records.length, filters: req.body ?? {} } });
-    reply.header('content-type', 'text/csv; charset=utf-8');
-    reply.header('content-disposition', `attachment; filename="${obj.api_name}.csv"`);
-    return toCsv(records, { header: true });
+      for (const v of values) {
+        const why = failsPattern.has(v) ? `doesn't match the required pattern ${pattern}` : importValueProblem(prop, v);
+        if (why) out.push({ value: v, error: why });
+      }
+      if (out.length > 0) problems[prop.api_name] = out;
+    }
+    return { problems };
   });
+
+  // Same body as search; returns CSV of up to 10000 records: Record ID, then
+  // the requested properties in order (all the caller can see when none).
+  // headings: "labels" uses property labels and dropdown choice labels (an
+  // import matches both); "names" (the default) internal names and values.
+  // format: "xlsx" returns the rows as JSON ({ columns, rows }) for the UI to
+  // write the workbook with typed cells; the export is logged as xlsx.
+  app.post<{ Params: { object: string }; Body: SearchRequest & { headings?: 'names' | 'labels'; format?: 'csv' | 'xlsx' } }>(
+    '/v1/objects/:object/exports',
+    async (req, reply) => {
+      const p = req.principal!;
+      requireScope(p, 'read');
+      const obj = await objectForWrite(req.params.object);
+      const { headings = 'names', format = 'csv', ...search } = req.body ?? {};
+      if (headings !== 'names' && headings !== 'labels') throw badRequest('headings must be names or labels');
+      if (format !== 'csv' && format !== 'xlsx') throw badRequest('format must be csv or xlsx');
+      const labels = headings === 'labels';
+      const props = visibleProperties(obj, p, search.properties).filter((x) => x.api_name !== obj.id_column);
+      const body: SearchRequest = { ...search, properties: props.map((x) => x.api_name), associations: undefined, limit: 200 };
+      const cell = (prop: PropertyDef, v: unknown): unknown => {
+        if (v === null || v === undefined) return null;
+        const list = Array.isArray(v) ? v : null;
+        if (prop.type === 'dropdown' || (prop.type === 'actor' && prop.dropdown_options.length > 0)) {
+          const vals = (list ?? [v]).map((x) => (labels ? prop.dropdown_options.find((o) => o.api_value === x)?.label ?? String(x) : String(x)));
+          return vals.join(labels ? '; ' : ';');
+        }
+        return list ? list.join(';') : v;
+      };
+      const rows: unknown[][] = [];
+      let after: string | undefined;
+      do {
+        const page = await searchRecords(obj, p, { ...body, after });
+        for (const r of page.results) rows.push([r.id, ...props.map((x) => cell(x, r.properties[x.api_name]))]);
+        after = page.next ?? undefined;
+      } while (after && rows.length < 10000);
+      const audit = { ...search, headings, format };
+      await logEvent(req, 'export', { target: { type: 'object', id: obj.api_name }, details: { rows: rows.length, filters: audit } });
+      await pool.query(
+        'insert into meta.export_jobs (object_type_id, format, row_count, filters, created_by, user_id) values ($1, $2, $3, $4, $5, $6)',
+        [obj.object_type_id, format, rows.length, JSON.stringify(audit), p.actor, p.userId]
+      );
+      const columns = [
+        { key: 'id', label: labels ? 'Record ID' : 'id', type: 'text' },
+        ...props.map((x) => ({
+          key: x.api_name, label: labels ? x.label : x.api_name,
+          type: x.type === 'calculation' ? x.calc_output_type ?? 'text' : ['number', 'date', 'datetime'].includes(x.type) ? x.type : 'text'
+        }))
+      ];
+      if (format === 'xlsx') return { columns, rows };
+      reply.header('content-type', 'text/csv; charset=utf-8');
+      reply.header('content-disposition', `attachment; filename="${obj.api_name}.csv"`);
+      return toCsv([columns.map((c) => c.label), ...rows.map((r) => r.map((v) => (v === null ? '' : v)))]);
+    }
+  );
 }

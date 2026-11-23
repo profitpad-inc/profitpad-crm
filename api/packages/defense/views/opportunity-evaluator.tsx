@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Page, Grid, Stack, Row, Card, Badge, Button, Select, TextInput, TextArea, Tabs, Loading, ErrorBox, Empty, FileInput, FileLink,
-  useQuery, useParams, setParams, createRecord, updateRecord, linkRecords, uploadFile, openRecord, callIntegration,
+  useQuery, useParams, setParams, createRecord, updateRecord, associateRecords, uploadFile, openRecord, callIntegration,
   formatDateTime, type BadgeTone
 } from '@pcrm/view'
 
@@ -361,7 +361,7 @@ function Evaluator({ params, products, cats }) {
       let id = leadId
       if (id) {
         await updateRecord('leads', id, props)
-        await linkRecords('leads', id, 'products', product.id)
+        await associateRecords('leads', id, 'products', product.id)
       } else {
         const name = `${product.name} fit: ${file ? file.name.replace(/\.[^.]+$/, '') : 'requirements'} (${new Date().toISOString().slice(0, 10)})`
         id = (await createRecord('leads', { name, source: 'manual', status: 'pushed_to_evaluator', ...props }, [{ object: 'products', id: product.id }])).id

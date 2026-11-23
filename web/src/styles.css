@@ -250,6 +250,12 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .modal.wide { width: min(860px, calc(100vw - 32px)); }
 .modal.discard-confirm { margin-top: 48px; }
 .confirm-message { margin: 0; white-space: pre-line; line-height: 1.5; }
+.confirm-details { margin-top: 12px; }
+.confirm-details .muted { margin: 0 0 6px; font-size: 13px; }
+.confirm-details ul { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.confirm-details li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; font-size: 13px; }
+.confirm-details li + li { border-top: 1px solid var(--border); }
+.confirm-details li > span:last-child { color: var(--muted-text); overflow-wrap: anywhere; text-align: right; min-width: 0; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
 .modal-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .modal-body { padding: 16px 20px; overflow: auto; }
@@ -740,6 +746,8 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .view-integration .error-text { color: var(--danger); }
 /* line numbers: each line is a grid row; unwrapped, the number column sticks to the left while scrolling sideways */
 .view-code.numbered { padding: 10px 12px 10px 0; }
+/* landing page record page (LandingPageCard): the page as visitors see it */
+.landing-preview { display: block; width: 100%; height: 640px; max-height: 75vh; margin-top: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
 .view-code.numbered .code-line { display: grid; grid-template-columns: calc(var(--gutter) + 24px) auto; }
 .view-code.numbered .ln { position: sticky; left: 0; padding: 0 12px; text-align: right; color: var(--muted-text); background: var(--surface); user-select: none; }
 .view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 24px) minmax(0, 1fr); }

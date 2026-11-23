@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PropertyDef } from './registry.js';
-import { matchDropdownInput, matchOption, toDb } from './values.js';
+import { importValueProblem, matchDropdownInput, matchOption, toDb } from './values.js';
 
 const fileProp = (options: Record<string, unknown>): PropertyDef => ({
   pc_0002_id: 'p1', object_type_id: 'pc_0100', api_name: 'receipt', label: 'Receipt', description: null, type: 'file', options,
@@ -47,4 +47,18 @@ test('matchDropdownInput: single and multi values', () => {
   assert.deepEqual(matchDropdownInput(dropdown(false), 'Lead; Marketing qualified lead;'), ['lead', 'mql']);
   assert.deepEqual(matchDropdownInput(dropdown(false), ['lead', 'Other']), ['lead', 'Other']);
   assert.equal(matchDropdownInput(dropdown(true), 5), 5);
+});
+
+const textProp = (api_name: string, options: Record<string, unknown> = {}): PropertyDef => ({ api_name, label: api_name, type: 'text', options, dropdown_options: [] } as unknown as PropertyDef);
+
+test('importValueProblem: emails and phone numbers', () => {
+  assert.equal(importValueProblem(textProp('email'), 'ada@example.com'), null);
+  assert.equal(importValueProblem(textProp('email'), 'ada@example'), 'not a valid email address');
+  assert.equal(importValueProblem(textProp('payer_email'), 'ada example.com'), 'not a valid email address');
+  assert.equal(importValueProblem(textProp('additional_emails'), 'a@x.com; b@x.com'), null);
+  assert.equal(importValueProblem(textProp('additional_emails'), 'a@x.com, nope'), 'not valid email addresses: nope');
+  assert.equal(importValueProblem(textProp('emailer'), 'whatever'), null);
+  assert.match(importValueProblem(textProp('phone', { display: 'phone' }), '504222032') ?? '', /^not a valid phone number/);
+  assert.equal(importValueProblem(textProp('phone', { display: 'phone' }), '+1 888 234 5678'), null);
+  assert.equal(importValueProblem(textProp('phone', { display: 'phone' }), '  '), null);
 });

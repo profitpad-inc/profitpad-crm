@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Page, Grid, Stack, Row, Card, Stat, Table, Tabs, Badge, Button, Select, TextInput, Loading, ErrorBox, Empty, RecordLink, FileInput, FileImage,
-  useQuery, useParams, setParams, useMe, createRecord, updateRecord, linkRecords, openRecord, navigate,
+  useQuery, useParams, setParams, useMe, createRecord, updateRecord, associateRecords, openRecord, navigate,
   formatMoney, formatDate, formatDateTime, formatNumber, type BadgeTone
 } from '@pcrm/view'
 
@@ -129,7 +129,7 @@ function Expenses({ params, me, expenses }) {
         name: form.name.trim(), amount, expense_date: form.date || null, category: form.category || null, vendor: form.vendor.trim() || null,
         ...(receipt ? { receipt: [receipt.id] } : {}), ...(me.id ? { owner: me.id } : {})
       })
-      if (form.trip) await linkRecords('expenses', made.id, 'trips', form.trip)
+      if (form.trip) await associateRecords('expenses', made.id, 'trips', form.trip)
       setForm((f) => ({ ...f, name: '', amount: '', vendor: '' }))
       setReceipt(null)
       expenses.refresh()

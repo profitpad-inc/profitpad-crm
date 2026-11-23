@@ -26,6 +26,10 @@ import {
 import { CHECK_SIZES_TEXT, FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { renderView } from './render.js';
 import {
+  createPage, htmlExcerpt, listPages, loadPage, pageOut, pageSummary, publishPage, renderPage, revertPageDraft, savePageDraft, unpublishPage,
+  type LandingPageRow
+} from './landing-pages.js';
+import {
   createTemplate, listTemplates, loadTemplate, pdfPages, publishTemplate, renderPdf, renderScreenshot, renderTemplate, requireTemplateAdmin,
   sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut
 } from './templates.js';
@@ -37,8 +41,12 @@ import {
 } from './integrations.js';
 import { describeCreateForm, listConfig } from './native-ui.js';
 import { approvalNextStep } from './approval.js';
+import { clientRequestIdArg, once } from './request-ids.js';
 import { isAdmin, loadFormsSettings, loadTheme, saveEmbedDomains, THEME_KEYS, updateTheme } from './routes/ui.js';
-import { BODY_MAX, createArticle, deleteArticle, getArticle, knowledgeAccess, listArticles, TITLE_MAX, updateArticle } from './knowledge.js';
+import {
+  articleSummary, BODY_MAX, createArticle, deleteArticle, getArticle, knowledgeAccess, listArticles, missingTopics, searchWords, sensitiveWarning, snippet, TITLE_MAX,
+  updateArticle
+} from './knowledge.js';
 import {
   createEndpoint, createSubscription, deleteEndpoint, deleteSubscription, EVENT_NAMES, EVENTS, listDeliveries, listEndpoints, testEndpoint,
   updateEndpoint, updateSubscription
@@ -57,22 +65,30 @@ const VERSION = process.env.PCRM_VERSION || '0.1.0';
 const allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 export const mcpOriginAllowed = (origin: string | undefined) => !origin || allowedOrigins.includes(origin);
 
-const INSTRUCTIONS = `ProfitPad CRM: records (contacts, companies, deals, tickets, quotes and more) organised as objects with typed properties, linked to each other by associations.
+// What this install calls itself, so a client connected to two CRMs (say the
+// main business and a division) can tell them apart: MCP_SERVER_NAME is the
+// server's title and the first words of its instructions, MCP_SERVER_ABOUT one
+// sentence on what data it holds and when to use it rather than the other.
+const SERVER_TITLE = process.env.MCP_SERVER_NAME?.trim() || 'ProfitPad CRM';
+const SERVER_ABOUT = process.env.MCP_SERVER_ABOUT?.trim();
+
+const INSTRUCTIONS = `${SERVER_TITLE}: records (contacts, companies, deals, tickets, quotes and more) organised as objects with typed properties, connected to each other by associations.${SERVER_ABOUT ? `\n${SERVER_ABOUT}` : ''}
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
 Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.
-Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.`;
+Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.
+Create tools take an optional client_request_id: send one, and if an answer is lost (502, timeout, dropped connection) call again with the same id and input to get the first result instead of a duplicate. Calls may run in parallel.`;
 
 // for connections whose user's roles let them read the knowledge base
 const KNOWLEDGE_INSTRUCTIONS = `
-The company's knowledge base (its ideal customer profile, revenue, sales team, products, competitors, sales process and more) is in get_knowledge: read it for context before answering questions about the business itself or how it sells.`;
+The company's knowledge base (its ideal customer profile, revenue, sales team, products, competitors, sales process and more) is in get_knowledge: read it for context before answering questions about the business itself or how it sells. With no arguments it lists the articles without their text; read the ones you need by id.`;
 
 // and for those whose roles let them change it
 const KNOWLEDGE_WRITE_INSTRUCTIONS = `
-You can also add and change knowledge base articles. When the user tells you a lasting fact about their business (a new revenue figure, a change to the sales team, a new competitor), offer to save it there, updating the existing article on that topic rather than adding a new one.`;
+You can also add and change knowledge base articles. When the user tells you a lasting fact about their business (a new revenue figure, a change to the sales team, a new competitor), offer to save it there, updating the existing article on that topic rather than adding a new one. get_knowledge lists missing_topics, standard topics with no article yet.`;
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. You can also build landing pages: public pages written in plain HTML (website pages, demo pages for clients) at /p/page/#slug, anyone can open them once published; read view_guide topic landing_pages first, and never publish one unless the user asked. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -118,22 +134,31 @@ const filterGroupsArg = z.array(z.object({
 
 export function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[], req?: FastifyRequest): McpServer {
   const server = new McpServer(
-    { name: 'profitpad-crm', title: 'ProfitPad CRM', version: VERSION, icons, websiteUrl: process.env.UI_URL || undefined },
+    { name: 'profitpad-crm', title: SERVER_TITLE, version: VERSION, icons, websiteUrl: process.env.UI_URL || undefined },
     { instructions: INSTRUCTIONS + (knowledgeAccess(p) !== 'none' ? KNOWLEDGE_INSTRUCTIONS : '') + (knowledgeAccess(p) === 'edit' ? KNOWLEDGE_WRITE_INSTRUCTIONS : '') + (p.scopes.has('schema') ? ADMIN_INSTRUCTIONS : '') }
   );
   const writeChallenge = requireScopes('read', 'write');
 
   server.registerTool('list_objects', {
     title: 'List objects',
-    description: 'Lists the CRM objects (record types) you can read: api_name, label, description, aliases (other names people use, e.g. "booking forms" for booking_pages), and which objects each can be linked to: links_to "all" (every other object), links_to_all_except [...], or a links_to list; linked_only_by_crm lists links only a CRM feature makes (meaning: made by that feature, see view_guide topic schema). describe_object has the full list.',
+    description: 'Lists the CRM objects (record types) you can read: api_name, label, description, aliases (other names people use, e.g. "booking forms" for booking_pages), and which objects each can have associations with: associates_with "all" (every other object), associates_with_all_except [...], or an associates_with list; associated_only_by_crm lists associations only a CRM feature makes (meaning: made by that feature, see view_guide topic schema). describe_object has the full list. The last entry, knowledge_base, is the company knowledge base when you may read it: not an object, read it with get_knowledge.',
     annotations: { readOnlyHint: true }
   }, async () => run(async () => {
     requireScope(p, 'read');
     const reg = await getRegistry();
     const readable = reg.objects.filter((o) => o.record_status === 'active' && canRead(p, o));
     const names = new Set(readable.map((o) => o.api_name));
-    // links in the shorter form: most objects link to nearly everything
-    return readable.map((o) => {
+    // the knowledge base is not an object, but people ask for it by these names
+    const knowledge = knowledgeAccess(p) === 'none' ? [] : [{
+      api_name: 'knowledge_base',
+      label: 'Knowledge base',
+      description: 'Not a record object (no search_records, describe_object or create_record): articles the business wrote about itself (ideal customer profile, revenue, sales team, products and pricing, competitors, sales process). Read them with get_knowledge' +
+        (knowledgeAccess(p) === 'edit' ? '; add and change them with create_knowledge_article(s), update_knowledge_article and delete_knowledge_article.' : '.'),
+      aliases: ['knowledge base', 'KB', 'wiki', 'company info', 'playbook', 'company knowledge'],
+      tools: ['get_knowledge', ...(knowledgeAccess(p) === 'edit' ? ['create_knowledge_article', 'create_knowledge_articles', 'update_knowledge_article', 'delete_knowledge_article'] : [])]
+    }];
+    // associations in the shorter form: most objects can be associated with nearly everything
+    return [...readable.map((o) => {
       const linked = o.links_to.filter((n) => names.has(n) && n !== o.api_name);
       const others = readable.filter((x) => x.api_name !== o.api_name).map((x) => x.api_name);
       const not = others.filter((n) => !linked.includes(n));
@@ -144,10 +169,10 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
         description: o.description,
         ...(o.icon ? { icon: o.icon } : {}),
         ...(o.aliases.length ? { aliases: o.aliases } : {}),
-        ...(linked.length === 0 ? { links_to: [] } : not.length === 0 ? { links_to: 'all' } : not.length < linked.length ? { links_to_all_except: not } : { links_to: linked }),
-        ...(system.length ? { linked_only_by_crm: system } : {})
+        ...(linked.length === 0 ? { associates_with: [] } : not.length === 0 ? { associates_with: 'all' } : not.length < linked.length ? { associates_with_all_except: not } : { associates_with: linked }),
+        ...(system.length ? { associated_only_by_crm: system } : {})
       };
-    });
+    }), ...knowledge];
   }));
 
   server.registerTool('describe_object', {
@@ -175,9 +200,9 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
       label: obj.label_singular,
       ...(obj.icon ? { icon: obj.icon } : {}),
       ...(obj.aliases.length ? { aliases: obj.aliases } : {}),
-      links_to: obj.links_to,
-      ...(obj.system_links.length ? { linked_only_by_crm: obj.system_links } : {}),
-      ...(FEATURE_LINKS[obj.api_name] ? { how_linked: FEATURE_LINKS[obj.api_name] } : {}),
+      associates_with: obj.links_to,
+      ...(obj.system_links.length ? { associated_only_by_crm: obj.system_links } : {}),
+      ...(FEATURE_LINKS[obj.api_name] ? { how_associated: FEATURE_LINKS[obj.api_name] } : {}),
       search_properties: obj.search_properties,
       properties: visibleProperties(obj, p).map((pr) => ({
         api_name: pr.api_name,
@@ -241,12 +266,12 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   server.registerTool('get_record', {
     title: 'Get record',
-    description: 'Gets one record by id, optionally with the ids and labels of linked records of other objects.',
+    description: 'Gets one record by id, optionally with the ids and labels of its associated records of other objects.',
     inputSchema: z.object({
       object: objectArg,
       id: z.string(),
       properties: propertiesArg,
-      associations: z.array(z.string()).optional().describe('Object api_names whose linked records to include')
+      associations: z.array(z.string()).optional().describe('Object api_names whose associated records to include')
     }),
     annotations: { readOnlyHint: true }
   }, async ({ object, id, properties, associations }) => run(async () => {
@@ -258,22 +283,25 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   server.registerTool('create_record', {
     title: 'Create record',
-    description: 'Creates a record. properties maps property api_names to values (dropdowns take option values). Optionally links it to existing records. A new user (object users) needs first_name, last_name, email and role (a role id or name; admins only).',
+    description: 'Creates a record. properties maps property api_names to values (dropdowns take option values). Optionally associates it with existing records. A new user (object users) needs first_name, last_name, email and role (a role id or name; admins only).',
     inputSchema: z.object({
       object: objectArg,
       properties: z.record(z.string(), z.unknown()),
-      associations: z.array(z.object({ object: z.string(), id: z.string(), label_id: z.string().optional() })).optional()
+      associations: z.array(z.object({ object: z.string(), id: z.string(), label_id: z.string().optional() })).optional(),
+      client_request_id: clientRequestIdArg
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: writeChallenge
-  }, async ({ object, properties, associations }) => run(async () => {
+  }, async ({ object, properties, associations, client_request_id }) => run(async () => {
     requireScope(p, 'write');
     const obj = await objectForWrite(object);
     if (obj.api_name === 'comments') throw badRequest('comments are added with add_comment, on the record they are about');
     for (const a of associations ?? []) await assertUserLinkable(obj, a.object);
-    const id = await withTx({ principal: p, source: 'mcp' }, (c) => createRecord(c, obj, p, properties, associations ?? []));
-    await drainCalcQueue();
-    return getRecord(pool, obj, p, id);
+    return once(p, 'create_record', client_request_id, async () => {
+      const id = await withTx({ principal: p, source: 'mcp' }, (c) => createRecord(c, obj, p, properties, associations ?? []));
+      await drainCalcQueue();
+      return getRecord(pool, obj, p, id);
+    });
   }));
 
   server.registerTool('update_record', {
@@ -290,9 +318,9 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     return getRecord(pool, obj, p, id);
   }));
 
-  server.registerTool('link_records', {
-    title: 'Link records',
-    description: 'Links two existing records (an association), e.g. a contact to a company. label_id is optional.',
+  server.registerTool('associate_records', {
+    title: 'Associate records',
+    description: 'Associates two existing records, e.g. a contact with a company. label_id (the association label) is optional.',
     inputSchema: z.object({ object: objectArg, id: z.string(), to_object: z.string(), to_id: z.string(), label_id: z.string().optional() }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     scopeChallenge: writeChallenge
@@ -344,12 +372,12 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
   server.registerTool('add_comment', {
     title: 'Add comment',
     description: 'Adds a comment to a call, email, note, task, form submission, marketing event participation or object event occurrence, as the signed-in user. Can tag people (see body).',
-    inputSchema: z.object({ object: commentTargetArg, id: z.string().describe('The record\'s id'), body: commentBodyArg }),
+    inputSchema: z.object({ object: commentTargetArg, id: z.string().describe('The record\'s id'), body: commentBodyArg, client_request_id: clientRequestIdArg }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: writeChallenge
-  }, async ({ object, id, body }) => run(async () => {
+  }, async ({ object, id, body, client_request_id }) => run(async () => {
     requireScope(p, 'write');
-    return addComment(p, object, id, body, 'mcp');
+    return once(p, 'add_comment', client_request_id, () => addComment(p, object, id, body, 'mcp'));
   }));
 
   server.registerTool('update_comment', {
@@ -390,48 +418,80 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   if (knowledgeAccess(p) !== 'none') server.registerTool('get_knowledge', {
     title: 'Get knowledge base',
-    description: 'The business\'s knowledge base (Settings, Knowledge base): articles the company wrote about itself, such as its ideal customer profile (ICP), revenue and goals, sales team, products and pricing, competitors and sales process. Read it for context whenever a question is about the business itself, its strategy, who to target or how to sell. With no arguments, returns every article you may read in full. id returns one; query keeps those whose title or text has every word.',
+    description: 'The business\'s knowledge base (Settings, Knowledge base; also called KB, wiki, company info or playbook): articles the company wrote about itself, such as its ideal customer profile (ICP), revenue and goals, sales team, products and pricing, competitors and sales process. Read it for context whenever a question is about the business itself, its strategy, who to target or how to sell. With no arguments, lists the articles without their text (id, title, admins_only, updated_at, length) and missing_topics, the standard topics no article title covers yet; then call with id to read one in full. query keeps those whose title or text has every word, each with a snippet around the match. full: true returns every listed article\'s whole text.',
     inputSchema: z.object({
-      id: z.string().optional().describe('One article\'s id'),
-      query: z.string().optional().describe('Words to look for in titles and text, any case')
+      id: z.string().optional().describe('One article\'s id: returns its whole text'),
+      query: z.string().optional().describe('Words to look for in titles and text, any case'),
+      full: z.boolean().optional().describe('true: return the whole text of every listed article (can be long)')
     }),
     annotations: { readOnlyHint: true }
-  }, async ({ id, query }) => run(async () => {
+  }, async ({ id, query, full }) => run(async () => {
     requireScope(p, 'read');
     if (id) return getArticle(p, id);
     const results = await listArticles(p, query);
+    const words = searchWords(query);
     return {
-      results: results.map(({ can_edit: _c, can_set_admins_only: _s, ...a }) => a),
+      results: results.map(({ can_edit: _c, can_set_admins_only: _s, ...a }) => full ? a
+        : { ...articleSummary(a), ...(words.length ? { snippet: snippet(a.body, words) } : {}) }),
       total: results.length,
+      ...(query ? {} : { missing_topics: missingTopics(results.map((a) => a.title)) }),
       can_edit: knowledgeAccess(p) === 'edit',
-      ...(results.length === 0 && !query ? { note: 'The knowledge base is empty.' } : {})
+      ...(results.length === 0 && !query ? { note: 'The knowledge base is empty.' } : {}),
+      ...(!full && results.length ? { next_step: 'Call get_knowledge with an id to read an article\'s text.' } : {})
     };
   }));
 
   if (knowledgeAccess(p) === 'edit') {
     const titleArg = z.string().min(1).max(TITLE_MAX).describe('Short heading, e.g. "Ideal customer profile"');
     const adminsOnlyArg = z.boolean().optional().describe(isAdmin(p)
-      ? 'true: only admins can read it (for figures like revenue that not everyone should see). Default false.'
+      ? 'true: only admins can read it (for figures like revenue, client details or pricing that not everyone should see). Default false, so everyone who can read the knowledge base sees it.'
       : 'Only admins can set this; leave it out.');
+    const articleArgs = { title: titleArg, body: z.string().max(BODY_MAX).describe('The article\'s text'), admins_only: adminsOnlyArg };
+    // what a save returns: the article without its text, plus a warning when
+    // an article everyone can read looks like it has figures
+    const saved = (a: Awaited<ReturnType<typeof createArticle>>) => {
+      const warning = sensitiveWarning(p, a);
+      return { ...articleSummary(a), ...(warning ? { warning } : {}) };
+    };
+    const addOne = (a: { title: string; body: string; admins_only?: boolean; client_request_id?: string }) =>
+      once(p, 'create_knowledge_article', a.client_request_id, async () =>
+        saved(await createArticle(p, { title: a.title, body: a.body, admins_only: a.admins_only }, 'mcp')));
 
     server.registerTool('create_knowledge_article', {
       title: 'Add knowledge base article',
-      description: 'Adds an article to the knowledge base. Before adding, call get_knowledge: if an article on the topic exists, change it with update_knowledge_article instead. Write plain text or simple Markdown, with facts stated plainly and dated when they change over time (e.g. "Revenue (Nov 2026): $2.4M ARR").',
-      inputSchema: z.object({
-        title: titleArg,
-        body: z.string().max(BODY_MAX).describe('The article\'s text'),
-        admins_only: adminsOnlyArg
-      }),
+      description: 'Adds an article to the knowledge base. Before adding, call get_knowledge: if an article on the topic exists, change it with update_knowledge_article instead. Write plain text or simple Markdown, with facts stated plainly and dated when they change over time (e.g. "Revenue (Nov 2026): $2.4M ARR"). Returns the article without its text. To add several, use create_knowledge_articles.',
+      inputSchema: z.object({ ...articleArgs, client_request_id: clientRequestIdArg }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
       scopeChallenge: writeChallenge
-    }, async ({ title, body, admins_only }) => run(async () => {
+    }, async (a) => run(async () => {
       requireScope(p, 'write');
-      return createArticle(p, { title, body, admins_only }, 'mcp');
+      return addOne(a);
+    }));
+
+    server.registerTool('create_knowledge_articles', {
+      title: 'Add knowledge base articles',
+      description: 'Adds up to 20 articles in one call, one after another (same rules as create_knowledge_article). Each result says ok with the article (without its text), or the error for that one; the others are still added. Give each a client_request_id so a retry after a lost answer adds none twice.',
+      inputSchema: z.object({ articles: z.array(z.object({ ...articleArgs, client_request_id: clientRequestIdArg })).min(1).max(20) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      scopeChallenge: writeChallenge
+    }, async ({ articles }) => run(async () => {
+      requireScope(p, 'write');
+      const results: unknown[] = [];
+      for (const a of articles) {
+        try {
+          results.push({ ok: true, ...(await addOne(a)) });
+        } catch (err) {
+          const mapped = err instanceof ApiError ? err : fromPg(err);
+          if (!mapped) throw err;
+          results.push({ ok: false, title: a.title, error: mapped.code, message: mapped.message, ...(a.client_request_id ? { client_request_id: a.client_request_id } : {}) });
+        }
+      }
+      return { results, added: results.filter((r) => (r as { ok: boolean }).ok).length, failed: results.filter((r) => !(r as { ok: boolean }).ok).length };
     }));
 
     server.registerTool('update_knowledge_article', {
       title: 'Update knowledge base article',
-      description: 'Changes a knowledge base article. Change the text one way per call: edits (find-and-replace, best for updating one fact), append (adds to the end) or body (replaces all of it). Every version is kept, and admins can restore an earlier one in Settings, Knowledge base.',
+      description: 'Changes a knowledge base article. Change the text one way per call: edits (find-and-replace, best for updating one fact), append (adds to the end) or body (replaces all of it). Every version is kept, and admins can restore an earlier one in Settings, Knowledge base. Returns the article without its text (call get_knowledge with the id to read it).',
       inputSchema: z.object({
         id: z.string().describe('The article\'s id from get_knowledge'),
         title: titleArg.optional(),
@@ -445,7 +505,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
       scopeChallenge: writeChallenge
     }, async ({ id, ...change }) => run(async () => {
       requireScope(p, 'write');
-      return updateArticle(p, id, change, 'mcp');
+      return saved(await updateArticle(p, id, change, 'mcp'));
     }));
 
     server.registerTool('delete_knowledge_article', {
@@ -548,6 +608,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     title: 'Create custom view',
     description: 'Creates a custom view as a draft (nobody but admins sees it until published). The code and queries are checked first; errors come back to fix. slug defaults from the name.',
     inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
       name: z.string(),
       slug: z.string().optional().describe('Page address: lowercase letters, digits, dashes, 3 to 60'),
       icon: z.string().optional().describe('Lucide icon name for menus, like chart-column; find one with find_icons'),
@@ -558,7 +619,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async (args) => run(async () => draftSaved(await createView(p, args))));
+  }, async ({ client_request_id, ...args }) => run(() => once(p, 'create_view', client_request_id, async () => draftSaved(await createView(p, args)))));
 
 
   server.registerTool('save_view_draft', {
@@ -696,14 +757,14 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
   server.registerTool('create_view_integration', {
     title: 'Create view integration',
     description: 'Adds an integration views can call. It sends CRM data to an outside address, so first show the admin the URL and the data it will receive and wait for their yes. It starts off: give the admin the approve_url from the answer to review and turn it on in the CRM (until then views cannot call it; test_integration still works). The endpoint gets a JSON POST {integration, data, view, user, sent_at}.',
-    inputSchema: z.object({ key: z.string().describe('2 to 40: lowercase letters, digits, - and _, starting with a letter; views call it by this'), ...integrationFields }),
+    inputSchema: z.object({ key: z.string().describe('2 to 40: lowercase letters, digits, - and _, starting with a letter; views call it by this'), ...integrationFields, client_request_id: clientRequestIdArg }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     scopeChallenge: schemaChallenge
-  }, async (b) => run(async () => {
+  }, async ({ client_request_id, ...b }) => run(() => once(p, 'create_view_integration', client_request_id, async () => {
     const out = await createIntegration(p, b);
     await auditIntegration(p, 'integration.created', out.key, b);
     return { ...out, url: undefined, ...maskUrl(out.url), ...approvalNextStep(out) };
-  }));
+  })));
 
   server.registerTool('update_view_integration', {
     title: 'Update view integration',
@@ -825,8 +886,9 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('create_document_template', {
     title: 'Create document template',
-    description: 'Creates a draft template for one object type: an HTML page with Liquid tags. The code and SQL sources are checked before saving. Admins only. Nothing reaches customers until it is published and linked or made the default.',
+    description: 'Creates a draft template for one object type: an HTML page with Liquid tags. The code and SQL sources are checked before saving. Admins only. Nothing reaches customers until it is published and associated with records or made the default.',
     inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
       name: z.string(),
       object: z.enum(['quotes']).optional().describe('Default quotes'),
       description: z.string().optional(),
@@ -838,7 +900,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     }),
     annotations: { readOnlyHint: false },
     scopeChallenge: schemaChallenge
-  }, async (input) => run(async () => templateOut(await createTemplate(p, input), false)));
+  }, async ({ client_request_id, ...input }) => run(() => once(p, 'create_document_template', client_request_id, async () => templateOut(await createTemplate(p, input), false))));
 
   server.registerTool('save_document_template_draft', {
     title: 'Save document template draft',
@@ -896,7 +958,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('publish_document_template', {
     title: 'Publish document template',
-    description: 'Makes the draft the version customers see (on records linked to it, or all records of its object when it is the default). Only when the user asked to publish.',
+    description: 'Makes the draft the version customers see (on records associated with it, or all records of its object when it is the default). Only when the user asked to publish.',
     inputSchema: z.object({ template: templateArg }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     scopeChallenge: schemaChallenge
@@ -909,6 +971,141 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     scopeChallenge: schemaChallenge
   }, async ({ template, default: on }) => run(async () => templateOut(await setDefaultTemplate(p, template, on), false)));
+
+  // ---- landing pages (landing-pages.ts) ---------------------------------------
+  const pageArg = z.string().describe('The landing page\'s slug (page address) or id');
+  const pageSaved = (pg: LandingPageRow, withHtml = false) => ({
+    ...(withHtml ? pageOut(pg) : pageSummary(pg)),
+    next_step: `Saved as a draft; the published page (if any) is unchanged. Check it with render_landing_page at ${CHECK_SIZES_TEXT} and fix what you find. Then give the user this link to preview it: ${pageOut(pg).draft_url} (admins only, signed in). Ask before publish_landing_page: a published page is public.`
+  });
+
+  server.registerTool('list_landing_pages', {
+    title: 'List landing pages',
+    description: 'Public pages written in HTML (website pages, demo pages for clients), opened at /p/page/#slug without signing in. Lists every one: name, slug, url, draft_url, status (draft or published) and whether the draft has unpublished changes. Read view_guide topic landing_pages before building one.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => (await listPages()).map((pg) => pageOut(pg, false))));
+
+  server.registerTool('get_landing_page', {
+    title: 'Get landing page',
+    description: 'One landing page with its HTML. html picks which version: draft (default), published, both or none. To read only part of it (before edits), give lines [start, end] or search (text, any case): the answer then has html_excerpt with line numbers instead; copy old_str from it without the "12| " prefixes.',
+    inputSchema: z.object({
+      page: pageArg,
+      html: z.enum(['draft', 'published', 'both', 'none']).optional(),
+      lines: z.tuple([z.number().int().min(1), z.number().int().min(1)]).optional().describe('[start, end], 1-based'),
+      search: z.string().optional(),
+      context: z.number().int().min(0).max(20).optional().describe('Lines around each search match (default 3)')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page, html, lines, search, context }) => run(async () => {
+    requireScope(p, 'schema');
+    const pg = await loadPage(pool, page);
+    const out: Record<string, unknown> = pageOut(pg);
+    const which = html ?? 'draft';
+    if (lines || search !== undefined) {
+      if (which === 'both' || which === 'none') throw badRequest('lines and search read one version: html draft or published');
+      const text = which === 'published' ? pg.html : pg.draft_html;
+      if (!text) throw badRequest(`the ${which} version has no HTML`);
+      out.html_excerpt = htmlExcerpt(text, { lines, search, context });
+      delete out.draft_html;
+      delete out.html;
+      return out;
+    }
+    if (which === 'none' || which === 'published') delete out.draft_html;
+    if (which === 'none' || which === 'draft') delete out.html;
+    return out;
+  }));
+
+  server.registerTool('create_landing_page', {
+    title: 'Create landing page',
+    description: 'Creates a landing page as a draft (only admins can see it until it is published). html is the whole document (<!doctype html> ...). slug defaults from the name. Read view_guide topic landing_pages first.',
+    inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
+      name: z.string(),
+      slug: z.string().optional().describe('Page address: lowercase letters, digits, dashes, 3 to 60. The page opens at /p/page/#<slug>'),
+      description: z.string().optional().describe('For the team; never shown on the page'),
+      html: z.string().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ client_request_id, ...args }) => run(() => once(p, 'create_landing_page', client_request_id, async () => pageSaved(await createPage(p, args)))));
+
+  server.registerTool('save_landing_page_draft', {
+    title: 'Save landing page draft',
+    description: 'Changes the draft HTML: edits (find and replace, best for changes; each old_str must match exactly one place) or html (the whole document). The published page does not change until publish_landing_page. return_html: true also returns the saved HTML.',
+    inputSchema: z.object({
+      page: pageArg,
+      edits: editsArg.optional(),
+      html: z.string().optional().describe('The whole document; replaces the draft'),
+      return_html: z.boolean().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ page, return_html, ...input }) => run(async () => pageSaved(await savePageDraft(p, page, input), return_html)));
+
+  server.registerTool('render_landing_page', {
+    title: 'Render landing page',
+    description: `Draws a landing page (the draft by default) in a headless browser and returns a screenshot plus a report: page height, sideways scrolling, console errors, failed requests, and addresses this checker does not load (anything not https on a public host). Scripts run and https embeds load. Check every page at ${CHECK_SIZES_TEXT}.`,
+    inputSchema: z.object({
+      page: pageArg,
+      width: z.number().int().min(320).max(2400).optional().describe('Screen width (default 1280)'),
+      height: z.number().int().min(300).max(2000).optional().describe('Screen height (default 800)'),
+      scroll_y: z.number().int().min(0).max(100000).optional(),
+      full_page: z.boolean().optional().describe('The whole page instead of one screen (at most 8000px tall)'),
+      wait_ms: z.number().int().min(0).max(5000).optional().describe('Wait after loading before the screenshot (default 800), for embeds and animations'),
+      published: z.boolean().optional().describe('Render the published version instead of the draft')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page, ...opts }) => {
+    try {
+      requireScope(p, 'schema');
+      const { image, report } = await renderPage(await loadPage(pool, page), opts);
+      return {
+        content: [
+          { type: 'image' as const, data: image, mimeType: 'image/png' },
+          { type: 'text' as const, text: JSON.stringify(report) }
+        ]
+      };
+    } catch (err) {
+      return run(() => Promise.reject(err));
+    }
+  });
+
+  server.registerTool('publish_landing_page', {
+    title: 'Publish landing page',
+    description: 'Makes the draft the public page at its url: anyone with the link can open it. Only call this when the user has explicitly asked to publish (after seeing the draft).',
+    inputSchema: z.object({ page: pageArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page }) => run(async () => pageOut(await publishPage(p, page), false)));
+
+  server.registerTool('unpublish_landing_page', {
+    title: 'Unpublish landing page',
+    description: 'Takes a published page down: its address shows "Page not found" until it is published again. The draft and the last published HTML are kept. Only when the user asked.',
+    inputSchema: z.object({ page: pageArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page }) => run(async () => pageOut(await unpublishPage(p, page), false)));
+
+  server.registerTool('revert_landing_page_draft', {
+    title: 'Revert landing page draft',
+    description: 'Throws away the draft\'s unpublished changes: the draft becomes the last published HTML again. Ask the user first.',
+    inputSchema: z.object({ page: pageArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page }) => run(async () => pageOut(await revertPageDraft(p, page), false)));
+
+  server.registerTool('archive_landing_page', {
+    title: 'Archive landing page',
+    description: 'Archives a landing page: its address stops working. It can be restored from the Landing pages list in the CRM. Ask the user first.',
+    inputSchema: z.object({ page: pageArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page }) => run(async () => {
+    requireScope(p, 'schema');
+    const pg = await loadPage(pool, page);
+    await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_record_status($1, $2, $3)', ['pc_0059', [pg.id], 'archived']));
+    return { archived: pg.slug };
+  }));
 
   server.registerTool('revert_view_draft', {
     title: 'Revert custom view draft',
@@ -939,6 +1136,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     title: 'Create property',
     description: 'Adds a property (a typed field) to an object. Ask the admin first. api_name is permanent. See view_guide topic properties for names, types and options.',
     inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
       object: objectArg,
       api_name: z.string(),
       label: z.string(),
@@ -951,7 +1149,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async ({ object, ...b }) => run(() => createProperty(p, object, b, SCHEMA_SOURCE)));
+  }, async ({ object, client_request_id, ...b }) => run(() => once(p, 'create_property', client_request_id, () => createProperty(p, object, b, SCHEMA_SOURCE))));
 
   server.registerTool('update_property', {
     title: 'Update property',
@@ -1063,6 +1261,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     title: 'Create shared option list',
     description: 'Creates a shared option list and optionally links dropdowns to it (same as link_dropdown_to_option_list for each). Ask the user before changing properties.',
     inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
       label: z.string().describe('e.g. Product categories'),
       api_name: z.string().optional().describe('lowercase name; made from the label when left out'),
       description: z.string().optional(),
@@ -1070,7 +1269,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async (b) => run(() => createOptionList(p, b, SCHEMA_SOURCE)));
+  }, async ({ client_request_id, ...b }) => run(() => once(p, 'create_option_list', client_request_id, () => createOptionList(p, b, SCHEMA_SOURCE))));
 
   server.registerTool('update_option_list', {
     title: 'Rename shared option list',
@@ -1185,13 +1384,13 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
   server.registerTool('create_webhook_subscription', {
     title: 'Create webhook subscription',
     description: 'Subscribes an endpoint to one event on one object (any object from list_objects, including forms, form_submissions, views and users). Add one subscription per object and event. Each delivery carries the event, record_id, the change (changes, change, association or merged_ids) and the current values of up to 3 send_properties (none unless chosen; ask the admin which fields the receiver needs). The answer\'s summary describes it in words; check it matches what the admin asked for. It starts off: give the admin the approve_url to review and turn it on.',
-    inputSchema: z.object({ endpoint_id: endpointIdArg, object: objectArg, ...subscriptionFields }),
+    inputSchema: z.object({ endpoint_id: endpointIdArg, object: objectArg, ...subscriptionFields, client_request_id: clientRequestIdArg }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async (b) => run(async () => {
+  }, async ({ client_request_id, ...b }) => run(() => once(p, 'create_webhook_subscription', client_request_id, async () => {
     const out = await createSubscription(p, b);
     return { ...out, ...approvalNextStep(out) };
-  }));
+  })));
 
   server.registerTool('update_webhook_subscription', {
     title: 'Update webhook subscription',

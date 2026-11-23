@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Page, Grid, Stack, Row, Card, Tabs, Button, Select, TextInput, Loading, ErrorBox, Badge,
-  useQuery, useParams, setParams, updateRecord, createRecord, linkRecords, openRecord, navigate, formatNumber
+  useQuery, useParams, setParams, updateRecord, createRecord, associateRecords, openRecord, navigate, formatNumber
 } from '@pcrm/view'
 
 // the view scrolls itself, so the results bar can stick to the bottom
@@ -150,7 +150,7 @@ export default function BantCalculator() {
         }
         const created = await createRecord('deals', props)
         const id = typeof created === 'string' ? created : created?.id
-        if (id && companyId) await linkRecords('deals', id, 'companies', companyId)
+        if (id && companyId) await associateRecords('deals', id, 'companies', companyId)
         setDraft(EMPTY_DRAFT)
         deals.refresh()
         setSaved(`Created with PWIN ${formatNumber(total)}%.`)

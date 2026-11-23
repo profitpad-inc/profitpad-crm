@@ -45,3 +45,21 @@
   .import-table th:nth-child(2) { display: none; }
   .import-counts { grid-template-columns: 1fr; }
 }
+.import-link-icon { vertical-align: -2px; }
+
+/* Settings, Imports and exports (pages/ImportHistory.tsx) */
+.history-row { cursor: pointer; }
+.settings .access-table .grid td.history-chevron { width: 28px; padding-right: 0; color: var(--muted-text); }
+.settings .access-table .grid tr.history-detail td { height: auto; padding-top: 4px; padding-bottom: 14px; white-space: normal; }
+.settings .access-table .grid tr.history-detail:hover td { background: transparent; }
+.history-detail td > * + * { margin-top: 10px; }
+.history-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted-text); font-size: 13px; }
+.history-detail p { margin: 0; }
+
+/* values that wouldn't be accepted (fix, leave empty, skip) */
+.import-values-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.import-values-head h3 { margin: 0; }
+.import-why { color: var(--danger, #b42318); font-size: 12px; font-weight: 400; margin-top: 2px; }
+.import-fix { width: 100%; margin-top: 6px; }
+.export-form { display: flex; flex-direction: column; gap: 14px; }
+.export-form p { margin: 0; }

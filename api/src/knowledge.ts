@@ -76,6 +76,59 @@ export function articleOut(a: ArticleRow, p: Principal) {
   };
 }
 
+// ---- shorter answers for AI agents (MCP) ----------------------------------------
+
+// An article without its text: what lists and saves return over MCP.
+export const articleSummary = (a: { id: string; title: string; admins_only: boolean; updated_at: Date; body: string }) => ({
+  id: a.id,
+  title: a.title,
+  admins_only: a.admins_only,
+  updated_at: a.updated_at,
+  length: a.body.length
+});
+
+// The words of a search, lowercased.
+export const searchWords = (query: string | undefined) => (query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+
+// A short piece of the text around the first searched word found in it (or
+// its start, when the words are only in the title).
+export function snippet(body: string, words: string[], width = 160): string {
+  const lower = body.toLowerCase();
+  const at = words.map((w) => lower.indexOf(w)).filter((i) => i >= 0).sort((x, y) => x - y)[0] ?? 0;
+  const start = Math.max(0, at - Math.floor(width / 3));
+  const end = Math.min(body.length, start + width);
+  const piece = body.slice(start, end).replace(/\s+/g, ' ').trim();
+  return `${start > 0 ? '…' : ''}${piece}${end < body.length ? '…' : ''}`;
+}
+
+// The topics the MCP instructions name. A topic counts as covered when an
+// article's title has one of its words (a guess from titles only).
+export const STANDARD_TOPICS: { topic: string; words: string[] }[] = [
+  { topic: 'Ideal customer profile', words: ['ideal customer', 'icp', 'target customer', 'target market', 'persona', 'who we sell to'] },
+  { topic: 'Revenue and goals', words: ['revenue', 'arr', 'mrr', 'financial', 'finance', 'goals', 'targets', 'quota'] },
+  { topic: 'Sales team', words: ['sales team', 'team', 'reps', 'org chart', 'people'] },
+  { topic: 'Products and pricing', words: ['product', 'pricing', 'price', 'packages', 'plans', 'services', 'offering'] },
+  { topic: 'Competitors', words: ['competitor', 'competition', 'competitive', 'alternatives'] },
+  { topic: 'Sales process', words: ['sales process', 'playbook', 'pipeline', 'sales stages', 'how we sell', 'sales motion'] }
+];
+
+export function missingTopics(titles: string[]): string[] {
+  const lower = titles.map((t) => ` ${t.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `);
+  const covered = (w: string) => lower.some((t) => t.includes(` ${w} `) || t.includes(` ${w}s `));
+  return STANDARD_TOPICS.filter((s) => !s.words.some(covered)).map((s) => s.topic);
+}
+
+// Money figures and financial words, which usually only admins should read.
+const SENSITIVE = /[$€£]\s?\d|\b\d[\d,.]*\s?(k|m|mm|million|billion)\b|\b(revenue|arr|mrr|profit|margin|ebitda|salary|salaries|valuation|payroll)\b/i;
+
+// A warning for an admin saving an article everyone can read that looks like
+// it holds figures; non-admins cannot mark articles admins only anyway.
+export function sensitiveWarning(p: Principal, a: { title: string; body: string; admins_only: boolean }): string | undefined {
+  if (a.admins_only || !isAdmin(p)) return undefined;
+  if (!SENSITIVE.test(`${a.title}\n${a.body}`)) return undefined;
+  return 'Everyone who can read the knowledge base can read this article, and it looks like it has money figures or financial terms. If only admins should see it, ask the user, then set admins_only: true with update_knowledge_article.';
+}
+
 // The name of whoever an actor string ("user:<id>", "api:<prefix>") is.
 const SELECT = `select a.*, coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as updated_by_name
   from ui.knowledge_articles a
@@ -144,7 +197,7 @@ export async function getArticle(p: Principal, id: string) {
 export async function listArticles(p: Principal, query?: string) {
   requireKnowledgeRead(p);
   const { rows } = await pool.query(`${SELECT} where ($1 or not a.admins_only) order by a.id`, [isAdmin(p)]);
-  const words = (query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const words = searchWords(query);
   const hit = (a: ArticleRow) => { const t = `${a.title}\n${a.body}`.toLowerCase(); return words.every((w) => t.includes(w)); };
   return (rows as ArticleRow[]).filter(hit).map((a) => articleOut(a, p));
 }

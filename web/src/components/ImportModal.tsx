@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { FileSpreadsheet, Upload } from 'lucide-react';
+import { FileSpreadsheet, History, Upload } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api, ApiError, type ObjectDef, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { MAX_IMPORT_ROWS, cellText, parseFile, parseText, type Sheet } from '../lib/import-parse';
@@ -15,7 +16,9 @@ import '../import.css';
 // Import records of one object from a CSV, TSV, .xls or .xlsx file or pasted
 // rows (tabs, else commas). Steps: pick the rows, match columns to
 // properties (and the one unique property that finds existing records),
-// settle dropdown values that match no choice, check every row with a dry
+// settle values that wouldn't be accepted (phones, emails, patterns, numbers,
+// dates: fix, leave empty or skip the row) and dropdown values that match no
+// choice, check every row with a dry
 // run, then import in batches. No associations: one object at a time.
 
 type Step = 'source' | 'map' | 'values' | 'review' | 'running' | 'done';
@@ -38,12 +41,19 @@ interface Built {
 
 const key = (v: string) => v.trim().toLowerCase();
 
+// a bad cell: typed again (text, and why it is still refused, if it is), left
+// empty, or its rows skipped; '' while nothing is picked
+type Fix = { action: 'fix'; text: string; error?: string | null } | { action: 'empty' } | { action: 'skip' } | { action: '' };
+const CHECK_CHUNK = 20000;
+
 export function ImportModal({ object, onClose, onImported }: { object: ObjectDef; onClose: () => void; onImported: () => void }) {
   const { me } = useApp();
   const [step, setStep] = useState<Step>('source');
   const [sheets, setSheets] = useState<Sheet[] | null>(null);
   const [sheetIdx, setSheetIdx] = useState(0);
   const [paste, setPaste] = useState('');
+  // the picked file's name, for the import history (null for pasted rows)
+  const [fileName, setFileName] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -54,6 +64,13 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
   const [dateOrders, setDateOrders] = useState<Record<number, DateOrder>>({});
   // property -> lower-cased typed value -> ADD, SKIP, a choice's api_value or '' (not picked yet)
   const [resolutions, setResolutions] = useState<Record<string, Record<string, string>>>({});
+  // cells a write would refuse or that aren't usable (phones, emails, patterns,
+  // numbers, dates), found right after the columns are matched:
+  // property -> cell text -> why and how many rows
+  const [formatProblems, setFormatProblems] = useState<Map<string, Map<string, { error: string; count: number }>>>(new Map());
+  // property -> cell text -> what to do with it
+  const [fixes, setFixes] = useState<Record<string, Record<string, Fix>>>({});
+  const [scanning, setScanning] = useState(false);
 
   const [checking, setChecking] = useState(false);
   const [check, setCheck] = useState<Outcome | null>(null);
@@ -102,6 +119,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     });
     setDateOrders(orders);
     setResolutions({});
+    setFixes({});
   }
 
   async function readFile(file: File) {
@@ -109,6 +127,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     setReading(true);
     try {
       takeSheets(await parseFile(file));
+      setFileName(file.name);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -121,6 +140,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     setError(null);
     try {
       takeSheets([parseText(paste)]);
+      setFileName(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -165,8 +185,75 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     return out;
   }, [sheet, mapping, propByName]);
 
-  function goToValues() {
-    // defaults: add the value when allowed, otherwise ask
+  // the API's verdict on text cells (phone numbers, email addresses, patterns)
+  async function checkTexts(name: string, texts: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (let i = 0; i < texts.length; i += CHECK_CHUNK) {
+      const res = await api<{ problems: Record<string, { value: string; error: string }[]> }>(
+        'POST', `/v1/objects/${object.api_name}/imports/check-values`, { values: { [name]: texts.slice(i, i + CHECK_CHUNK) } }
+      );
+      for (const pr of res.problems[name] ?? []) out.set(pr.value, pr.error);
+    }
+    return out;
+  }
+
+  // every mapped column's cells, checked before anything else: numbers and
+  // dates here, text cells by the API
+  async function scanFormats(): Promise<Map<string, Map<string, { error: string; count: number }>>> {
+    const s = sheet!;
+    const found = new Map<string, Map<string, { error: string; count: number }>>();
+    const add = (name: string, text: string, error: string) => {
+      const m = found.get(name) ?? new Map<string, { error: string; count: number }>();
+      const cur = m.get(text);
+      m.set(text, { error, count: (cur?.count ?? 0) + 1 });
+      found.set(name, m);
+    };
+    for (const [col, name] of mapping.entries()) {
+      const p = propByName.get(name);
+      if (!p || p.type === 'dropdown') continue;
+      if (p.type === 'text') {
+        const counts = new Map<string, number>();
+        for (const r of s.rows) {
+          const t = cellText(r[col]);
+          if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
+        }
+        const bad = await checkTexts(name, [...counts.keys()]);
+        for (const [t, error] of bad) {
+          const m = found.get(name) ?? new Map<string, { error: string; count: number }>();
+          m.set(t, { error, count: counts.get(t) ?? 1 });
+          found.set(name, m);
+        }
+        continue;
+      }
+      for (const r of s.rows) {
+        const c = convertCell(p, r[col], dateOrders[col] ?? 'mdy');
+        if (!c.ok) add(name, cellText(r[col]), c.error.replace(/^".*?" is /, 'is '));
+      }
+    }
+    return found;
+  }
+
+  async function goToValues() {
+    setError(null);
+    setScanning(true);
+    let found: Map<string, Map<string, { error: string; count: number }>>;
+    try {
+      found = await scanFormats();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (e as Error).message);
+      return;
+    } finally {
+      setScanning(false);
+    }
+    setFormatProblems(found);
+    // keep earlier picks for the same values; new ones start unpicked
+    const nextFixes: Record<string, Record<string, Fix>> = {};
+    for (const [name, values] of found) {
+      nextFixes[name] = {};
+      for (const t of values.keys()) nextFixes[name][t] = fixes[name]?.[t] ?? { action: '' };
+    }
+    setFixes(nextFixes);
+    // dropdowns: add the value when allowed, otherwise ask
     const next: Record<string, Record<string, string>> = {};
     for (const [name, values] of unmatched) {
       const p = propByName.get(name)!;
@@ -174,11 +261,35 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
       for (const k of values.keys()) next[name][k] = resolutions[name]?.[k] ?? (canAddTo(p) ? ADD : '');
     }
     setResolutions(next);
-    if (unmatched.size > 0) setStep('values');
+    if (unmatched.size > 0 || found.size > 0) setStep('values');
     else void startReview();
   }
 
-  const unresolved = [...unmatched].some(([name, values]) => [...values.keys()].some((k) => !resolutions[name]?.[k]));
+  // a typed fix: checked like the cell it replaces
+  async function checkFix(name: string, text: string, typed: string) {
+    const p = propByName.get(name)!;
+    const col = mapping.indexOf(name);
+    let why: string | null = null;
+    if (typed.trim() === '') why = 'type a value, or pick Leave empty';
+    else if (p.type === 'text') why = (await checkTexts(name, [typed.trim()]).catch(() => new Map<string, string>())).get(typed.trim()) ?? null;
+    else {
+      const c = convertCell(p, typed, dateOrders[col] ?? 'mdy');
+      why = c.ok ? null : c.error;
+    }
+    setFixes((cur) => {
+      const f = cur[name]?.[text];
+      if (!f || f.action !== 'fix' || f.text !== typed) return cur;
+      return { ...cur, [name]: { ...cur[name], [text]: { action: 'fix', text: typed, error: why } } };
+    });
+  }
+
+  const setFix = (name: string, text: string, fix: Fix) => setFixes((cur) => ({ ...cur, [name]: { ...cur[name], [text]: fix } }));
+  const setAllFixes = (name: string, action: 'empty' | 'skip') =>
+    setFixes((cur) => ({ ...cur, [name]: Object.fromEntries(Object.keys(cur[name] ?? {}).map((t) => [t, { action }])) }));
+
+  const unresolved =
+    [...unmatched].some(([name, values]) => [...values.keys()].some((k) => !resolutions[name]?.[k])) ||
+    Object.values(fixes).some((m) => Object.values(m).some((f) => f.action === '' || (f.action === 'fix' && (f.error !== null || f.text.trim() === ''))));
 
   // ---- step 4: build, check, import ------------------------------------------
   function build(): Built {
@@ -222,7 +333,14 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
           out[name] = isMultiValue(p) ? unique : unique[0];
           return;
         }
-        const c = convertCell(p, r[col], dateOrders[col] ?? 'mdy');
+        const raw = cellText(r[col]);
+        const fix = raw ? fixes[name]?.[raw] : undefined;
+        if (fix?.action === 'empty') return;
+        if (fix?.action === 'skip') {
+          errs.push(`${p.label}: "${raw}" ${formatProblems.get(name)?.get(raw)?.error ?? 'was skipped'}`);
+          return;
+        }
+        const c = convertCell(p, fix?.action === 'fix' ? fix.text.trim() : r[col], dateOrders[col] ?? 'mdy');
         if (!c.ok) errs.push(`${p.label}: ${c.error}`);
         else if (c.value !== undefined) out[name] = c.value;
       });
@@ -234,15 +352,19 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     return { rows, rowNumbers, problems, newOptions };
   }
 
-  function body(b: Built, rows: Record<string, unknown>[], extra: Record<string, unknown>) {
+  function body(b: Built, offset: number, rows: Record<string, unknown>[], extra: Record<string, unknown>) {
     return {
-      format: 'json', data: rows, mode: dedupe ? 'upsert' : 'create', ...(dedupe ? { id_property: dedupe } : {}),
+      format: 'json', data: rows, row_numbers: b.rowNumbers.slice(offset, offset + rows.length),
+      mode: dedupe ? 'upsert' : 'create', ...(dedupe ? { id_property: dedupe } : {}),
       ...(Object.keys(b.newOptions).length > 0 ? { new_options: b.newOptions } : {}), ...extra
     };
   }
 
-  const serverProblems = (b: Built, offset: number, errors: ImportResult['errors']): Problem[] =>
-    (errors ?? []).map((e) => ({ row: b.rowNumbers[offset + e.row - 1] ?? e.row, error: e.error }));
+  // errors carry the sheet's row numbers (row_numbers); rows skipped here are counted already
+  const serverProblems = (b: Built, errors: ImportResult['errors']): Problem[] => {
+    const skipped = new Set(b.problems.map((x) => x.row));
+    return (errors ?? []).filter((e) => !skipped.has(e.row)).map((e) => ({ row: e.row, error: e.error }));
+  };
 
   async function startReview() {
     setStep('review');
@@ -256,10 +378,10 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     }
     setChecking(true);
     try {
-      const res = await api<ImportResult>('POST', `/v1/objects/${object.api_name}/imports`, body(b, b.rows, { dry_run: true }));
+      const res = await api<ImportResult>('POST', `/v1/objects/${object.api_name}/imports`, body(b, 0, b.rows, { dry_run: true }));
       setCheck({
         created: res.created_rows, updated: res.updated_rows,
-        problems: [...b.problems, ...serverProblems(b, 0, res.errors)].sort((x, y) => x.row - y.row)
+        problems: [...b.problems, ...serverProblems(b, res.errors)].sort((x, y) => x.row - y.row)
       });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (e as Error).message);
@@ -274,15 +396,19 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     setProgress(0);
     setError(null);
     const total: Outcome = { created: 0, updated: 0, problems: [...b.problems] };
+    // one entry in the import history for all the batches
+    const history = { batch_id: crypto.randomUUID(), ...(fileName ? { file_name: fileName.slice(0, 255) } : {}) };
     try {
       for (let i = 0; i < b.rows.length; i += BATCH) {
         const chunk = b.rows.slice(i, i + BATCH);
-        // new choices are added with the first batch; later batches already carry their values
-        const req = i === 0 ? body(b, chunk, {}) : { ...body(b, chunk, {}), new_options: undefined };
+        // new choices and the rows skipped here go with the first batch; later batches already carry the new values
+        const req = i === 0
+          ? body(b, i, chunk, { ...history, ...(b.problems.length > 0 ? { skipped: b.problems } : {}) })
+          : { ...body(b, i, chunk, history), new_options: undefined };
         const res = await api<ImportResult>('POST', `/v1/objects/${object.api_name}/imports`, req);
         total.created += res.created_rows;
         total.updated += res.updated_rows;
-        total.problems.push(...serverProblems(b, i, res.errors));
+        total.problems.push(...serverProblems(b, res.errors));
         setProgress(Math.min(b.rows.length, i + BATCH));
       }
     } catch (e) {
@@ -371,7 +497,10 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
           <span>Or paste rows (copied from a spreadsheet, or comma separated)</span>
           <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={6} placeholder={'Name\tEmail\nAda Lovelace\tada@example.com'} spellCheck={false} />
         </label>
-        <p className="muted small">The first row must be the column headings. Up to {MAX_IMPORT_ROWS.toLocaleString()} rows.</p>
+        <p className="muted small">
+          The first row must be the column headings. Up to {MAX_IMPORT_ROWS.toLocaleString()} rows.{' '}
+          <Link to={`/settings/imports?object=${object.api_name}`}><History size={13} className="import-link-icon" /> Past imports</Link>
+        </p>
       </div>
     );
     footer = (
@@ -450,13 +579,77 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     footer = (
       <>
         <button className="btn" onClick={() => setStep('source')}>Back</button>
-        <button className="btn primary" disabled={mappedCount === 0} onClick={goToValues}>Next</button>
+        <button className="btn primary" disabled={mappedCount === 0 || scanning} onClick={() => void goToValues()}>
+          {scanning ? <Loading inline label="Checking values" /> : 'Next'}
+        </button>
       </>
     );
   } else if (step === 'values') {
     content = (
       <div className="import-values">
-        <p>Some dropdown values don't match a choice by internal value or label. Pick what each one becomes.</p>
+        {formatProblems.size > 0 && <p>Some values wouldn't be accepted as they are. Fix each one, leave it empty, or skip its rows.</p>}
+        {[...formatProblems].map(([name, values]) => {
+          const p = propByName.get(name)!;
+          const list = [...values];
+          return (
+            <section key={`f-${name}`} className="import-values-prop">
+              <div className="import-values-head">
+                <h3>{p.label}</h3>
+                {list.length > 1 && (
+                  <Select
+                    value="" face="For all of them…" aria-label={`Every ${p.label} value`}
+                    onChange={(v) => setAllFixes(name, v as 'empty' | 'skip')}
+                    options={[{ value: 'empty', label: 'Leave them all empty' }, { value: 'skip', label: 'Skip all their rows' }]}
+                  />
+                )}
+              </div>
+              <table className="import-table">
+                <tbody>
+                  {list.slice(0, 200).map(([text, { error: why, count }]) => {
+                    const f = fixes[name]?.[text] ?? { action: '' };
+                    return (
+                      <tr key={text}>
+                        <td className="import-col">
+                          {text} <span className="muted small">({count.toLocaleString()} {count === 1 ? 'row' : 'rows'})</span>
+                          <div className="import-why">{why}</div>
+                        </td>
+                        <td>
+                          <Select
+                            value={f.action}
+                            onChange={(v) => setFix(name, text, v === 'fix' ? { action: 'fix', text, error: undefined } : { action: v as 'empty' | 'skip' })}
+                            options={[
+                              { value: '', label: 'Pick one', disabled: true },
+                              { value: 'fix', label: 'Fix it' },
+                              { value: 'empty', label: 'Leave empty' },
+                              { value: 'skip', label: count === 1 ? 'Skip the row' : 'Skip these rows' }
+                            ]}
+                            aria-label={`What to do with ${text}`}
+                          />
+                          {f.action === 'fix' && (
+                            <>
+                              <input
+                                className="import-fix" value={f.text} autoFocus aria-label={`New value for ${text}`}
+                                onChange={(e) => {
+                                  const typed = e.target.value;
+                                  setFix(name, text, { action: 'fix', text: typed, error: undefined });
+                                  window.setTimeout(() => void checkFix(name, text, typed), 400);
+                                }}
+                                onBlur={(e) => void checkFix(name, text, e.target.value)}
+                              />
+                              {f.error && <div className="error prop-error">{f.error}</div>}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {list.length > 200 && <p className="muted small">{(list.length - 200).toLocaleString()} more values not shown; "For all of them" covers them too.</p>}
+            </section>
+          );
+        })}
+        {unmatched.size > 0 && <p>Some dropdown values don't match a choice by internal value or label. Pick what each one becomes.</p>}
         {[...unmatched].map(([name, values]) => {
           const p = propByName.get(name)!;
           const canAdd = canAddTo(p);
@@ -524,7 +717,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     const ready = !!check && check.created + check.updated > 0;
     footer = (
       <>
-        <button className="btn" disabled={checking} onClick={() => setStep(unmatched.size > 0 ? 'values' : 'map')}>Back</button>
+        <button className="btn" disabled={checking} onClick={() => setStep(unmatched.size > 0 || formatProblems.size > 0 ? 'values' : 'map')}>Back</button>
         <button className="btn primary" disabled={!ready || checking} onClick={() => void runImport()}>
           Import {check ? (check.created + check.updated).toLocaleString() : ''} {check && check.created + check.updated === 1 ? 'row' : 'rows'}
         </button>
@@ -544,7 +737,12 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
         {problemList(outcome.problems)}
       </div>
     );
-    footer = <button className="btn primary" onClick={onClose}>Done</button>;
+    footer = (
+      <>
+        <Link className="btn" to={`/settings/imports?object=${object.api_name}`}><History size={16} /> Import history</Link>
+        <button className="btn primary" onClick={onClose}>Done</button>
+      </>
+    );
   }
 
   return (

@@ -111,7 +111,9 @@ export const createRecord = (object: string, properties: Record<string, unknown>
   call<{ id: string; properties: Record<string, unknown> }>('createRecord', [object, properties, associations ?? []]);
 export const updateRecord = (object: string, id: string, properties: Record<string, unknown>) =>
   call<{ id: string; properties: Record<string, unknown> }>('updateRecord', [object, id, properties]);
-export const linkRecords = (object: string, id: string, toObject: string, toId: string) => call<void>('linkRecords', [object, id, toObject, toId]);
+export const associateRecords = (object: string, id: string, toObject: string, toId: string) => call<void>('associateRecords', [object, id, toObject, toId]);
+// the old name, kept so views saved before the rename keep working
+export const linkRecords = associateRecords;
 // Opens the CRM's own line items editor (the record page's Line items +) over
 // the view, for a record with line items (deals, quotes, invoices, ...).
 // Resolves when the viewer closes it: saved says whether lines were saved.

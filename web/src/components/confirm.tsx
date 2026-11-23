@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Modal } from './ui';
 
@@ -15,9 +15,11 @@ export interface ConfirmOptions {
   cancelLabel?: string;
   // red confirm button, for deletes and other changes that are hard to undo
   danger?: boolean;
+  // shown under the message (a list of what the action affects)
+  details?: ReactNode;
 }
 
-function ConfirmModal({ message, title, confirmLabel, cancelLabel, danger, alertOnly, done }: ConfirmOptions & {
+function ConfirmModal({ message, title, confirmLabel, cancelLabel, danger, details, alertOnly, done }: ConfirmOptions & {
   message: string; alertOnly?: boolean; done: (ok: boolean) => void;
 }) {
   // focus starts on the safe choice: Cancel for a risky (danger) action,
@@ -40,6 +42,7 @@ function ConfirmModal({ message, title, confirmLabel, cancelLabel, danger, alert
       }
     >
       <p className="confirm-message">{message}</p>
+      {details && <div className="confirm-details">{details}</div>}
     </Modal>
   );
 }

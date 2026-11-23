@@ -10,9 +10,11 @@ import { call, listen, post, report } from './bridge';
 import { hasScheme } from './external-url';
 import './frame.css';
 import { installTooltips } from '../lib/tooltips';
+import { installNoAutofill } from '../lib/no-autofill';
 import { attachComplete, snippetTrigger, type Snippet } from '../lib/text-complete';
 
 installTooltips();
+installNoAutofill();
 
 // The view frame: a sandboxed iframe (no same-origin) that runs one view's
 // compiled module. Built into a single HTML file (vite.frame.config.ts) whose

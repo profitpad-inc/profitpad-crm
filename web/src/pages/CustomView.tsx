@@ -52,7 +52,7 @@ function parseHash(hash: string): { slug: string; params: Params } {
 type Ask = { title: string; lines: string[] };
 
 // What a view asks to change, in words for the confirmation (values cut short)
-function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'linkRecords' | 'uploadFile' | 'editLineItems', args: unknown[]): Ask {
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'associateRecords' | 'uploadFile' | 'editLineItems', args: unknown[]): Ask {
   const short = (v: unknown) => {
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 79) + '…' : s;
@@ -69,7 +69,7 @@ function describeChange(label: (o: string) => string, method: 'createRecord' | '
   if (method === 'editLineItems') return { title: `Edit the line items of ${label(obj)} record ${String(args[1] ?? '')}`, lines: ['in the line items editor, where you see each change before saving'] };
   if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
   if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
-  return { title: 'Link two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `to ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
+  return { title: 'Associate two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `with ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
 }
 
 // Links a view opens (openUrl). The viewer is asked "You're leaving the CRM
@@ -416,13 +416,14 @@ export function CustomView() {
       case 'uploadFile':
       case 'createRecord':
       case 'updateRecord':
+      case 'associateRecords':
       case 'linkRecords': {
         if (method === 'uploadFile') {
           if (!(args[0] instanceof Blob)) throw new Error('uploadFile takes a File or Blob');
           if (args[1] !== null && args[1] !== undefined && typeof args[1] !== 'string') throw new Error('the file name must be a string');
         }
         const label = (o: string) => objectByName.get(o)?.label_plural ?? o;
-        if (!(await confirmWrite(describeChange(label, method, args)))) throw new Error('The viewer did not allow this change');
+        if (!(await confirmWrite(describeChange(label, method === 'linkRecords' ? 'associateRecords' : method, args)))) throw new Error('The viewer did not allow this change');
         break;
       }
       case 'openUrl': {
@@ -463,6 +464,7 @@ export function CustomView() {
         const [info] = await fileInfo([id]);
         return info ? asViewFile(info) : { id, name, mime_type: file.type || null, size_bytes: file.size };
       }
+      case 'associateRecords':
       case 'linkRecords':
         return api('PUT', `/v1/objects/${str(args[0], 'object')}/${str(args[1], 'id')}/associations/${str(args[2], 'object')}/${str(args[3], 'id')}`, {});
     }
@@ -501,7 +503,7 @@ export function CustomView() {
         runCall(msg.method, Array.isArray(msg.args) ? msg.args : [], msg.id)
           .then((value) => {
             send({ type: 'pcrm:reply', id: msg.id, ok: true, value });
-            if (msg.method === 'createRecord' || msg.method === 'updateRecord' || msg.method === 'linkRecords') toast();
+            if (msg.method === 'createRecord' || msg.method === 'updateRecord' || msg.method === 'associateRecords' || msg.method === 'linkRecords') toast();
           })
           .catch((err: Error) => {
             send({ type: 'pcrm:reply', id: msg.id, ok: false, error: { message: err.message, status: err instanceof ApiError ? err.status : undefined } });

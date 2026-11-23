@@ -25,7 +25,9 @@ const CREATE_FIELDS: Record<string, string[]> = {
   quotes: ['name', 'expiration_date'],
   invoices: ['name', 'due_date'],
   // key, lengths and start times are set in the editor; status starts as draft
-  booking_pages: ['name', 'description', 'host']
+  booking_pages: ['name', 'description', 'host'],
+  // the HTML comes from the API or MCP (the record page shows it)
+  landing_pages: ['name', 'slug', 'description']
 };
 // User pickers that start on the signed-in user.
 const STARTS_AS_ME = ['owner', 'host'];

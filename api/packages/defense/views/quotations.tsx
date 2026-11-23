@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Page, Grid, Stack, Row, Card, Stat, Table, Tabs, Badge, Button, Select, TextInput, TextArea, PhoneInput, Loading, ErrorBox, Empty,
-  useQuery, useParams, setParams, createRecord, updateRecord, linkRecords, openRecord, editLineItems,
+  useQuery, useParams, setParams, createRecord, updateRecord, associateRecords, openRecord, editLineItems,
   formatMoney, formatDate, formatNumber, type BadgeTone
 } from '@pcrm/view'
 
@@ -253,11 +253,11 @@ function Builder({ params }) {
     }
     if (editing) {
       const was = q || {}
-      if (companyId && companyId !== was.company_id) await linkRecords('quotes', id, 'companies', companyId)
-      if (contactId && contactId !== was.contact_id) await linkRecords('quotes', id, 'contacts', contactId)
-      if (f.deal_id && f.deal_id !== was.deal_id) await linkRecords('quotes', id, 'deals', f.deal_id)
-      if (f.partnership_id && f.partnership_id !== was.partnership_id) await linkRecords('quotes', id, 'partnerships', f.partnership_id)
-      if (f.bom_id && f.bom_id !== was.bom_id) await linkRecords('quotes', id, 'boms', f.bom_id)
+      if (companyId && companyId !== was.company_id) await associateRecords('quotes', id, 'companies', companyId)
+      if (contactId && contactId !== was.contact_id) await associateRecords('quotes', id, 'contacts', contactId)
+      if (f.deal_id && f.deal_id !== was.deal_id) await associateRecords('quotes', id, 'deals', f.deal_id)
+      if (f.partnership_id && f.partnership_id !== was.partnership_id) await associateRecords('quotes', id, 'partnerships', f.partnership_id)
+      if (f.bom_id && f.bom_id !== was.bom_id) await associateRecords('quotes', id, 'boms', f.bom_id)
     }
     setF((x) => ({ ...x, company_id: companyId, company_name: '', contact_id: contactId || NONE }))
     companies.refresh()

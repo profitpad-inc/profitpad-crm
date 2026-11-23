@@ -471,8 +471,11 @@ function validateSorts(obj: ObjectDef, sorts: unknown): { property: string; dire
 }
 
 // Long values that make poor table columns: a custom view's code and queries
-// (its record page shows them in the Code card).
-const NOT_DEFAULT_COLUMNS: Record<string, string[]> = { pc_0055: ['draft_source', 'draft_queries', 'source', 'queries'] };
+// and a landing page's HTML (their record pages show them).
+const NOT_DEFAULT_COLUMNS: Record<string, string[]> = {
+  pc_0055: ['draft_source', 'draft_queries', 'source', 'queries'],
+  pc_0059: ['draft_html', 'html']
+};
 
 // Default view: name plus the first few native properties, newest first.
 function defaultColumns(obj: ObjectDef): Column[] {

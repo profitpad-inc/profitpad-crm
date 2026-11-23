@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
   api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -11,6 +11,7 @@ import { defaultSortDirection, displayName, displayValue, formatValue, namePrope
 import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
 import { ImportModal } from '../components/ImportModal';
+import { ExportModal } from '../components/ExportModal';
 import { AddLineModal } from '../components/AddLineModal';
 import { AMOUNT_FIELDS, offerAmountUpdates, parentsOfLines } from '../lib/lines';
 import { FileUploadButton } from '../components/FileUploadButton';
@@ -22,6 +23,7 @@ import '../table.css';
 import { confirmDialog } from '../components/confirm';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Loading } from '../components/Loading';
+import { useIsMobile } from '../lib/use-mobile';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -59,6 +61,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const isMobile = useIsMobile();
   const [showColumns, setShowColumns] = useState(false);
   const [viewDialog, setViewDialog] = useState<null | { mode: 'create' | 'rename'; name: string }>(null);
   const [editing, setEditing] = useState<null | { record: CrmRecord; property: Property; rect: DOMRect }>(null);
@@ -501,9 +505,11 @@ function ObjectTableFor({ object }: { object: string }) {
         </div>
         <div className="table-head-actions">
           {object === 'contacts' && <Link className="btn" to="/scan"><IdCard size={16} /> Scan card</Link>}
-          {schema.permissions.create && !NO_IMPORT.includes(object) && (
+          {/* imports and exports are desktop work: hidden on phones */}
+          {!isMobile && schema.permissions.create && !NO_IMPORT.includes(object) && (
             <button className="btn" onClick={() => setShowImport(true)}><Upload size={16} /> Import</button>
           )}
+          {!isMobile && <button className="btn" onClick={() => setShowExport(true)}><Download size={16} /> Export</button>}
           {createButton}
         </div>
       </header>
@@ -806,6 +812,21 @@ function ObjectTableFor({ object }: { object: string }) {
           onCreated={(r) => {
             setShowCreate(false);
             navigate(`/objects/${object}/${r.id}`);
+          }}
+        />
+      )}
+      {showExport && (
+        <ExportModal
+          object={schema}
+          onClose={() => setShowExport(false)}
+          view={{
+            query: debounced || undefined,
+            status: archived ? 'archived' : undefined,
+            sorts,
+            // property columns in the order shown
+            properties: [...new Set(columns.flatMap((c) => (c.type === 'property' && schema.properties.some((p) => p.api_name === c.property) ? [c.property] : [])))],
+            total: data?.total ?? null,
+            picked: shown.filter((r) => picked.has(r.id)).map((r) => r.id)
           }}
         />
       )}

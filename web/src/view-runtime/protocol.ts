@@ -20,14 +20,16 @@ export interface ViewInit {
 // phoneRegions and checkPhone serve the kit's PhoneInput (read only, never asked).
 // Files: uploadFile gets a File or Blob (structured clone carries it across),
 // fileBlob answers with a Blob, which the view shows through a blob: URL.
-type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'linkRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone'
+type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'createRecord' | 'updateRecord' | 'associateRecords' | 'callIntegration' | 'phoneRegions' | 'checkPhone'
   | 'uploadFile' | 'getFiles' | 'fileBlob' | 'openFile'
   // snippets for the # menu in text boxes (read only, never asked)
   | 'snippets' | 'renderSnippet'
   // the viewer's own settings in this view (never asked: their preferences, not CRM data)
   | 'getSettings' | 'setSetting'
   // the CRM's own line items editor over a deal, quote, invoice, ... (a change: asked like createRecord)
-  | 'editLineItems';
+  | 'editLineItems'
+  // the old name of associateRecords, from a frame loaded before the rename
+  | 'linkRecords';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

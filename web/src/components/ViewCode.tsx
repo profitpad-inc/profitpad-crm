@@ -33,7 +33,7 @@ function readWrap(): boolean {
 
 // Code with line numbers (left out when copying). Unwrapped, long lines scroll
 // sideways and the numbers stay put; wrapped, a long line keeps one number.
-function CodeBlock({ text, wrap }: { text: string; wrap: boolean }) {
+export function CodeBlock({ text, wrap }: { text: string; wrap: boolean }) {
   const lines = text.split('\n');
   return (
     <pre className={`view-code numbered${wrap ? ' wrap' : ''}`} style={{ ['--gutter' as string]: `${String(lines.length).length}ch` }}>

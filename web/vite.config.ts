@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react';
 // The API runs on :3000 (api/) unless API_URL says otherwise; the dev
 // server proxies /v1 to it.
 //
-// Five pages: the CRM app (index.html) and the public quote, invoice, form and
-// booking pages (p/quote/, p/invoice/, p/form/, p/book/), which import nothing from the app so customers only
+// The CRM app (index.html) and the public quote, invoice, form, booking and
+// landing pages (p/quote/, p/invoice/, p/form/, p/book/, p/page/), which import nothing from the app so customers only
 // download the public code. embed.js is built separately (vite.embed.config.ts).
 const page = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -31,10 +31,17 @@ function csp(apiUrl: string): Plugin {
     `form-action 'self'${api ? ` ${api}` : ''}`,
     "frame-src 'self'"
   ].join('; ');
+  // The landing page shell (p/page/) frames the page's HTML, which may come
+  // from another host (PAGES_URL on the API), so any https frame there.
+  const pagePolicy = policy.replace("frame-src 'self'", "frame-src 'self' https:");
   return {
     name: 'pcrm-csp',
     apply: 'build',
-    transformIndexHtml: () => [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' }]
+    transformIndexHtml: (_html, ctx) => [{
+      tag: 'meta',
+      attrs: { 'http-equiv': 'Content-Security-Policy', content: /(^|\/)p\/page\/index\.html$/.test(ctx.path.replace(/\\/g, '/')) ? pagePolicy : policy },
+      injectTo: 'head-prepend'
+    }]
   };
 }
 
@@ -58,7 +65,8 @@ export default defineConfig(({ mode }) => ({
         invoice: page('p/invoice/index.html'),
         form: page('p/form/index.html'),
         book: page('p/book/index.html'),
-        unsubscribe: page('p/unsubscribe/index.html')
+        unsubscribe: page('p/unsubscribe/index.html'),
+        page: page('p/page/index.html')
       }
     }
   }

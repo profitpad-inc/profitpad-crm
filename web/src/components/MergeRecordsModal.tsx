@@ -211,7 +211,7 @@ export function MergeRecordsModal({ object, schema, record, onClose, onMerged }:
                             />
                             <span className="merge-prop-text">
                               <span className="merge-prop-label">{p.label}</span>
-                              <span className="merge-prop-value">{empty ? '--' : displayValue(p, v)}</span>
+                              <span className="merge-prop-value">{empty ? 'No value' : displayValue(p, v)}</span>
                             </span>
                           </label>
                           {i === 0 && <span className="merge-prop-arrow" aria-hidden><ChevronRight size={12} /></span>}
@@ -252,7 +252,7 @@ export function MergeRecordsModal({ object, schema, record, onClose, onMerged }:
                   return (
                     <div className="merge-preview-field" key={p.api_name}>
                       <div className="merge-prop-label">{p.label}</div>
-                      <div>{isEmpty(v) ? '--' : displayValue(p, v)}</div>
+                      <div>{isEmpty(v) ? <span className="merge-no-value">No value</span> : displayValue(p, v)}</div>
                     </div>
                   );
                 })}
@@ -279,8 +279,8 @@ function RecordCard({ record, createdProp, object, primary, onPrimary }: {
         <div className="merge-card-id">
           <span className="record-avatar small">{initials(name)}</span>
           <div className="merge-card-names">
-            <div className="merge-card-name">{name}</div>
-            {sub && <div className="muted merge-card-sub">{sub}</div>}
+            <div className="merge-card-name" title={name}>{name}</div>
+            {sub && <div className="muted merge-card-sub" title={sub}>{sub}</div>}
           </div>
         </div>
         <a className="merge-view-link" href={`/objects/${object}/${record.id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>

@@ -123,6 +123,33 @@ export function matchDropdownInput(prop: PropertyDef, input: unknown): unknown {
   return isSingleValue(prop) ? (out[0] ?? null) : out;
 }
 
+// Imports check addresses in email properties before anything is written
+// (the API itself stores any text): properties named email, *_email or
+// additional_emails (several addresses split by ; , or spaces).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export function isEmailProperty(prop: PropertyDef): boolean {
+  return prop.type === 'text' && (prop.api_name === 'email' || prop.api_name.endsWith('_email') || prop.api_name === 'additional_emails');
+}
+
+// Imports: why one text cell would be refused or is not a usable value, or
+// null. Phone numbers as toDb checks them, email addresses as above.
+// Patterns (options.regex) are checked by the caller in Postgres, as the
+// column's own check does.
+export function importValueProblem(prop: PropertyDef, input: string): string | null {
+  const text = input.trim();
+  if (text === '' || prop.type !== 'text') return null;
+  if (isEmailProperty(prop)) {
+    const parts = prop.api_name === 'additional_emails' ? text.split(/[;,\s]+/).filter(Boolean) : [text];
+    const bad = parts.filter((e) => !EMAIL_RE.test(e));
+    if (bad.length > 0) return parts.length > 1 ? `not valid email addresses: ${bad.join(', ')}` : 'not a valid email address';
+  }
+  if (prop.options.display === 'phone') {
+    const phone = checkPhone(text);
+    if (!phone.valid) return `not a valid phone number (${phone.reason})`;
+  }
+  return null;
+}
+
 // Converts a stored value into its API shape.
 export function fromDb(prop: PropertyDef, raw: unknown): unknown {
   if (raw === null || raw === undefined) return null;

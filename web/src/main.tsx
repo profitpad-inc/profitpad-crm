@@ -12,6 +12,7 @@ import { api, type Me } from './lib/api';
 import { finishReauth, onReauthChange, reauthPending } from './lib/reauth';
 import { AppProvider } from './lib/app-context';
 import { installTooltips } from './lib/tooltips';
+import { installNoAutofill } from './lib/no-autofill';
 import { Sidebar } from './components/Sidebar';
 import { BottomBar } from './components/MobileNav';
 import { useIsMobile } from './lib/use-mobile';
@@ -93,6 +94,7 @@ function App() {
 // light or dark before the first paint (the login page too); AppProvider takes over once signed in
 applyMode(resolveMode(getColorMode()));
 installTooltips();
+installNoAutofill();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

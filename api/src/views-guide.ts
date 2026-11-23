@@ -21,7 +21,7 @@ export const CHECK_SIZES = [
 ] as const;
 export const CHECK_SIZES_TEXT = CHECK_SIZES.map((s) => `${s.width}x${s.height} (${s.name})`).join(', ');
 
-export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'design', 'sql', 'schema', 'properties', 'integrations', 'examples', 'document_templates'] as const;
+export const GUIDE_TOPICS = ['overview', 'runtime', 'ui_kit', 'styling', 'design', 'sql', 'schema', 'properties', 'integrations', 'examples', 'document_templates', 'landing_pages'] as const;
 export type GuideTopic = (typeof GUIDE_TOPICS)[number];
 
 const DOCUMENT_TEMPLATES = `# Document templates
@@ -31,11 +31,11 @@ A document template draws a record as a document: the customer's quote page and 
 The result is one static HTML page. The customer sees it in a sandboxed iframe (no scripts run), and the PDF is that page printed by Chromium with scripts off, so they look the same. Write a whole page (<!doctype html>, <style> in the head) sized for paper: for US Letter, 8.5in wide. Use @media print for PDF-only changes (no drop shadows, no grey backdrop) and @page { size: letter; margin: 0 } when the page draws its own margins. page_size, orientation and page_margin on the template are the PDF defaults; a CSS @page rule wins. <script> never runs: compute values with Liquid instead.
 
 ## Which template a record uses
-The template linked to the record (association; a quote links to at most one), else the published template marked default for that object. There is no built-in layout: quotes always have exactly one active, published default (the CRM refuses to archive, delete or un-default it until another template is the default), and the "Standard quote" template that came with the CRM can be archived but never deleted. Only published templates are used for customers; set_default_document_template picks the default.
+The template associated with the record (a quote can have at most one), else the published template marked default for that object. There is no built-in layout: quotes always have exactly one active, published default (the CRM refuses to archive, delete or un-default it until another template is the default), and the "Standard quote" template that came with the CRM can be archived but never deleted. Only published templates are used for customers; set_default_document_template picks the default.
 
 ## data (see it with get_document_template_data)
 - record, and the same object under the singular name (quote): every property by api_name (a single-value dropdown as its value, numbers as numbers, dates YYYY-MM-DD, times ISO), id, and _text: each property as the CRM shows it (dropdown labels, money, long dates). public_key and customer_ip are never included.
-- lines: the line items, oldest first. company, contact, deal: the first linked one (or null). linked: every linked record by object api name (linked.companies, linked.products ...).
+- lines: the line items, oldest first. company, contact, deal: the first associated one (or null). linked: every associated record by object api name (linked.companies, linked.products ...).
 - queries: the template's data sources by name. SQL sources run read-only over view_data like view queries (view_guide topic sql) with :record_id bound to the record; their rows are lists. Integration sources ({"integration": "key", "data": {...}}) call an enabled view integration while drawing; string values in data may hold Liquid ({{ quote.name }}), and the answer's data is queries.<name>.
 - org: {logo (data URL or null), theme}. today (YYYY-MM-DD), now (ISO, UTC).
 
@@ -50,6 +50,26 @@ money: currency ("$1,240.00"), number: decimals ("1,240.5"), fixed: decimals ("1
 2. To copy an existing page, start from its own HTML and CSS: keep the CSS as it is and put Liquid where the values are. Watch for inherited styles from stylesheets the page loads (a theme's line-height changes every box height).
 3. create_document_template (draft), then render_document_template after each change: it returns a screenshot of the page at paper width, the PDF's page count and warnings (failed queries, images that did not load). Compare with the target until they match. save_document_template_draft takes edits (find and replace) like save_view_draft.
 4. Ask the user before publish_document_template and set_default_document_template: published templates go to customers.`;
+
+const LANDING_PAGES = `# Landing pages
+
+A landing page is a public page anyone can open without signing in: a website page, a demo page for a client, an event page. It is a record of the object "landing_pages" (/objects/landing_pages in the CRM) holding one HTML document, with a draft and a published version like a view. It opens at /p/page/#<slug> (the url in every answer). It is not a custom view: no React, no queries, no CRM data, and it does not follow the CRM's styling. Write it like a stand-alone website page.
+
+## The HTML
+- A whole document: <!doctype html>, <html lang>, <head> with <meta charset="utf-8">, <meta name="viewport" content="width=device-width, initial-scale=1"> and a <title> (the browser tab shows it), then <body>. Put CSS in <style> and scripts in <script>, inline or from a CDN. Up to 1,000,000 characters: host big images and videos elsewhere and link to them (https).
+- Anything a normal page can load works: Google Fonts, Tailwind from its CDN, analytics tags, chat widgets.
+- Embeds: <iframe> for YouTube (https://www.youtube.com/embed/<id>), Vimeo, Loom, Google Maps, Calendly, Typeform and the like, and the embed <script> snippets those services give. Give iframes allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" and allowfullscreen when the service suggests it, and size them with CSS (aspect-ratio: 16 / 9; width: 100%).
+- The CRM's own forms and booking pages: <div data-pcrm-form="FORM_KEY_OR_SLUG"></div> or <div data-pcrm-booking="BOOKING_SLUG"></div> (the form or booking page must be published). They are drawn right in the page, so your CSS can reach the form (the booking page keeps its own styles); the page needs no Embed domains entry. Do not add the website embed.js snippet yourself.
+- Links leave the page in the whole browser window (the page sits in a frame), except #anchors, which scroll within the page. target="_blank" opens a new tab. Links to /p/... (another landing page /p/page/#other, a form /p/form/#key) go to this CRM.
+- Must look right on phones: test at ${CHECK_SIZES_TEXT}. No sideways scrolling.
+
+## How it is served (what this means for the page)
+The HTML runs in a sandbox so its scripts can never reach the CRM. When the CRM has a separate page host (PAGES_URL), scripts get their own origin and cookies and local storage work, so every embed works. Without it (the usual setup), the page has no origin of its own: localStorage and document.cookie throw (wrap them in try/catch), fetch to other sites needs their CORS to allow origin null, and some third-party embeds that need their own storage may not work (render_landing_page does not show this; ask the user to check in a browser). The CRM's forms and booking pages work either way. alert, confirm, window.open and downloads work. Search engines do not index /p/page/ addresses (they are hash links).
+
+## Workflow
+1. create_landing_page with a name, slug and the HTML (a draft: only admins can see it).
+2. render_landing_page at each size above (a screenshot, the page height, console errors, failed requests); fix what you find. It draws the page on its own, without the CRM page around it, so CRM forms and booking pages show as not available there: check those in the draft_url. save_landing_page_draft takes edits (find and replace, each old_str matching exactly one place) or the whole html.
+3. Give the user draft_url to look at, and ask before publish_landing_page: published pages are public. unpublish_landing_page takes a page down; archive_landing_page removes it.`;
 
 const OVERVIEW = `# Custom views
 
@@ -70,7 +90,7 @@ A custom view is a page in the CRM built from React (TSX) plus named, read-only 
 
 ## What views can and cannot do
 - Read data only through the view's own queries (SQL over the view_data schema). Every query runs as the person viewing, with row-level security: they only ever see records their roles let them see, and a query that reads a property their roles hide is refused for them.
-- Change data only through the record actions in @pcrm/view (createRecord, updateRecord, linkRecords), which use the viewer's own permissions.
+- Change data only through the record actions in @pcrm/view (createRecord, updateRecord, associateRecords), which use the viewer's own permissions.
 - Upload files and set file properties (uploadFile or <FileInput>, then the ids in createRecord / updateRecord), and show or open files the viewer can open (useFileUrl, <FileImage>, openFile). Topic runtime, "Files".
 - Talk to outside services (an n8n webhook that posts to Slack, say) only through integrations an admin set up: callIntegration(key, data) (topic "integrations", list_view_integrations).
 - Link to outside web pages (SAM.gov, a partner's site) only with <ExternalLink href> or openUrl(url) (or a plain <a href="https://...">, which the frame hands to openUrl): they open in a new tab, http and https only, and the viewer is asked to confirm the domain unless they said not to ask again for it.
@@ -109,7 +129,7 @@ Anything else fails to save.
 - navigate(path): goes to a CRM path, e.g. '/objects/contacts' or '/view/#other-view'.
 - openUrl(url): opens a web page outside the CRM in a new tab, e.g. openUrl('https://sam.gov/opp/' + row.notice_id + '/view'). Only full http:// and https:// addresses; anything else (javascript:, data:, mailto:, relative paths, addresses with a user name or password) rejects with an Error. The CRM shows "You're leaving the CRM for <domain>" with the full address, unless the viewer ticked "Don't ask again" for that domain before. Resolves with { opened: true } or { opened: false } (the viewer cancelled). Call it only from a click or tap, never on load or after an await: browsers, phones above all, open tabs only straight from the viewer's tap, so a call without one always shows the confirmation. Prefer <ExternalLink> for links. For CRM pages use navigate or openRecord instead.
 - setParams({ key: value }): merges into the address params (undefined or '' removes one). Use it for filters, tabs and the selected item (a picked row, an open detail panel: setParams({ page: row.id })) rather than React state, so links, refreshes and the back button keep them, and render_view can draw that state with params.
-- createRecord(object, properties, associations?), updateRecord(object, id, properties), linkRecords(object, id, toObject, toId): change data with the viewer's permissions. The first time a view changes data, the CRM asks the viewer to allow it; one yes allows that view's changes for everyone from then on (anyone's "Don't allow" refuses only that change). Still call these only from something the viewer clicked, never on load. Property values follow the CRM API (dropdowns take api_values). They reject with an Error whose message explains why (including "The viewer did not allow this change"); show it. Call refresh() on the affected queries afterwards.
+- createRecord(object, properties, associations?), updateRecord(object, id, properties), associateRecords(object, id, toObject, toId): change data with the viewer's permissions. The first time a view changes data, the CRM asks the viewer to allow it; one yes allows that view's changes for everyone from then on (anyone's "Don't allow" refuses only that change). Still call these only from something the viewer clicked, never on load. Property values follow the CRM API (dropdowns take api_values). They reject with an Error whose message explains why (including "The viewer did not allow this change"); show it. Call refresh() on the affected queries afterwards.
 - editLineItems(object, id): opens the CRM's own line items editor (the record page's Line items +: product search, custom lines, quantities, prices, the record's amount) over the view, for a record with line items (deals, quotes, invoices, carts, orders). Resolves with { saved: true } when the viewer saved lines, { saved: false } when they closed it. It is a change like createRecord (asked the same way); call it from a click, e.g. right after createRecord('quotes', ...) in a "New quote" form, then refresh() the queries that show the record's lines or amount. render_view refuses it.
 - uploadFile, getFiles, getFileBlob, openFile: files, below.
 - useViewSetting(key, fallback): like useState, but remembered on the server for this viewer in this view, on every device: const [cards, setCards, { loading }] = useViewSetting('cards', ['pipeline', 'weighted']). It is fallback until the saved value loads (loading true), saves a moment after the last change, and accepts a function like setState. Keys: 1 to 100 letters, digits, _ . : or -; values: any JSON up to 32 KB; at most 200 keys per viewer per view; setting null removes it. Per person only: never use it for data other people should see (that belongs in records), and nobody else, admins included, can read it. getViewSettings() and setViewSetting(key, value) are the plain calls behind it. Draft and published share the settings. API keys have no user, so it rejects for them. render_view reads your own saved settings and keeps changes for that render only.
@@ -311,11 +331,11 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 - Single-value dropdowns are text (the api_value) plus <name>__label (the label). Multi-value dropdowns are text[] plus <name>__label (text[] of labels). Filter on the api_value, show the label.
 - owner is a dropdown of user ids (owner__label is the user's name).
 - users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name". Records can be owned by users who are archived or deactivated, and those are not in that list (or, when archived, not in users at all), so add the owners found on the records: "select pc_0000_id as id, name from users where status = 'active' union select owner, owner__label from deals where owner is not null order by 2".
-- How CRM features link records (meetings to the booking page they were booked on, submissions to forms, lines to their parent, payments and invoices to quotes): see "How it is linked" for that object in topic schema, or how_linked in describe_object. Links listed as linked_only_by_crm are made only by the feature, so they mean exactly that (every call linked to a booking page was booked through it).
-- associations: one row per link, seen from both sides: association_id, label_id, label, object_type_id, record_id, other_object_type_id, other_record_id, side, created_at, object, other_object (the last two are api_names, like 'deals' and 'contacts'). It holds links between every pair of objects, so always filter both object and other_object; joining contacts on other_record_id without other_object = 'contacts' matches ids of unrelated records. A deal's contacts:
+- How CRM features associate records (meetings with the booking page they were booked on, submissions with forms, lines with their parent, payments and invoices with quotes): see "How it is associated" for that object in topic schema, or how_associated in describe_object. Associations listed as associated_only_by_crm are made only by the feature, so they mean exactly that (every call associated with a booking page was booked through it).
+- associations: one row per association, seen from both sides: association_id, label_id, label, object_type_id, record_id, other_object_type_id, other_record_id, side, created_at, object, other_object (the last two are api_names, like 'deals' and 'contacts'). It holds associations between every pair of objects, so always filter both object and other_object; joining contacts on other_record_id without other_object = 'contacts' matches ids of unrelated records. A deal's contacts:
   "select ct.pc_0010_id as id, ct.name from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' and a.record_id = :deal"
   Contacts per deal, for a board: "select a.record_id as deal_id, string_agg(distinct ct.name, ', ') as contacts from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' group by a.record_id"
-  Always join to the other object's view (as above) rather than counting association rows, so hidden records are not counted, and use count(distinct ...) since two records can be linked under more than one label.
+  Always join to the other object's view (as above) rather than counting association rows, so hidden records are not counted, and use count(distinct ...) since two records can be associated under more than one label.
 - objects, properties, property_options, association_labels, currencies: the CRM's setup. currencies: code, name, symbol, decimals, rate_to_base (1 of this currency in base units), is_base, rate_date, rate_source (manual or provider), rate_manual (pinned by an admin).
 - currency_rates: the exchange rate history, one row per day and currency: rate_date, from_code, to_code (the base that day), rate (1 from_code = rate to_code), source (manual or provider), provider, created_at. Order dropdown values by property_options.display_order.
 - property_history: every change to a property, one row per property per write (creating a record writes a row for each value set): object (api_name, like 'deals'), object_type_id, record_id, property (api_name), old_value and new_value (jsonb, as stored: dropdowns are arrays), old_text and new_text (the same as text: a dropdown's first value), changed_at, changed_by (an actor, as created_by), source, history_id (increasing; order by it for ties). Only records the viewer can read, and no properties their roles hide. Always filter object and property, and usually record_id or changed_at. When each deal entered its current stage, and time in stage:
@@ -431,20 +451,20 @@ export default function SlackNote() {
 }
 \`\`\``;
 
-// How CRM features link the records they make (all through associations,
+// How CRM features associate the records they make (all through associations,
 // unlabeled unless said). Shown with the object in the schema topic and by
 // describe_object. Keep in step with the features (routes/booking.ts,
 // forms.ts, payments/fulfil.ts, migrations 0016, 0022, 0028).
 export const FEATURE_LINKS: Record<string, string> = {
-  booking_pages: 'A meeting booked on a booking page is a calls record (call_type meeting) linked to the page. Only bookings make this link (users cannot add or remove it), so every call linked to a booking page was booked through it; to count bookings per page, count calls linked to it. A cancelled booking keeps its link with call status cancelled. The meeting is also linked to the contact (found or created by the attendee email) and to the form submissions of the page\'s forms.',
-  calls: 'Meetings booked through a booking page are linked to that page (a link only bookings make), to the contact and to the form submissions. Other calls are linked by people as usual.',
-  forms: 'Each submission is a form_submissions record linked to its form; only the form makes this link.',
-  form_submissions: 'Linked to its form (a link only the form makes), to the contact it filled in, and to the ticket when the form creates tickets.',
-  lines: 'A line is linked to at most one product and at most one parent: a deal, quote, invoice, payment, cart, order or custom object record. Archiving or deleting the parent does the same to its lines.',
-  payments: 'A payment is linked to the quote or invoice it pays and to that record\'s contacts and companies.',
-  invoices: 'A paid quote creates a paid invoice linked to the quote, the payment, and the quote\'s deals, contacts and companies.',
-  users: 'Users link only to teams.',
-  views: 'Views link to nothing.'
+  booking_pages: 'A meeting booked on a booking page is a calls record (call_type meeting) associated with the page. Only bookings make this association (users cannot add or remove it), so every call associated with a booking page was booked through it; to count bookings per page, count calls associated with it. A cancelled booking keeps its association with call status cancelled. The meeting is also associated with the contact (found or created by the attendee email) and with the form submissions of the page\'s forms.',
+  calls: 'Meetings booked through a booking page are associated with that page (an association only bookings make), with the contact and with the form submissions. Other calls are associated by people as usual.',
+  forms: 'Each submission is a form_submissions record associated with its form; only the form makes this association.',
+  form_submissions: 'Associated with its form (an association only the form makes), with the contact it filled in, and with the ticket when the form creates tickets.',
+  lines: 'A line is associated with at most one product and at most one parent: a deal, quote, invoice, payment, cart, order or custom object record. Archiving or deleting the parent does the same to its lines.',
+  payments: 'A payment is associated with the quote or invoice it pays and with that record\'s contacts and companies.',
+  invoices: 'A paid quote creates a paid invoice associated with the quote, the payment, and the quote\'s deals, contacts and companies.',
+  users: 'Users can be associated only with teams.',
+  views: 'Views have no associations.'
 };
 
 // ---- dynamic topics ---------------------------------------------------------------
@@ -466,7 +486,7 @@ function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
   const lines = [`## ${o.api_name} (${o.label_plural}, code ${o.object_type_id}, id column ${o.id_column})`];
   if (o.description) lines.push(o.description);
   if (o.aliases.length) lines.push(`Also called: ${o.aliases.join(', ')}`);
-  if (FEATURE_LINKS[o.api_name]) lines.push(`How it is linked: ${FEATURE_LINKS[o.api_name]}`);
+  if (FEATURE_LINKS[o.api_name]) lines.push(`How it is associated: ${FEATURE_LINKS[o.api_name]}`);
   for (const pr of props) {
     let line = `- ${pr.api_name}: ${columnType(pr)}${pr.label !== pr.api_name ? `, "${pr.label}"` : ''}`;
     if (pr.type === 'text' && pr.options.display === 'phone') line += ', a phone number (use PhoneInput)';
@@ -488,7 +508,7 @@ function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
     if (detailed && pr.description) line += `. ${pr.description}`;
     lines.push(line);
   }
-  if (o.links_to.length) lines.push(`Links to: ${o.links_to.join(', ')}`);
+  if (o.links_to.length) lines.push(`Can be associated with: ${o.links_to.join(', ')}`);
   return lines.join('\n');
 }
 
@@ -527,5 +547,6 @@ export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', ob
     case 'integrations': return INTEGRATIONS;
     case 'examples': return examplesTopic();
     case 'document_templates': return DOCUMENT_TEMPLATES;
+    case 'landing_pages': return LANDING_PAGES;
   }
 }

@@ -1,7 +1,7 @@
 import {
   Box, Building2, CalendarClock, FileCode2, CalendarDays, CircleDollarSign, ClipboardList, Contact, CreditCard, File, FileText, Handshake, Home, IdCard,
   ListChecks, Mail, MailPlus, Megaphone, Package, PhoneCall, ReceiptText, ShoppingBag, ShoppingCart, StickyNote, TextQuote,
-  Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, MessageSquare, type LucideIcon, type LucideProps
+  Ticket, User, Users, Wrench, Zap, BarChart3, LayoutDashboard, MessageSquare, Globe, type LucideIcon, type LucideProps
 } from 'lucide-react';
 import { Send } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
@@ -42,6 +42,7 @@ const OBJECT_ICONS: Record<string, LucideIcon> = {
   views: LayoutDashboard,
   card_scans: IdCard,
   document_templates: FileCode2,
+  landing_pages: Globe,
   comments: MessageSquare
 };
 
@@ -78,7 +79,7 @@ export const ReportingIcon = BarChart3;
 export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'CRM', objects: ['contacts', 'companies', 'deals', 'tickets', 'products', 'orders', 'services', 'lines', 'quotes', 'invoices', 'payments', 'carts'] },
   { label: 'Activities', objects: ['calls', 'emails', 'notes', 'tasks', 'comments'] },
-  { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'email_campaigns', 'marketing_events', 'marketing_event_participations', 'card_scans', 'booking_pages'] },
+  { label: 'Marketing', objects: ['forms', 'form_submissions', 'email_templates', 'email_campaigns', 'marketing_events', 'marketing_event_participations', 'card_scans', 'booking_pages', 'landing_pages'] },
   { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'document_templates', 'object_events', 'object_event_occurrences'] }
 ];
 
