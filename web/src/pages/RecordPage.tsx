@@ -183,6 +183,48 @@ async function loadLinked(object: string, id: string, codeToName: Map<string, st
   return groups.filter((g): g is Associated => g !== null);
 }
 
+interface CloneLinkGroup {
+  object: string;
+  label: string;
+  records: { id: string; name: string }[];
+}
+
+// In the clone confirmation (its own React root, so no app context): a
+// switch per associated object. kept collects the objects switched on, read
+// by cloneRecord once the dialog is confirmed.
+function CloneLinkPicker({ groups, kept }: { groups: CloneLinkGroup[]; kept: Set<string> }) {
+  const [on, setOn] = useState<Set<string>>(() => new Set(kept));
+  function toggle(o: string, value: boolean) {
+    const next = new Set(on);
+    if (value) next.add(o); else next.delete(o);
+    kept.clear();
+    next.forEach((x) => kept.add(x));
+    setOn(next);
+  }
+  return (
+    <>
+      <p className="muted clone-links-head">Keep these associations on the copy:</p>
+      <ul className="clone-links">
+        {groups.map((g) => {
+          const names = g.records.slice(0, 3).map((r) => r.name).join(', ');
+          const more = g.records.length - 3;
+          return (
+            <li key={g.object}>
+              <label>
+                <input type="checkbox" checked={on.has(g.object)} onChange={(e) => toggle(g.object, e.target.checked)} />
+                <span className="clone-links-text">
+                  <span>{g.label} ({g.records.length})</span>
+                  <span className="muted">{names}{more > 0 ? ` and ${more} more` : ''}</span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 // Where the back link goes when the record was opened from somewhere other
 // than its object's table (a custom view): navigation state, kept for this
 // record while its own address changes (tabs).
@@ -305,25 +347,38 @@ export function RecordPage() {
   }
 
   // a new record with the same values, without unique ones (the API leaves them
-  // out); the confirmation lists the filled ones that stay behind
+  // out); the confirmation lists the filled ones that stay behind and has a
+  // switch per associated object whose links the copy keeps (all off)
   async function cloneRecord() {
     if (!schema || !record) return;
     const skipped = schema.properties.filter((p) => p.record_status === 'active'
       && (p.options.unique === true || (object === 'contacts' && p.api_name === 'additional_emails'))
       && formatValue(p, record.properties[p.api_name]) !== '');
     const singular = schema.label_singular.toLowerCase();
-    const details = skipped.length > 0 && (
+    const systemLinks = objectByName.get(object)?.system_links ?? [];
+    const groups: CloneLinkGroup[] = associated
+      .filter((g) => g.records.length > 0 && !systemLinks.includes(g.object))
+      .map((g) => ({ object: g.object, label: objectByName.get(g.object)?.label_plural ?? g.object, records: g.records.map((r) => ({ id: r.record.id, name: recordName(r.record) })) }));
+    const kept = new Set<string>();
+    const details = (skipped.length > 0 || groups.length > 0) && (
       <>
-        <p className="muted">These are unique, so they won{'\u2019'}t be copied:</p>
-        <ul>
-          {skipped.map((p) => <li key={p.api_name}><span>{p.label}</span><span>{formatValue(p, record.properties[p.api_name])}</span></li>)}
-        </ul>
+        {skipped.length > 0 && (
+          <>
+            <p className="muted">These are unique, so they won{'\u2019'}t be copied:</p>
+            <ul>
+              {skipped.map((p) => <li key={p.api_name}><span>{p.label}</span><span>{formatValue(p, record.properties[p.api_name])}</span></li>)}
+            </ul>
+          </>
+        )}
+        {groups.length > 0 && <CloneLinkPicker groups={groups} kept={kept} />}
       </>
     );
-    if (!(await confirmDialog(`Creates a new ${singular} with the same property values as ${recordName(record)}. Associations, activities and files are not copied.`,
-      { title: `Clone this ${singular}?`, confirmLabel: 'Clone', details }))) return;
+    const message = `Creates a new ${singular} with the same property values as ${recordName(record)}.`
+      + (groups.length > 0 ? ' Only the associations you turn on below are kept.' : '');
+    if (!(await confirmDialog(message, { title: `Clone this ${singular}?`, confirmLabel: 'Clone', details }))) return;
+    const associations = groups.filter((g) => kept.has(g.object)).flatMap((g) => g.records.map((r) => ({ object: g.object, id: r.id })));
     try {
-      const copy = await api<CrmRecord>('POST', `/v1/objects/${object}/${id}/clone`);
+      const copy = await api<CrmRecord>('POST', `/v1/objects/${object}/${id}/clone`, { associations });
       toast('Cloned');
       navigate(`/objects/${object}/${copy.id}`);
     } catch (err) {

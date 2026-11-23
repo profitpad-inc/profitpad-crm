@@ -746,7 +746,9 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
   }
 
   return (
-    <Modal title={`Import ${plural}`} onClose={onClose} wide locked={step === 'running' || checking} className="import-modal" footer={footer}>
+    <Modal
+      title={step !== 'done' ? `Import ${plural}` : error ? 'Import stopped partway' : `${object.label_plural} imported successfully`}
+      onClose={onClose} wide locked={step === 'running' || checking} className="import-modal" footer={footer}>
       {error && <div className="error">{error}</div>}
       {content}
     </Modal>

@@ -506,7 +506,7 @@
 .activity > .file-viewer.card { margin-top: 16px; }
 /* the popup attachment tiles open: the viewer's header is the popup's header */
 .overlay.file-preview-overlay { padding: 4vh 16px; place-items: start center; }
-.modal.file-preview-modal { width: min(1100px, calc(100vw - 32px)); max-height: 92vh; overflow: hidden; }
+.modal.file-preview-modal { width: min(1100px, calc(100vw - 32px)); max-height: 100%; overflow: hidden; }
 .file-viewer.in-modal { display: flex; flex-direction: column; gap: 12px; min-height: 0; padding: 14px 16px 16px; }
 .file-viewer.in-modal .file-viewer-actions { align-items: center; }
 .file-preview-modal .pdf-pages { height: calc(92vh - 150px); }
@@ -557,7 +557,7 @@
 .line-search > input { margin-bottom: 6px; }
 
 /* line items editor (LineItemsEditor) */
-.modal.line-editor { width: min(1180px, calc(100vw - 32px)); max-height: 90vh; }
+.modal.line-editor { width: min(1180px, calc(100vw - 32px)); max-height: 100%; }
 .line-editor .modal-foot { align-items: center; }
 .le-amount { display: flex; align-items: center; gap: 8px; margin-right: auto; font-size: 13px; }
 .le-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -805,7 +805,7 @@ a.comment-author:hover { color: var(--primary); }
 }
 
 /* Merge duplicate records (components/MergeRecordsModal.tsx), laid out like HubSpot's */
-.modal.merge-modal { width: min(1120px, calc(100vw - 32px)); max-height: 92vh; }
+.modal.merge-modal { width: min(1120px, calc(100vw - 32px)); max-height: 100%; }
 .merge-modal .modal-foot { justify-content: flex-start; align-items: center; }
 .merge-modal .merge-explain-toggle { margin-left: auto; color: var(--primary); font-weight: 600; }
 .merge-explain { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.5; }

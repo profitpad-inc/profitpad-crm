@@ -467,7 +467,8 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
     [`${base}/{id}/clone`]: {
       post: {
         tags: [tag], summary: `Clone a ${o.label_singular.toLowerCase()}`, operationId: `clone_${o.api_name}`, parameters: [idParam],
-        description: 'Creates a new record with the same values, leaving out unique properties, calculations, files, read-only and system properties, and archived dropdown choices. Associations are not copied.',
+        description: 'Creates a new record with the same values, leaving out unique properties, calculations, files, read-only and system properties, and archived dropdown choices. Associations are copied only for the linked records listed in associations, each with the labels the source has it under.',
+        requestBody: { ...body({ type: 'object', properties: { associations: { type: 'array', description: 'Records linked to the source that the copy is linked to as well', items: { type: 'object', required: ['object', 'id'], properties: { object: { type: 'string', description: 'Object api_name' }, id: { type: 'string' } } } } } }), required: false },
         responses: { 201: json(rec), ...errors }
       }
     },

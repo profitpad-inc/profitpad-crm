@@ -164,9 +164,9 @@ export function ExportModal({ object, view, onClose }: { object: ObjectDef; view
             />
           </label>
           <label className="field">
-            <span>Headings</span>
+            <span>Heading row</span>
             <Select
-              value={headings} onChange={(v) => setHeadings(v as typeof headings)} aria-label="Headings"
+              value={headings} onChange={(v) => setHeadings(v as typeof headings)} aria-label="Heading row"
               options={[{ value: 'labels', label: 'Labels (easy to read, imports back)' }, { value: 'names', label: 'Internal names and values (for the API)' }]}
             />
           </label>

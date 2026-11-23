@@ -7,7 +7,7 @@
 .html-seg button[aria-pressed='true'] { background: var(--page-background); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
 .html-code { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; background: var(--surface); border-radius: 6px; padding: 6px 8px; }
 
-.modal.html-editor-modal { width: min(1100px, calc(100vw - 32px)); max-height: 90vh; }
+.modal.html-editor-modal { width: min(1100px, calc(100vw - 32px)); max-height: 100%; }
 .html-editor-modal .modal-body { display: flex; flex-direction: column; gap: 10px; }
 .html-editor-hint { margin: 0; font-size: 13px; }
 .html-editor-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

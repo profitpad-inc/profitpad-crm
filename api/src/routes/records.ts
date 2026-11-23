@@ -176,8 +176,9 @@ export async function recordRoutes(app: FastifyInstance) {
 
   // A new record with the same values, leaving out unique properties (email,
   // domain, page address...), calculations, files, read-only and system ones.
-  // Associations are not copied.
-  app.post<{ Params: RecParams }>('/v1/objects/:object/:id/clone', async (req, reply) => {
+  // associations lists linked records ({object, id}) the copy is linked to as
+  // well, each with the source's labels; the rest are not copied.
+  app.post<{ Params: RecParams; Body: { associations?: { object: string; id: string }[] } }>('/v1/objects/:object/:id/clone', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
@@ -202,7 +203,30 @@ export async function recordRoutes(app: FastifyInstance) {
       }
       properties[prop.api_name] = v;
     }
-    const id = await withTx({ principal: p, source: 'clone' }, (c) => createRecord(c, obj, p, properties));
+    const keep = req.body?.associations ?? [];
+    if (!Array.isArray(keep) || keep.some((a) => !a || typeof a.object !== 'string' || typeof a.id !== 'string')) {
+      throw badRequest('associations must be a list of {object, id}');
+    }
+    const links: { object: string; id: string; label_id: string }[] = [];
+    if (keep.length > 0) {
+      const byType = new Map<string, { to: Awaited<ReturnType<typeof objectForWrite>>; ids: Set<string> }>();
+      for (const a of keep) {
+        const to = await objectForWrite(a.object);
+        await assertUserLinkable(obj, to.api_name);
+        const g = byType.get(to.object_type_id) ?? { to, ids: new Set<string>() };
+        g.ids.add(a.id);
+        byType.set(to.object_type_id, g);
+      }
+      for (const { to, ids } of byType.values()) await assertAccessible(pool, to, p, [...ids]);
+      // only links the source really has, with every label it has them under
+      const { rows } = await pool.query<{ object_type_id: string; record_id: string; label_id: string }>(
+        `select other_object_type_id as object_type_id, other_record_id as record_id, label_id
+         from crm.associations_both where object_type_id = $1 and record_id = $2 order by created_at`,
+        [obj.object_type_id, source.id]
+      );
+      for (const r of rows) if (byType.get(r.object_type_id)?.ids.has(r.record_id)) links.push({ object: r.object_type_id, id: r.record_id, label_id: r.label_id });
+    }
+    const id = await withTx({ principal: p, source: 'clone' }, (c) => createRecord(c, obj, p, properties, links));
     await drainCalcQueue();
     reply.code(201);
     return getRecord(pool, obj, p, id);
