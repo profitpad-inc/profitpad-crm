@@ -661,6 +661,12 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
 .code-editor.template-code.short textarea { min-height: 200px; }
 .template-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .template-record { min-width: 180px; max-width: 280px; }
+.template-head { flex-wrap: wrap; row-gap: 8px; }
+@media (max-width: 767px) {
+  /* phones: the record picker takes its own row, Show and PDF sit under it */
+  .template-head > .template-record { flex: 1 1 100%; min-width: 0; max-width: none; }
+  .stream-panel > .card + .card { margin-top: 12px; }
+}
 iframe.template-preview { display: block; width: 100%; min-height: 400px; border: 1px solid var(--hairline); border-radius: var(--radius); background: #fff; }
 
 /* ---- comments on activities (components/Comments.tsx) ------------------------------ */
@@ -797,6 +803,8 @@ a.comment-author:hover { color: var(--primary); }
 }
 /* tablets: the object's own cards (public link, signing, ...) sit above the properties in the left column */
 .record-page .record-left > .record-tab-panel { margin-bottom: 12px; }
+/* tablets, editor pages (forms, booking pages, ...): the association cards follow the properties */
+.record-page .record-left > .record-left-links { margin: 12px 0 0; }
 /* tablets: the Associations tab has room for cards side by side, as the row under the columns had */
 @media (min-width: 768px) {
   .record-page .stream-panel > .record-right.record-tab-panel {

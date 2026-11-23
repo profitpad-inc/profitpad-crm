@@ -149,7 +149,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   return (
     <>
       <div className="card">
-        <div className="card-head">
+        <div className="card-head template-head">
           <h3>Template</h3>
           <span className="muted small">
             HTML (Liquid) · {t.status === 'published' ? (t.unpublished_changes ? 'Published, draft has changes' : 'Published') : 'Draft, not published yet'}
@@ -200,7 +200,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
       </div>
 
       <div className="card">
-        <div className="card-head">
+        <div className="card-head template-head">
           <h3>Preview</h3>
           <span className="muted small">{which === 'draft' ? 'The draft' : 'The published version'}, for</span>
           <div className="template-record">

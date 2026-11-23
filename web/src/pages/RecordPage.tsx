@@ -623,6 +623,9 @@ export function RecordPage() {
     ...(noRight ? [] : [associationsPanel])
   ] : [];
   const propsInTab = tabbed || viewTabbed || phoneTabbed;
+  // Tablets, editor pages (forms, booking pages, ...): the right column would drop to a row below
+  // both columns, out of reach under the editor's own scroll, so its cards join the left column
+  const cardsLeft = narrow && !mobile && !noRight && !streamOnly && !isUser && !isView;
   const viewPanels: StreamPanel[] = isView ? [
     ...(viewTabbed ? [{ key: 'properties' as const, label: 'Properties', content: propertyList }] : []),
     {
@@ -731,8 +734,9 @@ export function RecordPage() {
           )}
         </div>
         {!phoneTabbed && userRoles}
-        {assocTab && !tabbed && <div className="record-right record-tab-panel">{ownCards}</div>}
+        {((assocTab && !tabbed) || cardsLeft) && <div className="record-right record-tab-panel">{ownCards}</div>}
         {!propsInTab && propertyList}
+        {cardsLeft && <div className="record-right record-tab-panel record-left-links">{linkCards}</div>}
       </aside>
 
       {phoneTabbed ? (
@@ -783,7 +787,7 @@ export function RecordPage() {
             )}
           </section>
 
-          {!noRight && !assocTab && !phoneTabbed && <aside className="record-right">
+          {!noRight && !assocTab && !phoneTabbed && !cardsLeft && <aside className="record-right">
             {ownCards}
             {linkCards}
           </aside>}
@@ -1878,6 +1882,7 @@ function ActivityExpanded({ object, id, initial, page, onPageLinkChanged, onComm
       {showAttachments && (
         <LoggedAttachments emailId={id} onFetched={async () => { setLinksKey((n) => n + 1); await onPageLinkChanged(); }} />
       )}
+      {object === 'emails' && !showAttachments && !restricted && <EmailFiles emailId={id} reloadKey={linksKey} />}
       {fields.length > 0 && (
         <dl className="activity-fields">
           {fields.map((f) => (
@@ -1977,6 +1982,46 @@ function LoggedAttachments({ emailId, onFetched }: { emailId: string; onFetched:
         </div>
       )}
       {error && <div className="error">{error}</div>}
+      {preview && <FilePreviewModal fileId={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+// The files linked to an email that was not auto-logged (one sent from the
+// CRM links its attachments to itself), as the same tiles under the body.
+function EmailFiles({ emailId, reloadKey }: { emailId: string; reloadKey: number }) {
+  const [files, setFiles] = useState<{ id: string; name: string | null; size: number | null }[]>([]);
+  const [preview, setPreview] = useState<string | null>(null);
+  const version = useLiveVersion('emails', emailId);
+  useEffect(() => {
+    let cancelled = false;
+    api<CrmRecord>('GET', `/v1/objects/emails/${emailId}?properties=name&associations=files&association_properties=files:name,files:size_bytes`)
+      .then((r) => {
+        if (cancelled) return;
+        setFiles((r.associations?.files ?? []).map((f) => ({
+          id: f.id,
+          name: typeof f.properties?.name === 'string' ? f.properties.name : null,
+          size: typeof f.properties?.size_bytes === 'number' ? f.properties.size_bytes : f.properties?.size_bytes != null ? Number(f.properties.size_bytes) : null
+        })));
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [emailId, reloadKey, version]);
+  if (!files.length) return null;
+  return (
+    <div className="email-attachments">
+      <div className="email-attachments-label">Attachments</div>
+      <div className="attachment-tiles">
+        {files.map((f) => (
+          <button key={f.id} type="button" className="attachment-tile" title="Preview" onClick={() => setPreview(f.id)}>
+            <span className="attachment-tile-icon"><FileIcon size={18} aria-hidden /></span>
+            <span className="attachment-tile-text">
+              <span className="attachment-tile-name">{f.name ?? f.id}</span>
+              {f.size != null && <span className="attachment-tile-meta">{formatBytes(f.size)}</span>}
+            </span>
+          </button>
+        ))}
+      </div>
       {preview && <FilePreviewModal fileId={preview} onClose={() => setPreview(null)} />}
     </div>
   );

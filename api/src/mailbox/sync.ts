@@ -417,10 +417,10 @@ export async function logMessage(ctx: LogContext, m: MailMessage): Promise<LogOu
 
   return withTx({ actor: `user:${ctx.userId}`, source: SOURCE }, async (c) => {
     // the thread it replies into
-    let parent: { id: string; thread_id: string | null } | null = null;
+    let parent: { id: string; thread_id: string | null; outbound: boolean } | null = null;
     if (d.references.length) {
       const { rows } = await c.query(
-        `select pc_0031_id as id, thread_id from crm.pc_0031
+        `select pc_0031_id as id, thread_id, coalesce(direction, '{}') @> '{outbound}' as outbound from crm.pc_0031
          where lower(message_id) = any ($1) and record_status in ('active', 'archived')
          order by sent_at desc nulls last limit 1`,
         [d.references.map((r) => r.toLowerCase())]
@@ -455,6 +455,10 @@ export async function logMessage(ctx: LogContext, m: MailMessage): Promise<LogOu
       [id, ctx.provider, ctx.mailbox, m.providerId.slice(0, 500), d.attachments.slice(0, 100).map((a) => a.slice(0, 255))]
     );
     if (parent && !parent.thread_id) await c.query('update crm.pc_0031 set thread_id = $1 where pc_0031_id = $1', [parent.id]);
+    // a reply from outside answers our email: Replied at is when the first one came
+    if (parent?.outbound && !m.outbound) {
+      await c.query('update crm.pc_0031 set replied_at = least(replied_at, $2::timestamptz) where pc_0031_id = $1', [parent.id, m.date.toISOString()]);
+    }
 
     const links: [string, string[]][] = [['pc_0010', contacts], ['pc_0011', await companiesOf(c, contacts)]];
     if (parent) {
