@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, quoteIdent, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { recordFilter, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
+import { hasPermission, recordFilter, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { isAdmin } from '../routes/ui.js';
 import { getObject } from '../registry.js';
@@ -24,7 +24,7 @@ const DOMAIN_RE = /^(?=.{3,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function requireAdmin(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can change mailbox settings');
+  if (!hasPermission(p, 'integrations')) throw forbidden('mailbox settings need the Integrations permission');
 }
 
 function provider(value: string): MailProvider {

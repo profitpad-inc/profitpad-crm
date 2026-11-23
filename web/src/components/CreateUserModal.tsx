@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef } from '../lib/api';
 import { Modal, PropertyInput, fromInput } from './ui';
 import { Select } from './Select';
+import { useApp } from '../lib/app-context';
 
 // Create a user: first name, last name, email, phone and a role. The role is
-// a role assignment (admin only), not a property, so this is its own form
+// a role assignment (the Users or Roles permission; Super Admin roles only
+// for Super Admins), not a property, so this is its own form
 // rather than the generic CreateRecordModal. The API requires the same four
 // (role goes in the create properties, see api/src/routes/users.ts).
 
@@ -17,7 +19,7 @@ const FIELDS: { key: FieldKey; label: string; required: boolean }[] = [
   { key: 'phone', label: 'Phone', required: false }
 ];
 
-interface RoleOption { id: string; name: string }
+interface RoleOption { id: string; name: string; is_admin: boolean }
 
 // The schema and roles are preloaded by the pages that open this modal
 // (preloadCreateUser on mount), so the form opens fully drawn instead of
@@ -30,7 +32,7 @@ let pending: Promise<Prefetched> | null = null;
 function loadCreateUser(): Promise<Prefetched> {
   if (!pending) {
     pending = Promise.all([getSchema('users'), api<{ results: RoleOption[] }>('GET', '/v1/roles')])
-      .then(([schema, r]) => (cached = { schema, roles: r.results.map((x) => ({ id: String(x.id), name: x.name })) }))
+      .then(([schema, r]) => (cached = { schema, roles: r.results.map((x) => ({ id: String(x.id), name: x.name, is_admin: x.is_admin })) }))
       .finally(() => { pending = null; });
   }
   return pending;
@@ -41,6 +43,7 @@ export function preloadCreateUser(): void {
 }
 
 export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: (record: CrmRecord) => void }) {
+  const { me } = useApp();
   const [schema, setSchema] = useState<ObjectDef | null>(cached?.schema ?? null);
   const [roles, setRoles] = useState<RoleOption[] | null>(cached?.roles ?? null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -130,7 +133,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
             value={roleId}
             onChange={setRoleId}
             loading={!roles}
-            options={[{ value: '', label: 'Pick a role', disabled: true }, ...(roles ?? []).map((r) => ({ value: r.id, label: r.name }))]}
+            options={[{ value: '', label: 'Pick a role', disabled: true }, ...(roles ?? []).filter((r) => me.is_admin || !r.is_admin).map((r) => ({ value: r.id, label: r.name }))]}
           />
           {error?.field === 'role' && <div className="error prop-error" role="alert">{error.message}</div>}
         </label>

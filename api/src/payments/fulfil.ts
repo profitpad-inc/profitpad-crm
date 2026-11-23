@@ -17,14 +17,15 @@ export const PAYMENT_PRINCIPAL: Principal = {
   actor: 'payments',
   permissions: {
     objects: new Map([
-      ['pc_0022', { read: true, create: false, edit: true, delete: false }],
-      ['pc_0023', { read: true, create: true, edit: true, delete: false }],
-      ['pc_0024', { read: true, create: true, edit: true, delete: false }],
-      ['pc_0010', { read: true, create: false, edit: false, delete: false }],
-      ['pc_0011', { read: true, create: false, edit: false, delete: false }]
+      ['pc_0022', { read: true, create: false, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0023', { read: true, create: true, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0024', { read: true, create: true, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0010', { read: true, create: false, edit: false, delete: false, readAll: true, editAll: false, deleteAll: false }],
+      ['pc_0011', { read: true, create: false, edit: false, delete: false, readAll: true, editAll: false, deleteAll: false }]
     ]),
     propertyAccess: new Map(),
-    recordAccess: 'all',
+    ownScope: 'own',
+    granted: new Set(),
     teamUserIds: [],
     sharingRules: [],
     knowledgeAccess: 'none'

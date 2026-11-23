@@ -7,6 +7,7 @@ import sanitizeHtml from 'sanitize-html';
 import { checkPhone } from './phone.js';
 import { trackingFromUrl } from './form-tracking.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
+import { isGmailTypo } from './email-typo.js';
 
 // Forms (crm.pc_0052): the `definition` property holds the form as JSON.
 //
@@ -71,7 +72,7 @@ const OPERATORS: Record<string, ConditionOperator[]> = {
 };
 const NAME_RE = /^[a-z][a-z0-9_]{0,62}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const URL_RE = /^https?:\/\/[^\s]+$/;
 // custom patterns match the whole answer, like the HTML pattern attribute
@@ -359,6 +360,7 @@ function cleanValue(f: FormField, v: unknown): unknown {
       if (s.length > max) throw new Error(`must be at most ${max} characters`);
       if (f.type !== 'textarea' && /[\r\n]/.test(s)) throw new Error('must be a single line');
       if (f.format === 'email' && !EMAIL_RE.test(s)) throw new Error('must be an email address');
+      if (f.format === 'email' && isGmailTypo(s)) throw new Error('looks like a typo: did you mean @gmail.com?');
       if (f.format === 'phone') {
         // stored as +18882345678ext9 (see phone.ts)
         const phone = checkPhone(s);

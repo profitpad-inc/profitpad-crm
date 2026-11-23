@@ -32,16 +32,17 @@ const BOOKING_PRINCIPAL: Principal = {
   actor: 'public',
   permissions: {
     objects: new Map([
-      ['pc_0054', { read: true, create: false, edit: false, delete: false }],
+      ['pc_0054', { read: true, create: false, edit: false, delete: false, readAll: true, editAll: false, deleteAll: false }],
       // meetings: created on booking, moved or cancelled through the manage link
-      ['pc_0030', { read: true, create: true, edit: true, delete: false }],
-      ['pc_0053', { read: false, create: true, edit: false, delete: false }],
+      ['pc_0030', { read: true, create: true, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0053', { read: false, create: true, edit: false, delete: false, readAll: false, editAll: false, deleteAll: false }],
       // forms upsert contacts by email and create tickets
-      ['pc_0010', { read: true, create: true, edit: true, delete: false }],
-      ['pc_0013', { read: false, create: true, edit: false, delete: false }]
+      ['pc_0010', { read: true, create: true, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0013', { read: false, create: true, edit: false, delete: false, readAll: false, editAll: false, deleteAll: false }]
     ]),
     propertyAccess: new Map(),
-    recordAccess: 'all',
+    ownScope: 'own',
+    granted: new Set(),
     teamUserIds: [],
     sharingRules: [],
     knowledgeAccess: 'none'
@@ -131,7 +132,8 @@ function pageFromRow(r: Record<string, unknown>): BookingPage {
   }
   const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
   return {
-    id: r.pc_0054_id as string, name: text(r.name), description: text(r.description), status: first(r.status), host: first(r.host),
+    // name is what visitors see: the Public name, or the Name when that is empty
+    id: r.pc_0054_id as string, name: text(typeof r.public_name === 'string' ? r.public_name.trim() : null) ?? text(r.name), description: text(r.description), status: first(r.status), host: first(r.host),
     hostName: text(r.host_name), rules, locationType: first(r.location_type), locationDetails: text(r.location_details),
     confirmationMessage: text(r.confirmation_message), formBeforeId: text(r.form_before_id), formAfterId: text(r.form_after_id),
     durations: readDurations(r.duration_options, rules?.durationMinutes ?? num(r.duration_minutes), false)

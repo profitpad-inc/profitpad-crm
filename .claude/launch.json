@@ -154,6 +154,40 @@
         "--strictPort"
       ],
       "port": 5179
+    },
+    {
+      "name": "api-roles-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5491",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_db",
+        "PORT=3011",
+        "UI_URL=http://localhost:5181",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
+      "port": 3011
+    },
+    {
+      "name": "web-roles-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3011",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5181",
+        "--strictPort"
+      ],
+      "port": 5181
     }
   ]
 }

@@ -50,6 +50,13 @@ async function send<T>(method: string, path: string, body: unknown, retried: boo
 
 // ---- types ----------------------------------------------------------------
 
+// Role permissions besides object access (api/src/auth.ts ROLE_PERMISSIONS)
+export type RolePermission = 'api_keys' | 'integrations' | 'users' | 'roles' | 'import' | 'export' | 'properties' | 'security_log';
+
+// Whether the signed-in user has a role permission (Super Admins have all)
+export const can = (me: Pick<Me, 'is_admin' | 'permissions'> | null | undefined, perm: RolePermission): boolean =>
+  !!me && (me.is_admin || (me.permissions ?? []).includes(perm));
+
 export interface Me {
   actor: string;
   key_name: string;
@@ -57,6 +64,8 @@ export interface Me {
   is_admin: boolean;
   // the knowledge base: what the user's roles allow (Super Admins edit)
   knowledge_access?: 'none' | 'read' | 'edit';
+  // what the user's roles allow besides objects (Super Admins: all of them)
+  permissions?: RolePermission[];
   user: {
     id: string; name: string | null; first_name: string | null; last_name: string | null; email: string | null; email_signature?: string | null;
     // profile photo: the uploaded one wins over the Google/Microsoft account's (account_photo: there is one)

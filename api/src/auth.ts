@@ -7,12 +7,22 @@ import { compileFilterGroups, type FilterGroup } from './search.js';
 
 export type Scope = 'read' | 'write' | 'schema' | 'admin';
 
+// read, edit and delete reach the records the user owns (or their team's,
+// see Permissions.ownScope); the *All flags reach every record (migration 0123)
 export interface ObjectPermission {
   read: boolean;
   create: boolean;
   edit: boolean;
   delete: boolean;
+  readAll: boolean;
+  editAll: boolean;
+  deleteAll: boolean;
 }
+
+// What a role may do besides objects (auth.roles.permissions). Super Admins
+// can do all of it.
+export const ROLE_PERMISSIONS = ['api_keys', 'integrations', 'users', 'roles', 'import', 'export', 'properties', 'security_log'] as const;
+export type RolePermission = (typeof ROLE_PERMISSIONS)[number];
 
 // A role's sharing rule (migration 0012): records of `anchor` matching
 // filterGroups, plus records of other objects linked to them.
@@ -28,8 +38,10 @@ export interface SharingRule {
 export interface Permissions {
   objects: Map<string, ObjectPermission>;
   propertyAccess: Map<string, 'hidden' | 'read_only'>;
-  recordAccess: 'own' | 'team' | 'all';
+  // what "records they own" means: owned by them, or by them or a teammate
+  ownScope: 'own' | 'team';
   teamUserIds: string[];
+  granted: Set<RolePermission>;
   sharingRules: SharingRule[];
   // the knowledge base (knowledge.ts): the most any of their roles gives
   knowledgeAccess: KnowledgeAccess;
@@ -317,6 +329,9 @@ export async function userPrincipal(userId: string): Promise<Principal> {
 
 // A user's roles come from direct assignment or from their teams. Across
 // roles the most permissive setting wins.
+const NO_OBJECT_ACCESS: ObjectPermission = { read: false, create: false, edit: false, delete: false, readAll: false, editAll: false, deleteAll: false };
+export const FULL_OBJECT_ACCESS: ObjectPermission = { read: true, create: true, edit: true, delete: true, readAll: true, editAll: true, deleteAll: true };
+
 async function loadPermissions(db: Db, userId: string): Promise<Permissions | null> {
   const { rows: teams } = await db.query(
     `select other_record_id as team_id from crm.associations_both
@@ -325,26 +340,28 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
   );
   const teamIds: string[] = teams.map((t) => t.team_id);
   const { rows: roles } = await db.query(
-    `select distinct r.id, r.is_admin, r.record_access, r.knowledge_access from auth.roles r
+    `select distinct r.id, r.is_admin, r.record_access, r.knowledge_access, r.permissions from auth.roles r
      join auth.role_assignments a on a.role_id = r.id
      where a.user_id = $1 or a.team_id = any ($2)`,
     [userId, teamIds]
   );
   if (roles.some((r) => r.is_admin)) return null;
   const roleIds = roles.map((r) => r.id);
-  const rank = { own: 0, team: 1, all: 2 } as const;
-  let recordAccess: Permissions['recordAccess'] = 'own';
-  for (const r of roles) if (rank[r.record_access as keyof typeof rank] > rank[recordAccess]) recordAccess = r.record_access;
+  const ownScope: Permissions['ownScope'] = roles.some((r) => r.record_access === 'team') ? 'team' : 'own';
+  const granted = new Set<RolePermission>(roles.flatMap((r) => (r.permissions ?? []) as RolePermission[]).filter((x) => ROLE_PERMISSIONS.includes(x)));
 
   const objects = new Map<string, ObjectPermission>();
   const { rows: objPerms } = await db.query('select * from auth.role_object_permissions where role_id = any ($1)', [roleIds]);
   for (const p of objPerms) {
-    const cur = objects.get(p.object_type_id) ?? { read: false, create: false, edit: false, delete: false };
+    const cur = objects.get(p.object_type_id) ?? NO_OBJECT_ACCESS;
     objects.set(p.object_type_id, {
       read: cur.read || p.can_read,
       create: cur.create || p.can_create,
       edit: cur.edit || p.can_edit,
-      delete: cur.delete || p.can_delete
+      delete: cur.delete || p.can_delete,
+      readAll: cur.readAll || p.can_read_all,
+      editAll: cur.editAll || p.can_edit_all,
+      deleteAll: cur.deleteAll || p.can_delete_all
     });
   }
 
@@ -361,7 +378,7 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
   }
 
   let teamUserIds: string[] = [userId];
-  if (recordAccess === 'team' && teamIds.length > 0) {
+  if (ownScope === 'team' && teamIds.length > 0) {
     const { rows } = await db.query(
       `select distinct other_record_id as user_id from crm.associations_both
        where object_type_id = 'pc_0006' and record_id = any ($1) and other_object_type_id = 'pc_0000'`,
@@ -369,9 +386,9 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
     );
     teamUserIds = [userId, ...rows.map((r) => r.user_id)];
   }
-  const sharingRules = recordAccess === 'all' ? [] : await loadSharingRules(db, roleIds);
+  const sharingRules = await loadSharingRules(db, roleIds);
   const knowledgeAccess = strongestKnowledgeAccess(roles.map((r) => r.knowledge_access));
-  return { objects, propertyAccess, recordAccess, teamUserIds, sharingRules, knowledgeAccess };
+  return { objects, propertyAccess, ownScope, teamUserIds, granted, sharingRules, knowledgeAccess };
 }
 
 async function loadSharingRules(db: Db, roleIds: unknown[]): Promise<SharingRule[]> {
@@ -400,30 +417,76 @@ export function requireScope(p: Principal, scope: Scope): void {
   throw forbidden(`this API key needs the "${scope}" scope`);
 }
 
-export function requireObjectPermission(p: Principal, obj: ObjectDef, action: keyof ObjectPermission): void {
+export function requireObjectPermission(p: Principal, obj: ObjectDef, action: 'read' | 'create' | 'edit' | 'delete'): void {
   if (!p.permissions) return;
   const perm = p.permissions.objects.get(obj.object_type_id);
   if (!perm || !perm[action]) throw forbidden(`your role cannot ${action} ${obj.api_name}`);
 }
+
+// A Super Admin: a user with an admin role (any credential but an OAuth app
+// limited otherwise by its route), or a key with the admin scope.
+export const isSuperAdmin = (p: Principal): boolean => p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
+
+// Permissions that hand out access or show who did what: never through a
+// connected app (OAuth), as the admin scope never was. The others reach
+// connected apps of Super Admins only (as before; their routes may also ask
+// for the schema scope).
+const NEVER_FOR_APPS = new Set<RolePermission>(['api_keys', 'users', 'roles', 'security_log']);
+const ONLY_FOR_ADMIN_APPS = new Set<RolePermission>(['integrations', 'properties']);
+
+const PERMISSION_LABELS: Record<RolePermission, string> = {
+  api_keys: 'API keys', integrations: 'Integrations', users: 'Users', roles: 'Roles',
+  import: 'Import', export: 'Export', properties: 'Properties', security_log: 'Security log'
+};
+
+// Whether the caller has a role permission. Super Admins have them all.
+// Everyone else needs it from a role, and the credential's own scope: write
+// for changes, read for looking (write: false).
+export function hasPermission(p: Principal, perm: RolePermission, opts: { write?: boolean } = {}): boolean {
+  if (p.oauth && NEVER_FOR_APPS.has(perm)) return false;
+  if (p.permissions === null) return isSuperAdmin(p);
+  if (p.oauth && ONLY_FOR_ADMIN_APPS.has(perm)) return false;
+  if (!p.permissions.granted.has(perm)) return false;
+  return p.scopes.has(opts.write === false ? 'read' : 'write');
+}
+
+export function requirePermission(p: Principal, perm: RolePermission, opts: { write?: boolean } = {}): void {
+  if (!hasPermission(p, perm, opts)) throw forbidden(`this needs the ${PERMISSION_LABELS[perm]} permission`);
+}
+
+// Changing properties, dropdown choices and option lists: Super Admins and
+// keys with the schema scope (as before), or a role with the Properties
+// permission.
+export function requirePropertyChange(p: Principal): void {
+  if (p.permissions === null) return requireScope(p, 'schema');
+  requirePermission(p, 'properties');
+}
+
+// Every permission the caller has (for /v1/me)
+export const grantedPermissions = (p: Principal): RolePermission[] => ROLE_PERMISSIONS.filter((x) => hasPermission(p, x, { write: false }));
 
 export function propertyAccess(p: Principal, prop: PropertyDef): 'full' | 'read_only' | 'hidden' {
   if (!p.permissions) return 'full';
   return p.permissions.propertyAccess.get(prop.pc_0002_id) ?? 'full';
 }
 
-// What the caller is about to do with the records. Sharing rules widen "read"
-// (read rules and edit rules) and "edit" (edit rules only); "delete" (archive,
-// restore, merge) is limited to own/team records.
+// What the caller is about to do with the records. A role's "all records"
+// switch for the mode opens every record; otherwise the user's own (or team)
+// records, and sharing rules widen "read" (read rules and edit rules) and
+// "edit" (edit rules only); "delete" (archive, restore, merge) is limited to
+// own/team records.
 export type AccessMode = 'read' | 'edit' | 'delete';
 
 // Extra WHERE clause for record-level access ("own" / "team", plus the
 // role's sharing rules), using $n params appended to params. Users have no
 // owner, so only the role's object permissions limit them.
 export function recordFilter(p: Principal, obj: ObjectDef, params: unknown[], alias = 't', mode: AccessMode = 'read'): string {
-  if (!p.permissions || p.permissions.recordAccess === 'all' || !p.userId) return 'true';
+  if (!p.permissions || !p.userId) return 'true';
   if (obj.object_type_id === 'pc_0000') return 'true';
+  const perm = p.permissions.objects.get(obj.object_type_id);
+  if (perm && (mode === 'read' ? perm.readAll : mode === 'edit' ? perm.editAll : perm.deleteAll)) return 'true';
   const owner = obj.byName.get('owner');
-  const ids = p.permissions.recordAccess === 'own' ? [p.userId] : p.permissions.teamUserIds;
+  const ids = p.permissions.ownScope === 'own' ? [p.userId] : p.permissions.teamUserIds;
   let base: string;
   if (owner && owner.type === 'dropdown') {
     params.push(ids);

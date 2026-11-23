@@ -1,9 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { pool } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { requireRecentSignIn, type Principal } from '../auth.js';
+import { hasPermission, requireRecentSignIn, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
-import { isAdmin } from '../routes/ui.js';
 import { seal, secretBoxReady } from '../secret-box.js';
 import {
   GOOGLE_CALENDAR_SCOPES, GOOGLE_MEET_SCOPES, loadProviders, MAIL_PROVIDERS, MICROSOFT_CALENDAR_PERMISSIONS, MICROSOFT_MEETING_PERMISSIONS,
@@ -20,7 +19,7 @@ const INTERVALS = [1, 2, 3, 5, 15, 30, 60];
 const GUIDISH_RE = /^[A-Za-z0-9_-]{6,100}$/;
 
 function requireAdmin(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can change meeting settings');
+  if (!hasPermission(p, 'integrations')) throw forbidden('meeting settings need the Integrations permission');
 }
 
 async function settingsOut() {

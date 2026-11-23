@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { pool } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
-import { requireScope, type Principal } from '../auth.js';
+import { grantedPermissions, requirePermission, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { approveFields, approveUrl, canApprove, requestFields } from '../approval.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
@@ -188,7 +188,7 @@ export async function loadFormsSettings(): Promise<FormsSettings> {
 // signed in to the CRM the list is saved as given; from anywhere else
 // removals apply and new websites are added to pending_origins instead.
 export async function saveEmbedDomains(p: Principal, body: unknown, req?: FastifyRequest): Promise<FormsSettings & { requested: string[]; approve_url?: string }> {
-  requireAdmin(p);
+  requirePermission(p, 'integrations');
   const b = (body ?? {}) as { allowed_origins?: unknown; pending_origins?: unknown };
   const wanted = readOrigins(b.allowed_origins, 'allowed_origins');
   const keep = b.pending_origins === undefined ? null : new Set(readOrigins(b.pending_origins, 'pending_origins'));
@@ -543,6 +543,8 @@ export async function uiRoutes(app: FastifyInstance) {
       key_name: p.name,
       scopes: [...p.scopes],
       is_admin: isAdmin(p),
+      // role permissions (auth.ts ROLE_PERMISSIONS): Super Admins have them all
+      permissions: grantedPermissions(p),
       // the knowledge base (knowledge.ts): none, read or edit
       knowledge_access: p.permissions === null ? 'edit' : p.permissions.knowledgeAccess,
       user,
@@ -560,8 +562,12 @@ export async function uiRoutes(app: FastifyInstance) {
 
   app.put<{ Params: { key: string }; Body: unknown }>('/v1/ui/settings/:key', async (req) => {
     const p = req.principal!;
+    // embed domains (key "forms") are an integration; every other setting is Super Admins'
+    if (req.params.key === 'forms') {
+      requirePermission(p, 'integrations');
+      return saveEmbedDomains(p, req.body, req);
+    }
     requireAdmin(p);
-    if (req.params.key === 'forms') return saveEmbedDomains(p, req.body, req);
     return saveSetting(p, req.params.key, req.body, req);
   });
 

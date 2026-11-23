@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { pool } from './db.js';
 import { ApiError, badRequest, forbidden, notFound } from './errors.js';
-import { requireScope, type Principal } from './auth.js';
+import { hasPermission, requireScope, type Principal } from './auth.js';
 import { approvalChange, approvalNotice, approvalOut, approveUrl, type ApprovalRow } from './approval.js';
 import { isBlockedAddress } from './oauth.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
@@ -53,11 +53,11 @@ interface IntegrationRow extends ApprovalRow {
 const isAdmin = (p: Principal) => p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
 const canUse = (p: Principal, i: IntegrationRow) => i.enabled && (i.audience === 'everyone' || isAdmin(p));
 
-// Admins; a connected app (an admin's AI over MCP) also needs the schema
-// scope. Only an admin signed in to the CRM can turn one on (approval.ts):
+// Super Admins and roles with the Integrations permission; a connected app
+// (a Super Admin's AI over MCP) also needs the schema scope. Only an admin signed in to the CRM can turn one on (approval.ts):
 // set up any other way, it waits for approval.
 function requireAdmin(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can change integrations');
+  if (!hasPermission(p, 'integrations')) throw forbidden('view integrations need the Integrations permission');
   if (p.oauth && !p.scopes.has('schema')) throw forbidden('connected apps need the schema scope to manage integrations');
 }
 
@@ -152,13 +152,13 @@ async function loadIntegration(key: string): Promise<IntegrationRow> {
   return rows[0];
 }
 
-// Admins get every integration with its settings; anyone else the enabled
-// ones they may call.
+// Those who manage integrations get every one with its settings; anyone else
+// the enabled ones they may call.
 export async function listIntegrations(p: Principal) {
   requireScope(p, 'read');
   const { rows } = await pool.query('select * from auth.view_integrations order by key');
   const all = rows as IntegrationRow[];
-  if (isAdmin(p)) return all.map(adminOut);
+  if (hasPermission(p, 'integrations', { write: false })) return all.map(adminOut);
   return all.filter((i) => canUse(p, i)).map(publicOut);
 }
 

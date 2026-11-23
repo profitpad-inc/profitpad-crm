@@ -42,9 +42,14 @@
 }
 
 # Inside the compose network only: the API fetches the custom view frame from
-# here for the renderer (VIEW_FRAME_URL), whatever the public address is.
+# here for the renderer (VIEW_FRAME_URL), and the landing page shell
+# (PAGE_SHELL_URL), whatever the public address is.
 http://web {
 	handle /view-frame/* {
+		root * /srv/www
+		file_server
+	}
+	handle /p/page/index.html {
 		root * /srv/www
 		file_server
 	}
@@ -106,6 +111,16 @@ http://web {
 		request_body {
 			max_size 25MB
 		}
+		import api
+	}
+
+	# Landing pages at a path address (/p/page/<slug>): the API sends the page
+	# shell with the page's title, description and preview image in its head
+	# (api/src/routes/landing-pages.ts), so search engines and link previews
+	# see them. /p/page/ itself (the #slug form) stays a static folder.
+	@pagepath path_regexp ^/p/page/[a-z0-9][a-z0-9-]{1,58}[a-z0-9]/?$
+	handle @pagepath {
+		encode zstd gzip
 		import api
 	}
 

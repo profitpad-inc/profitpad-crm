@@ -107,6 +107,20 @@ function safeName(name: string | null): string {
 
 const publicUrl = (req: FastifyRequest, f: FileRow) => `${apiBaseUrl(req)}/files/${f.public_token}/${safeName(f.name)}`;
 
+// A public link's path for a file (landing page assets, landing-pages.ts).
+export const publicFilePath = (token: string, name: string | null) => `/files/${token}/${safeName(name)}`;
+
+// Turns a file's public link on (same token if already on) for server code
+// that already checked the caller may (landing page assets). Returns the token.
+export async function makeFilePublic(p: Principal, id: string): Promise<string> {
+  const f = await loadFile(pool, id);
+  if (!f || !isReady(f) || f.record_status !== 'active') throw new ApiError(409, 'only uploaded, active files can have a public link', 'conflict');
+  if (f.public_token) return f.public_token;
+  const token = randomBytes(16).toString('base64url');
+  await withTx({ principal: p }, (c) => c.query('update crm.pc_0050 set public_token = $2 where pc_0050_id = $1', [id, token]));
+  return token;
+}
+
 // Whether the caller may open (read) or change (edit) a file: through the
 // files object itself (own/team records and sharing rules, like any record),
 // or through any record they can see whose file property holds it.

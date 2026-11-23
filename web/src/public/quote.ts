@@ -8,6 +8,7 @@ import { el, keyFromHash, publicApi, queryParamsFromLocation, type PublicQuote }
 import { attachSignaturePad } from './signature-pad';
 import { day } from './document';
 import { afterCheckout, paymentBox } from './payment-box';
+import { GMAIL_TYPO_MESSAGE, isGmailTypo } from '../lib/email-typo';
 
 // Customer view of a quote: /p/quote/#<public key>. View, accept (fill in the
 // quote's signing fields and draw a signature) or decline, download the PDF,
@@ -178,6 +179,11 @@ function respondDecline(q: PublicQuote, box: HTMLElement): void {
       error.textContent = 'Enter your name and email.';
       return;
     }
+    if (isGmailTypo(email.value)) {
+      error.textContent = GMAIL_TYPO_MESSAGE;
+      email.focus();
+      return;
+    }
     void send('decline', { name: name.value.trim(), email: email.value.trim(), ...(reason.value.trim() ? { reason: reason.value.trim() } : {}) }, error, submit);
   });
   box.replaceChildren(form);
@@ -210,10 +216,21 @@ function respondAccept(q: PublicQuote, box: HTMLElement): void {
       error.textContent = 'Enter your name and email.';
       return;
     }
+    if (isGmailTypo(email.value)) {
+      error.textContent = GMAIL_TYPO_MESSAGE;
+      email.focus();
+      return;
+    }
     const missing = inputs.find(({ field, input }) => field.required && !input.value.trim());
     if (missing) {
       error.textContent = `Fill in ${missing.field.label}.`;
       missing.input.focus();
+      return;
+    }
+    const typo = inputs.find(({ field, input }) => field.type === 'email' && isGmailTypo(input.value));
+    if (typo) {
+      error.textContent = `${typo.field.label}: did you mean @gmail.com? Please check the address.`;
+      typo.input.focus();
       return;
     }
     if (pad.isEmpty()) {

@@ -5,9 +5,10 @@ import type pg from 'pg';
 import { pool, quoteIdent, withTx, type Db } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import {
-  generateKey, hashKey, noneHidden, requireObjectPermission, requireRecentSignIn, requireScope, sharingClauses, USER_CAN_SIGN_IN,
-  type Principal, type Scope, type SharingRule
+  generateKey, hashKey, hasPermission, isSuperAdmin, noneHidden, requireObjectPermission, requirePermission, requireRecentSignIn, requireScope,
+  ROLE_PERMISSIONS, sharingClauses, USER_CAN_SIGN_IN, type Principal, type RolePermission, type Scope, type SharingRule
 } from '../auth.js';
+import { forbidden } from '../errors.js';
 import { logEvent } from '../audit.js';
 import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord, upsertProperties, visibleProperties } from '../records.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
@@ -22,11 +23,38 @@ const SCOPES: Scope[] = ['read', 'write', 'schema', 'admin'];
 export const KEY_EXPIRY_DAYS = [90, 180, 365] as const;
 const DAY = 86400_000;
 
-// Changes to who can do what: admin only, and from a browser only with a
-// recent sign-in.
-function requireAdminChange(p: Principal): void {
-  requireScope(p, 'admin');
+// Changes to who can do what: Super Admins, or a role with the permission
+// (API keys, Roles, Users), and from a browser only with a recent sign-in.
+function requireChange(p: Principal, perm: RolePermission): void {
+  requirePermission(p, perm);
   requireRecentSignIn(p);
+}
+
+// Super Admin roles, and keys that act as a Super Admin, are handed out and
+// changed by Super Admins only, so a permission cannot be used to climb to one.
+function requireSuperAdminFor(p: Principal, what: string): void {
+  if (!isSuperAdmin(p)) throw forbidden(`only Super Admins can ${what}`);
+}
+
+async function roleIsAdmin(db: Db, roleId: string): Promise<boolean> {
+  const { rows } = await db.query('select is_admin from auth.roles where id::text = $1', [roleId]);
+  if (rows.length === 0) throw notFound('role not found');
+  return rows[0].is_admin;
+}
+
+// Roles are listed on the Roles and Users pages, and assigned from both
+const canSeeRoles = (p: Principal) => hasPermission(p, 'roles', { write: false }) || hasPermission(p, 'users', { write: false });
+function requireAssign(p: Principal): void {
+  if (!hasPermission(p, 'roles') && !hasPermission(p, 'users')) throw forbidden('this needs the Roles or Users permission');
+  requireRecentSignIn(p);
+}
+
+function checkPermissionList(v: unknown): RolePermission[] | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || !v.every((x) => (ROLE_PERMISSIONS as readonly string[]).includes(x))) {
+    throw badRequest(`permissions must be a list from ${ROLE_PERMISSIONS.join(', ')}`, { property: 'permissions' });
+  }
+  return [...new Set(v as RolePermission[])];
 }
 
 function keyExpiry(b: { expires_in_days?: number; expires_at?: string }): Date {
@@ -44,7 +72,7 @@ function keyExpiry(b: { expires_in_days?: number; expires_at?: string }): Date {
 
 // A key acts as its user, so the user must be able to sign in; an admin key
 // needs a user with an admin role.
-async function checkKeyUser(userId: unknown, scopes: Scope[]): Promise<string> {
+async function checkKeyUser(p: Principal, userId: unknown, scopes: Scope[]): Promise<string> {
   if (typeof userId !== 'string' || !/^[0-9a-f]{10}$/.test(userId)) throw badRequest('user_id is required: every API key belongs to a user');
   const { rows } = await pool.query(
     `select ${USER_CAN_SIGN_IN('u')} as ok,
@@ -58,6 +86,9 @@ async function checkKeyUser(userId: unknown, scopes: Scope[]): Promise<string> {
   if (rows.length === 0) throw badRequest('user_id is not a user');
   if (!rows[0].ok) throw badRequest('that user is archived or deactivated');
   if (scopes.includes('admin') && !rows[0].admin) throw badRequest('the admin scope needs a user with an admin role');
+  if (rows[0].admin) requireSuperAdminFor(p, 'make API keys for a Super Admin');
+  // the schema scope changes objects and views, which the API keys permission does not reach
+  if (scopes.includes('schema')) requireSuperAdminFor(p, 'make API keys with the schema scope');
   return userId;
 }
 
@@ -177,10 +208,46 @@ async function countShared(rule: SharingRule, obj: ObjectDef): Promise<number> {
   return rows[0].n;
 }
 
+const OBJECT_SWITCHES = ['can_read', 'can_create', 'can_edit', 'can_delete', 'can_read_all', 'can_edit_all', 'can_delete_all'] as const;
+type ObjectSwitches = Record<(typeof OBJECT_SWITCHES)[number], boolean>;
+
+// "all" includes "own"; create, edit and delete include read; edit all and
+// delete all include read all
+export function normalizeObjectSwitches(v: ObjectSwitches): ObjectSwitches {
+  const o = { ...v };
+  if (o.can_edit_all) o.can_edit = true;
+  if (o.can_delete_all) o.can_delete = true;
+  if (o.can_edit_all || o.can_delete_all) o.can_read_all = true;
+  if (o.can_read_all || o.can_create || o.can_edit || o.can_delete) o.can_read = true;
+  return o;
+}
+
+function checkRecordAccess(v: unknown): void {
+  if (v !== undefined && v !== null && v !== 'own' && v !== 'team') {
+    throw badRequest('record_access must be own or team (what "records they own" means); "all records" is set per object', { property: 'record_access' });
+  }
+}
+
+async function userIsSuperAdmin(userId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `select 1 from auth.role_assignments a join auth.roles r on r.id = a.role_id
+     where r.is_admin and (a.user_id = $1 or a.team_id in (
+       select other_record_id from crm.associations_both where object_type_id = 'pc_0000' and record_id = $1 and other_object_type_id = 'pc_0006'))`,
+    [userId]
+  );
+  return rows.length > 0;
+}
+
+async function keyActsAsAdmin(keyId: string): Promise<boolean> {
+  const { rows } = await pool.query('select user_id, scopes from auth.api_keys where id::text = $1', [keyId]);
+  if (rows.length === 0) return false;
+  return (rows[0].scopes as string[]).includes('admin') || (rows[0].user_id !== null && (await userIsSuperAdmin(rows[0].user_id)));
+}
+
 export async function adminRoutes(app: FastifyInstance) {
   // ---- API keys -----------------------------------------------------------
   app.get<{ Querystring: { status?: string } }>('/v1/api-keys', async (req) => {
-    requireScope(req.principal!, 'admin');
+    requirePermission(req.principal!, 'api_keys', { write: false });
     const status = req.query.status;
     let where = '';
     if (status === 'all') where = '';
@@ -192,12 +259,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { name: string; scopes: Scope[]; user_id?: string; expires_in_days?: number; expires_at?: string } }>('/v1/api-keys', async (req, reply) => {
     const p = req.principal!;
-    requireAdminChange(p);
+    requireChange(p, 'api_keys');
     const b = req.body ?? ({} as never);
     if (!Array.isArray(b.scopes) || b.scopes.length === 0 || !b.scopes.every((s) => SCOPES.includes(s))) {
       throw badRequest(`scopes must be a non-empty subset of ${SCOPES.join(', ')}`);
     }
-    const userId = await checkKeyUser(b.user_id, b.scopes);
+    const userId = await checkKeyUser(p, b.user_id, b.scopes);
     const expiresAt = keyExpiry(b);
     const { key, prefix } = generateKey();
     const { rows } = await pool.query(
@@ -211,7 +278,9 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>('/v1/api-keys/:id', async (req, reply) => {
-    requireAdminChange(req.principal!);
+    const p = req.principal!;
+    requireChange(p, 'api_keys');
+    if (!isSuperAdmin(p) && (await keyActsAsAdmin(req.params.id))) requireSuperAdminFor(p, 'revoke the API keys of a Super Admin');
     const { rows } = await pool.query(
       'update auth.api_keys set revoked_at = now() where id = $1 and revoked_at is null returning user_id, key_prefix',
       [req.params.id]
@@ -228,7 +297,7 @@ export async function adminRoutes(app: FastifyInstance) {
     '/v1/api-keys/:id/rotate',
     async (req, reply) => {
       const p = req.principal!;
-      requireAdminChange(p);
+      requireChange(p, 'api_keys');
       const b = req.body ?? {};
       const grace = b.grace_hours ?? 24;
       if (!Number.isInteger(grace) || grace < 0 || grace > 168) throw badRequest('grace_hours must be a whole number from 0 to 168');
@@ -238,7 +307,7 @@ export async function adminRoutes(app: FastifyInstance) {
         [req.params.id]
       );
       if (!old.length) throw notFound('api key not found, revoked, expired or already rotated');
-      const userId = await checkKeyUser(old[0].user_id ?? b.user_id, old[0].scopes);
+      const userId = await checkKeyUser(p, old[0].user_id ?? b.user_id, old[0].scopes);
       const expiresAt = keyExpiry(b);
       const { key, prefix } = generateKey();
       const created = await withTx({ principal: p }, async (c) => {
@@ -266,7 +335,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // ---- Security log (migration 0019) ---------------------------------------
   // Newest first; page with before=<id of the last event shown>.
   app.get<{ Querystring: { limit?: string; before?: string; user_id?: string; event?: string } }>('/v1/security-events', async (req) => {
-    requireScope(req.principal!, 'admin');
+    requirePermission(req.principal!, 'security_log', { write: false });
     const q = req.query;
     const limit = Math.min(Math.max(Number(q.limit ?? 50) || 50, 1), 200);
     const params: unknown[] = [];
@@ -298,7 +367,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   };
   app.get('/v1/roles', async (req) => {
-    requireScope(req.principal!, 'admin');
+    if (!canSeeRoles(req.principal!)) throw forbidden('this needs the Roles or Users permission');
     const { rows } = await pool.query(
       `select r.*,
          coalesce((select jsonb_agg(to_jsonb(o) - 'role_id') from auth.role_object_permissions o where o.role_id = r.id), '[]') as object_permissions,
@@ -310,29 +379,39 @@ export async function adminRoutes(app: FastifyInstance) {
     return { results: rows };
   });
 
-  app.post<{ Body: { name: string; description?: string; is_admin?: boolean; record_access?: 'own' | 'team' | 'all'; knowledge_access?: string } }>('/v1/roles', async (req, reply) => {
+  app.post<{ Body: { name: string; description?: string; is_admin?: boolean; record_access?: string; knowledge_access?: string; permissions?: string[] } }>('/v1/roles', async (req, reply) => {
     const p = req.principal!;
-    requireAdminChange(p);
+    requireChange(p, 'roles');
     const b = req.body ?? ({} as never);
     checkKnowledgeAccess(b.knowledge_access);
+    checkRecordAccess(b.record_access);
+    const permissions = checkPermissionList(b.permissions) ?? [];
+    if (b.is_admin) requireSuperAdminFor(p, 'create Super Admin roles');
     const { rows } = await pool.query(
-      'insert into auth.roles (name, description, is_admin, record_access, knowledge_access, created_by) values ($1, $2, $3, $4, $5, $6) returning *',
-      [b.name, b.description ?? null, b.is_admin ?? false, b.record_access ?? 'all', b.knowledge_access ?? 'read', p.actor]
+      'insert into auth.roles (name, description, is_admin, record_access, knowledge_access, permissions, created_by) values ($1, $2, $3, $4, $5, $6, $7) returning *',
+      [b.name, b.description ?? null, b.is_admin ?? false, b.record_access ?? 'own', b.knowledge_access ?? 'read', permissions, p.actor]
     );
-    await logEvent(req, 'role.created', { target: { type: 'role', id: rows[0].id }, details: { name: rows[0].name, is_admin: rows[0].is_admin, record_access: rows[0].record_access, knowledge_access: rows[0].knowledge_access } });
+    await logEvent(req, 'role.created', {
+      target: { type: 'role', id: rows[0].id },
+      details: { name: rows[0].name, is_admin: rows[0].is_admin, record_access: rows[0].record_access, knowledge_access: rows[0].knowledge_access, permissions: rows[0].permissions }
+    });
     reply.code(201);
     return rows[0];
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; is_admin?: boolean; record_access?: string; knowledge_access?: string } }>('/v1/roles/:id', async (req) => {
-    requireAdminChange(req.principal!);
+  app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; is_admin?: boolean; record_access?: string; knowledge_access?: string; permissions?: string[] } }>('/v1/roles/:id', async (req) => {
+    const p = req.principal!;
+    requireChange(p, 'roles');
     const b = req.body ?? {};
     checkKnowledgeAccess(b.knowledge_access);
-    const { rows } = await keepingAnAdmin(req.principal!.actor, (client) => client.query(
+    checkRecordAccess(b.record_access);
+    const permissions = checkPermissionList(b.permissions);
+    if (b.is_admin || (await roleIsAdmin(pool, req.params.id))) requireSuperAdminFor(p, 'change Super Admin roles');
+    const { rows } = await keepingAnAdmin(p.actor, (client) => client.query(
       `update auth.roles set name = coalesce($2, name), description = coalesce($3, description),
          is_admin = coalesce($4, is_admin), record_access = coalesce($5, record_access),
-         knowledge_access = coalesce($6, knowledge_access) where id = $1 returning *`,
-      [req.params.id, b.name ?? null, b.description ?? null, b.is_admin ?? null, b.record_access ?? null, b.knowledge_access ?? null]
+         knowledge_access = coalesce($6, knowledge_access), permissions = coalesce($7, permissions) where id = $1 returning *`,
+      [req.params.id, b.name ?? null, b.description ?? null, b.is_admin ?? null, b.record_access ?? null, b.knowledge_access ?? null, permissions ?? null]
     ));
     if (rows.length === 0) throw notFound('role not found');
     await logEvent(req, 'role.updated', { target: { type: 'role', id: req.params.id }, details: { changes: b } });
@@ -340,38 +419,57 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>('/v1/roles/:id', async (req, reply) => {
-    requireAdminChange(req.principal!);
+    requireChange(req.principal!, 'roles');
+    if (await roleIsAdmin(pool, req.params.id)) requireSuperAdminFor(req.principal!, 'delete Super Admin roles');
     const { rows } = await keepingAnAdmin(req.principal!.actor, (client) => client.query('delete from auth.roles where id = $1 returning name', [req.params.id]));
     if (rows.length) await logEvent(req, 'role.deleted', { target: { type: 'role', id: req.params.id }, details: { name: rows[0].name } });
     reply.code(204);
   });
 
-  app.put<{ Params: { id: string; object: string }; Body: { can_read?: boolean; can_create?: boolean; can_edit?: boolean; can_delete?: boolean } }>(
+  // can_read, can_edit and can_delete reach the records the role's users own;
+  // the *_all switches reach every record and include their "own" switch, and
+  // create, edit and delete include read (all of this is filled in here).
+  app.put<{ Params: { id: string; object: string }; Body: Partial<Record<(typeof OBJECT_SWITCHES)[number], boolean>> }>(
     '/v1/roles/:id/object-permissions/:object',
     async (req) => {
-      requireAdminChange(req.principal!);
+      const p = req.principal!;
+      requireChange(p, 'roles');
+      if (await roleIsAdmin(pool, req.params.id)) requireSuperAdminFor(p, 'change Super Admin roles');
       const obj = await getObject(req.params.object);
       const b = req.body ?? {};
+      for (const k of Object.keys(b)) {
+        if (!(OBJECT_SWITCHES as readonly string[]).includes(k)) throw badRequest(`unknown switch "${k}"; send ${OBJECT_SWITCHES.join(', ')}`);
+      }
+      const v = normalizeObjectSwitches({
+        can_read: b.can_read ?? true, can_create: b.can_create ?? false, can_edit: b.can_edit ?? false, can_delete: b.can_delete ?? false,
+        can_read_all: b.can_read_all ?? false, can_edit_all: b.can_edit_all ?? false, can_delete_all: b.can_delete_all ?? false
+      });
       const { rows } = await pool.query(
-        `insert into auth.role_object_permissions (role_id, object_type_id, can_read, can_create, can_edit, can_delete)
-         values ($1, $2, $3, $4, $5, $6)
+        `insert into auth.role_object_permissions (role_id, object_type_id, can_read, can_create, can_edit, can_delete, can_read_all, can_edit_all, can_delete_all)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          on conflict (role_id, object_type_id) do update set can_read = excluded.can_read, can_create = excluded.can_create,
-           can_edit = excluded.can_edit, can_delete = excluded.can_delete
+           can_edit = excluded.can_edit, can_delete = excluded.can_delete, can_read_all = excluded.can_read_all,
+           can_edit_all = excluded.can_edit_all, can_delete_all = excluded.can_delete_all
          returning *`,
-        [req.params.id, obj.object_type_id, b.can_read ?? true, b.can_create ?? false, b.can_edit ?? false, b.can_delete ?? false]
+        [req.params.id, obj.object_type_id, v.can_read, v.can_create, v.can_edit, v.can_delete, v.can_read_all, v.can_edit_all, v.can_delete_all]
       );
+      const r = rows[0];
       await logEvent(req, 'role.object_permission', {
         target: { type: 'role', id: req.params.id },
-        details: { object: obj.api_name, read: rows[0].can_read, create: rows[0].can_create, edit: rows[0].can_edit, delete: rows[0].can_delete }
+        details: {
+          object: obj.api_name, read: r.can_read, read_all: r.can_read_all, create: r.can_create,
+          edit: r.can_edit, edit_all: r.can_edit_all, delete: r.can_delete, delete_all: r.can_delete_all
+        }
       });
-      return rows[0];
+      return r;
     }
   );
 
   app.put<{ Params: { id: string; object: string; property: string }; Body: { access: 'hidden' | 'read_only' | null } }>(
     '/v1/roles/:id/property-permissions/:object/:property',
     async (req) => {
-      requireAdminChange(req.principal!);
+      requireChange(req.principal!, 'roles');
+      if (await roleIsAdmin(pool, req.params.id)) requireSuperAdminFor(req.principal!, 'change Super Admin roles');
       const obj = await getObject(req.params.object);
       const prop = getProperty(obj, req.params.property);
       if (!prop) throw notFound(`unknown property "${req.params.property}"`);
@@ -392,13 +490,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ---- Sharing rules (migration 0012) -------------------------------------
   app.get<{ Params: { id: string } }>('/v1/roles/:id/sharing-rules', async (req) => {
-    requireScope(req.principal!, 'admin');
+    requirePermission(req.principal!, 'roles', { write: false });
     return { results: await listSharingRules(pool, req.params.id) };
   });
 
   app.post<{ Params: { id: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules', async (req, reply) => {
     const p = req.principal!;
-    requireAdminChange(p);
+    requireChange(p, 'roles');
     const rule = await validateSharingRule(pool, req.body ?? {});
     const id = await withTx({ principal: p }, async (c) => {
       const { rows } = await c.query(
@@ -416,7 +514,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.put<{ Params: { id: string; ruleId: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules/:ruleId', async (req) => {
     const p = req.principal!;
-    requireAdminChange(p);
+    requireChange(p, 'roles');
     const rule = await validateSharingRule(pool, req.body ?? {});
     await withTx({ principal: p }, async (c) => {
       const { rowCount } = await c.query(
@@ -432,7 +530,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string; ruleId: string } }>('/v1/roles/:id/sharing-rules/:ruleId', async (req, reply) => {
-    requireAdminChange(req.principal!);
+    requireChange(req.principal!, 'roles');
     const { rows } = await pool.query('delete from auth.role_sharing_rules where role_id = $1 and id = $2 returning name', [req.params.id, req.params.ruleId]);
     if (!rows.length) throw notFound('sharing rule not found');
     await logEvent(req, 'sharing_rule.deleted', { target: { type: 'role', id: req.params.id }, details: { rule_id: req.params.ruleId, name: rows[0].name } });
@@ -441,7 +539,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // How many active records a (saved or unsaved) rule would share right now.
   app.post<{ Params: { id: string }; Body: SharingRuleBody }>('/v1/roles/:id/sharing-rules/preview', async (req) => {
-    requireScope(req.principal!, 'admin');
+    requirePermission(req.principal!, 'roles', { write: false });
     const rule = await validateSharingRule(pool, req.body ?? {});
     const registry = await getRegistry();
     const objects = [rule.anchor, ...new Set(rule.associations.map((a) => registry.byKey.get(a.object_type_id)!))];
@@ -451,8 +549,10 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string }; Body: { user_id?: string; team_id?: string } }>('/v1/roles/:id/assignments', async (req, reply) => {
-    requireAdminChange(req.principal!);
+    requireAssign(req.principal!);
+    if (await roleIsAdmin(pool, req.params.id)) requireSuperAdminFor(req.principal!, 'give out Super Admin roles');
     const b = req.body ?? {};
+    if (b.user_id && !isSuperAdmin(req.principal!) && (await userIsSuperAdmin(b.user_id))) requireSuperAdminFor(req.principal!, 'change the roles of a Super Admin');
     const { rows } = await pool.query('insert into auth.role_assignments (role_id, user_id, team_id) values ($1, $2, $3) returning *', [
       req.params.id, b.user_id ?? null, b.team_id ?? null
     ]);
@@ -462,7 +562,8 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string; assignmentId: string } }>('/v1/roles/:id/assignments/:assignmentId', async (req, reply) => {
-    requireAdminChange(req.principal!);
+    requireAssign(req.principal!);
+    if (await roleIsAdmin(pool, req.params.id)) requireSuperAdminFor(req.principal!, 'take away Super Admin roles');
     const { rows } = await keepingAnAdmin(req.principal!.actor, (client) =>
       client.query('delete from auth.role_assignments where role_id = $1 and id = $2 returning user_id, team_id', [req.params.id, req.params.assignmentId])
     );
@@ -527,6 +628,7 @@ export async function adminRoutes(app: FastifyInstance) {
   }>('/v1/objects/:object/imports', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'write');
+    requirePermission(p, 'import');
     const baseObj = await objectForWrite(req.params.object);
     requireObjectPermission(p, baseObj, 'create');
     const b = req.body ?? ({} as never);
@@ -568,7 +670,7 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!prop || prop.type !== 'dropdown' || prop.record_status !== 'active') throw badRequest(`new_options: "${name}" is not a dropdown`);
       if (!Array.isArray(list)) throw badRequest(`new_options.${name} must be a list`);
       if (prop.options.auto_append_users === true) throw badRequest(`new_options: ${prop.label} lists users; choices cannot be added`);
-      if (!p.scopes.has('schema') && prop.options.allow_user_add !== true) {
+      if (!hasPermission(p, 'properties') && !p.scopes.has('schema') && prop.options.allow_user_add !== true) {
         throw badRequest(`new_options: you cannot add choices to ${prop.label}`, { property: prop.api_name });
       }
       for (const o of list) {
@@ -775,6 +877,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post<{ Params: { object: string }; Body: { values?: Record<string, unknown> } }>('/v1/objects/:object/imports/check-values', async (req) => {
     const p = req.principal!;
     requireScope(p, 'write');
+    requirePermission(p, 'import');
     const obj = await objectForWrite(req.params.object);
     requireObjectPermission(p, obj, 'create');
     const input = req.body?.values;
@@ -816,6 +919,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const p = req.principal!;
       requireScope(p, 'read');
+      requirePermission(p, 'export', { write: false });
       const obj = await objectForWrite(req.params.object);
       const { headings = 'names', format = 'csv', ...search } = req.body ?? {};
       if (headings !== 'names' && headings !== 'labels') throw badRequest('headings must be names or labels');

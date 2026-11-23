@@ -3,11 +3,10 @@ import type pg from 'pg';
 import type Stripe from 'stripe';
 import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { browserOrigins, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
+import { browserOrigins, hasPermission, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { getObject } from '../registry.js';
 import { assertAccessible, updateRecord } from '../records.js';
-import { isAdmin } from './ui.js';
 import { loadPublicInvoice, loadPublicQuote, rateLimit } from './public.js';
 import { toMinor } from '../payments/amounts.js';
 import {
@@ -20,6 +19,7 @@ import {
   type Purpose
 } from '../payments/fulfil.js';
 import { DEFAULT_PAYMENT_SETTINGS, paymentSettings, type PaymentSettings, type PublicPayment } from '../payments/state.js';
+import { isGmailTypo } from '../email-typo.js';
 import {
   createAccount,
   createCheckout,
@@ -46,11 +46,11 @@ const uiBase = (process.env.UI_URL || browserOrigins[0] || '').replace(/\/$/, ''
 const SETTINGS_PATH = '/settings/payments';
 
 function requireAdminChange(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can change payment settings');
+  if (!hasPermission(p, 'integrations')) throw forbidden('payment settings need the Integrations permission');
   requireRecentSignIn(p);
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function str(v: unknown, field: string, max: number, required: boolean): string {
   if (v === undefined || v === null) {
@@ -67,6 +67,7 @@ function str(v: unknown, field: string, max: number, required: boolean): string 
 function email(v: unknown, field: string, required: boolean): string {
   const s = str(v, field, 254, required);
   if (s && !EMAIL_RE.test(s)) throw badRequest(`${field} must be an email address`);
+  if (s && isGmailTypo(s)) throw badRequest(`${field}: did you mean @gmail.com? Please check the address.`);
   return s;
 }
 
@@ -305,7 +306,7 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   app.get('/v1/payments/connection', async (req) => {
     const p = req.principal!;
-    if (!isAdmin(p)) throw forbidden('only admins can see payment settings');
+    if (!hasPermission(p, 'integrations', { write: false })) throw forbidden('payment settings need the Integrations permission');
     let conn = await currentConnection();
     // read again even when active: Stripe can still ask for more (shown on the page)
     if (conn && stripeConfigured()) {
@@ -339,7 +340,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   });
 
   app.post('/v1/payments/stripe/refresh', async (req) => {
-    if (!isAdmin(req.principal!)) throw forbidden('only admins can see payment settings');
+    if (!hasPermission(req.principal!, 'integrations', { write: false })) throw forbidden('payment settings need the Integrations permission');
     const conn = await currentConnection();
     if (!conn) throw notFound('no Stripe account is set up');
     return { connection: shownConnection(await refreshConnection(conn)) };

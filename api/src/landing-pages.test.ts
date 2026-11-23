@@ -76,3 +76,50 @@ test('helper script: valid JavaScript, bridges only the public form routes, load
   // messages to the shell go only to the CRM's origin
   assert.match(code, /parent\.postMessage\(m,UI\|\|'\*'\)/);
 });
+
+test('sniffType: reads the file type from its first bytes', () => {
+  assert.equal(lp.sniffType(Buffer.from('89504e470d0a1a0a0000', 'hex')), 'image/png');
+  assert.equal(lp.sniffType(Buffer.from('ffd8ffe000104a46', 'hex')), 'image/jpeg');
+  assert.equal(lp.sniffType(Buffer.from('GIF89a......')), 'image/gif');
+  assert.equal(lp.sniffType(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')])), 'image/webp');
+  assert.equal(lp.sniffType(Buffer.from('%PDF-1.7')), 'application/pdf');
+  assert.equal(lp.sniffType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">')), null);
+  assert.equal(lp.sniffType(Buffer.from('<!doctype html>')), null);
+});
+
+test('shellWithHead: title, description, canonical and preview tags; noindex removed; text escaped', () => {
+  const shell = '<!doctype html><html><head><meta name="robots" content="noindex" /><title>&#8203;</title></head><body></body></html>';
+  const out = lp.shellWithHead(shell, row({
+    slug: 'acme-demo', html: '<title>Acme &amp; Co</title><meta name="description" content="From the page">', meta_title: null, meta_description: null,
+    og_image: 'https://cdn.example.com/og.png'
+  }));
+  assert.doesNotMatch(out, /noindex/);
+  assert.match(out, /<title>Acme &amp; Co<\/title>/);
+  assert.match(out, /<meta name="description" content="From the page">/);
+  assert.match(out, /<link rel="canonical" href="https:\/\/crm\.example\.com\/p\/page\/acme-demo">/);
+  assert.match(out, /og:image" content="https:\/\/cdn\.example\.com\/og\.png"/);
+  assert.match(out, /summary_large_image/);
+  const own = lp.shellWithHead(shell, row({ meta_title: 'Hi "there" <b>', meta_description: 'Ours', og_image: null }));
+  assert.match(own, /<title>Hi &quot;there&quot; &lt;b&gt;<\/title>/);
+  assert.match(own, /content="Ours"/);
+  assert.doesNotMatch(own, /og:image/);
+});
+
+test('page addresses: path form is the url, hash form still given', () => {
+  const out = lp.pageOut(row({ slug: 'acme-demo' }), false);
+  assert.equal(out.url, 'https://crm.example.com/p/page/acme-demo');
+  assert.equal(out.hash_url, 'https://crm.example.com/p/page/#acme-demo');
+  assert.equal(out.url_path, '/p/page/acme-demo');
+});
+
+test('renderRequestAllowed: https on named public hosts only', () => {
+  assert.equal(lp.renderRequestAllowed('https://fonts.googleapis.com/css2?family=Inter'), true);
+  assert.equal(lp.renderRequestAllowed('https://fonts.gstatic.com/s/inter/v1/x.woff2'), true);
+  assert.equal(lp.renderRequestAllowed('data:image/png;base64,AA'), true);
+  assert.equal(lp.renderRequestAllowed('http://example.com/'), false);
+  assert.equal(lp.renderRequestAllowed('https://10.0.0.1/'), false);
+  assert.equal(lp.renderRequestAllowed('https://[::1]/'), false);
+  assert.equal(lp.renderRequestAllowed('https://api:3100/'), false);
+  assert.equal(lp.renderRequestAllowed('https://db.internal/'), false);
+  assert.equal(lp.renderRequestAllowed('https://user:pw@example.com/'), false);
+});

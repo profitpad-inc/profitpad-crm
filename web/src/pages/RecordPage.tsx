@@ -2,7 +2,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useS
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
 import { fileInfo, formatBytes } from '../lib/files';
-import { api, ApiError, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
+import { api, ApiError, can, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
@@ -79,7 +79,7 @@ const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   orders: [...DEFAULT_CARDS, 'lines']
 };
 const ACTIVITY_PROPS: Record<string, string[]> = {
-  calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at'],
+  calls: ['name', 'call_type', 'direction', 'status', 'started_at', 'duration_seconds', 'body', 'created_at', 'logged_via'],
   emails: ['name', 'subject', 'body', 'direction', 'status', 'from_address', 'to_addresses', 'cc_addresses', 'sent_at', 'scheduled_at', 'created_at',
     'stream', 'delivered_at', 'first_opened_at', 'open_count', 'first_clicked_at', 'click_count', 'replied_at', 'thread_id', 'logged_via'],
   // to suggest as recipients and attachments when writing an email
@@ -2449,8 +2449,13 @@ interface UserRole {
 function UserRoles({ userId, onLoaded }: { userId: string; onLoaded?: (roles: UserRole[]) => void }) {
   const { me } = useApp();
   const [roles, setRoles] = useState<UserRole[] | null>(null);
-  const [allRoles, setAllRoles] = useState<{ id: string; name: string }[]>([]);
+  const [allRoles, setAllRoles] = useState<{ id: string; name: string; is_admin: boolean }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // giving and taking roles: the Users or Roles permission; Super Admin roles,
+  // and the roles of a Super Admin, only by Super Admins
+  const canAssign = can(me, 'users') || can(me, 'roles');
+  const userIsSuperAdmin = !!roles?.some((r) => r.is_admin);
+  const canChange = (roleIsAdmin: boolean) => canAssign && (me.is_admin || (!roleIsAdmin && !userIsSuperAdmin));
 
   const load = useCallback(async () => {
     const r = await api<{ results: UserRole[] }>('GET', `/v1/users/${userId}/roles`);
@@ -2460,8 +2465,8 @@ function UserRoles({ userId, onLoaded }: { userId: string; onLoaded?: (roles: Us
 
   useEffect(() => {
     load().catch((e) => setError((e as Error).message));
-    if (me.is_admin) api<{ results: { id: string; name: string }[] }>('GET', '/v1/roles').then((r) => setAllRoles(r.results)).catch(() => undefined);
-  }, [load, me.is_admin]);
+    if (canAssign) api<{ results: { id: string; name: string; is_admin: boolean }[] }>('GET', '/v1/roles').then((r) => setAllRoles(r.results)).catch(() => undefined);
+  }, [load, canAssign]);
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -2473,12 +2478,12 @@ function UserRoles({ userId, onLoaded }: { userId: string; onLoaded?: (roles: Us
     }
   }
 
-  const available = allRoles.filter((r) => !roles?.some((x) => x.role_id === r.id && !x.team_id));
+  const available = allRoles.filter((r) => canChange(r.is_admin) && !roles?.some((x) => x.role_id === r.id && !x.team_id));
   return (
     <div className="props user-roles">
       <h3>
         Roles
-        {me.is_admin && <Link to="/settings/roles" className="small push-right">Manage roles</Link>}
+        {can(me, 'roles') && <Link to="/settings/roles" className="small push-right">Manage roles</Link>}
       </h3>
       {error && <div className="error">{error}</div>}
       <div className="role-chips">
@@ -2488,14 +2493,14 @@ function UserRoles({ userId, onLoaded }: { userId: string; onLoaded?: (roles: Us
             {r.name}
             {r.team_id ? (
               <Link to={`/objects/teams/${r.team_id}`} className="muted">&nbsp;via team</Link>
-            ) : me.is_admin ? (
+            ) : canChange(r.is_admin) ? (
               <button className="icon-btn" aria-label={`Remove ${r.name}`} onClick={() => run(() => api('DELETE', `/v1/roles/${r.role_id}/assignments/${r.assignment_id}`))}>
                 <X size={12} />
               </button>
             ) : null}
           </span>
         ))}
-        {me.is_admin && available.length > 0 && (
+        {available.length > 0 && (
           <Select className="role-add" value="" aria-label="Add a role" onChange={(v) => run(() => api('POST', `/v1/roles/${v}/assignments`, { user_id: userId }))}>
             <option value="">Add role…</option>
             {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -2534,8 +2539,9 @@ function SignInHistory({ id }: { id: string }) {
     load();
   }, [load]);
 
-  // only the user themself and admins may end sessions
-  const canEnd = me.is_admin || me.user?.id === id;
+  // the user themself, and those with the Users permission (the API keeps a
+  // Super Admin's sessions to Super Admins)
+  const canEnd = can(me, 'users') || me.user?.id === id;
   async function end(fn: () => Promise<unknown>, message: string) {
     setActionError(null);
     try {

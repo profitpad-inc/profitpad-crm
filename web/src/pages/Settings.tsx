@@ -5,7 +5,7 @@ import {
   BellRing, Folder, Hash, Mail, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
 } from 'lucide-react';
 import { BrandMark } from '../components/Logo';
-import { api, type CrmRecord, type NavItem, type SearchResult, type View } from '../lib/api';
+import { api, can, type CrmRecord, type NavItem, type RolePermission, type SearchResult, type View } from '../lib/api';
 import { useApp, type Themes } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
@@ -42,9 +42,10 @@ import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import '../settings.css';
 import { confirmDialog } from '../components/confirm';
 
-// who sees a page: everyone, signed-in users (not bare API keys), admins, or
-// those who may edit a menu (admins, and users allowed to change their own)
-type Gate = 'all' | 'user' | 'admin' | 'nav' | 'knowledge';
+// who sees a page: everyone, signed-in users (not bare API keys), Super
+// Admins, those who may edit a menu (admins, and users allowed to change their
+// own), or those whose role has one of the listed permissions
+type Gate = 'all' | 'user' | 'admin' | 'nav' | 'knowledge' | RolePermission[];
 interface SettingsLink { path: string; label: string; icon: ReactNode; gate: Gate; element: ReactNode }
 
 const GROUPS: { label: string; links: SettingsLink[] }[] = [
@@ -59,36 +60,37 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'theme', label: 'Theme', icon: <Palette size={16} />, gate: 'admin', element: <ThemeSettings /> },
     { path: 'knowledge', label: 'Knowledge base', icon: <BookOpen size={16} />, gate: 'knowledge', element: <KnowledgeSettings /> },
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
-    { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: 'admin', element: <PropertySettings /> },
-    { path: 'option-lists', label: 'Option lists', icon: <ListChecks size={16} />, gate: 'admin', element: <OptionListSettings /> },
+    { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: ['properties'], element: <PropertySettings /> },
+    { path: 'option-lists', label: 'Option lists', icon: <ListChecks size={16} />, gate: ['properties'], element: <OptionListSettings /> },
     { path: 'currencies', label: 'Currencies', icon: <Coins size={16} />, gate: 'admin', element: <CurrencySettings /> },
     { path: 'imports', label: 'Imports and exports', icon: <History size={16} />, gate: 'all', element: <ImportHistory /> }
   ] },
   { label: 'People and access', links: [
-    { path: 'users', label: 'Users', icon: <Users size={16} />, gate: 'admin', element: <UserSettings /> },
-    { path: 'roles', label: 'Roles', icon: <ShieldCheck size={16} />, gate: 'admin', element: <RoleSettings /> }
+    { path: 'users', label: 'Users', icon: <Users size={16} />, gate: ['users', 'roles'], element: <UserSettings /> },
+    { path: 'roles', label: 'Roles', icon: <ShieldCheck size={16} />, gate: ['roles'], element: <RoleSettings /> }
   ] },
   { label: 'Integrations', links: [
-    { path: 'embed-domains', label: 'Embed domains', icon: <Globe size={16} />, gate: 'admin', element: <EmbedDomains /> },
-    { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: 'admin', element: <IntegrationSettings /> },
-    { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: 'admin', element: <WebhookSettings /> },
-    { path: 'mailboxes', label: 'Mailboxes', icon: <Mail size={16} />, gate: 'admin', element: <MailboxSettings /> },
-    { path: 'meetings', label: 'Meetings', icon: <Video size={16} />, gate: 'admin', element: <MeetingSettings /> },
-    { path: 'notification-emails', label: 'Notification emails', icon: <BellRing size={16} />, gate: 'admin', element: <NotificationEmailSettings /> },
-    { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: 'admin', element: <PaymentSettings /> },
-    { path: 'email', label: 'Email', icon: <Send size={16} />, gate: 'admin', element: <EmailSettings /> },
-    { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: 'admin', element: <CardScannerSettings /> },
-    { path: 'address-autocomplete', label: 'Address autocomplete', icon: <MapPin size={16} />, gate: 'admin', element: <AddressSettings /> }
+    { path: 'embed-domains', label: 'Embed domains', icon: <Globe size={16} />, gate: ['integrations'], element: <EmbedDomains /> },
+    { path: 'view-integrations', label: 'View integrations', icon: <Cable size={16} />, gate: ['integrations'], element: <IntegrationSettings /> },
+    { path: 'webhooks', label: 'Webhooks', icon: <Webhook size={16} />, gate: ['integrations'], element: <WebhookSettings /> },
+    { path: 'mailboxes', label: 'Mailboxes', icon: <Mail size={16} />, gate: ['integrations'], element: <MailboxSettings /> },
+    { path: 'meetings', label: 'Meetings', icon: <Video size={16} />, gate: ['integrations'], element: <MeetingSettings /> },
+    { path: 'notification-emails', label: 'Notification emails', icon: <BellRing size={16} />, gate: ['integrations'], element: <NotificationEmailSettings /> },
+    { path: 'payments', label: 'Payments', icon: <CreditCard size={16} />, gate: ['integrations'], element: <PaymentSettings /> },
+    { path: 'email', label: 'Email', icon: <Send size={16} />, gate: ['integrations'], element: <EmailSettings /> },
+    { path: 'card-scanner', label: 'Card scanner', icon: <IdCard size={16} />, gate: ['integrations'], element: <CardScannerSettings /> },
+    { path: 'address-autocomplete', label: 'Address autocomplete', icon: <MapPin size={16} />, gate: ['integrations'], element: <AddressSettings /> }
   ] },
   { label: 'Security', links: [
-    { path: 'api-keys', label: 'API keys', icon: <KeyRound size={16} />, gate: 'admin', element: <ApiKeySettings /> },
-    { path: 'security-log', label: 'Security log', icon: <ScrollText size={16} />, gate: 'admin', element: <SecurityLog /> }
+    { path: 'api-keys', label: 'API keys', icon: <KeyRound size={16} />, gate: ['api_keys'], element: <ApiKeySettings /> },
+    { path: 'security-log', label: 'Security log', icon: <ScrollText size={16} />, gate: ['security_log'], element: <SecurityLog /> }
   ] }
 ];
 
 export function Settings() {
   const { me, navCanEdit } = useApp();
-  const allowed = (g: Gate) => g === 'all' || (g === 'user' ? !!me.user : g === 'nav' ? me.is_admin || navCanEdit
+  const allowed = (g: Gate) => g === 'all' || (Array.isArray(g) ? g.some((x) => can(me, x))
+    : g === 'user' ? !!me.user : g === 'nav' ? me.is_admin || navCanEdit
     : g === 'knowledge' ? me.is_admin || (me.knowledge_access ?? 'read') !== 'none' : me.is_admin);
   return (
     <div className="page settings">

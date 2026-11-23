@@ -10,6 +10,7 @@ import { cleanEmailHtml, htmlToText, MAX_BODY, tightParagraphs, withSignature } 
 import { buildMime } from './mime.js';
 import { domainOf, loadProviders, MailAuthError, MailSendError, sendMessage, type MailProvider, type OutgoingMessage } from './providers.js';
 import { resolveSender, userName } from './senders.js';
+import { isGmailTypo } from '../email-typo.js';
 
 // Writing and sending an email from a record page (POST /v1/mailboxes/send).
 // The email becomes an emails record (pc_0031) linked to the page's record,
@@ -29,7 +30,7 @@ const SOURCE = 'mailbox_send';
 // sender's access was checked when the email was written).
 const SYSTEM: Principal = { keyId: null, name: 'Mailbox sender', scopes: new Set(['admin']), userId: null, actor: 'system:mailbox', permissions: null };
 
-const EMAIL_RE = /^[^@\s<>(),;:"[\]\\]+@[^@\s<>(),;:"[\]\\]+\.[^@\s<>(),;:"[\]\\]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^@\s<>(),;:"[\]\\]+@[^@\s<>(),;:"[\]\\]+\.[^@\s<>(),;:"[\]\\]+$/;
 
 export function cleanAddresses(v: unknown, field: string): string[] {
   if (v === undefined || v === null || v === '') return [];
@@ -40,6 +41,7 @@ export function cleanAddresses(v: unknown, field: string): string[] {
     const a = raw.trim().toLowerCase();
     if (!a) continue;
     if (a.length > 254 || !EMAIL_RE.test(a)) throw badRequest(`"${raw.trim()}" is not an email address`, { property: field });
+    if (isGmailTypo(a)) throw badRequest(`"${raw.trim()}" looks like a typo, did you mean @gmail.com?`, { property: field });
     if (!out.includes(a)) out.push(a);
   }
   return out;

@@ -1,9 +1,11 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { pool, withTx, type Db } from './db.js';
-import { badRequest, notFound } from './errors.js';
+import { ApiError, badRequest, notFound } from './errors.js';
 import { requireScope, type Principal } from './auth.js';
 import { getRegistry } from './registry.js';
-import { createRecord, onWrite, SLUG_RE } from './records.js';
+import { createRecord, onWrite, SLUG_RE, updateRecord } from './records.js';
+import { makeFilePublic, publicFilePath, saveFileBytes } from './files.js';
+import { fetchPublic, publicHttpsUrl } from './safe-fetch.js';
 import { deriveKey } from './secret-box.js';
 import { applyEdits, sourceExcerpt, type SourceEdit } from './views.js';
 import { getBrowser, slot } from './render.js';
@@ -34,9 +36,13 @@ export interface LandingPageRow {
   published_at: Date | null;
   record_status: string;
   updated_at: Date;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  og_image?: string | null;
 }
 
-const COLUMNS = `pc_0059_id as id, name, slug, description, status[1] as status, draft_html, html, published_at, record_status, updated_at`;
+const COLUMNS = `pc_0059_id as id, name, slug, description, status[1] as status, draft_html, html, published_at, record_status, updated_at,
+  meta_title, meta_description, og_image`;
 
 export async function loadPage(db: Db, slugOrId: string): Promise<LandingPageRow> {
   const { rows } = await db.query(
@@ -60,19 +66,106 @@ function checkHtml(html: string | null): void {
 
 const source = (p: Principal) => (p.oauth ? 'mcp' : 'api');
 
-export async function createPage(p: Principal, input: { name?: string; slug?: string; description?: string; html?: string }): Promise<LandingPageRow> {
+export interface PageSettingsInput {
+  name?: string;
+  slug?: string;
+  description?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  og_image?: string | null;
+}
+
+const SETTINGS = ['name', 'slug', 'description', 'meta_title', 'meta_description', 'og_image'] as const;
+
+export async function createPage(p: Principal, input: PageSettingsInput & { html?: string }): Promise<LandingPageRow> {
   requireScope(p, 'schema');
   if (typeof input.name !== 'string' || input.name.trim() === '') throw badRequest('a landing page needs a name');
   checkHtml(input.html ?? null);
   const obj = (await getRegistry()).byKey.get('landing_pages')!;
   const id = await withTx({ principal: p, source: source(p) }, async (c) => {
     const props: Record<string, unknown> = { name: input.name!.trim(), description: input.description ?? null };
-    if (input.slug) props.slug = input.slug;
+    for (const k of ['slug', 'meta_title', 'meta_description', 'og_image'] as const) if (input[k]) props[k] = input[k];
     const newId = await createRecord(c, obj, p, props);
     await c.query('update crm.pc_0059 set draft_html = $2 where pc_0059_id = $1', [newId, input.html ?? null]);
+    if (input.html) await saveVersion(c, newId, 'draft', input.html, p);
     return newId;
   });
   return loadPage(pool, id);
+}
+
+// Name, page address, description and what search engines and link previews
+// show. A changed slug moves the page: the old address stops working.
+export async function updatePageSettings(p: Principal, idOrSlug: string, input: PageSettingsInput): Promise<LandingPageRow> {
+  requireScope(p, 'schema');
+  const page = await loadPage(pool, idOrSlug);
+  const props: Record<string, unknown> = {};
+  for (const k of SETTINGS) if (input[k] !== undefined) props[k] = input[k] === '' ? null : input[k];
+  if (!Object.keys(props).length) throw badRequest(`send at least one of ${SETTINGS.join(', ')}`);
+  const obj = (await getRegistry()).byKey.get('landing_pages')!;
+  await withTx({ principal: p, source: source(p) }, (c) => updateRecord(c, obj, p, page.id, props));
+  return loadPage(pool, page.id);
+}
+
+// A copy of a page's draft as a new draft page (never published).
+export async function duplicatePage(p: Principal, idOrSlug: string, input: { name?: string; slug?: string; description?: string }): Promise<LandingPageRow> {
+  requireScope(p, 'schema');
+  const from = await loadPage(pool, idOrSlug);
+  return createPage(p, {
+    name: input.name?.trim() || `${from.name ?? from.slug} (copy)`,
+    slug: input.slug,
+    description: input.description ?? from.description,
+    meta_title: from.meta_title,
+    meta_description: from.meta_description,
+    og_image: from.og_image,
+    html: from.draft_html ?? from.html ?? undefined
+  });
+}
+
+// ---- versions ------------------------------------------------------------------------
+
+// Every saved draft and every publish is kept (ui.landing_page_versions), the
+// newest KEEP_DRAFTS drafts and KEEP_PUBLISHED publishes per page.
+const KEEP_DRAFTS = 30;
+const KEEP_PUBLISHED = 30;
+
+async function saveVersion(c: Db, pageId: string, kind: 'draft' | 'published', html: string, p: Principal): Promise<void> {
+  const { rows } = await c.query(
+    'select html from ui.landing_page_versions where page_id = $1 and kind = $2 order by id desc limit 1',
+    [pageId, kind]
+  );
+  if (rows[0]?.html === html) return;
+  await c.query('insert into ui.landing_page_versions (page_id, kind, html, created_by) values ($1, $2, $3, $4)', [pageId, kind, html, p.actor]);
+  await c.query(
+    `delete from ui.landing_page_versions where page_id = $1 and kind = $2 and id not in (
+       select id from ui.landing_page_versions where page_id = $1 and kind = $2 order by id desc limit $3)`,
+    [pageId, kind, kind === 'draft' ? KEEP_DRAFTS : KEEP_PUBLISHED]
+  );
+}
+
+export async function listVersions(idOrSlug: string) {
+  const page = await loadPage(pool, idOrSlug);
+  const { rows } = await pool.query(
+    `select id::text as id, kind, created_by, created_at, char_length(html) as html_length,
+       html = $2 as is_current_draft, html = $3 as is_published_html
+     from ui.landing_page_versions where page_id = $1 order by id desc`,
+    [page.id, page.draft_html ?? '', page.status === 'published' ? page.html ?? '' : '']
+  );
+  return { page: page.slug, versions: rows };
+}
+
+export async function getVersionHtml(idOrSlug: string, versionId: string): Promise<{ page: LandingPageRow; html: string }> {
+  const page = await loadPage(pool, idOrSlug);
+  if (!/^\d{1,18}$/.test(versionId)) throw badRequest('version is a number from list_landing_page_versions');
+  const { rows } = await pool.query('select html from ui.landing_page_versions where page_id = $1 and id = $2', [page.id, versionId]);
+  if (!rows[0]) throw notFound(`no version ${versionId} of this landing page`);
+  return { page, html: rows[0].html };
+}
+
+// Copies an earlier version into the draft (the published page is unchanged).
+export async function restoreVersion(p: Principal, idOrSlug: string, versionId: string): Promise<LandingPageRow> {
+  requireScope(p, 'schema');
+  const { page, html } = await getVersionHtml(idOrSlug, versionId);
+  return savePageDraft(p, page.id, { html });
 }
 
 export interface PageDraftInput {
@@ -92,7 +185,10 @@ export async function savePageDraft(p: Principal, idOrSlug: string, input: PageD
     html = applyEdits(page.draft_html, input.edits);
   } else throw badRequest('send html (the whole page) or edits');
   checkHtml(html);
-  await withTx({ principal: p, source: source(p) }, (c) => c.query('update crm.pc_0059 set draft_html = $2 where pc_0059_id = $1', [page.id, html]));
+  await withTx({ principal: p, source: source(p) }, async (c) => {
+    await c.query('update crm.pc_0059 set draft_html = $2 where pc_0059_id = $1', [page.id, html]);
+    if (html) await saveVersion(c, page.id, 'draft', html, p);
+  });
   return loadPage(pool, page.id);
 }
 
@@ -100,9 +196,10 @@ export async function publishPage(p: Principal, idOrSlug: string): Promise<Landi
   requireScope(p, 'schema');
   const page = await loadPage(pool, idOrSlug);
   if (!page.draft_html?.trim()) throw badRequest('the draft has no HTML to publish');
-  await withTx({ principal: p, source: source(p) }, (c) =>
-    c.query(`update crm.pc_0059 set html = draft_html, status = '{published}', published_at = now() where pc_0059_id = $1`, [page.id])
-  );
+  await withTx({ principal: p, source: source(p) }, async (c) => {
+    await c.query(`update crm.pc_0059 set html = draft_html, status = '{published}', published_at = now() where pc_0059_id = $1`, [page.id]);
+    await saveVersion(c, page.id, 'published', page.draft_html!, p);
+  });
   return loadPage(pool, page.id);
 }
 
@@ -122,7 +219,10 @@ export async function revertPageDraft(p: Principal, idOrSlug: string): Promise<L
   requireScope(p, 'schema');
   const page = await loadPage(pool, idOrSlug);
   if (!page.html) throw badRequest('this landing page has never been published, so there is nothing to go back to');
-  await withTx({ principal: p, source: source(p) }, (c) => c.query('update crm.pc_0059 set draft_html = html where pc_0059_id = $1', [page.id]));
+  await withTx({ principal: p, source: source(p) }, async (c) => {
+    await c.query('update crm.pc_0059 set draft_html = html where pc_0059_id = $1', [page.id]);
+    await saveVersion(c, page.id, 'draft', page.html!, p);
+  });
   return loadPage(pool, page.id);
 }
 
@@ -135,8 +235,13 @@ const uiBase = trim(process.env.UI_URL);
 // else the API's public address, else the same origin as the shell
 const contentBase = trim(process.env.PAGES_URL) || trim(process.env.PUBLIC_API_URL);
 
-export const pageUrl = (slug: string) => `${uiBase}/p/page/#${slug}`;
+// /p/page/<slug>: the shell with the page's title, description and preview
+// image in its <head> (served by the API, pageShellHtml), so search engines
+// and link previews see them. /p/page/#<slug> (the first form) still works.
+export const pageUrl = (slug: string) => `${uiBase}/p/page/${slug}`;
+export const pageHashUrl = (slug: string) => `${uiBase}/p/page/#${slug}`;
 export const pageDraftUrl = (slug: string) => `${uiBase}/p/page/?draft=1#${slug}`;
+export const pagePreviewUrl = (slug: string, token: string) => `${uiBase}/p/page/?preview=${token}#${slug}`;
 const htmlUrl = (slug: string) => `${contentBase}/v1/public/pages/${encodeURIComponent(slug)}/html`;
 
 const hostOf = (url: string) => {
@@ -185,6 +290,248 @@ export function draftTokenOk(page: LandingPageRow, token: string): boolean {
   const want = Buffer.from(signDraft(page.id, exp));
   const got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got);
+}
+
+// ---- shareable previews --------------------------------------------------------------
+
+// A preview link shows the current draft to anyone holding it (a client, a
+// teammate without a CRM login) until it expires or is revoked. Only a hash of
+// the token is stored; the link is shown once, when made.
+const MAX_PREVIEW_HOURS = 24 * 90;
+const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+export async function createPreviewLink(p: Principal, idOrSlug: string, input: { expires_in_hours?: number; label?: string }) {
+  requireScope(p, 'schema');
+  const page = await loadPage(pool, idOrSlug);
+  if (!page.draft_html?.trim()) throw badRequest('the draft has no HTML to preview yet');
+  const hours = input.expires_in_hours ?? 24 * 7;
+  if (!Number.isFinite(hours) || hours < 1 || hours > MAX_PREVIEW_HOURS) throw badRequest(`expires_in_hours is 1 to ${MAX_PREVIEW_HOURS}`);
+  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 200) || null : null;
+  const token = randomBytes(24).toString('base64url');
+  const { rows } = await pool.query(
+    `insert into ui.landing_page_preview_links (page_id, token_hash, label, expires_at, created_by)
+     values ($1, $2, $3, now() + make_interval(hours => $4), $5) returning id::text as id, expires_at`,
+    [page.id, hashToken(token), label, Math.round(hours), p.actor]
+  );
+  return { id: rows[0].id, page: page.slug, label, url: pagePreviewUrl(page.slug, token), expires_at: rows[0].expires_at };
+}
+
+export async function listPreviewLinks(idOrSlug: string) {
+  const page = await loadPage(pool, idOrSlug);
+  const { rows } = await pool.query(
+    `select id::text as id, label, created_by, created_at, expires_at, revoked_at, last_used_at,
+       revoked_at is null and expires_at > now() as active
+     from ui.landing_page_preview_links where page_id = $1 order by id desc limit 100`,
+    [page.id]
+  );
+  return { page: page.slug, links: rows };
+}
+
+export async function revokePreviewLink(p: Principal, idOrSlug: string, linkId: string) {
+  requireScope(p, 'schema');
+  const page = await loadPage(pool, idOrSlug);
+  if (!/^\d{1,18}$/.test(linkId)) throw badRequest('link is an id from list_landing_page_preview_links');
+  const { rows } = await pool.query(
+    `update ui.landing_page_preview_links set revoked_at = coalesce(revoked_at, now())
+     where page_id = $1 and id = $2 returning id::text as id, revoked_at`,
+    [page.id, linkId]
+  );
+  if (!rows[0]) throw notFound(`no preview link ${linkId} on this landing page`);
+  return { id: rows[0].id, page: page.slug, revoked_at: rows[0].revoked_at };
+}
+
+// The page a preview token opens, or null (unknown, expired or revoked).
+export async function pageForPreview(slug: string, token: string): Promise<LandingPageRow | null> {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
+  const { rows } = await pool.query(
+    `update ui.landing_page_preview_links set last_used_at = now()
+     where token_hash = $1 and revoked_at is null and expires_at > now() returning page_id`,
+    [hashToken(token)]
+  );
+  if (!rows[0]) return null;
+  try {
+    const page = await loadPage(pool, rows[0].page_id);
+    return page.slug.toLowerCase() === slug.toLowerCase() ? page : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---- assets ------------------------------------------------------------------------
+
+// Images (and video, PDF) for pages: stored as files with a public link, so a
+// page can show real logos, screenshots and photos. SVG and HTML are not
+// taken: files are served from the CRM's own host (files.ts), where only
+// plain media types open in the browser. Put SVG inline in the HTML.
+export const ASSET_TYPES: Record<string, string> = {
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif',
+  'video/mp4': 'mp4', 'video/webm': 'webm', 'application/pdf': 'pdf'
+};
+const MAX_ASSET_BYTES = 15 * 1024 * 1024;
+
+// What a file's first bytes say it is (the declared type is not trusted).
+export function sniffType(b: Buffer): string | null {
+  const hex = b.subarray(0, 16).toString('hex');
+  if (hex.startsWith('89504e470d0a1a0a')) return 'image/png';
+  if (hex.startsWith('ffd8ff')) return 'image/jpeg';
+  if (hex.startsWith('474946383761') || hex.startsWith('474946383961')) return 'image/gif';
+  if (hex.startsWith('52494646') && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  if (b.subarray(4, 8).toString('latin1') === 'ftyp') {
+    const brand = b.subarray(8, 12).toString('latin1');
+    return brand === 'avif' || brand === 'avis' ? 'image/avif' : 'video/mp4';
+  }
+  if (hex.startsWith('1a45dfa3')) return 'video/webm';
+  if (b.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
+  return null;
+}
+
+const assetBase = () => contentBase || uiBase;
+
+export interface AssetInput {
+  url?: string;
+  data_base64?: string;
+  name?: string;
+  page?: string;
+}
+
+export async function uploadAsset(p: Principal, input: AssetInput) {
+  requireScope(p, 'schema');
+  if ((input.url ? 1 : 0) + (input.data_base64 ? 1 : 0) !== 1) throw badRequest('send either url or data_base64');
+  const page = input.page ? await loadPage(pool, input.page) : null;
+  let bytes: Buffer;
+  let name = typeof input.name === 'string' ? input.name.trim() : '';
+  if (input.url) {
+    const u = publicHttpsUrl(input.url);
+    if (!u) throw badRequest('url must be an https address on a public host');
+    let res;
+    try {
+      res = await fetchPublic(u.href, { maxBytes: MAX_ASSET_BYTES, timeoutMs: 30_000, headers: { accept: 'image/*,video/*,application/pdf;q=0.9,*/*;q=0.5' } });
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+      throw badRequest(`could not download ${u.href.slice(0, 200)}: ${(e as Error).message}`);
+    }
+    if (res.status !== 200) throw badRequest(`${u.href.slice(0, 200)} answered HTTP ${res.status}`);
+    bytes = res.body;
+    if (!name) name = decodeURIComponent(new URL(res.url).pathname.split('/').pop() || '');
+  } else {
+    const text = String(input.data_base64).replace(/^data:[^,]*;base64,/, '').replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9+/_-]*={0,2}$/.test(text)) throw badRequest('data_base64 is not base64');
+    bytes = Buffer.from(text, 'base64');
+  }
+  if (!bytes.length) throw badRequest('the file is empty');
+  if (bytes.length > MAX_ASSET_BYTES) throw badRequest(`the file is larger than ${MAX_ASSET_BYTES / 1024 / 1024} MB`);
+  const type = sniffType(bytes);
+  if (!type) throw badRequest(`only ${[...new Set(Object.values(ASSET_TYPES))].join(', ')} files are taken (SVG: put it inline in the HTML)`);
+  const ext = ASSET_TYPES[type];
+  name = name.replace(/\.[A-Za-z0-9]{1,5}$/, '').slice(0, 120) || 'asset';
+  const id = await saveFileBytes(p, `${name}.${ext}`, type, bytes);
+  const token = await makeFilePublic(p, id);
+  await pool.query('insert into ui.landing_page_assets (file_id, page_id, created_by) values ($1, $2, $3)', [id, page?.id ?? null, p.actor]);
+  return { id, name: `${name}.${ext}`, content_type: type, size_bytes: bytes.length, page: page?.slug ?? null, url: `${assetBase()}${publicFilePath(token, `${name}.${ext}`)}` };
+}
+
+export async function listAssets(pageArg?: string) {
+  const page = pageArg ? await loadPage(pool, pageArg) : null;
+  const { rows } = await pool.query(
+    `select f.pc_0050_id as id, f.name, f.mime_type as content_type, f.size_bytes::bigint as size_bytes, f.public_token,
+       l.slug as page, a.created_at
+     from ui.landing_page_assets a
+     join crm.pc_0050 f on f.pc_0050_id = a.file_id and f.record_status = 'active'
+     left join crm.pc_0059 l on l.pc_0059_id = a.page_id
+     where ($1::text is null or a.page_id = $1)
+     order by a.created_at desc limit 500`,
+    [page?.id ?? null]
+  );
+  return rows.map(({ public_token, size_bytes, ...r }) => ({
+    ...r,
+    size_bytes: Number(size_bytes),
+    url: public_token ? `${assetBase()}${publicFilePath(public_token, r.name)}` : null
+  }));
+}
+
+// ---- stats -------------------------------------------------------------------------
+
+// One visit each time the page shell loads a published page
+// (GET /v1/public/pages/:slug): browsers, and bots that run scripts.
+export async function countView(pageId: string): Promise<void> {
+  await pool.query(
+    `insert into ui.landing_page_views (page_id, day, views) values ($1, current_date, 1)
+     on conflict (page_id, day) do update set views = ui.landing_page_views.views + 1`,
+    [pageId]
+  );
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export async function pageStats(idOrSlug: string, days = 30) {
+  const page = await loadPage(pool, idOrSlug);
+  const n = Math.min(Math.max(Math.round(days), 1), 365);
+  // form submissions record the shell's address: /p/page/<slug> or /p/page/...#<slug>
+  const slug = escapeRe(page.slug);
+  const pattern = `/p/page/(${slug}([/?#]|$)|[^#]*#${slug}$)`;
+  const { rows } = await pool.query(
+    `with d as (select generate_series(current_date - ($2::int - 1), current_date, interval '1 day')::date as day),
+     v as (select day, views from ui.landing_page_views where page_id = $1 and day > current_date - $2::int),
+     s as (select (submitted_at at time zone 'UTC')::date as day, count(*)::int as submissions
+           from crm.pc_0053 where record_status = 'active' and submitted_at > now() - make_interval(days => $2::int)
+             and page_url ~* $3 group by 1)
+     select to_char(d.day, 'YYYY-MM-DD') as day, coalesce(v.views, 0)::int as views, coalesce(s.submissions, 0) as form_submissions
+     from d left join v using (day) left join s using (day) order by d.day`,
+    [page.id, n, pattern]
+  );
+  const total = (k: 'views' | 'form_submissions') => rows.reduce((a, r) => a + r[k], 0);
+  return {
+    page: page.slug,
+    days: n,
+    totals: { views: total('views'), form_submissions: total('form_submissions') },
+    by_day: rows.filter((r) => r.views || r.form_submissions),
+    note: 'views: each time the published page was opened (people, and bots that run scripts), counted in UTC days. Drafts and preview links are not counted. form_submissions: CRM form submissions sent from this page.'
+  };
+}
+
+// ---- the page shell at /p/page/<slug> ------------------------------------------------
+
+const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+export function pageDescription(page: LandingPageRow, html: string | null): string | null {
+  if (page.meta_description?.trim()) return page.meta_description.trim();
+  const m = html?.match(/<meta\s[^>]*name=["']description["'][^>]*>/i)?.[0].match(/content=["']([^"']*)["']/i);
+  return m?.[1].trim() || null;
+}
+
+// The built shell (web/p/page/index.html, served by the UI), from
+// PAGE_SHELL_URL or UI_URL; kept 5 minutes.
+let shellCache: { html: string; at: number } | null = null;
+export async function loadShellHtml(): Promise<string> {
+  if (shellCache && Date.now() - shellCache.at < 5 * 60_000) return shellCache.html;
+  const url = process.env.PAGE_SHELL_URL || (uiBase ? `${uiBase}/p/page/index.html` : '');
+  if (!url) throw new ApiError(503, 'the page shell is not configured (PAGE_SHELL_URL or UI_URL)', 'not_configured');
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new ApiError(503, `could not load the page shell (HTTP ${res.status})`, 'not_configured');
+  shellCache = { html: await res.text(), at: Date.now() };
+  return shellCache.html;
+}
+
+// The shell with the published page's title, description, canonical address
+// and Open Graph tags, and without the shell's noindex.
+export function shellWithHead(shell: string, page: LandingPageRow): string {
+  const title = page.meta_title?.trim() || pageTitle(page, page.html);
+  const description = pageDescription(page, page.html);
+  const url = pageUrl(page.slug);
+  const tags = [
+    `<title>${escAttr(title)}</title>`,
+    description ? `<meta name="description" content="${escAttr(description)}">` : '',
+    url.startsWith('http') ? `<link rel="canonical" href="${escAttr(url)}">` : '',
+    '<meta property="og:type" content="website">',
+    `<meta property="og:title" content="${escAttr(title)}">`,
+    description ? `<meta property="og:description" content="${escAttr(description)}">` : '',
+    url.startsWith('http') ? `<meta property="og:url" content="${escAttr(url)}">` : '',
+    page.og_image ? `<meta property="og:image" content="${escAttr(page.og_image)}">` : '',
+    `<meta name="twitter:card" content="${page.og_image ? 'summary_large_image' : 'summary'}">`
+  ].filter(Boolean).join('\n    ');
+  return shell
+    .replace(/<meta\s+name=["']robots["'][^>]*>\s*/i, '')
+    .replace(/<title>[\s\S]*?<\/title>/i, tags);
 }
 
 // ---- serving -------------------------------------------------------------------------
@@ -326,17 +673,7 @@ export function notFoundHtml(): string {
 // the compose services "api" or "db"), plus data: and blob:.
 export function renderRequestAllowed(raw: string): boolean {
   if (raw.startsWith('data:') || raw.startsWith('blob:') || raw === 'about:blank') return true;
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (u.protocol !== 'https:' || u.username || u.password) return false;
-  const host = u.hostname.toLowerCase();
-  if (!host.includes('.') || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return false;
-  if (/^[\d.]+$/.test(host) || host.startsWith('[')) return false;
-  return true;
+  return publicHttpsUrl(raw) !== null;
 }
 
 export interface PageRenderOptions {
@@ -344,27 +681,97 @@ export interface PageRenderOptions {
   height?: number;
   scroll_y?: number;
   full_page?: boolean;
+  settle_animations?: boolean;
   wait_ms?: number;
   published?: boolean;
 }
+
+// The renderer has no way out to the internet (renderer_net is internal), so
+// the API fetches what the page asks for (safe-fetch.ts: public addresses
+// only) and hands it to the browser. Fonts, CDNs, images and embeds load as
+// they would for a visitor.
+const FORWARD_HEADERS = ['accept', 'accept-language', 'content-type', 'user-agent', 'origin', 'referer', 'range'];
+const MAX_REQUESTS = 400;
+const MAX_TOTAL_BYTES = 80 * 1024 * 1024;
+
+// Scrolls down a screen at a time and back up, so content that appears as it
+// scrolls into view (IntersectionObserver, scroll-reveal libraries) is shown
+// before a full-page screenshot.
+const SETTLE_SCRIPT = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const step = Math.max(200, Math.round(innerHeight * 0.7));
+  let y = 0;
+  for (let i = 0; i < 80; i++) {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    if (y >= max) break;
+    y = Math.min(y + step, max);
+    window.scrollTo(0, y);
+    await sleep(140);
+  }
+  await sleep(300);
+  window.scrollTo(0, 0);
+})()`;
+
+// Big parts of the page that are invisible (opacity 0 or visibility hidden)
+// after loading: often scroll-reveal content that never fired, or a bug.
+const HIDDEN_SCRIPT = `(() => {
+  const vw = innerWidth, min = vw * innerHeight * 0.04;
+  const found = [];
+  const all = document.body ? document.body.getElementsByTagName('*') : [];
+  for (let i = 0; i < all.length && i < 5000 && found.length < 12; i++) {
+    const el = all[i];
+    if (found.some((f) => f.el.contains(el))) continue;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || (cs.opacity !== '0' && cs.visibility !== 'hidden')) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width * r.height < min || !(el.textContent || '').trim() && !el.querySelector('img,video,svg,canvas,iframe')) continue;
+    const name = el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\\s+/).slice(0, 3).join('.') : '');
+    found.push({ el, item: { element: name, top: Math.round(r.top + scrollY), height: Math.round(r.height), why: cs.opacity === '0' ? 'opacity 0' : 'visibility hidden' } });
+  }
+  return found.map((f) => f.item);
+})()`;
 
 export async function renderPage(page: LandingPageRow, o: PageRenderOptions = {}) {
   const html = o.published ? (page.status === 'published' ? page.html : null) : page.draft_html;
   if (!html) throw badRequest(o.published ? 'this landing page is not published' : 'the draft has no HTML yet');
   const width = o.width ?? 1280;
   const height = o.height ?? 800;
+  const settle = o.settle_animations ?? !!o.full_page;
   return slot(async () => {
     const b = await getBrowser();
     const context = await b.newContext({ viewport: { width, height }, serviceWorkers: 'block' });
     const consoleErrors: string[] = [];
     const blocked = new Set<string>();
     const failed = new Set<string>();
+    let requests = 0;
+    let totalBytes = 0;
     try {
-      await context.route('**/*', (route) => {
-        const url = route.request().url();
-        if (renderRequestAllowed(url)) return route.continue();
-        blocked.add(url.slice(0, 200));
-        return route.abort('blockedbyclient');
+      await context.route('**/*', async (route) => {
+        const req = route.request();
+        const url = req.url();
+        if (url.startsWith('data:') || url.startsWith('blob:') || url === 'about:blank') return route.continue();
+        if (!renderRequestAllowed(url) || requests >= MAX_REQUESTS || totalBytes >= MAX_TOTAL_BYTES) {
+          blocked.add(url.slice(0, 200));
+          return route.abort('blockedbyclient');
+        }
+        requests++;
+        const sent = req.headers();
+        const headers: Record<string, string> = {};
+        for (const k of FORWARD_HEADERS) if (sent[k]) headers[k] = sent[k];
+        try {
+          const res = await fetchPublic(url, {
+            method: req.method(),
+            headers,
+            body: req.postDataBuffer(),
+            maxBytes: 20 * 1024 * 1024,
+            timeoutMs: 15_000
+          });
+          totalBytes += res.body.length;
+          await route.fulfill({ status: res.status, headers: res.headers, body: res.body });
+        } catch (e) {
+          if (failed.size < 20) failed.add(`${url.slice(0, 200)} (${(e as Error).message.slice(0, 120)})`);
+          await route.abort('failed').catch(() => undefined);
+        }
       });
       const tab = await context.newPage();
       tab.on('console', (m) => {
@@ -375,13 +782,27 @@ export async function renderPage(page: LandingPageRow, o: PageRenderOptions = {}
       });
       tab.on('requestfailed', (r) => {
         const url = r.url();
-        if (!blocked.has(url.slice(0, 200)) && failed.size < 20) failed.add(`${url.slice(0, 200)} (${r.failure()?.errorText ?? 'failed'})`);
+        const short = url.slice(0, 200);
+        if (blocked.has(short) || [...failed].some((f) => f.startsWith(short))) return;
+        if (failed.size < 20) failed.add(`${short} (${r.failure()?.errorText ?? 'failed'})`);
       });
-      await tab.setContent(preparePageHtml(html), { waitUntil: 'load', timeout: 20_000 }).catch(() => undefined);
+      await tab.setContent(preparePageHtml(html), { waitUntil: 'load', timeout: 25_000 }).catch(() => undefined);
+      // web fonts in use finish loading before the screenshot
+      await tab.evaluate('document.fonts ? document.fonts.ready.then(() => true) : true').catch(() => undefined);
       await tab.waitForTimeout(Math.min(Math.max(o.wait_ms ?? 800, 0), 5000));
-      if (o.scroll_y) await tab.evaluate((y) => window.scrollTo(0, y), o.scroll_y);
+      if (settle) {
+        await tab.evaluate(SETTLE_SCRIPT).catch(() => undefined);
+        await tab.waitForTimeout(700);
+      }
+      if (o.scroll_y) {
+        await tab.evaluate((y) => window.scrollTo(0, y), o.scroll_y);
+        // let scroll-triggered animations run
+        await tab.waitForTimeout(700);
+      }
       const pageHeight = (await tab.evaluate('document.documentElement.scrollHeight')) as number;
       const scrollWidth = (await tab.evaluate('document.documentElement.scrollWidth')) as number;
+      const hidden = ((await tab.evaluate(HIDDEN_SCRIPT).catch(() => [])) as { element: string; top: number; height: number; why: string }[]);
+      const fonts = (await tab.evaluate(`document.fonts ? [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/["']/g, '')) : []`).catch(() => [])) as string[];
       const shot = await tab.screenshot({
         type: 'png',
         fullPage: !!o.full_page,
@@ -395,12 +816,15 @@ export async function renderPage(page: LandingPageRow, o: PageRenderOptions = {}
           height,
           page_height: pageHeight,
           sideways_scroll: scrollWidth > width ? `the page is ${scrollWidth}px wide on a ${width}px screen` : null,
+          web_fonts_loaded: [...new Set(fonts)],
           console_errors: consoleErrors,
           failed_requests: [...failed],
           not_loaded_here: [...blocked].slice(0, 20),
-          note: blocked.size
-            ? 'not_loaded_here lists addresses this checker does not load (not https on a public host). They may still work for visitors.'
-            : undefined
+          hidden_areas: hidden.length ? hidden : undefined,
+          note: [
+            blocked.size ? 'not_loaded_here lists addresses this checker does not load (not https on a public host, or over its request limit). They may still work for visitors.' : '',
+            hidden.length ? `hidden_areas lists large parts of the page that are invisible (opacity 0 or visibility hidden)${settle ? ' even after scrolling through the page' : ''}. If they are meant to appear on scroll, check them with full_page or scroll_y; if not, they are a bug.` : ''
+          ].filter(Boolean).join(' ') || undefined
         }
       };
     } finally {
@@ -420,12 +844,16 @@ export function pageOut(pg: LandingPageRow, withHtml = true) {
     slug: pg.slug,
     description: pg.description,
     status: pg.status,
-    url_path: `/p/page/#${pg.slug}`,
+    url_path: `/p/page/${pg.slug}`,
     url: pageUrl(pg.slug),
+    hash_url: pageHashUrl(pg.slug),
     draft_url: pageDraftUrl(pg.slug),
     unpublished_changes: hasUnpublishedChanges(pg),
     published_at: pg.published_at,
     updated_at: pg.updated_at,
+    meta_title: pg.meta_title ?? null,
+    meta_description: pg.meta_description ?? null,
+    og_image: pg.og_image ?? null,
     ...(withHtml ? { draft_html: pg.draft_html, html: pg.html } : {})
   };
 }
@@ -481,6 +909,11 @@ onWrite('landing_pages', async (client, properties, existing) => {
       throw badRequest('The page address can have lowercase letters, digits and dashes (3 to 60, not starting or ending with a dash).', { property: 'slug' });
     }
     out.slug = slug;
+  }
+  if (typeof out.og_image === 'string' && out.og_image.trim()) {
+    const u = publicHttpsUrl(out.og_image.trim());
+    if (!u) throw badRequest('The preview image must be an https address (upload one with upload_landing_page_asset).', { property: 'og_image' });
+    out.og_image = u.href;
   }
   return out;
 });

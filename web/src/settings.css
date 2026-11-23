@@ -232,6 +232,16 @@
 .role-list button.active { background: var(--primary-soft); color: var(--primary); }
 .role-editor { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
 .role-form { display: flex; flex-direction: column; gap: 14px; max-width: 520px; }
+/* the details fields sit in a fieldset so a locked role disables them all at once */
+.role-form .plain-fieldset { display: contents; }
+/* role permissions besides objects: a switch, its name, and what it covers */
+.permission-list { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.permission-list label.check.permission-row { align-items: flex-start; gap: 10px; }
+.permission-row > span { display: flex; flex-direction: column; gap: 2px; }
+.permission-row .muted.small { font-weight: 400; }
+/* object access: Read, Edit and Delete span their Own and All columns */
+.settings .grid.object-access th.cell-group { text-align: center; border-bottom: 1px solid var(--hairline); height: 30px; }
+.settings .grid.object-access td.cell-check, .settings .grid.object-access th.cell-check { width: 64px; }
 .member-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .member-list .person { padding: 3px 10px 3px 3px; border: 1px solid var(--border); border-radius: 999px; }
 .member-list .person-avatar { width: 24px; height: 24px; font-size: 10px; }

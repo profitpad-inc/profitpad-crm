@@ -83,7 +83,7 @@ function countText(counts: { object: string; count: number }[], objectByName: Ma
   return `Right now that's ${joinList(parts)}.`;
 }
 
-export function SharingRules({ roleId, recordAccess }: { roleId: string; recordAccess: 'own' | 'team' | 'all' }) {
+export function SharingRules({ roleId }: { roleId: string }) {
   const { objects, objectByName } = useApp();
   const [rules, setRules] = useState<SharingRule[]>([]);
   const [schemas, setSchemas] = useState<Map<string, ObjectDef>>(new Map());
@@ -156,13 +156,10 @@ export function SharingRules({ roleId, recordAccess }: { roleId: string; recordA
       description={<>
         Sharing rules let this role see records it otherwise wouldn't, without opening up everything: for example every company whose
         name contains "ACME", plus those companies' contacts. The object access above still decides what they can do with them, and a
-        rule never lets anyone delete.
+        rule never lets anyone delete. Rules add nothing on objects where the role already reads (or edits) all records.
       </>}
       actions={!draft && rules.length > 0 ? add : undefined}
     >
-      {recordAccess === 'all' && (
-        <div className="callout">This role already sees every record, so its sharing rules add nothing until record access is set to their own or their team's records.</div>
-      )}
       {error && <div className="error">{error}</div>}
       {rules.map((rule) => {
         const schema = schemas.get(rule.object);

@@ -1,5 +1,6 @@
 import { el, type PublicPayment } from './public-api';
 import { day, money } from './document';
+import { GMAIL_TYPO_MESSAGE, isGmailTypo } from '../lib/email-typo';
 
 // The "Pay" part of the quote and invoice pages: pay online on Stripe
 // Checkout, or send an Interac e-Transfer and say so. Shows "processing" while
@@ -92,6 +93,11 @@ function etransferForm(et: NonNullable<PublicPayment['etransfer']>, amount: stri
     error.textContent = '';
     if (!name.value.trim() || !email.value.trim()) {
       error.textContent = 'Enter your name and email.';
+      return;
+    }
+    if (isGmailTypo(email.value)) {
+      error.textContent = GMAIL_TYPO_MESSAGE;
+      email.focus();
       return;
     }
     submit.disabled = true;

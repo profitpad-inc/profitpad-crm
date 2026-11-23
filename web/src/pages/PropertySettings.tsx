@@ -86,7 +86,7 @@ function sameKeys(o: Options): string {
 }
 
 export function PropertySettings() {
-  const { objects, toast } = useApp();
+  const { me, objects, toast } = useApp();
   // ?object=<api_name> opens on that object (the Objects page links here)
   const [params] = useSearchParams();
   const asked = params.get('object');
@@ -210,7 +210,8 @@ export function PropertySettings() {
                           {p.record_status === 'archived' && (
                             <>
                               <button onClick={() => { close(); run(() => api('POST', `${base}/${encodeURIComponent(p.api_name)}/unarchive`), `${p.label} restored`); }}>Unarchive</button>
-                              <button className="danger" onClick={() => { close(); setDeleting(p); }}>Delete permanently</button>
+                              {/* wiping a property's data stays with Super Admins */}
+                              {me.is_admin && <button className="danger" onClick={() => { close(); setDeleting(p); }}>Delete permanently</button>}
                             </>
                           )}
                         </>

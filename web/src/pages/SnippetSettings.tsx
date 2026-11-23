@@ -4,11 +4,13 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { clearSnippetCache } from '../lib/snippets';
 import { confirmDialog } from '../components/confirm';
-import { EditPanel, EmptyState, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 
 // Settings → Snippets: saved text pulled into any text box by typing # and
-// the shortcut (api/src/snippets.ts). Everyone keeps their own; admins keep
-// the shared ones. A personal snippet wins over a shared one with its shortcut.
+// the shortcut (api/src/snippets.ts). Snippets are shared with everyone unless
+// their author turns that off; the author or an admin changes a shared one,
+// and a personal one replaces a shared one with its shortcut for its author.
+// Most recently used first, as the API sorts them.
 
 interface Snippet {
   id: string;
@@ -16,7 +18,11 @@ interface Snippet {
   name: string;
   body: string;
   shared: boolean;
+  added_by: { id: string; name: string | null } | null;
   can_edit: boolean;
+  can_share: boolean;
+  last_used_at: string | null;
+  created_at: string;
   updated_at: string;
 }
 
@@ -26,10 +32,13 @@ interface Draft {
   name: string;
   body: string;
   shared: boolean;
+  // whether this user decides who sees it (the author, or anyone for a new one)
+  canShare: boolean;
 }
 
 const shortcutFrom = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 export function SnippetSettings() {
   const { me, toast } = useApp();
@@ -38,8 +47,8 @@ export function SnippetSettings() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [shortcutTouched, setShortcutTouched] = useState(false);
   const [busy, setBusy] = useState(false);
-  // a bare API key has no user, so only shared snippets
-  const canOwn = !!me.user;
+  // a bare API key has no user to own a snippet; only admins add them then
+  const canAdd = !!me.user || me.is_admin;
 
   const load = () => api<{ results: Snippet[] }>('GET', '/v1/snippets')
     .then((r) => { setList(r.results); setError(null); })
@@ -56,9 +65,9 @@ export function SnippetSettings() {
     setBusy(true);
     setError(null);
     try {
-      const body = { shortcut: d.shortcut, name: d.name, body: d.body };
+      const body = { shortcut: d.shortcut, name: d.name, body: d.body, ...(d.canShare ? { shared: d.shared } : {}) };
       if (d.id) await api('PATCH', `/v1/snippets/${d.id}`, body);
-      else await api('POST', '/v1/snippets', { ...body, shared: d.shared });
+      else await api('POST', '/v1/snippets', body);
       clearSnippetCache();
       setDraft(null);
       toast(d.id ? 'Snippet saved' : 'Snippet added');
@@ -82,29 +91,33 @@ export function SnippetSettings() {
     }
   }
 
-  const mine = list?.filter((s) => !s.shared) ?? [];
-  const shared = list?.filter((s) => s.shared) ?? [];
-  const overridden = new Set(mine.map((s) => s.shortcut));
   const d = draft;
+  const mineShortcuts = new Set(list?.filter((s) => !s.shared).map((s) => s.shortcut));
 
   const table = (rows: Snippet[]) => (
     <div className="access-table">
       <table className="grid">
         <thead>
-          <tr><th>Shortcut</th><th>Name and text</th><th /></tr>
+          <tr><th>Shortcut</th><th>Name and text</th><th>Added by</th><th>Last used</th><th>Updated</th><th>Created</th><th /></tr>
         </thead>
         <tbody>
           {rows.map((s) => (
             <tr key={s.id}>
               <td><code>#{s.shortcut}</code></td>
               <td className="primary-cell wrap">
-                {s.name} {s.shared && overridden.has(s.shortcut) && <StatusPill tone="off">Replaced by yours</StatusPill>}
+                {s.name}
+                {!s.shared && <> <StatusPill tone="off">Only you</StatusPill></>}
+                {s.shared && mineShortcuts.has(s.shortcut) && <> <StatusPill tone="off">Replaced by yours</StatusPill></>}
                 <span className="sub">{oneLine(s.body).slice(0, 160)}{oneLine(s.body).length > 160 ? '…' : ''}</span>
               </td>
+              <td className="muted">{!s.added_by ? 'An admin' : s.added_by.id === me.user?.id ? 'You' : s.added_by.name ?? 'Unknown user'}</td>
+              <td className="muted" style={{ whiteSpace: 'nowrap' }}>{s.last_used_at ? when(s.last_used_at) : 'Never'}</td>
+              <td className="muted" style={{ whiteSpace: 'nowrap' }}>{when(s.updated_at)}</td>
+              <td className="muted" style={{ whiteSpace: 'nowrap' }}>{when(s.created_at)}</td>
               <td className="row-actions">
                 {s.can_edit && (
                   <span className="row-actions-inner">
-                    <button className="btn small ghost" onClick={() => start({ id: s.id, shortcut: s.shortcut, name: s.name, body: s.body, shared: s.shared })}>Edit</button>
+                    <button className="btn small ghost" onClick={() => start({ id: s.id, shortcut: s.shortcut, name: s.name, body: s.body, shared: s.shared, canShare: s.can_share })}>Edit</button>
                     <button className="btn small ghost danger-text" onClick={() => remove(s)}>Delete</button>
                   </span>
                 )}
@@ -116,7 +129,8 @@ export function SnippetSettings() {
     </div>
   );
 
-  const newDraft = (): Draft => ({ id: null, shortcut: '', name: '', body: '', shared: !canOwn });
+  // shared with everyone unless turned off; an API key with no user cannot keep one for itself
+  const newDraft = (): Draft => ({ id: null, shortcut: '', name: '', body: '', shared: true, canShare: !!me.user });
 
   return (
     <SettingsPage
@@ -127,8 +141,9 @@ export function SnippetSettings() {
         <code>#</code> and the shortcut, then picking it from the menu. Merge fields fill in when the snippet goes in:{' '}
         <code>{'{{r.first_name|there}}'}</code> is the first name of the record you are on, or "there" when it has none, and{' '}
         <code>{'{{me.first_name}}'}</code> is yours. Any property's API name works after <code>r.</code> or <code>me.</code>.
+        {' '}Snippets are shared with everyone unless you turn that off to keep one for yourself. The person who added a shared snippet, or an admin, can change it.
       </>}
-      actions={!d && <button className="btn primary" onClick={() => start(newDraft())}><Plus size={14} /> New snippet</button>}
+      actions={!d && canAdd && <button className="btn primary" onClick={() => start(newDraft())}><Plus size={14} /> New snippet</button>}
     >
       {error && <div className="error">{error}</div>}
       {d && (
@@ -150,8 +165,8 @@ export function SnippetSettings() {
                 title="Lowercase letters, digits, _ and -"
                 onChange={(e) => { setShortcutTouched(true); setDraft({ ...d, shortcut: e.target.value.toLowerCase().replace(/^#/, '') }); }} />
             </label>
-            {!d.id && me.is_admin && canOwn && (
-              <label className="check" title="Shared snippets are offered to everyone; only admins change them">
+            {d.canShare && (
+              <label className="check" title="Off: only you see this snippet">
                 <input type="checkbox" checked={d.shared} onChange={(e) => setDraft({ ...d, shared: e.target.checked })} /> Shared with everyone
               </label>
             )}
@@ -165,22 +180,11 @@ export function SnippetSettings() {
       )}
       {!list && !error && <TableSkeleton rows={3} />}
       {list && list.length === 0 && !d && (
-        <EmptyState icon={<Hash size={18} />} title="No snippets yet" action={<button className="btn primary" onClick={() => start(newDraft())}>New snippet</button>}>
-          Add text you type often, like a product name (#hss for HubSpot) or a whole welcome email.
+        <EmptyState icon={<Hash size={18} />} title="No snippets yet" action={canAdd ? <button className="btn primary" onClick={() => start(newDraft())}>New snippet</button> : undefined}>
+          Add text you type often, like a quick reply (#omw for "On my way!") or a whole welcome email.
         </EmptyState>
       )}
-      {list && list.length > 0 && (
-        <>
-          {canOwn && (
-            <SettingsSection title="Your snippets" description="Only you see these. One with the same shortcut as a shared snippet replaces it for you.">
-              {mine.length ? table(mine) : <p className="muted small">None yet.</p>}
-            </SettingsSection>
-          )}
-          <SettingsSection title="Shared snippets" description={me.is_admin ? 'Offered to everyone. Only admins change these.' : 'Offered to everyone, kept by your admins.'}>
-            {shared.length ? table(shared) : <p className="muted small">None yet.</p>}
-          </SettingsSection>
-        </>
-      )}
+      {list && list.length > 0 && table(list)}
     </SettingsPage>
   );
 }

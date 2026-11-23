@@ -256,10 +256,13 @@ export async function checkQueryAccess(p: Principal, name: string, info: QueryAn
 
 // ---- run ------------------------------------------------------------------------
 
-function rlsSettings(p: Principal): [string, string[], number[]] {
+// [pcrm.access, owner ids, sharing rule ids, objects whose every record the
+// caller reads (migration 0123)]
+function rlsSettings(p: Principal): [string, string[], number[], string[]] {
   const perms = p.permissions;
-  if (!perms || perms.recordAccess === 'all' || !p.userId) return ['all', [], []];
-  return ['restricted', perms.recordAccess === 'own' ? [p.userId] : perms.teamUserIds, perms.sharingRules.map((r) => r.id)];
+  if (!perms || !p.userId) return ['all', [], [], []];
+  const all = [...perms.objects].filter(([, o]) => o.readAll).map(([code]) => code);
+  return ['restricted', perms.ownScope === 'own' ? [p.userId] : perms.teamUserIds, perms.sharingRules.map((r) => r.id), all];
 }
 
 // What view_data.property_history must leave out for the caller (migration
@@ -307,7 +310,7 @@ export async function runQuery(
     }
     return `$${index.get(param)}::${PARAM_TYPES[param === 'me' ? 'text' : spec.params[param]]}`;
   });
-  const [access, owners, rules] = rlsSettings(p);
+  const [access, owners, rules, allObjects] = rlsSettings(p);
   const hidden = textArray(await hiddenForHistory(p));
   const client = await pool.connect();
   try {
@@ -316,8 +319,8 @@ export async function runQuery(
     await client.query(
       `select set_config('pcrm.access', $1, true), set_config('pcrm.owner_ids', $2, true), set_config('pcrm.rule_ids', $3, true),
               set_config('statement_timeout', $4, true), set_config('search_path', 'view_data, pg_catalog, public', true),
-              set_config('pcrm.hidden_properties', $5, true)`,
-      [access, `{${owners.join(',')}}`, `{${rules.join(',')}}`, QUERY_TIMEOUT, hidden]
+              set_config('pcrm.hidden_properties', $5, true), set_config('pcrm.all_objects', $6, true)`,
+      [access, `{${owners.join(',')}}`, `{${rules.join(',')}}`, QUERY_TIMEOUT, hidden, textArray(allObjects)]
     );
     let res: pg.QueryResult;
     try {

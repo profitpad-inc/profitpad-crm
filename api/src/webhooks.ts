@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import type { FastifyRequest } from 'fastify';
 import { newClient, pool, quoteIdent } from './db.js';
 import { ApiError, badRequest, forbidden, notFound } from './errors.js';
-import { noneHidden, type Principal } from './auth.js';
+import { hasPermission, noneHidden, type Principal } from './auth.js';
 import { activeProperties, getProperty, getRegistry, type ObjectDef, type Registry } from './registry.js';
 import { compileFilterGroups, type FilterGroup } from './search.js';
 import { serialize } from './records.js';
@@ -63,13 +63,12 @@ const POLL_MS = 500;
 
 // ---- access -------------------------------------------------------------------
 
-const isAdmin = (p: Principal) => p.scopes.has('admin') || (p.userId !== null && p.permissions === null);
-
-// Admins; a connected app (an admin's AI over MCP) also needs the schema scope.
+// Super Admins and roles with the Integrations permission; a connected app
+// (a Super Admin's AI over MCP) also needs the schema scope.
 // Only an admin signed in to the CRM can turn endpoints and subscriptions on
 // (approval.ts): set up any other way, they wait for approval.
 function requireAdmin(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can see or change webhooks');
+  if (!hasPermission(p, 'integrations')) throw forbidden('webhooks need the Integrations permission');
   if (p.oauth && !p.scopes.has('schema')) throw forbidden('connected apps need the schema scope to manage webhooks');
 }
 

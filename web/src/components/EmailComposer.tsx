@@ -10,6 +10,7 @@ import { Select } from './Select';
 import { confirmDialog } from './confirm';
 import './email-composer.css';
 import { Loading } from './Loading';
+import { isGmailTypo } from '../lib/email-typo';
 
 // Writing and sending an email from a record page, from the user's own
 // mailbox or a shared one (Settings → Mailboxes). The email is saved on this
@@ -21,7 +22,9 @@ export interface Attachable { id: string; name: string | null; size_bytes: numbe
 interface Attached { id: string; name: string; size: number | null }
 
 const MAX_BYTES = 25 * 1024 ** 2;
-const EMAIL_RE = /^[^@\s<>(),;:"[\]\\]+@[^@\s<>(),;:"[\]\\]+\.[^@\s<>(),;:"[\]\\]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^@\s<>(),;:"[\]\\]+@[^@\s<>(),;:"[\]\\]+\.[^@\s<>(),;:"[\]\\]+$/;
+// why an address can't be used, or null (same checks as api/src/mailbox/send.ts)
+const addressProblem = (a: string) => !EMAIL_RE.test(a) ? `${a} is not an email address` : isGmailTypo(a) ? `${a} looks like a typo, did you mean @gmail.com?` : null;
 
 // "Ana <ana@x.com>", "ana@x.com, bob@y.com" → addresses
 function parseAddresses(text: string): string[] {
@@ -85,7 +88,7 @@ function AddressInput({ label, value, onChange, suggestions, autoFocus, single, 
       <span className="ec-label">{label}</span>
       <div className="ec-chips">
         {value.map((a) => (
-          <span key={a} className={`ec-chip${EMAIL_RE.test(a) ? '' : ' bad'}`} title={EMAIL_RE.test(a) ? a : `${a} is not an email address`}>
+          <span key={a} className={`ec-chip${addressProblem(a) ? ' bad' : ''}`} title={addressProblem(a) ?? a}>
             {suggestions.find((s) => s.email === a)?.name ?? a}
             <button type="button" aria-label={`Remove ${a}`} onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== a)); }}><X size={12} /></button>
           </span>
@@ -194,7 +197,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
 
   const sender = senders?.find((s) => s.key === senderKey) ?? null;
   const total = files.reduce((n, f) => n + (f.size ?? 0), 0);
-  const badAddress = [...to, ...cc, ...bcc, ...replyTo].find((a) => !EMAIL_RE.test(a));
+  const badAddress = [...to, ...cc, ...bcc, ...replyTo].find((a) => addressProblem(a));
   const ready = !!sender && !!from && to.length > 0 && !!subject.trim() && !body.empty && !badAddress && total <= MAX_BYTES && !uploading;
   const laterDate = later ? new Date(later) : null;
   const laterOk = !laterDate || (!Number.isNaN(laterDate.getTime()) && laterDate.getTime() > Date.now() + 60_000);
@@ -349,7 +352,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
         </div>
       )}
       {error && <div className="error composer-note" role="alert">{error}</div>}
-      {badAddress && <div className="error composer-note">{badAddress} is not an email address.</div>}
+      {badAddress && <div className="error composer-note">{addressProblem(badAddress)}.</div>}
       <div className="composer-foot">
         <span className="ec-foot-left">
           <input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />

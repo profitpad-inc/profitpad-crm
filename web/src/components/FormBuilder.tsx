@@ -306,7 +306,7 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
         <Preview
           def={{ ...def, fields: def.fields.filter((f) => !f.hidden).map(resolved) }}
           html={dirty ? null : html}
-          name={String(record.properties.name ?? '')}
+          name={String(record.properties.public_name || record.properties.name || '')}
           primary={theme.primary}
         />
       ) : (

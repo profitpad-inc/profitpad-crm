@@ -26,9 +26,11 @@ import {
 import { CHECK_SIZES_TEXT, FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
 import { renderView } from './render.js';
 import {
-  createPage, htmlExcerpt, listPages, loadPage, pageOut, pageSummary, publishPage, renderPage, revertPageDraft, savePageDraft, unpublishPage,
-  type LandingPageRow
+  createPage, createPreviewLink, duplicatePage, getVersionHtml, htmlExcerpt, listAssets, listPages, listPreviewLinks, listVersions, loadPage, pageOut,
+  pageStats, pageSummary, publishPage, renderPage, restoreVersion, revertPageDraft, revokePreviewLink, savePageDraft, unpublishPage,
+  updatePageSettings, uploadAsset, type LandingPageRow
 } from './landing-pages.js';
+import { createForm, listBookingPages, listForms, setFormPublished } from './form-tools.js';
 import {
   createTemplate, listTemplates, loadTemplate, pdfPages, publishTemplate, renderPdf, renderScreenshot, renderTemplate, requireTemplateAdmin,
   sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut
@@ -88,7 +90,7 @@ You can also add and change knowledge base articles. When the user tells you a l
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. You can also build landing pages: public pages written in plain HTML (website pages, demo pages for clients) at /p/page/#slug, anyone can open them once published; read view_guide topic landing_pages first, and never publish one unless the user asked. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. You can also build landing pages: public pages written in plain HTML (website pages, demo pages for clients) at /p/page/<slug>, anyone can open them once published; read view_guide topic landing_pages first, and never publish one unless the user asked. Landing page tools: list_landing_pages, get_landing_page, create_landing_page, save_landing_page_draft, render_landing_page, update_landing_page, duplicate_landing_page, upload_landing_page_asset, list_landing_page_assets, list_forms, list_booking_pages, create_form, create_landing_page_preview_link, list_landing_page_versions, restore_landing_page_version, get_landing_page_stats, publish_landing_page. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -550,7 +552,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('view_guide', {
     title: 'Custom view guide',
-    description: `How to build custom views: workflow, React runtime, UI kit, styling, SQL rules, the data, property rules and full examples. Read "overview" first. Topics: ${GUIDE_TOPICS.join(', ')}. For "schema", object narrows it to one object with dropdown values.`,
+    description: `How to build custom views (workflow, React runtime, UI kit, styling, SQL rules, the data, property rules and full examples), document templates and landing pages. Read "overview" first for views, "document_templates" for templates and "landing_pages" for landing pages. Topics: ${GUIDE_TOPICS.join(', ')}. For "schema", object narrows it to one object with dropdown values.`,
     inputSchema: z.object({ topic: z.enum(GUIDE_TOPICS).optional(), object: z.string().optional() }),
     annotations: { readOnlyHint: true }
   }, async ({ topic, object }) => {
@@ -974,9 +976,16 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   // ---- landing pages (landing-pages.ts) ---------------------------------------
   const pageArg = z.string().describe('The landing page\'s slug (page address) or id');
+  const pageEditsArg = z.array(z.object({ old_str: z.string(), new_str: z.string() }))
+    .describe('Find-and-replace edits to the current draft HTML, applied in order; each old_str must match exactly one place (copy it from get_landing_page, with lines or search for an excerpt, with enough surrounding HTML to be unique). Use instead of html for changes.');
+  const seoArgs = {
+    meta_title: z.string().max(200).optional().describe('Title for search engines and link previews (default: the page\'s <title>)'),
+    meta_description: z.string().max(500).optional().describe('One or two sentences for search results and link previews (default: the page\'s <meta name="description">)'),
+    og_image: z.string().optional().describe('https address of the link preview image, 1200x630 (upload one with upload_landing_page_asset)')
+  };
   const pageSaved = (pg: LandingPageRow, withHtml = false) => ({
     ...(withHtml ? pageOut(pg) : pageSummary(pg)),
-    next_step: `Saved as a draft; the published page (if any) is unchanged. Check it with render_landing_page at ${CHECK_SIZES_TEXT} and fix what you find. Then give the user this link to preview it: ${pageOut(pg).draft_url} (admins only, signed in). Ask before publish_landing_page: a published page is public.`
+    next_step: `Saved as a draft; the published page (if any) is unchanged. Check it with render_landing_page at ${CHECK_SIZES_TEXT} and fix what you find. Then give the user this link to preview it: ${pageOut(pg).draft_url} (admins only, signed in; for someone without a CRM login, make one with create_landing_page_preview_link). Ask before publish_landing_page: a published page is public.`
   });
 
   server.registerTool('list_landing_pages', {
@@ -1023,7 +1032,8 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
       name: z.string(),
       slug: z.string().optional().describe('Page address: lowercase letters, digits, dashes, 3 to 60. The page opens at /p/page/#<slug>'),
       description: z.string().optional().describe('For the team; never shown on the page'),
-      html: z.string().optional()
+      html: z.string().optional(),
+      ...seoArgs
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
@@ -1034,7 +1044,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     description: 'Changes the draft HTML: edits (find and replace, best for changes; each old_str must match exactly one place) or html (the whole document). The published page does not change until publish_landing_page. return_html: true also returns the saved HTML.',
     inputSchema: z.object({
       page: pageArg,
-      edits: editsArg.optional(),
+      edits: pageEditsArg.optional(),
       html: z.string().optional().describe('The whole document; replaces the draft'),
       return_html: z.boolean().optional()
     }),
@@ -1044,13 +1054,14 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('render_landing_page', {
     title: 'Render landing page',
-    description: `Draws a landing page (the draft by default) in a headless browser and returns a screenshot plus a report: page height, sideways scrolling, console errors, failed requests, and addresses this checker does not load (anything not https on a public host). Scripts run and https embeds load. Check every page at ${CHECK_SIZES_TEXT}.`,
+    description: `Draws a landing page (the draft by default) in a headless browser and returns a screenshot plus a report: page height, sideways scrolling, web fonts loaded, console errors, failed requests, addresses this checker does not load (anything not https on a public host), and hidden_areas (big parts still invisible, opacity 0 or visibility hidden). Scripts run; fonts, CDNs, images and https embeds load. full_page first scrolls through the page so scroll-reveal content shows. Check every page at ${CHECK_SIZES_TEXT}.`,
     inputSchema: z.object({
       page: pageArg,
       width: z.number().int().min(320).max(2400).optional().describe('Screen width (default 1280)'),
       height: z.number().int().min(300).max(2000).optional().describe('Screen height (default 800)'),
       scroll_y: z.number().int().min(0).max(100000).optional(),
       full_page: z.boolean().optional().describe('The whole page instead of one screen (at most 8000px tall)'),
+      settle_animations: z.boolean().optional().describe('Scroll through the page a screen at a time before the screenshot, so content revealed on scroll appears (default: on with full_page, off otherwise)'),
       wait_ms: z.number().int().min(0).max(5000).optional().describe('Wait after loading before the screenshot (default 800), for embeds and animations'),
       published: z.boolean().optional().describe('Render the published version instead of the draft')
     }),
@@ -1105,6 +1116,171 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     const pg = await loadPage(pool, page);
     await withTx({ principal: p, source: SCHEMA_SOURCE }, (c) => c.query('select meta.set_record_status($1, $2, $3)', ['pc_0059', [pg.id], 'archived']));
     return { archived: pg.slug };
+  }));
+
+  server.registerTool('update_landing_page', {
+    title: 'Update landing page settings',
+    description: 'Changes a landing page\'s name, page address (slug), description, and what search engines and link previews show (meta_title, meta_description, og_image). Takes effect at once, also on a published page (the HTML is unchanged). A new slug moves the page: the old address stops working, so ask the user first. An empty string clears a field.',
+    inputSchema: z.object({
+      page: pageArg,
+      name: z.string().optional(),
+      slug: z.string().optional(),
+      description: z.string().optional(),
+      ...seoArgs
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page, ...input }) => run(async () => pageOut(await updatePageSettings(p, page, input), false)));
+
+  server.registerTool('duplicate_landing_page', {
+    title: 'Duplicate landing page',
+    description: 'Copies a landing page\'s draft HTML and settings into a new draft page (for a variant, say one per client). name defaults to "<name> (copy)", slug from the name. Then change it with save_landing_page_draft edits.',
+    inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
+      page: pageArg.describe('The page to copy (slug or id)'),
+      name: z.string().optional(),
+      slug: z.string().optional(),
+      description: z.string().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ client_request_id, page, ...input }) => run(() => once(p, 'duplicate_landing_page', client_request_id, async () => pageSaved(await duplicatePage(p, page, input)))));
+
+  server.registerTool('upload_landing_page_asset', {
+    title: 'Upload landing page asset',
+    description: 'Stores an image (or video, PDF) for landing pages and returns a stable public https url to use in the HTML (<img src>, CSS url(), og_image). Send url (https on a public host; the server downloads it) or data_base64. PNG, JPEG, GIF, WebP, AVIF, MP4, WebM or PDF, at most 15 MB; the type is read from the file itself. SVG is not taken: put SVG inline in the HTML. Ask the user before uploading images you did not get from them or their own website.',
+    inputSchema: z.object({
+      url: z.string().optional().describe('https address to download'),
+      data_base64: z.string().optional().describe('The file as base64 (a data: URL works too)'),
+      name: z.string().optional().describe('File name, e.g. "acme-logo"; the extension follows the file type'),
+      page: pageArg.optional().describe('The landing page it is for (slug or id), so list_landing_page_assets can filter by page')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async (input) => run(() => uploadAsset(p, input)));
+
+  server.registerTool('list_landing_page_assets', {
+    title: 'List landing page assets',
+    description: 'Images and other files uploaded for landing pages, newest first, with their public url, type and size. page narrows it to one page\'s.',
+    inputSchema: z.object({ page: pageArg.optional() }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page }) => run(async () => {
+    requireScope(p, 'schema');
+    return listAssets(page);
+  }));
+
+  server.registerTool('list_forms', {
+    title: 'List forms',
+    description: 'The CRM\'s forms: name, status (only published forms can be filled in), key, the embed snippet for a landing page (<div data-pcrm-form="KEY"></div>), the hosted page url, and the fields (name, label, type, required, the contact or ticket property each fills). Submissions create or update contacts (or tickets) in the CRM.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(() => listForms(p)));
+
+  server.registerTool('list_booking_pages', {
+    title: 'List booking pages',
+    description: 'The CRM\'s booking pages (meeting scheduling): name, status (only published ones take bookings), key, the embed snippet for a landing page (<div data-pcrm-booking="KEY"></div>), hosted page url, meeting length and location type. Booking pages are set up in the CRM (they need a host and a calendar).',
+    annotations: { readOnlyHint: true }
+  }, async () => run(() => listBookingPages(p)));
+
+  server.registerTool('create_form', {
+    title: 'Create form',
+    description: `Creates a CRM form as a draft, to embed in a landing page. definition: {"fields": [...], "submit_label": "Send", "success_message": "Thanks!"}. A field: {"name": "email" (lowercase, digits, _), "label": "Work email", "type": text|textarea|number|select|multiselect|checkbox|date|datetime, "required": true, "placeholder"?, "help"?, "options"? [{"value","label"}] for select/multiselect, "format"? email|phone|url|regex with "pattern", "property"? {"object": "contacts"|"tickets", "name": "<property api_name>"} to fill a CRM property (use describe_object; contact properties update or create a contact by email, so include contacts.email), "hidden"? true with "value" (a fixed value, e.g. lead source), "from_url"? true (filled only from the page address's query parameter of the same name)}. Fields filling a property take its type. slug sets the key used in the embed (else a random key). Draft forms cannot be filled in: ask the user, then publish_form.`,
+    inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
+      name: z.string(),
+      public_name: z.string().optional().describe('Heading visitors see on the form; when empty the name is shown'),
+      slug: z.string().optional().describe('Form address, used as the embed key: lowercase letters, digits, dashes, 3 to 60'),
+      description: z.string().optional().describe('For the team'),
+      definition: z.record(z.string(), z.unknown())
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: requireScopes('read', 'write')
+  }, async ({ client_request_id, ...input }) => run(() => once(p, 'create_form', client_request_id, async () => ({
+    ...(await createForm(p, input)),
+    next_step: 'Created as a draft. Put its embed in the landing page; ask the user before publish_form, which lets anyone send it.'
+  }))));
+
+  server.registerTool('publish_form', {
+    title: 'Publish form',
+    description: 'Publishes a form (published: true) so anyone with its page or embed can send it, or turns it back into a draft (published: false). Only when the user asked.',
+    inputSchema: z.object({ form: z.string().describe('Form id, slug or key'), published: z.boolean() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: requireScopes('read', 'write')
+  }, async ({ form, published }) => run(() => setFormPublished(p, form, published)));
+
+  server.registerTool('create_landing_page_preview_link', {
+    title: 'Create landing page preview link',
+    description: 'Makes a link that shows the page\'s current draft (as it is when opened, so later saves show too) to anyone holding it, without signing in: for a client or a teammate, before publishing. It expires after expires_in_hours (default 168, a week; at most 2160) and can be revoked. The url is returned only now; give it to the user. Search engines never see it.',
+    inputSchema: z.object({
+      page: pageArg,
+      expires_in_hours: z.number().int().min(1).max(2160).optional(),
+      label: z.string().max(200).optional().describe('Who it is for, e.g. "Acme review"')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ page, ...input }) => run(() => createPreviewLink(p, page, input)));
+
+  server.registerTool('list_landing_page_preview_links', {
+    title: 'List landing page preview links',
+    description: 'A page\'s preview links (not their urls): id, label, active, expires_at, revoked_at, last_used_at.',
+    inputSchema: z.object({ page: pageArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page }) => run(async () => {
+    requireScope(p, 'schema');
+    return listPreviewLinks(page);
+  }));
+
+  server.registerTool('revoke_landing_page_preview_link', {
+    title: 'Revoke landing page preview link',
+    description: 'Turns a preview link off at once.',
+    inputSchema: z.object({ page: pageArg, link: z.string().describe('id from list_landing_page_preview_links') }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page, link }) => run(() => revokePreviewLink(p, page, link)));
+
+  server.registerTool('list_landing_page_versions', {
+    title: 'List landing page versions',
+    description: 'Earlier versions of a page, newest first: every saved draft (the newest 30) and every publish (the newest 30), with who saved it, when, the length, and whether it is the current draft or the published HTML. version_id with get_landing_page_version or restore_landing_page_version.',
+    inputSchema: z.object({ page: pageArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page }) => run(async () => {
+    requireScope(p, 'schema');
+    return listVersions(page);
+  }));
+
+  server.registerTool('get_landing_page_version', {
+    title: 'Get landing page version',
+    description: 'One earlier version\'s HTML (lines or search for an excerpt, like get_landing_page).',
+    inputSchema: z.object({
+      page: pageArg,
+      version: z.string(),
+      lines: z.tuple([z.number().int().min(1), z.number().int().min(1)]).optional(),
+      search: z.string().optional(),
+      context: z.number().int().min(0).max(20).optional()
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page, version, lines, search, context }) => run(async () => {
+    requireScope(p, 'schema');
+    const { page: pg, html } = await getVersionHtml(page, version);
+    if (lines || search !== undefined) return { page: pg.slug, version, html_excerpt: htmlExcerpt(html, { lines, search, context }) };
+    return { page: pg.slug, version, html };
+  }));
+
+  server.registerTool('restore_landing_page_version', {
+    title: 'Restore landing page version',
+    description: 'Copies an earlier version into the draft (the current draft stays in the version list). The published page does not change until publish_landing_page. Ask the user first.',
+    inputSchema: z.object({ page: pageArg, version: z.string() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ page, version }) => run(async () => pageSaved(await restoreVersion(p, page, version))));
+
+  server.registerTool('get_landing_page_stats', {
+    title: 'Get landing page stats',
+    description: 'Visits to a published page and CRM form submissions sent from it, by day (UTC) and in total, for the last days (default 30, at most 365). Visits count each time the page was opened (people, and bots that run scripts); drafts and preview links are not counted.',
+    inputSchema: z.object({ page: pageArg, days: z.number().int().min(1).max(365).optional() }),
+    annotations: { readOnlyHint: true }
+  }, async ({ page, days }) => run(async () => {
+    requireScope(p, 'schema');
+    return pageStats(page, days);
   }));
 
   server.registerTool('revert_view_draft', {

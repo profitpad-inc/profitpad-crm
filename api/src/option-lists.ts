@@ -5,7 +5,7 @@
 // Used by routes/option-lists.ts, the MCP tools (mcp.ts) and packages.
 import { pool, withTx } from './db.js';
 import { badRequest, notFound } from './errors.js';
-import { requireScope, type Principal } from './auth.js';
+import { requirePropertyChange, requireScope, type Principal } from './auth.js';
 import { getObject, getProperty } from './registry.js';
 
 export interface OptionListMember {
@@ -74,7 +74,7 @@ export async function createOptionList(
   b: { api_name?: string; label?: string; description?: string; dropdowns?: { object: string; property: string }[] },
   source?: string
 ): Promise<OptionList> {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const label = str(b.label, 'label')?.trim();
   if (!label) throw badRequest('label is required');
   const apiName = str(b.api_name, 'api_name') ?? listApiName(label);
@@ -91,7 +91,7 @@ export async function createOptionList(
 }
 
 export async function updateOptionList(p: Principal, key: string, b: { label?: string; description?: string }, source?: string): Promise<OptionList> {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const label = str(b.label, 'label')?.trim();
   if (label === '') throw badRequest('label cannot be empty');
   const description = str(b.description, 'description', 2000);
@@ -100,7 +100,7 @@ export async function updateOptionList(p: Principal, key: string, b: { label?: s
 }
 
 export async function deleteOptionList(p: Principal, key: string, source?: string): Promise<void> {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   await withTx({ principal: p, source }, (c) => c.query('select meta.delete_option_list($1)', [key]));
 }
 
@@ -114,14 +114,14 @@ async function resolveDropdown(object: unknown, property: unknown): Promise<{ ob
 }
 
 export async function linkDropdown(p: Principal, key: string, b: { object?: string; property?: string }, source?: string): Promise<OptionList> {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const d = await resolveDropdown(b.object, b.property);
   await withTx({ principal: p, source }, (c) => c.query('select meta.link_option_list($1, $2, $3)', [key, d.object, d.property]));
   return getOptionList(p, key);
 }
 
 export async function unlinkDropdown(p: Principal, b: { object?: string; property?: string }, source?: string): Promise<void> {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const d = await resolveDropdown(b.object, b.property);
   await withTx({ principal: p, source }, (c) => c.query('select meta.unlink_option_list($1, $2)', [d.object, d.property]));
 }

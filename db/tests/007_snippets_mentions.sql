@@ -1,4 +1,4 @@
--- Snippets and mentions (0077): shortcut rules, shared and personal shortcuts,
+-- Snippets and mentions (0077, 0122): shortcut rules, shared and personal shortcuts,
 -- and ui.mentions following the @[name](id) tokens in note bodies.
 -- Runs in a transaction that is rolled back.
 \set ON_ERROR_STOP 1
@@ -17,15 +17,22 @@ begin
   -- snippets
   insert into ui.snippets (shortcut, name, body) values ('hss', 'HubSpot', 'HubSpot');
   begin
-    insert into ui.snippets (shortcut, name, body) values ('hss', 'Again', 'x');
+    insert into ui.snippets (shortcut, name, body, owner_user_id) values ('hss', 'Again', 'x', 'bbbbbbbbbb');
     raise exception 'shared shortcuts are unique';
   exception when unique_violation then null;
   end;
-  insert into ui.snippets (shortcut, name, body, owner_user_id) values ('hss', 'Mine', 'x', 'aaaaaaaaaa');
+  -- a personal one may reuse a shared shortcut (it replaces it for its author)
+  insert into ui.snippets (shortcut, name, body, owner_user_id, shared) values ('hss', 'Mine', 'x', 'aaaaaaaaaa', false);
+  insert into ui.snippets (shortcut, name, body, owner_user_id, shared) values ('hss', 'Theirs', 'x', 'bbbbbbbbbb', false);
   begin
-    insert into ui.snippets (shortcut, name, body, owner_user_id) values ('hss', 'Mine again', 'x', 'aaaaaaaaaa');
-    raise exception 'a user''s shortcuts are unique';
+    insert into ui.snippets (shortcut, name, body, owner_user_id, shared) values ('hss', 'Mine again', 'x', 'aaaaaaaaaa', false);
+    raise exception 'a user''s personal shortcuts are unique';
   exception when unique_violation then null;
+  end;
+  begin
+    insert into ui.snippets (shortcut, name, body, shared) values ('nobody', 'Nobody''s', 'x', false);
+    raise exception 'a personal snippet needs an author';
+  exception when check_violation then null;
   end;
   begin
     insert into ui.snippets (shortcut, name, body) values ('Has Space', 'Bad', 'x');

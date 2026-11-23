@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
-  api, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
+  api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
 } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -79,10 +79,12 @@ function ObjectTableFor({ object }: { object: string }) {
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
   const activeViewId = activeView?.id;
 
-  // the Create user form opens instantly (admins on the users table)
+  // creating users gives a role: the Users or Roles permission (Super Admins have both)
+  const canAddUsers = can(me, 'users') || can(me, 'roles');
+  // the Create user form opens instantly (on the users table)
   useEffect(() => {
-    if (object === 'users' && me.is_admin) preloadCreateUser();
-  }, [object, me.is_admin]);
+    if (object === 'users' && canAddUsers) preloadCreateUser();
+  }, [object, canAddUsers]);
 
   // schema, views and labels for this object
   useEffect(() => {
@@ -506,10 +508,10 @@ function ObjectTableFor({ object }: { object: string }) {
         <div className="table-head-actions">
           {object === 'contacts' && <Link className="btn" to="/scan"><IdCard size={16} /> Scan card</Link>}
           {/* imports and exports are desktop work: hidden on phones */}
-          {!isMobile && schema.permissions.create && !NO_IMPORT.includes(object) && (
+          {!isMobile && schema.permissions.create && can(me, 'import') && !NO_IMPORT.includes(object) && (
             <button className="btn" onClick={() => setShowImport(true)}><Upload size={16} /> Import</button>
           )}
-          {!isMobile && <button className="btn" onClick={() => setShowExport(true)}><Download size={16} /> Export</button>}
+          {!isMobile && can(me, 'export') && <button className="btn" onClick={() => setShowExport(true)}><Download size={16} /> Export</button>}
           {createButton}
         </div>
       </header>
@@ -796,7 +798,7 @@ function ObjectTableFor({ object }: { object: string }) {
           }}
         />
       )}
-      {showCreate && object === 'users' && me.is_admin && (
+      {showCreate && object === 'users' && canAddUsers && (
         <CreateUserModal
           onClose={() => setShowCreate(false)}
           onCreated={(r) => {
@@ -805,7 +807,7 @@ function ObjectTableFor({ object }: { object: string }) {
           }}
         />
       )}
-      {showCreate && object !== 'lines' && !(object === 'users' && me.is_admin) && (
+      {showCreate && object !== 'lines' && !(object === 'users' && canAddUsers) && (
         <CreateRecordModal
           object={schema}
           onClose={() => setShowCreate(false)}

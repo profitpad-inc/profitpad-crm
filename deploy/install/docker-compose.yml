@@ -84,6 +84,7 @@ services:
       FILES_ACCEL_PREFIX: /_pcrm_files/
       RENDERER_WS_URL: ws://renderer:3000/
       VIEW_FRAME_URL: http://web/view-frame/index.html
+      PAGE_SHELL_URL: http://web/p/page/index.html
     volumes:
       - ${PCRM_FILES_DIR:-pc_files}:/data/files
     networks:

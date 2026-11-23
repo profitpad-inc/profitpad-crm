@@ -1,10 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
+import { hasPermission, requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { canApprove } from '../approval.js';
 import { getObject } from '../registry.js';
-import { isAdmin } from './ui.js';
 import { rateLimit } from './public.js';
 import { loadEmailSettings, saveEmailSettings, settingsOut, webhookAuthOk } from '../email/settings.js';
 import { sendEmail } from '../email/send.js';
@@ -24,7 +23,7 @@ import { EMAIL_ACTOR } from '../email/send.js';
 const ID = /^[0-9a-f]{10}$/;
 
 function requireAdminUser(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can do this');
+  if (!hasPermission(p, 'integrations')) throw forbidden('email settings need the Integrations permission');
 }
 
 async function requireCampaignEdit(p: Principal): Promise<void> {

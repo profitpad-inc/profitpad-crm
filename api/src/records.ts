@@ -1,10 +1,10 @@
 import type pg from 'pg';
-import { pool, quoteIdent, type Db } from './db.js';
+import { channelOf, pool, quoteIdent, type Db } from './db.js';
 import { badRequest, forbidden, notFound } from './errors.js';
 import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode, type Principal } from './auth.js';
 import { activeProperties, getObject, getProperty, getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
-import { fromDb, isWritable, toDb } from './values.js';
+import { emailValueProblem, fromDb, isWritable, toDb } from './values.js';
 import { contactIdByEmail } from './contact-emails.js';
 
 export interface RecordOut {
@@ -314,11 +314,19 @@ async function planWrite(
 ): Promise<WritePlan> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw badRequest('properties must be an object');
   const plan: WritePlan = { columns: [], values: [] };
+  // email addresses are checked for the CRM UI and MCP, not the API itself
+  // or the server's own writes (values.ts emailValueProblem)
+  const channel = channelOf(principal);
+  const checkEmails = channel === 'crm_ui' || channel === 'mcp';
   for (const [name, raw] of Object.entries(input)) {
     const prop = getProperty(obj, name);
     if (!prop || prop.record_status !== 'active' || propertyAccess(principal, prop) === 'hidden') throw badRequest(`unknown property "${name}"`);
     if (!isWritable(prop) || propertyAccess(principal, prop) === 'read_only') throw badRequest(`"${prop.api_name}" is read-only`);
     const { value, newOptions } = toDb(prop, raw, existing?.[prop.api_name]);
+    if (checkEmails) {
+      const why = emailValueProblem(prop, value, existing?.[prop.api_name]);
+      if (why) throw badRequest(why, { property: prop.api_name });
+    }
     if (prop.type === 'file' && Array.isArray(value) && fileIdCheck) {
       const before = new Set(Array.isArray(existing?.[prop.api_name]) ? (existing![prop.api_name] as string[]) : []);
       const added = (value as string[]).filter((id) => !before.has(id));

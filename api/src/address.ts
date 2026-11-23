@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { ApiError, badRequest, forbidden } from './errors.js';
-import { requireRecentSignIn, requireScope } from './auth.js';
+import { hasPermission, requireRecentSignIn, requireScope } from './auth.js';
 import { getObject, getProperty, type ObjectDef } from './registry.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 import { logEvent } from './audit.js';
-import { isAdmin } from './routes/ui.js';
 
 // Address autocomplete (migration 0069, Settings → Address autocomplete,
 // web/src/components/AddressInput.tsx). Once an admin adds a Google Maps API
@@ -307,7 +306,7 @@ export async function addressRoutes(app: FastifyInstance) {
 
   app.get('/v1/address/settings', async (req) => {
     const p = req.principal!;
-    if (!isAdmin(p)) throw forbidden('only admins can see address autocomplete settings');
+    if (!hasPermission(p, 'integrations', { write: false })) throw forbidden('address autocomplete settings need the Integrations permission');
     const s = await loadSettings();
     return settingsOut(s, s.groups ?? DEFAULT_GROUPS);
   });
@@ -316,7 +315,7 @@ export async function addressRoutes(app: FastifyInstance) {
   // to remove it. groups: a list, or null to go back to the defaults.
   app.put<{ Body: { enabled?: unknown; google_key?: unknown; countries?: unknown; groups?: unknown } }>('/v1/address/settings', async (req) => {
     const p = req.principal!;
-    if (!isAdmin(p)) throw forbidden('only admins can change address autocomplete settings');
+    if (!hasPermission(p, 'integrations')) throw forbidden('address autocomplete settings need the Integrations permission');
     requireRecentSignIn(p);
     const b = req.body ?? {};
     const cur = await loadSettings();

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, ExternalLink, Globe } from 'lucide-react';
-import { API_BASE, api, type CrmRecord } from '../lib/api';
+import { API_BASE, api, can, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { StatusPill } from './settings';
 import { localToday } from './DatePicker';
@@ -148,7 +148,7 @@ export function PublicLinkCard({ object, record, onChanged }: {
           <div className="public-link-label">Embed on a website</div>
           <textarea readOnly className="public-link-snippet" value={snippet} rows={3} onFocus={(e) => e.target.select()} aria-label="Embed snippet" />
           <div className="small muted">
-            The website must be listed under {me.is_admin ? <Link to="/settings/embed-domains">Embed domains</Link> : 'Embed domains'} in Settings.
+            The website must be listed under {can(me, 'integrations') ? <Link to="/settings/embed-domains">Embed domains</Link> : 'Embed domains'} in Settings.
           </div>
         </>
       )}

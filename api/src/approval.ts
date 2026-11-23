@@ -1,5 +1,5 @@
 import { ApiError } from './errors.js';
-import { requireRecentSignIn, type Principal } from './auth.js';
+import { hasPermission, requireRecentSignIn, type Principal } from './auth.js';
 
 // Admin approval (migration 0061) for places CRM data goes: view
 // integrations, webhook endpoints and subscriptions, and embed domains.
@@ -10,9 +10,10 @@ import { requireRecentSignIn, type Principal } from './auth.js';
 
 const uiBase = (process.env.UI_URL ?? '').replace(/\/$/, '');
 
-// An admin's browser session, not a connected app or an API key.
+// The browser session (not a connected app or an API key) of a Super Admin
+// or a user whose role has the Integrations permission.
 export function canApprove(p: Principal): boolean {
-  return !!p.session && !p.oauth && p.keyId === null && (p.scopes.has('admin') || (p.userId !== null && p.permissions === null));
+  return !!p.session && !p.oauth && p.keyId === null && hasPermission(p, 'integrations');
 }
 
 // Where the admin approves it: a Settings page, opened on the item.

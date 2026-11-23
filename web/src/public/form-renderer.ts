@@ -2,6 +2,7 @@ import { el, publicApi, PublicApiError, pageUrlWith, queryParamsFromLocation, ty
 import { visibleFields } from './conditions';
 import { CARET, composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegion } from './phone-regions';
 import { DROPDOWN_CSS, enhanceSelect, type Dropdown } from './dropdown';
+import { isGmailTypo } from '../lib/email-typo';
 
 // Renders a published form into a container and submits it. Shared by the
 // hosted page (/p/form/), embed.js and the builder's preview, so it uses plain
@@ -201,7 +202,8 @@ const isEmpty = (v: unknown) => v === undefined || v === '' || v === false || (A
 // Same checks as the API (api/src/forms.ts cleanValue), for quicker feedback.
 function formatProblem(f: FormField, v: unknown): string | null {
   if (typeof v !== 'string' || !v) return null;
-  if (f.format === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return `${f.label} must be an email address.`;
+  if (f.format === 'email' && !/^(?!.*\.\.)[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return `${f.label} must be an email address.`;
+  if (f.format === 'email' && isGmailTypo(v)) return `${f.label}: did you mean @gmail.com? Please check the address.`;
   if (f.format === 'url' && !/^https?:\/\/\S+$/.test(v)) return `${f.label} must be a web address starting with http:// or https://.`;
   if (f.format === 'regex' && f.pattern) {
     try {

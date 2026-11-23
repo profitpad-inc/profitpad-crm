@@ -9,8 +9,13 @@ import { keyFromHash } from './public-api';
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 const root = document.getElementById('root')!;
-const slug = keyFromHash();
+// /p/page/<slug> (the API serves this shell there with the page's head) or
+// /p/page/#<slug>
+const pathSlug = (window.location.pathname.match(/^\/p\/page\/([a-z0-9][a-z0-9-]{1,58}[a-z0-9])\/?$/) ?? [])[1] ?? '';
+const slug = keyFromHash() || pathSlug;
 const draft = new URLSearchParams(window.location.search).get('draft') === '1';
+// a shareable preview link: ?preview=<token>, the draft for anyone holding it
+const previewToken = new URLSearchParams(window.location.search).get('preview') ?? '';
 
 interface PageInfo {
   slug: string;
@@ -62,7 +67,11 @@ function message(title: string, text: string): void {
 
 async function load(): Promise<void> {
   if (!slug) return message('Page not found', 'This link is missing its page address.');
-  const path = draft ? `/v1/landing-pages/${encodeURIComponent(slug)}/preview` : `/v1/public/pages/${encodeURIComponent(slug)}`;
+  const path = draft
+    ? `/v1/landing-pages/${encodeURIComponent(slug)}/preview`
+    : previewToken
+      ? `/v1/public/pages/${encodeURIComponent(slug)}/preview?token=${encodeURIComponent(previewToken)}`
+      : `/v1/public/pages/${encodeURIComponent(slug)}`;
   let res: Response;
   try {
     // the draft is for signed-in admins (the CRM's session cookie); the
@@ -74,6 +83,7 @@ async function load(): Promise<void> {
   if (draft && (res.status === 401 || res.status === 403)) {
     return message('Sign in to preview', 'Drafts can only be seen by CRM admins. Sign in to the CRM, then open this link again.');
   }
+  if (res.status === 404 && previewToken) return message('Preview not available', 'This preview link has expired or was turned off. Ask for a new one.');
   if (res.status === 404) return message('Page not found', 'This page does not exist or is no longer available.');
   if (!res.ok) return message('Could not load this page', `The server answered ${res.status}. Try again in a moment.`);
   const page = (await res.json()) as PageInfo;
@@ -87,10 +97,10 @@ async function load(): Promise<void> {
   frame.setAttribute('allowfullscreen', '');
   frame.src = withVisitorParams(page.html_url);
   const parts: HTMLElement[] = [frame];
-  if (draft) {
+  if (draft || previewToken) {
     const badge = document.createElement('div');
     badge.className = 'lp-badge';
-    badge.textContent = 'Draft preview';
+    badge.textContent = draft ? 'Draft preview' : 'Preview';
     parts.push(badge);
   }
   root.replaceChildren(...parts);
@@ -109,7 +119,7 @@ async function load(): Promise<void> {
 function withVisitorParams(htmlUrl: string): string {
   const url = new URL(htmlUrl, window.location.href);
   new URLSearchParams(window.location.search).forEach((value, key) => {
-    if (key !== 'draft') url.searchParams.append(key, value);
+    if (key !== 'draft' && key !== 'preview') url.searchParams.append(key, value);
   });
   return url.href;
 }
@@ -150,6 +160,7 @@ async function answer(d: BridgeRequest, target: Window): Promise<void> {
       if (json && typeof json === 'object' && 'page_url' in json) {
         const here = new URL(window.location.href);
         here.searchParams.delete('draft');
+        here.searchParams.delete('preview');
         json.page_url = here.href;
         body = JSON.stringify(json);
       }

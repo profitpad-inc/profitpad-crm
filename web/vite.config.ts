@@ -54,7 +54,9 @@ export default defineConfig(({ mode }) => ({
     // /files: public file links, which the API builds on the same origin
     proxy: {
       '/v1': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false },
-      '/files/': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false }
+      '/files/': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false },
+      // landing pages at a path address: the API sends the shell with the page's head
+      '^/p/page/[a-z0-9][a-z0-9-]{1,58}[a-z0-9]/?$': { target: process.env.API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false }
     }
   },
   build: {

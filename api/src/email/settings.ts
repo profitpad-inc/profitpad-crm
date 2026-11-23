@@ -6,6 +6,7 @@ import { apiBaseUrl, publicApiUrl, type Principal } from '../auth.js';
 import { open, seal, secretBoxReady } from '../secret-box.js';
 import { logEvent } from '../audit.js';
 import { serverInfo } from './postmark.js';
+import { isGmailTypo } from '../email-typo.js';
 
 // Settings → Email (auth.email_settings, migration 0094): the Postmark server
 // token, the default sender, the reply domain and the mailing address that
@@ -94,7 +95,7 @@ export function webhookAuthOk(req: FastifyRequest, secret: string | null): boole
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-const EMAIL_RE = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
 export const isEmail = (v: string) => v.length <= 254 && EMAIL_RE.test(v);
 
 function hookUrl(req: FastifyRequest | null, path: string, secret: string | null): string | null {
@@ -149,6 +150,7 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
     if (b[k] === undefined) continue;
     const v = text(b[k], k === 'from_address' ? 'The from address' : 'The fallback address', 254);
     if (v && !isEmail(v)) throw badRequest(`"${v}" is not an email address`, { property: k });
+    if (v && isGmailTypo(v)) throw badRequest(`"${v}" looks like a typo, did you mean @gmail.com?`, { property: k });
     next[k] = v ? v.toLowerCase() : null;
   }
   if (b.reply_domain !== undefined) {

@@ -18,12 +18,18 @@ const row = (r: Partial<ApprovalRow>): ApprovalRow => ({
   enabled: true, awaiting_approval: false, requested_by: null, requested_via: null, requested_at: null, approved_by: null, approved_at: null, ...r
 });
 
-test('only an admin signed in to the CRM can approve', () => {
+test('only a Super Admin or the Integrations permission, signed in to the CRM, can approve', () => {
   assert.equal(canApprove(session), true);
   assert.equal(canApprove(mcp), false);
   assert.equal(canApprove(apiKey), false);
   // a user without an admin role: no admin scope, and their role permissions
-  assert.equal(canApprove(admin({ session: { id: '1', signedInAt: new Date() }, scopes: new Set(['read', 'write']), permissions: { objects: new Map() } as never })), false);
+  const user = (granted: string[]) => admin({
+    session: { id: '1', signedInAt: new Date() }, scopes: new Set(['read', 'write']),
+    permissions: { objects: new Map(), granted: new Set(granted) } as never
+  });
+  assert.equal(canApprove(user([])), false);
+  assert.equal(canApprove(user(['webhooks', 'import'])), false);
+  assert.equal(canApprove(user(['integrations'])), true);
 });
 
 test('created over MCP or with an API key it starts off, whatever enabled says', () => {

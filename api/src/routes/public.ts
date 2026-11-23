@@ -9,6 +9,7 @@ import { checkPhone } from '../phone.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type FormDefinition } from '../forms.js';
 import { renderPdf, renderTemplate, templateFor, type TemplateRow } from '../templates.js';
 import { invoicePayable, publicPayment, quotePayable, type PublicPayment } from '../payments/state.js';
+import { GMAIL_TYPO_MESSAGE, isGmailTypo } from '../email-typo.js';
 
 // Public pages: customers open quotes (/p/quote/#key) and fill in forms
 // (/p/form/#key, or the embed snippet on an allowed website) without signing
@@ -24,14 +25,15 @@ const PUBLIC_PRINCIPAL: Principal = {
   actor: 'public',
   permissions: {
     objects: new Map([
-      ['pc_0022', { read: true, create: false, edit: true, delete: false }],
-      ['pc_0053', { read: false, create: true, edit: false, delete: false }],
+      ['pc_0022', { read: true, create: false, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0053', { read: false, create: true, edit: false, delete: false, readAll: false, editAll: false, deleteAll: false }],
       // forms upsert contacts by email and create tickets
-      ['pc_0010', { read: true, create: true, edit: true, delete: false }],
-      ['pc_0013', { read: false, create: true, edit: false, delete: false }]
+      ['pc_0010', { read: true, create: true, edit: true, delete: false, readAll: true, editAll: true, deleteAll: false }],
+      ['pc_0013', { read: false, create: true, edit: false, delete: false, readAll: false, editAll: false, deleteAll: false }]
     ]),
     propertyAccess: new Map(),
-    recordAccess: 'all',
+    ownScope: 'own',
+    granted: new Set(),
     teamUserIds: [],
     sharingRules: [],
     knowledgeAccess: 'none'
@@ -246,6 +248,7 @@ function readSignedFields(defs: SigningField[], raw: unknown): Record<string, st
     const v = text(given[f.key], f.label, 2000, f.required);
     if (v === null) continue;
     if (f.type === 'email' && !EMAIL_RE.test(v)) throw badRequest(`${f.label} must be an email address`);
+    if (f.type === 'email' && isGmailTypo(v)) throw badRequest(`${f.label}: did you mean @gmail.com? Please check the address.`);
     if (f.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw badRequest(`${f.label} must be a date (YYYY-MM-DD)`);
     out[f.key] = v;
   }
@@ -398,13 +401,14 @@ function text(v: unknown, field: string, max: number, required: boolean): string
   return s || null;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---- forms -------------------------------------------------------------------
 
+// name is what visitors see: the Public name, or the Name when that is empty.
 async function loadPublishedForm(key: string): Promise<{ id: string; name: string | null; description: string | null; html: string | null; definition: FormDefinition }> {
   const { rows } = await pool.query(
-    `select pc_0052_id as id, name, description, html, definition from crm.pc_0052
+    `select pc_0052_id as id, coalesce(nullif(btrim(public_name), ''), name) as name, description, html, definition from crm.pc_0052
      where ${byKey} and status @> '{published}' ${keyFirst}`,
     [checkKey(key)]
   );
@@ -467,6 +471,7 @@ export async function publicRoutes(app: FastifyInstance) {
         const name = text(b.name, 'name', 200, true)!;
         const email = text(b.email, 'email', 254, true)!;
         if (!EMAIL_RE.test(email)) throw badRequest('email must be an email address');
+        if (isGmailTypo(email)) throw badRequest(GMAIL_TYPO_MESSAGE);
         const reason = action === 'decline' ? text(b.reason, 'reason', 2000, false) : null;
         const signature = action === 'accept' ? readSignature(b.signature_png) : null;
         const quote = await loadPublicQuote(req.params.key);

@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { pool, quoteIdent, withTx, type Db } from './db.js';
 import { ApiError, badRequest, forbidden } from './errors.js';
-import { recordFilter, requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from './auth.js';
+import { hasPermission, recordFilter, requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from './auth.js';
 import { getObject, getProperty, type ObjectDef } from './registry.js';
 import { assertAccessible, createRecord, drainCalcQueue, updateRecord } from './records.js';
 import { readFileBytes } from './files.js';
@@ -12,7 +12,6 @@ import { contactIdByEmail } from './contact-emails.js';
 import { checkPhone, isRegion } from './phone.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 import { logEvent } from './audit.js';
-import { isAdmin } from './routes/ui.js';
 import { parseCard, wordsFromTsv, wordsToLines } from './card-parse.js';
 
 // Business card scanner (web/src/pages/CardScanner.tsx, migrations 0063 and
@@ -734,7 +733,7 @@ export async function cardScanRoutes(app: FastifyInstance) {
 
   app.get('/v1/card-scans/settings', async (req) => {
     const p = req.principal!;
-    if (!isAdmin(p)) throw forbidden('only admins can see card scanner settings');
+    if (!hasPermission(p, 'integrations', { write: false })) throw forbidden('card scanner settings need the Integrations permission');
     const s = await scanSettings();
     return settingsOut(s, await tesseractAvailable());
   });
@@ -743,7 +742,7 @@ export async function cardScanRoutes(app: FastifyInstance) {
   // null to remove it (which also switches the reader back to Tesseract).
   app.put<{ Body: { reader?: unknown; anthropic_key?: unknown } }>('/v1/card-scans/settings', async (req) => {
     const p = req.principal!;
-    if (!isAdmin(p)) throw forbidden('only admins can change card scanner settings');
+    if (!hasPermission(p, 'integrations')) throw forbidden('card scanner settings need the Integrations permission');
     requireRecentSignIn(p);
     const b = req.body ?? {};
     const cur = await scanSettings();

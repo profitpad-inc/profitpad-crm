@@ -6,12 +6,15 @@ import { getObject, getProperty, type ObjectDef, type PropertyDef } from './regi
 import { batchReadRecords, getRecord } from './records.js';
 import { isAdmin } from './routes/ui.js';
 
-// Snippets and @mentions (migration 0077).
+// Snippets and @mentions (migrations 0077, 0122).
 //
 // Snippets are saved text people pull into a text box by typing # and the
-// shortcut. Shared ones (owner_user_id null) are kept by admins; personal ones
-// belong to one user and win over a shared one with the same shortcut. Merge
-// fields in the body are filled in when the snippet is inserted:
+// shortcut. A snippet is shared with everyone unless its author keeps it for
+// themself (shared false, migration 0122). owner_user_id is the author: they
+// or an admin change a shared snippet; only they see or change a personal one,
+// which replaces a shared one with its shortcut for them. last_used_at is set
+// whenever anyone inserts the snippet. Merge fields in the body are filled in
+// when the snippet is inserted:
 //   {{r.first_name|there}}  the record being worked on (the page's record),
 //                           read with the caller's access; "there" when empty
 //   {{me.first_name}}       the signed-in user's own user record
@@ -28,24 +31,44 @@ interface SnippetRow {
   name: string;
   body: string;
   owner_user_id: string | null;
+  owner_name?: string | null;
+  shared: boolean;
+  last_used_at: Date | null;
+  created_at: Date;
   updated_at: Date;
 }
 
+const isAuthor = (p: Principal, s: SnippetRow) => s.owner_user_id !== null && s.owner_user_id === p.userId;
+const canSee = (p: Principal, s: SnippetRow) => s.shared || isAuthor(p, s);
+const canEdit = (p: Principal, s: SnippetRow) => isAuthor(p, s) || (s.shared && isAdmin(p));
+
 function snippetOut(s: SnippetRow, p: Principal) {
-  const shared = s.owner_user_id === null;
   return {
     id: String(s.id),
     shortcut: s.shortcut,
     name: s.name,
     body: s.body,
-    shared,
-    can_edit: shared ? isAdmin(p) : s.owner_user_id === p.userId,
+    shared: s.shared,
+    added_by: s.owner_user_id ? { id: s.owner_user_id, name: s.owner_name ?? null } : null,
+    can_edit: canEdit(p, s),
+    // only the author decides who sees it
+    can_share: isAuthor(p, s),
+    last_used_at: s.last_used_at,
+    created_at: s.created_at,
     updated_at: s.updated_at
   };
 }
 
-function cleanInput(raw: { shortcut?: unknown; name?: unknown; body?: unknown }, partial: boolean) {
-  const out: { shortcut?: string; name?: string; body?: string } = {};
+// The author's name, as mentions show it.
+const SELECT_SNIPPETS = `select s.*, coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as owner_name
+  from ui.snippets s left join crm.pc_0000 u on u.pc_0000_id = s.owner_user_id`;
+
+function cleanInput(raw: { shortcut?: unknown; name?: unknown; body?: unknown; shared?: unknown }, partial: boolean) {
+  const out: { shortcut?: string; name?: string; body?: string; shared?: boolean } = {};
+  if (raw.shared !== undefined) {
+    if (typeof raw.shared !== 'boolean') throw badRequest('shared must be true or false', { property: 'shared' });
+    out.shared = raw.shared;
+  }
   if (raw.shortcut !== undefined || !partial) {
     if (typeof raw.shortcut !== 'string') throw badRequest('shortcut is required', { property: 'shortcut' });
     const s = raw.shortcut.trim().replace(/^#/, '').toLowerCase();
@@ -67,20 +90,24 @@ const uniqueTaken = (err: unknown) => (err as { code?: string }).code === '23505
 
 async function loadSnippet(id: string): Promise<SnippetRow> {
   if (!/^\d{1,18}$/.test(id)) throw notFound('snippet not found');
-  const { rows } = await pool.query('select * from ui.snippets where id = $1', [id]);
+  const { rows } = await pool.query(`${SELECT_SNIPPETS} where s.id = $1`, [id]);
   if (!rows[0]) throw notFound('snippet not found');
   return rows[0];
 }
 
-function canSee(p: Principal, s: SnippetRow): boolean {
-  return s.owner_user_id === null || s.owner_user_id === p.userId;
+// A snippet the caller may see (a personal one of someone else's is not found).
+async function visibleSnippet(p: Principal, id: string): Promise<SnippetRow> {
+  const s = await loadSnippet(id);
+  if (!canSee(p, s)) throw notFound('snippet not found');
+  return s;
 }
 
 function requireEdit(p: Principal, s: SnippetRow): void {
-  if (s.owner_user_id === null ? !isAdmin(p) : s.owner_user_id !== p.userId) {
-    throw (canSee(p, s) ? forbidden('only admins can change shared snippets') : notFound('snippet not found'));
-  }
+  if (!canEdit(p, s)) throw forbidden('only the person who added this snippet, or an admin, can change it');
 }
+
+const shortcutTaken = (shortcut: string | undefined, shared: boolean) =>
+  badRequest(`#${shortcut} is already used by ${shared ? 'a shared snippet' : 'one of your snippets'}`, { property: 'shortcut' });
 
 // ---- merge fields ------------------------------------------------------------
 
@@ -153,55 +180,63 @@ export async function mentionableUsers(): Promise<{ id: string; name: string }[]
 }
 
 export async function snippetRoutes(app: FastifyInstance) {
-  // The caller's snippets: shared ones and their own.
+  // The caller's snippets: the shared ones and their own personal ones, most
+  // recently used first (never used ones last, newest first).
   app.get('/v1/snippets', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
     const { rows } = await pool.query(
-      `select * from ui.snippets where owner_user_id is null or owner_user_id = $1
-       order by shortcut, owner_user_id nulls last`,
+      `${SELECT_SNIPPETS} where s.shared or s.owner_user_id = $1
+       order by s.last_used_at desc nulls last, s.created_at desc, s.id desc`,
       [p.userId]
     );
     return { results: rows.map((s: SnippetRow) => snippetOut(s, p)) };
   });
 
+  // shared defaults to true.
   app.post<{ Body: { shortcut?: unknown; name?: unknown; body?: unknown; shared?: unknown } }>('/v1/snippets', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'read');
-    const shared = req.body?.shared === true;
-    if (shared && !isAdmin(p)) throw forbidden('only admins can add shared snippets');
-    if (!shared && !p.userId) throw badRequest('personal snippets need a signed-in user; use shared: true');
     const v = cleanInput(req.body ?? {}, false);
+    const shared = v.shared ?? true;
+    if (!p.userId) {
+      // an API key with no user has nobody to own the snippet
+      if (!shared) throw badRequest('personal snippets need a signed-in user; leave shared on', { property: 'shared' });
+      if (!isAdmin(p)) throw forbidden('only signed-in users and admins can add snippets');
+    }
     try {
       const { rows } = await pool.query(
-        `insert into ui.snippets (shortcut, name, body, owner_user_id, created_by, updated_by)
-         values ($1, $2, $3, $4, $5, $5) returning *`,
-        [v.shortcut, v.name, v.body, shared ? null : p.userId, p.actor]
+        `insert into ui.snippets (shortcut, name, body, shared, owner_user_id, created_by, updated_by)
+         values ($1, $2, $3, $4, $5, $6, $6) returning id`,
+        [v.shortcut, v.name, v.body, shared, p.userId ?? null, p.actor]
       );
       reply.code(201);
-      return snippetOut(rows[0], p);
+      return snippetOut(await loadSnippet(String(rows[0].id)), p);
     } catch (err) {
-      if (uniqueTaken(err)) throw badRequest(`#${v.shortcut} is already used by ${shared ? 'a shared' : 'one of your'} snippets`, { property: 'shortcut' });
+      if (uniqueTaken(err)) throw shortcutTaken(v.shortcut, shared);
       throw err;
     }
   });
 
-  app.patch<{ Params: { id: string }; Body: { shortcut?: unknown; name?: unknown; body?: unknown } }>('/v1/snippets/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { shortcut?: unknown; name?: unknown; body?: unknown; shared?: unknown } }>('/v1/snippets/:id', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
-    const s = await loadSnippet(req.params.id);
+    const s = await visibleSnippet(p, req.params.id);
     requireEdit(p, s);
     const v = cleanInput(req.body ?? {}, true);
+    if (v.shared !== undefined && v.shared !== s.shared && !isAuthor(p, s)) {
+      throw forbidden('only the person who added this snippet can change who sees it');
+    }
     try {
-      const { rows } = await pool.query(
+      await pool.query(
         `update ui.snippets set shortcut = coalesce($2, shortcut), name = coalesce($3, name), body = coalesce($4, body),
-           updated_at = now(), updated_by = $5
-         where id = $1 returning *`,
-        [s.id, v.shortcut ?? null, v.name ?? null, v.body ?? null, p.actor]
+           shared = coalesce($5, shared), updated_at = now(), updated_by = $6
+         where id = $1`,
+        [s.id, v.shortcut ?? null, v.name ?? null, v.body ?? null, v.shared ?? null, p.actor]
       );
-      return snippetOut(rows[0], p);
+      return snippetOut(await loadSnippet(String(s.id)), p);
     } catch (err) {
-      if (uniqueTaken(err)) throw badRequest(`#${v.shortcut} is already used`, { property: 'shortcut' });
+      if (uniqueTaken(err)) throw shortcutTaken(v.shortcut ?? s.shortcut, v.shared ?? s.shared);
       throw err;
     }
   });
@@ -209,18 +244,19 @@ export async function snippetRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/v1/snippets/:id', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'read');
-    const s = await loadSnippet(req.params.id);
+    const s = await visibleSnippet(p, req.params.id);
     requireEdit(p, s);
     await pool.query('delete from ui.snippets where id = $1', [s.id]);
     reply.code(204);
   });
 
   // The snippet's text with merge fields filled in for a record (optional).
+  // Every insert goes through here, so it also marks the snippet used.
   app.post<{ Params: { id: string }; Body: { object?: unknown; record_id?: unknown } }>('/v1/snippets/:id/render', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');
-    const s = await loadSnippet(req.params.id);
-    if (!canSee(p, s)) throw notFound('snippet not found');
+    const s = await visibleSnippet(p, req.params.id);
+    await pool.query('update ui.snippets set last_used_at = now() where id = $1', [s.id]);
     const object = typeof req.body?.object === 'string' ? req.body.object : undefined;
     const id = typeof req.body?.record_id === 'string' ? req.body.record_id : undefined;
     return { text: await renderSnippet(p, s.body, object, id) };

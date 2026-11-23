@@ -17,7 +17,7 @@ begin
     raise exception 'a role is still called Admin';
   end if;
 
-  select id into v_view from auth.roles where name = 'View Only' and is_default and read_new_objects and not is_admin and record_access = 'all';
+  select id into v_view from auth.roles where name = 'View Only' and is_default and read_new_objects and not is_admin;
   if v_view is null then
     raise exception 'View Only is missing or not the default';
   end if;

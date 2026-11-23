@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EllipsisVertical, Plus, ShieldCheck, Table2, Trash2, Users, X } from 'lucide-react';
-import { api, type SearchResult } from '../lib/api';
+import { api, can, type RolePermission, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName } from '../lib/display';
 import { UserAvatar } from '../components/UserAvatar';
@@ -13,14 +13,20 @@ import { confirmDialog } from '../components/confirm';
 import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 
 // Admin pages for who can see what: users get roles (directly; team
-// assignments made through the API are shown too), roles get object access.
+// assignments made through the API are shown too), roles get object access
+// (on the records they own, or on all records) and permissions for settings.
 
+// can_read, can_edit and can_delete reach the records the role's users own;
+// the *_all switches reach every record
 interface ObjectPermission {
   object_type_id: string;
   can_read: boolean;
   can_create: boolean;
   can_edit: boolean;
   can_delete: boolean;
+  can_read_all: boolean;
+  can_edit_all: boolean;
+  can_delete_all: boolean;
 }
 
 // ids are bigints, which the API sends as strings
@@ -29,8 +35,10 @@ interface Role {
   name: string;
   description: string | null;
   is_admin: boolean;
-  record_access: 'own' | 'team' | 'all';
+  // what "records they own" means: owned by them, or by them or a teammate
+  record_access: 'own' | 'team';
   knowledge_access: 'none' | 'read' | 'edit';
+  permissions: RolePermission[];
   object_permissions: ObjectPermission[];
   assignments: { id: string; user_id: string | null; team_id: string | null }[];
 }
@@ -44,29 +52,57 @@ interface UserRow {
 
 type PermissionKey = keyof Omit<ObjectPermission, 'object_type_id'>;
 
-const PERMISSION_COLUMNS: { key: PermissionKey; label: string }[] = [
-  { key: 'can_read', label: 'Read' },
-  { key: 'can_create', label: 'Create' },
-  { key: 'can_edit', label: 'Edit' },
-  { key: 'can_delete', label: 'Delete' }
+// the table's columns, grouped under Read, Create, Edit and Delete
+const PERMISSION_GROUPS: { label: string; columns: { key: PermissionKey; label: string }[] }[] = [
+  { label: 'Read', columns: [{ key: 'can_read', label: 'Own' }, { key: 'can_read_all', label: 'All' }] },
+  { label: 'Create', columns: [{ key: 'can_create', label: '' }] },
+  { label: 'Edit', columns: [{ key: 'can_edit', label: 'Own' }, { key: 'can_edit_all', label: 'All' }] },
+  { label: 'Delete', columns: [{ key: 'can_delete', label: 'Own' }, { key: 'can_delete_all', label: 'All' }] }
 ];
+const PERMISSION_COLUMNS = PERMISSION_GROUPS.flatMap((g) => g.columns.map((c) => ({ ...c, group: g.label })));
+const columnName = (c: { group: string; label: string }) => (c.label ? `${c.group} ${c.label === 'Own' ? 'own records' : 'all records'}` : c.group);
 
-// create/edit/delete imply read; no read means none of the others
+const NO_ACCESS = { can_read: false, can_create: false, can_edit: false, can_delete: false, can_read_all: false, can_edit_all: false, can_delete_all: false };
+
+// Turning one switch on or off keeps the rest consistent (the API does the
+// same): "all" includes "own", create/edit/delete include read, edit all and
+// delete all include read all. Off works the other way round.
 function applyPermission(cur: ObjectPermission, key: PermissionKey, value: boolean): ObjectPermission {
-  const next = { ...cur, [key]: value };
-  if (key === 'can_read' && !value) Object.assign(next, { can_create: false, can_edit: false, can_delete: false });
-  if (key !== 'can_read' && value) next.can_read = true;
-  return next;
+  const n = { ...cur, [key]: value };
+  if (value) {
+    if (key === 'can_edit_all') n.can_edit = true;
+    if (key === 'can_delete_all') n.can_delete = true;
+    if (n.can_edit_all || n.can_delete_all) n.can_read_all = true;
+    if (n.can_read_all || n.can_create || n.can_edit || n.can_delete) n.can_read = true;
+  } else {
+    if (key === 'can_read') Object.assign(n, NO_ACCESS);
+    if (key === 'can_read_all') Object.assign(n, { can_edit_all: false, can_delete_all: false });
+    if (key === 'can_edit') n.can_edit_all = false;
+    if (key === 'can_delete') n.can_delete_all = false;
+  }
+  return n;
 }
 
+// Permissions besides objects, in the order shown
+const ROLE_PERMISSIONS: { key: RolePermission; label: string; hint: string }[] = [
+  { key: 'users', label: 'Users', hint: 'Add users, give and take roles, send invites, see sign-in history and sign people out. Adding and deactivating users also needs Create and Edit on Users under Object access.' },
+  { key: 'roles', label: 'Roles', hint: 'Create and change roles, their object access, permissions and sharing rules, and give roles to users.' },
+  { key: 'properties', label: 'Properties', hint: 'Add, change and archive properties and dropdown choices, and manage option lists.' },
+  { key: 'import', label: 'Import', hint: 'Import records from a spreadsheet, for objects the role can create.' },
+  { key: 'export', label: 'Export', hint: 'Export records it can read to CSV or Excel.' },
+  { key: 'integrations', label: 'Integrations', hint: 'Embed domains, view integrations, webhooks, mailboxes, meetings, notification emails, payments, email, card scanner and address autocomplete.' },
+  { key: 'api_keys', label: 'API keys', hint: 'Create, rotate and revoke API keys.' },
+  { key: 'security_log', label: 'Security log', hint: 'See sign-ins, key and role changes, and exports.' }
+];
+
 // header checkbox that ticks or clears a whole column; shows a dash when only some rows are ticked
-function ColumnCheck({ label, checked, partial, onChange }: { label: string; checked: boolean; partial: boolean; onChange: (value: boolean) => void }) {
+function ColumnCheck({ label, name, checked, partial, onChange }: { label: string; name?: string; checked: boolean; partial: boolean; onChange: (value: boolean) => void }) {
   return (
     <label className="column-check">
       {label}
       <input
         type="checkbox"
-        aria-label={`${label}: all objects`}
+        aria-label={`${name ?? label}: every object`}
         checked={checked}
         ref={(el) => { if (el) el.indeterminate = partial; }}
         onChange={(e) => onChange(e.target.checked)}
@@ -82,9 +118,8 @@ const KNOWLEDGE_ACCESS: { value: Role['knowledge_access']; label: string }[] = [
 ];
 
 const RECORD_ACCESS: { value: Role['record_access']; label: string }[] = [
-  { value: 'own', label: 'Only records they own' },
-  { value: 'team', label: "Their team's records" },
-  { value: 'all', label: 'All records' }
+  { value: 'own', label: 'Records they own' },
+  { value: 'team', label: 'Records they or their team own' }
 ];
 
 function useAccessData() {
@@ -124,7 +159,12 @@ export function UserSettings() {
   const [show, setShow] = useState<'active' | 'deactivated'>('active');
   const [creating, setCreating] = useState(false);
   const shown = users.filter((u) => (show === 'active') === !u.deactivated);
-  useEffect(() => { preloadCreateUser(); }, []);
+  // giving roles (and so adding users): the Users or Roles permission; invites,
+  // deactivating and sign-outs: Users. Super Admin roles, and the roles of a
+  // Super Admin, stay with Super Admins (the API checks all of this again).
+  const canAssign = can(me, 'users') || can(me, 'roles');
+  const canManage = can(me, 'users');
+  useEffect(() => { if (canAssign) preloadCreateUser(); }, [canAssign]);
   // the sign-in options this CRM has set up, named in the description
   const [signIn, setSignIn] = useState('Google or Microsoft');
   useEffect(() => {
@@ -194,7 +234,7 @@ export function UserSettings() {
       </>}
       actions={<>
         <Link className="btn" to="/objects/users"><Table2 size={14} /> View table</Link>
-        <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> Add a user</button>
+        {canAssign && <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} /> Add a user</button>}
       </>}
     >
       {loaded && users.length > 0 && (
@@ -208,7 +248,7 @@ export function UserSettings() {
       {error && <div className="error">{error}</div>}
       {!loaded && <TableSkeleton rows={4} />}
       {loaded && users.length === 0 && (
-        <EmptyState icon={<Users size={18} />} title="No users yet" action={<button className="btn primary" onClick={() => setCreating(true)}>Add a user</button>}>
+        <EmptyState icon={<Users size={18} />} title="No users yet" action={canAssign ? <button className="btn primary" onClick={() => setCreating(true)}>Add a user</button> : undefined}>
           Create a user record with someone's email so they can sign in.
         </EmptyState>
       )}
@@ -226,9 +266,13 @@ export function UserSettings() {
             <tbody>
               {shown.map((u) => {
                 const assigned = rolesOf(u.id);
-                const available = roles.filter((r) => !assigned.some((a) => a.role.id === r.id));
+                const userIsSuperAdmin = assigned.some((a) => a.role.is_admin);
+                const canChange = (roleIsAdmin: boolean) => canAssign && (me.is_admin || (!roleIsAdmin && !userIsSuperAdmin));
+                const available = roles.filter((r) => canChange(r.is_admin) && !assigned.some((a) => a.role.id === r.id));
                 const isMe = me.user?.id === u.id;
-                const canSignInAs = me.is_admin && !me.signed_in_as_by && !isMe && !u.deactivated && !assigned.some((a) => a.role.is_admin);
+                const canSignInAs = me.is_admin && !me.signed_in_as_by && !isMe && !u.deactivated && !userIsSuperAdmin;
+                const canSetStatus = canManage && !isMe && (me.is_admin || !userIsSuperAdmin);
+                const canInvite = canManage && !u.deactivated && !!u.email;
                 return (
                   <tr key={u.id}>
                     <td className="primary-cell">
@@ -246,19 +290,21 @@ export function UserSettings() {
                         {assigned.map(({ role, assignmentId }) => (
                           <span key={assignmentId} className={`role-chip${role.is_admin ? ' admin' : ''}`}>
                             {role.name}
-                            <button
-                              className="icon-btn"
-                              aria-label={`Remove ${role.name}`}
-                              onClick={() => run(() => api('DELETE', `/v1/roles/${role.id}/assignments/${assignmentId}`))}
-                            >
-                              <X size={12} />
-                            </button>
+                            {canChange(role.is_admin) && (
+                              <button
+                                className="icon-btn"
+                                aria-label={`Remove ${role.name}`}
+                                onClick={() => run(() => api('DELETE', `/v1/roles/${role.id}/assignments/${assignmentId}`))}
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
                           </span>
                         ))}
                       </div>
                     </td>
                     <td className="row-actions">
-                      {(available.length > 0 || canSignInAs || !isMe) && (
+                      {(available.length > 0 || canSignInAs || canInvite || canSetStatus) && (
                         <Menu
                           align="right"
                           trigger={(toggle) => (
@@ -277,12 +323,12 @@ export function UserSettings() {
                                       <Plus size={14} /> {r.name}
                                     </button>
                                   ))}
-                                  {(canSignInAs || !isMe) && <div className="menu-sep" />}
+                                  {(canSignInAs || canInvite || canSetStatus) && <div className="menu-sep" />}
                                 </>
                               )}
                               {canSignInAs &&<button onClick={() => { close(); signInAs(u); }}>Sign in as {u.name}</button>}
-                              {!u.deactivated && u.email && <button onClick={() => { close(); sendInvite(u); }}>Send invite</button>}
-                              {!isMe && (u.deactivated
+                              {canInvite && <button onClick={() => { close(); sendInvite(u); }}>Send invite</button>}
+                              {canSetStatus && (u.deactivated
                                 ? <button onClick={() => { close(); setStatus(u, 'active'); }}>Reactivate</button>
                                 : <button className="danger" onClick={() => { close(); setStatus(u, 'deactivated'); }}>Deactivate</button>)}
                             </>
@@ -311,21 +357,29 @@ export function UserSettings() {
   );
 }
 
+type RoleDraft = Pick<Role, 'name' | 'is_admin' | 'record_access' | 'knowledge_access' | 'permissions'> & { description: string };
+const EMPTY_DRAFT: RoleDraft = { name: '', description: '', is_admin: false, record_access: 'own', knowledge_access: 'read', permissions: [] };
+const draftOf = (r: Role): RoleDraft => ({
+  name: r.name, description: r.description ?? '', is_admin: r.is_admin, record_access: r.record_access, knowledge_access: r.knowledge_access, permissions: r.permissions ?? []
+});
+const samePermissions = (a: RolePermission[], b: RolePermission[]) => a.length === b.length && a.every((x) => b.includes(x));
+
 export function RoleSettings() {
-  const { objects } = useApp();
+  const { me, objects } = useApp();
   const { roles, users, loaded, error, setError, reloadRoles } = useAccessData();
   const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ name: string; description: string; is_admin: boolean; record_access: Role['record_access']; knowledge_access: Role['knowledge_access'] }>({
-    name: '', description: '', is_admin: false, record_access: 'all', knowledge_access: 'read'
-  });
+  const [draft, setDraft] = useState<RoleDraft>(EMPTY_DRAFT);
   const [message, setMessage] = useState<string | null>(null);
 
   const role = selected && selected !== 'new' ? roles.find((r) => r.id === selected) ?? null : null;
+  // Super Admin roles are changed by Super Admins only (the API refuses others)
+  const locked = !!role?.is_admin && !me.is_admin;
 
-  // unsaved changes to the role's details (permissions and sharing rules save as they change)
+  // unsaved changes to the role's details (object access and sharing rules save as they change)
   const dirty = selected === 'new'
-    ? draft.name.trim() !== '' || draft.description.trim() !== '' || draft.is_admin
-    : !!role && (draft.name !== role.name || draft.description !== (role.description ?? '') || draft.is_admin !== role.is_admin || draft.record_access !== role.record_access || draft.knowledge_access !== role.knowledge_access);
+    ? draft.name.trim() !== '' || draft.description.trim() !== '' || draft.is_admin || draft.permissions.length > 0
+    : !!role && (draft.name !== role.name || draft.description !== (role.description ?? '') || draft.is_admin !== role.is_admin || draft.record_access !== role.record_access
+      || draft.knowledge_access !== role.knowledge_access || !samePermissions(draft.permissions, role.permissions ?? []));
 
   // id is a role id or 'new'
   async function pick(id: string, list = roles) {
@@ -338,9 +392,7 @@ export function RoleSettings() {
     setMessage(null);
     setError(null);
     const r = list.find((x) => x.id === id);
-    setDraft(r
-      ? { name: r.name, description: r.description ?? '', is_admin: r.is_admin, record_access: r.record_access, knowledge_access: r.knowledge_access }
-      : { name: '', description: '', is_admin: false, record_access: 'all', knowledge_access: 'read' });
+    setDraft(r ? draftOf(r) : EMPTY_DRAFT);
   }
 
   useEffect(() => {
@@ -364,13 +416,16 @@ export function RoleSettings() {
   async function save(e?: FormEvent) {
     e?.preventDefault();
     if (!dirty) return;
-    const body = { name: draft.name.trim(), description: draft.description.trim() || null, is_admin: draft.is_admin, record_access: draft.record_access, knowledge_access: draft.knowledge_access };
+    const body = {
+      name: draft.name.trim(), description: draft.description.trim() || null, is_admin: draft.is_admin, record_access: draft.record_access,
+      knowledge_access: draft.knowledge_access, permissions: draft.permissions
+    };
     if (!body.name) return setError('A role needs a name.');
     if (selected === 'new') {
       const created = (await run(() => api<Role>('POST', '/v1/roles', body), 'Role created.')) as Role | undefined;
       if (created) {
         setSelected(created.id);
-        setDraft({ name: created.name, description: created.description ?? '', is_admin: created.is_admin, record_access: created.record_access, knowledge_access: created.knowledge_access });
+        setDraft(draftOf(created));
         setMessage('Role created. Now choose which objects it can use.');
       }
     } else if (role) {
@@ -389,7 +444,7 @@ export function RoleSettings() {
 
   const permissionOf = (objectTypeId: string): ObjectPermission =>
     role?.object_permissions.find((p) => p.object_type_id === objectTypeId)
-      ?? { object_type_id: objectTypeId, can_read: false, can_create: false, can_edit: false, can_delete: false };
+      ?? { object_type_id: objectTypeId, ...NO_ACCESS };
 
   function putPermission(roleId: string, apiName: string, next: ObjectPermission) {
     const { object_type_id: _, ...body } = next;
@@ -415,15 +470,33 @@ export function RoleSettings() {
   const members = role
     ? role.assignments.map((a) => ({ id: a.id, name: a.user_id ? users.find((u) => u.id === a.user_id)?.name ?? `User ${a.user_id}` : `Team ${a.team_id}` }))
     : [];
-  const accessLabel = (r: Role) => (r.is_admin ? 'Super Admin' : RECORD_ACCESS.find((o) => o.value === r.record_access)?.label);
+  const accessLabel = (r: Role) => (r.is_admin ? 'Super Admin' : r.description || `${r.object_permissions.filter((x) => x.can_read).length} objects`);
+  // a column's header switch: turns the column on or off for every object
+  function columnHead(column: { key: PermissionKey; label: string; group: string }, rowSpan?: number) {
+    const ticked = objects.filter((o) => permissionOf(o.object_type_id)[column.key]).length;
+    return (
+      <th key={column.key} className="cell-check" rowSpan={rowSpan}>
+        <ColumnCheck
+          label={column.label || column.group}
+          name={columnName(column)}
+          checked={objects.length > 0 && ticked === objects.length}
+          partial={ticked > 0 && ticked < objects.length}
+          onChange={(v) => setColumn(column.key, v)}
+        />
+      </th>
+    );
+  }
+  const togglePermission = (key: RolePermission, on: boolean) =>
+    setDraft({ ...draft, permissions: on ? [...draft.permissions.filter((x) => x !== key), key] : draft.permissions.filter((x) => x !== key) });
 
   return (
     <SettingsPage
       className="wide"
       title="Roles"
       description={<>
-        A role decides which objects its users can read, create, edit and delete, and which records they see. Someone with
-        several roles gets the most permissive combination. Assign roles on the <Link to="/settings/users">Users</Link> page.
+        A role decides which objects its users can read, create, edit and delete (on the records they own, or on all records), and
+        which settings they can manage. Someone with several roles gets the most permissive combination. Assign roles on
+        the <Link to="/settings/users">Users</Link> page.
       </>}
       actions={<button className="btn primary" onClick={() => pick('new')}><Plus size={14} /> New role</button>}
     >
@@ -449,45 +522,68 @@ export function RoleSettings() {
             )}
             {(role || selected === 'new') && (
               <SettingsSection title={selected === 'new' ? 'New role' : 'Details'}>
+                {locked && <div className="callout">Only Super Admins can change Super Admin roles.</div>}
                 <form className="role-form" onSubmit={save}>
-                  <label className="field">
-                    <span>Name</span>
-                    <input value={draft.name} maxLength={63} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>Description</span>
-                    <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-                  </label>
-                  <label className="check">
-                    <input type="checkbox" checked={draft.is_admin} onChange={(e) => setDraft({ ...draft, is_admin: e.target.checked })} />
-                    Super Admin: full access to every object, record and setting
-                  </label>
-                  {!draft.is_admin && (
+                  <fieldset disabled={locked} className="plain-fieldset">
                     <label className="field">
-                      <span>Which records can people with this role see?</span>
-                      <Select value={draft.record_access} onChange={(v) => setDraft({ ...draft, record_access: v as Role['record_access'] })}>
-                        {RECORD_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                      {draft.record_access !== 'all' && <span className="muted small">Plus anything a sharing rule below opens up.</span>}
+                      <span>Name</span>
+                      <input value={draft.name} maxLength={63} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
                     </label>
-                  )}
-                  {!draft.is_admin && (
                     <label className="field">
-                      <span>Knowledge base</span>
-                      <Select value={draft.knowledge_access} onChange={(v) => setDraft({ ...draft, knowledge_access: v as Role['knowledge_access'] })}>
-                        {KNOWLEDGE_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                      <span className="muted small">
-                        Also what their AI agents can do with it over MCP. Articles marked admins only stay with Super Admins.
-                      </span>
+                      <span>Description</span>
+                      <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
                     </label>
-                  )}
-                  {role && (
+                    {me.is_admin && (
+                      <label className="check">
+                        <input type="checkbox" checked={draft.is_admin} onChange={(e) => setDraft({ ...draft, is_admin: e.target.checked })} />
+                        Super Admin: full access to every object, record and setting
+                      </label>
+                    )}
+                    {!draft.is_admin && (
+                      <label className="field">
+                        <span>Records they own means</span>
+                        <Select value={draft.record_access} onChange={(v) => setDraft({ ...draft, record_access: v as Role['record_access'] })}>
+                          {RECORD_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </Select>
+                        <span className="muted small">
+                          Used by the Own columns under Object access (owner, or creator when an object has no owner), plus anything a sharing rule below opens up.
+                        </span>
+                      </label>
+                    )}
+                    {!draft.is_admin && (
+                      <label className="field">
+                        <span>Knowledge base</span>
+                        <Select value={draft.knowledge_access} onChange={(v) => setDraft({ ...draft, knowledge_access: v as Role['knowledge_access'] })}>
+                          {KNOWLEDGE_ACCESS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </Select>
+                        <span className="muted small">
+                          Also what their AI agents can do with it over MCP. Articles marked admins only stay with Super Admins.
+                        </span>
+                      </label>
+                    )}
+                  </fieldset>
+                  {role && !locked && (
                     <div className="actions">
                       <button type="button" className="btn ghost danger-text" onClick={remove}><Trash2 size={14} /> Delete role</button>
                     </div>
                   )}
                 </form>
+              </SettingsSection>
+            )}
+
+            {(role || selected === 'new') && !draft.is_admin && (
+              <SettingsSection title="Permissions" description="Settings and tools besides objects. Saved with the role's details.">
+                <div className="permission-list">
+                  {ROLE_PERMISSIONS.map((x) => (
+                    <label key={x.key} className="check permission-row">
+                      <input type="checkbox" checked={draft.permissions.includes(x.key)} disabled={locked} onChange={(e) => togglePermission(x.key, e.target.checked)} />
+                      <span>
+                        {x.label}
+                        <span className="muted small">{x.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </SettingsSection>
             )}
 
@@ -503,29 +599,27 @@ export function RoleSettings() {
                   )}
                 </SettingsSection>
 
-                <SettingsSection title="Object access" description={role.is_admin ? 'Super Admin roles can use every object.' : 'Create, edit and delete each include read.'}>
+                <SettingsSection
+                  title="Object access"
+                  description={role.is_admin
+                    ? 'Super Admin roles can use every object.'
+                    : 'Own reaches the records they own (see Details); All reaches every record and includes Own. Create, edit and delete each include read.'}
+                >
                   {!role.is_admin && !role.object_permissions.some((p) => p.can_read) && (
-                    <div className="callout warn">This role cannot read any object yet, so its users see nothing. Tick Read for the objects they should use.</div>
+                    <div className="callout warn">This role cannot read any object yet, so its users see nothing. Turn on Read for the objects they should use.</div>
                   )}
                   {!role.is_admin && (
                     <div className="access-table">
-                      <table className="grid">
+                      <table className="grid object-access">
                         <thead>
                           <tr>
-                            <th>Object</th>
-                            {PERMISSION_COLUMNS.map((c) => {
-                              const ticked = objects.filter((o) => permissionOf(o.object_type_id)[c.key]).length;
-                              return (
-                                <th key={c.key} className="cell-check">
-                                  <ColumnCheck
-                                    label={c.label}
-                                    checked={objects.length > 0 && ticked === objects.length}
-                                    partial={ticked > 0 && ticked < objects.length}
-                                    onChange={(v) => setColumn(c.key, v)}
-                                  />
-                                </th>
-                              );
-                            })}
+                            <th rowSpan={2}>Object</th>
+                            {PERMISSION_GROUPS.map((g) => (g.columns.length > 1
+                              ? <th key={g.label} colSpan={g.columns.length} className="cell-group">{g.label}</th>
+                              : columnHead({ ...g.columns[0], group: g.label }, 2)))}
+                          </tr>
+                          <tr>
+                            {PERMISSION_COLUMNS.filter((c) => c.label).map((c) => columnHead(c))}
                           </tr>
                         </thead>
                         <tbody>
@@ -534,13 +628,13 @@ export function RoleSettings() {
                             return (
                               <tr key={o.object_type_id}>
                                 <td>{o.label_plural}</td>
-                                {PERMISSION_COLUMNS.map(({ key: k }) => (
-                                  <td key={k} className="cell-check">
+                                {PERMISSION_COLUMNS.map((c) => (
+                                  <td key={c.key} className="cell-check">
                                     <input
                                       type="checkbox"
-                                      aria-label={`${o.label_plural}: ${k.slice(4)}`}
-                                      checked={p[k]}
-                                      onChange={(e) => setPermission(o.object_type_id, o.api_name, k, e.target.checked)}
+                                      aria-label={`${o.label_plural}: ${columnName(c)}`}
+                                      checked={p[c.key]}
+                                      onChange={(e) => setPermission(o.object_type_id, o.api_name, c.key, e.target.checked)}
                                     />
                                   </td>
                                 ))}
@@ -553,17 +647,17 @@ export function RoleSettings() {
                   )}
                 </SettingsSection>
 
-                {!role.is_admin && <SharingRules roleId={role.id} recordAccess={role.record_access} />}
+                {!role.is_admin && <SharingRules roleId={role.id} />}
               </>
             )}
           </div>
         </div>
       )}
-      {loaded && (role || selected === 'new') && (
+      {loaded && (role || selected === 'new') && !locked && (
         <SaveBar dirty={dirty} message={message}>
           <button className="btn" disabled={!dirty} onClick={() => {
             if (selected === 'new') { setSelected(null); if (roles.length) load(roles[0].id); return; }
-            if (role) setDraft({ name: role.name, description: role.description ?? '', is_admin: role.is_admin, record_access: role.record_access, knowledge_access: role.knowledge_access });
+            if (role) setDraft(draftOf(role));
           }}>{selected === 'new' ? 'Cancel' : 'Discard'}</button>
           <button className="btn primary" disabled={!dirty} onClick={() => void save()}>{selected === 'new' ? 'Create role' : 'Save role'}</button>
         </SaveBar>

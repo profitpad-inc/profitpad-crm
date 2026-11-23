@@ -1,5 +1,6 @@
 import { checkPhone } from './phone.js';
 import { badRequest } from './errors.js';
+import { isGmailTypo } from './email-typo.js';
 import { isSingleValue, type PropertyDef } from './registry.js';
 
 const HEX_ID = /^[0-9a-f]{10}$/;
@@ -126,9 +127,28 @@ export function matchDropdownInput(prop: PropertyDef, input: unknown): unknown {
 // Imports check addresses in email properties before anything is written
 // (the API itself stores any text): properties named email, *_email or
 // additional_emails (several addresses split by ; , or spaces).
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^(?!.*\.\.)[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function isEmailProperty(prop: PropertyDef): boolean {
   return prop.type === 'text' && (prop.api_name === 'email' || prop.api_name.endsWith('_email') || prop.api_name === 'additional_emails');
+}
+
+// Record writes from the CRM UI (card scans included) and MCP: every email
+// property (isEmailProperty) must be a valid address and not a gmail typo
+// (email-typo.ts). records.ts skips this for the API itself and for the
+// server's own writes. Synced meeting fields are left alone, so one bad invite
+// address can't stop a calendar sync. Addresses already on the record pass,
+// so older records can still be saved.
+const SYNCED_EMAIL_PROPS = new Set(['attendee_email', 'organizer_email']);
+export function emailValueProblem(prop: PropertyDef, value: unknown, existing: unknown): string | null {
+  if (!isEmailProperty(prop) || SYNCED_EMAIL_PROPS.has(prop.api_name) || typeof value !== 'string') return null;
+  const split = (v: unknown) => (typeof v !== 'string' ? [] : prop.api_name === 'additional_emails' ? v.split(/[;,\s]+/).filter(Boolean) : [v.trim()].filter(Boolean));
+  const before = new Set(split(existing));
+  const added = split(value).filter((e) => !before.has(e));
+  const bad = added.filter((e) => !EMAIL_RE.test(e));
+  if (bad.length > 0) return `${prop.label}: ${bad.join(', ')} ${bad.length > 1 ? 'are not valid email addresses' : 'is not a valid email address'}`;
+  const typos = added.filter(isGmailTypo);
+  if (typos.length > 0) return `${prop.label}: ${typos.join(', ')} looks like a typo, did you mean @gmail.com?`;
+  return null;
 }
 
 // Imports: why one text cell would be refused or is not a usable value, or
@@ -142,6 +162,8 @@ export function importValueProblem(prop: PropertyDef, input: string): string | n
     const parts = prop.api_name === 'additional_emails' ? text.split(/[;,\s]+/).filter(Boolean) : [text];
     const bad = parts.filter((e) => !EMAIL_RE.test(e));
     if (bad.length > 0) return parts.length > 1 ? `not valid email addresses: ${bad.join(', ')}` : 'not a valid email address';
+    const typos = parts.filter(isGmailTypo);
+    if (typos.length > 0) return `looks like a typo, did you mean @gmail.com? (${typos.join(', ')})`;
   }
   if (prop.options.display === 'phone') {
     const phone = checkPhone(text);

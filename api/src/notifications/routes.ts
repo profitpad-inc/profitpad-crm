@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { requireRecentSignIn, requireScope, type Principal } from '../auth.js';
+import { hasPermission, requirePermission, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { isAdmin } from '../routes/ui.js';
 import { cleanAddresses } from '../mailbox/send.js';
@@ -13,7 +13,7 @@ import { deliver, loadSender, PREFERENCE_VALUES, queueApiEmail, queueInvite, sen
 // automations (admins or API keys with the admin scope). See emails.ts.
 
 function requireAdmin(p: Principal): void {
-  if (!isAdmin(p)) throw forbidden('only admins can do this');
+  if (!hasPermission(p, 'integrations')) throw forbidden('notification email settings need the Integrations permission');
 }
 
 const KINDS = ['mention', 'task_assigned', 'invite', 'api', 'test'];
@@ -152,7 +152,7 @@ export async function notificationRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>('/v1/users/:id/invite', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'write');
-    requireAdmin(p);
+    requirePermission(p, 'users');
     if (!/^[0-9a-f]{10}$/.test(req.params.id)) throw notFound('user not found');
     const result = await queueInvite(p, req.params.id);
     reply.code(202);

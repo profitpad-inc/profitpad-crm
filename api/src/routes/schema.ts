@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
-import { propertyAccess, requireScope, type Principal } from '../auth.js';
+import { propertyAccess, requirePropertyChange, requireScope, type Principal } from '../auth.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
 import { createForm } from '../native-ui.js';
 import { ICON_NAMES } from '../icons.js';
@@ -80,7 +80,7 @@ export interface PropertyInput {
 }
 
 export async function createProperty(p: Principal, objectKey: string, b: PropertyInput, source?: string) {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const obj = await getObject(objectKey);
   await withTx({ principal: p, source }, (c) =>
     c.query(
@@ -98,7 +98,7 @@ export async function updateProperty(
   b: { label?: string; description?: string; options?: Record<string, unknown>; calc_sql?: string; calc_output_type?: string; type?: string },
   source?: string
 ) {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
   // only name changes type: text <-> calculation (text output)
   const retype = b.type !== undefined && b.type !== prop.type;
@@ -125,7 +125,7 @@ export async function updateProperty(
 }
 
 export async function setPropertyArchived(p: Principal, objectKey: string, name: string, archived: boolean, source?: string) {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
   await withTx({ principal: p, source }, (c) =>
     c.query(archived ? 'select meta.archive_property($1, $2)' : 'select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name])
@@ -151,7 +151,7 @@ export async function addOption(
   p: Principal, objectKey: string, name: string,
   b: { api_value: string; label: string; display_order?: number; description?: string } & OptionDetails, source?: string
 ) {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
   const details = pickDetails(b);
   await withTx({ principal: p, source }, async (c) => {
@@ -165,7 +165,7 @@ export async function updateOption(
   p: Principal, objectKey: string, name: string, value: string,
   b: { label?: string; display_order?: number; description?: string; record_status?: 'active' | 'archived' } & OptionDetails, source?: string
 ) {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
   const details = pickDetails(b);
   await withTx({ principal: p, source }, async (c) => {
@@ -181,7 +181,7 @@ export async function updateOption(
 
 // tries a calculation on one record without saving anything (always rolled back)
 export async function testCalculation(p: Principal, objectKey: string, b: { calc_sql: string; calc_output_type: string; record_id: string }) {
-  requireScope(p, 'schema');
+  requirePropertyChange(p);
   const obj = await getObject(objectKey);
   if (!b.record_id) throw badRequest('record_id is required');
   const client = await pool.connect();
@@ -325,7 +325,7 @@ export async function schemaRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { object: string; property: string; value: string } }>('/v1/schema/:object/properties/:property/options/:value', async (req) => {
     const p = req.principal!;
-    requireScope(p, 'schema');
+    requirePropertyChange(p);
     const [obj, prop] = await findProperty(req.params.object, req.params.property);
     await withTx({ principal: p }, (c) => c.query('select meta.delete_option($1, $2, $3)', [obj.object_type_id, prop.api_name, req.params.value]));
     return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);

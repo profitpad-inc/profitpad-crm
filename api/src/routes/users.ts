@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
-import { requireObjectPermission, requireRecentSignIn, requireScope, sessionEndsAt, USER_CAN_SIGN_IN, userIsAdmin, type Principal } from '../auth.js';
+import { hasPermission, isSuperAdmin, requireObjectPermission, requirePermission, requireRecentSignIn, requireScope, sessionEndsAt, USER_CAN_SIGN_IN, userIsAdmin, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { getObject } from '../registry.js';
 import { isAdmin } from './ui.js';
@@ -33,22 +33,24 @@ onWrite('users', async (_client, properties, existing) => {
 });
 
 // Every new user gets a role: "role" in the create properties, a role id or
-// name. Giving a role is an admin change (like POST /v1/roles/:id/assignments),
-// so only admins can create users.
+// name. Giving a role is an access change (like POST /v1/roles/:id/assignments),
+// so creating users needs the Users or Roles permission, and only Super Admins
+// can create a Super Admin.
 onCreate('users', {
   fields: ['role'],
   run: async (client, principal, id, { role }) => {
     if (blank(role) || (typeof role !== 'string' && typeof role !== 'number')) {
       throw badRequest('Role is required: send "role" with a role id or name', { property: 'role' });
     }
-    requireScope(principal, 'admin');
+    if (!hasPermission(principal, 'users') && !hasPermission(principal, 'roles')) throw forbidden('creating users needs the Users permission');
     requireRecentSignIn(principal);
     const wanted = String(role).trim();
-    const { rows } = await client.query<{ id: string; name: string }>(
-      `select id::text as id, name from auth.roles where id::text = $1 or lower(name) = lower($1) order by (id::text = $1) desc limit 1`,
+    const { rows } = await client.query<{ id: string; name: string; is_admin: boolean }>(
+      `select id::text as id, name, is_admin from auth.roles where id::text = $1 or lower(name) = lower($1) order by (id::text = $1) desc limit 1`,
       [wanted]
     );
     if (rows.length === 0) throw badRequest(`no role "${wanted}"`, { property: 'role' });
+    if (rows[0].is_admin && !isSuperAdmin(principal)) throw forbidden('only Super Admins can give out Super Admin roles');
     // The new user already has the default role ("View Only", from the trigger
     // on crm.pc_0000). The role picked here is the one they get: picking the
     // default keeps it, picking another replaces it.
@@ -76,10 +78,12 @@ onCreate('users', {
   }
 });
 
-// A user's own sessions, or anyone's for an admin (with a recent sign-in)
-function requireSessionAccess(p: Principal, userId: string): void {
+// A user's own sessions, or anyone's with the Users permission (and a recent
+// sign-in); a Super Admin's only for Super Admins
+async function requireSessionAccess(p: Principal, userId: string): Promise<void> {
   if (p.userId === userId) return;
-  if (!isAdmin(p)) throw forbidden('only admins can end other users\' sessions');
+  requirePermission(p, 'users');
+  if (!isSuperAdmin(p) && (await userIsAdmin(userId))) throw forbidden('only Super Admins can end the sessions of a Super Admin');
   requireRecentSignIn(p);
 }
 
@@ -108,7 +112,7 @@ export async function userRoutes(app: FastifyInstance) {
   // IP addresses and devices: only admins and the user themself
   app.get<{ Params: { id: string } }>('/v1/users/:id/sign-ins', async (req) => {
     const p = req.principal!;
-    if (!isAdmin(p) && p.userId !== req.params.id) throw forbidden('only admins can see other users\' sign-in history');
+    if (p.userId !== req.params.id && !hasPermission(p, 'users', { write: false })) throw forbidden('seeing other users\' sign-in history needs the Users permission');
     const [identities, sessions, admin] = await Promise.all([
       pool.query(
         `select provider, email, created_at, last_login_at from auth.identities where user_id = $1 order by created_at`,
@@ -136,7 +140,7 @@ export async function userRoutes(app: FastifyInstance) {
   // Ends one session (sign out that device)
   app.delete<{ Params: { id: string; sessionId: string } }>('/v1/users/:id/sessions/:sessionId', async (req, reply) => {
     const p = req.principal!;
-    requireSessionAccess(p, req.params.id);
+    await requireSessionAccess(p, req.params.id);
     const { rowCount } = await pool.query(
       'update auth.sessions set revoked_at = now() where id = $1 and user_id = $2 and revoked_at is null',
       [req.params.sessionId, req.params.id]
@@ -150,7 +154,7 @@ export async function userRoutes(app: FastifyInstance) {
   // the caller's own session signed in
   app.post<{ Params: { id: string }; Body: { keep_current?: boolean } }>('/v1/users/:id/sessions/revoke', async (req) => {
     const p = req.principal!;
-    requireSessionAccess(p, req.params.id);
+    await requireSessionAccess(p, req.params.id);
     const keep = req.body?.keep_current && p.session ? p.session.id : null;
     const { rowCount } = await pool.query(
       `update auth.sessions set revoked_at = now()
