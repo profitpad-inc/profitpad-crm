@@ -212,7 +212,7 @@
 
 /* a phone-width frame around the real bottom bar's markup */
 .bottom-bar-preview { width: min(390px, 100%); flex: none; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-card); }
-.bottom-bar-preview .bottom-bar { border-top: 0; padding-bottom: 0; }
+.bottom-bar-preview .bottom-bar { z-index: auto; border-top: 0; padding-bottom: 0; }
 .bottom-bar-preview .bottom-item { cursor: default; }
 
 /* Users and roles */

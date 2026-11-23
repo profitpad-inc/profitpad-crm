@@ -584,11 +584,60 @@ export function RecordPage() {
     { key: 'properties', label: 'Properties', content: <><div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
     associationsPanel
   ] : assocTab ? [associationsPanel] : [];
+  // Views: Code and Changes tabs (no activity), with Properties first on phones
+  const isView = object === 'views';
+  const viewTabbed = mobile && isView;
+  // Every other page on phones: Properties first, then its editor (or answers, sign-in
+  // history, ...), the linked records, and the activity tabs where it has a stream,
+  // else Changes alone. Tablets and computers keep the columns.
+  const userRoles = isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />;
+  const archivedNote = (what: string, restoreTo: string) => <div className="card muted">Archived {what}. Restore this {restoreTo}.</div>;
+  const editorPanel: { label: string; content: ReactNode } | null =
+    object === 'forms' ? { label: 'Builder', content: <FormBuilder record={record} onSaved={setRecord} /> }
+    : object === 'booking_pages' ? { label: 'Editor', content: <BookingPageEditor record={record} onSaved={setRecord} /> }
+    : object === 'form_submissions' ? { label: 'Answers', content: <><SubmissionAnswers record={record} />{commentThread}</> }
+    : object === 'email_campaigns' ? {
+      label: 'Campaign',
+      content: record.record_status === 'archived'
+        ? archivedNote('campaigns are not sent', 'campaign to work on it')
+        : <EmailCampaignEditor record={record} onChanged={setRecord} />
+    }
+    : object === 'document_templates' ? {
+      label: 'Template',
+      content: record.record_status === 'archived'
+        ? archivedNote('templates are not used', 'template to see its code')
+        : <DocumentTemplateEditor record={record} onChanged={setRecord} />
+    }
+    : object === 'landing_pages' ? {
+      label: 'Page',
+      content: record.record_status === 'archived'
+        ? archivedNote('landing pages do not open', 'page to see it')
+        : <LandingPageCard record={record} onChanged={setRecord} />
+    }
+    : null;
+  const phoneTabbed = mobile && !tabbed && !isView && (isUser || !!editorPanel);
+  const phonePanels: StreamPanel[] = phoneTabbed ? [
+    { key: 'properties', label: 'Properties', content: <>{userRoles}<div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
+    ...(editorPanel ? [{ key: 'editor' as const, ...editorPanel }] : []),
+    ...(isUser ? [{ key: 'sign-ins' as const, label: 'Sign-in history', content: <SignInHistory id={record.id} /> }] : []),
+    ...(noRight ? [] : [associationsPanel])
+  ] : [];
+  const propsInTab = tabbed || viewTabbed || phoneTabbed;
+  const viewPanels: StreamPanel[] = isView ? [
+    ...(viewTabbed ? [{ key: 'properties' as const, label: 'Properties', content: propertyList }] : []),
+    {
+      key: 'code',
+      label: 'Code',
+      content: record.record_status === 'archived'
+        ? <div className="card muted">Archived views do not open. Restore this view to see its code.</div>
+        : <ViewCode record={record} onChanged={setRecord} />
+    }
+  ] : [];
 
   return (
     <LiveContext.Provider value={live}>
     <SnippetRecordProvider object={object} id={id}>
-    <div className={`record-page${noRight ? ' two-col' : ''}${tabbed ? ' tabbed' : ''}`}>
+    <div className={`record-page${noRight ? ' two-col' : ''}${propsInTab ? ' tabbed' : ''}`}>
       {merging && (
         <MergeRecordsModal
           object={object}
@@ -681,12 +730,16 @@ export function RecordPage() {
             </div>
           )}
         </div>
-        {isUser && <UserRoles userId={record.id} onLoaded={(roles) => setUserSuperAdmin({ id: record.id, admin: roles.some((r) => r.is_admin) })} />}
+        {!phoneTabbed && userRoles}
         {assocTab && !tabbed && <div className="record-right record-tab-panel">{ownCards}</div>}
-        {!tabbed && propertyList}
+        {!propsInTab && propertyList}
       </aside>
 
-      {isUser ? (
+      {phoneTabbed ? (
+        <section className="record-middle">
+          <ActivityStream {...streamProps} panels={phonePanels} bare={!hasStream} />
+        </section>
+      ) : isUser ? (
         <section className="record-middle">
           <UserHistory object={object} id={record.id} schema={schema} />
         </section>
@@ -720,13 +773,8 @@ export function RecordPage() {
                   : <LandingPageCard record={record} onChanged={setRecord} />}
                 <ActivityStream {...streamProps} />
               </>
-            ) : object === 'views' ? (
-              <>
-                {record.record_status === 'archived'
-                  ? <div className="card muted">Archived views do not open. Restore this view to see its code.</div>
-                  : <ViewCode record={record} onChanged={setRecord} />}
-                <ActivityStream {...streamProps} />
-              </>
+            ) : isView ? (
+              <ActivityStream {...streamProps} panels={viewPanels} bare />
             ) : (
               <>
                 {commentThread}
@@ -735,7 +783,7 @@ export function RecordPage() {
             )}
           </section>
 
-          {!noRight && !assocTab && <aside className="record-right">
+          {!noRight && !assocTab && !phoneTabbed && <aside className="record-right">
             {ownCards}
             {linkCards}
           </aside>}
@@ -989,7 +1037,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
 
 type Tab = 'preview' | PanelTab | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
 // On phones the properties and the right column are tabs of the stream (RecordPage passes them in)
-type PanelTab = 'properties' | 'associations';
+type PanelTab = 'properties' | 'associations' | 'code' | 'editor' | 'sign-ins';
 interface StreamPanel { key: PanelTab; label: string; count?: number; content: ReactNode }
 
 type HistoryVia = 'crm_ui' | 'api' | 'mcp' | 'calculation' | 'other';
@@ -1062,10 +1110,12 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
   return q ? `?${q}` : '';
 }
 
-function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend, panels = [] }: {
+function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend, panels = [], bare = false }: {
   linksLoaded: boolean; object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
   compose: { object: ComposeObject; key: number; mode?: 'send' } | null; onCompose: (o: ComposeObject | null, mode?: 'send') => void; onComposeDirty: (dirty: boolean) => void;
   canSend: boolean; panels?: StreamPanel[];
+  // only the panels and Changes: no activity tabs (custom views)
+  bare?: boolean;
 }) {
   const { objectByName, toast } = useApp();
   const navigate = useNavigate();
@@ -1074,13 +1124,15 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const linksTo = objectByName.get(object)?.links_to ?? [];
   // file records lead with a Preview tab holding the file itself
   const previewFirst = object === 'files';
-  const tabs: Tab[] = [...(previewFirst ? ['preview' as const] : []), ...panels.map((p) => p.key), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
+  const tabs: Tab[] = bare
+    ? [...panels.map((p) => p.key), 'changes']
+    : [...(previewFirst ? ['preview' as const] : []), ...panels.map((p) => p.key), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
   const codeOf = (o: string) => objectByName.get(o)?.object_type_id ?? '';
   const codes = ACTIVITY_OBJECTS.map(codeOf).filter(Boolean);
   const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
   const tabParam = params.get('tab') as Tab | null;
   const lead: Tab | null = previewFirst ? 'preview' : panels[0]?.key ?? null;
-  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : lead && !opened ? lead : 'activity';
+  const tab: Tab = tabParam && tabs.includes(tabParam) ? tabParam : lead && (!opened || bare) ? lead : 'activity';
   const panel = panels.find((p) => p.key === tab);
   const searchFor = (t: Tab, o: string | null, rid?: string) => activitySearch(params, t, o ? { code: codeOf(o), id: rid ?? '' } : null, codes, lead);
   // opening/closing an activity replaces the history entry; tab clicks push one

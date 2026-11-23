@@ -760,6 +760,20 @@ span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background:
 .view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 24px) minmax(0, 1fr); }
 .view-code.numbered.wrap .lc { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code-wrap-toggle { display: flex; align-items: center; gap: 8px; margin-right: 12px; align-self: center; white-space: nowrap; }
+/* a custom view's Code card (components/ViewCode.tsx) */
+.view-code-card > .card-head { flex-wrap: wrap; row-gap: 10px; }
+.view-code-title { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+.view-code-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.view-code-tabs { display: flex; align-items: flex-end; box-shadow: inset 0 -1px 0 var(--border); margin-bottom: 12px; }
+.view-code-tabs > .tabs { box-shadow: none; margin-bottom: 0; }
+.view-code-tabs > .tabs:first-child { flex: 1; }
+.view-code-tabs .code-wrap-toggle { margin-left: auto; }
+@media (max-width: 767px) {
+  .view-code-card > .card-head { flex-direction: column; align-items: stretch; }
+  .view-code-tabs { flex-direction: column; align-items: stretch; box-shadow: none; gap: 8px; }
+  .view-code-tabs > .tabs { box-shadow: inset 0 -1px 0 var(--border); }
+  .view-code-tabs .code-wrap-toggle { margin-right: 0; }
+}
 .custom-view-frame { display: block; width: 100%; border: 0; background: var(--page-background); }
 .view-loading { justify-content: center; padding: 96px 20px; opacity: 0; animation: view-loading-in 200ms ease-out 150ms forwards; }
 @keyframes view-loading-in { to { opacity: 1; } }

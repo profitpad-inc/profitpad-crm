@@ -184,39 +184,46 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   const source = which === 'draft' ? code.draft_source : code.source;
   const queries = which === 'draft' ? code.draft_queries : code.queries;
   return (
-    <div className="card">
+    <div className="card view-code-card">
       <div className="card-head">
-        <h3>Code</h3>
-        <span className="muted small">
-          {code.status === 'published' ? (code.unpublished_changes ? 'Published, draft has changes' : 'Published') : 'Draft, not published yet'}
-        </span>
-        <span style={{ flex: 1 }} />
-        <button className="btn small" onClick={iconPicker.open} title={icon ? `Icon: ${icon}` : 'Default icon'}>
-          <ViewIcon icon={icon} size={14} /> Icon
-        </button>
-        <Link className="btn small" to={{ pathname: '/view/', search: '?draft=1', hash: `#${code.slug}` }}>Open draft <ExternalLink size={12} /></Link>
-        {code.status === 'published' && <Link className="btn small" to={{ pathname: '/view/', hash: `#${code.slug}` }}>Open <ExternalLink size={12} /></Link>}
-        {menu && (
-          menu.inMenu
-            ? <Link className="btn small" to="/settings/navigation">In menu</Link>
-            : <button className="btn small" disabled={menu.busy || code.status !== 'published'} title={code.status === 'published' ? undefined : 'Publish the view first'} onClick={menu.add}>Add to menu</button>
-        )}
-        {code.unpublished_changes && code.draft_source && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
+        <div className="view-code-title">
+          <h3>Code</h3>
+          <span className="muted small">
+            {code.status === 'published' ? (code.unpublished_changes ? 'Published, draft has changes' : 'Published') : 'Draft, not published yet'}
+          </span>
+        </div>
+        <div className="view-code-actions">
+          <button className="btn small" onClick={iconPicker.open} title={icon ? `Icon: ${icon}` : 'Default icon'}>
+            <ViewIcon icon={icon} size={14} /> Icon
+          </button>
+          <Link className="btn small" to={{ pathname: '/view/', search: '?draft=1', hash: `#${code.slug}` }}>Open draft <ExternalLink size={12} /></Link>
+          {code.status === 'published' && <Link className="btn small" to={{ pathname: '/view/', hash: `#${code.slug}` }}>Open <ExternalLink size={12} /></Link>}
+          {menu && (
+            menu.inMenu
+              ? <Link className="btn small" to="/settings/navigation">In menu</Link>
+              : <button className="btn small" disabled={menu.busy || code.status !== 'published'} title={code.status === 'published' ? undefined : 'Publish the view first'} onClick={menu.add}>Add to menu</button>
+          )}
+          {code.unpublished_changes && code.draft_source && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
+        </div>
       </div>
       {(error || iconPicker.error || menu?.error) && <div className="error">{error ?? iconPicker.error ?? menu?.error}</div>}
       {iconPicker.picker}
-      <div className="tabs">
-        <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
-        <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!code.source}>Published</button></div>
-        <span style={{ flex: 1 }} />
-        {tab !== 'integrations' && (
-          <label className="small muted code-wrap-toggle">
-            <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
-          </label>
-        )}
-        <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>React</button></div>
-        <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Queries ({Object.keys(queries ?? {}).length})</button></div>
-        <div className={`tab${tab === 'integrations' ? ' active' : ''}`}><button onClick={() => setTab('integrations')}>Integrations ({integrationKeys(source).keys.length})</button></div>
+      {/* one row on wide screens; on phones the version and the part are two rows */}
+      <div className="view-code-tabs">
+        <div className="tabs">
+          <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
+          <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!code.source}>Published</button></div>
+          {tab !== 'integrations' && (
+            <label className="small muted code-wrap-toggle">
+              <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
+            </label>
+          )}
+        </div>
+        <div className="tabs">
+          <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>React</button></div>
+          <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Queries ({Object.keys(queries ?? {}).length})</button></div>
+          <div className={`tab${tab === 'integrations' ? ' active' : ''}`}><button onClick={() => setTab('integrations')}>Integrations ({integrationKeys(source).keys.length})</button></div>
+        </div>
       </div>
       {tab === 'integrations' ? (
         <ViewIntegrations source={source} />
