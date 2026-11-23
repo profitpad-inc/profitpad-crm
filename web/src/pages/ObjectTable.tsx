@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
   api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -31,6 +31,11 @@ const MIN_WIDTH = 60;
 const MAX_WIDTH = 1000;
 // created another way (uploads, a parent record, a linked activity, the user form)
 const NO_IMPORT = ['files', 'lines', 'comments', 'users'];
+// phone cards: the name is the card's title, then at most this many of the view's other columns
+const CARD_FIELDS = 5;
+// already in the card's title
+const NAME_PARTS = new Set(['name', 'first_name', 'last_name']);
+const LONG_PRESS_MS = 450;
 
 // Keyed by object so switching tables starts fresh instead of sending one
 // search with the previous object's schema, columns and sorts.
@@ -74,6 +79,9 @@ function ObjectTableFor({ object }: { object: string }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const lastPicked = useRef<number | null>(null);
   const [bulk, setBulk] = useState<null | 'edit' | 'delete' | 'remove'>(null);
+  // phones: tapping a card picks it instead of opening it (the Select button or a long press)
+  const [selectMode, setSelectMode] = useState(false);
+  const press = useRef<{ timer?: ReturnType<typeof setTimeout>; fired: boolean; x: number; y: number }>({ fired: false, x: 0, y: 0 });
 
   const viewId = searchParams.get('view');
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
@@ -190,12 +198,50 @@ function ObjectTableFor({ object }: { object: string }) {
   // a new search, sort, view or the recycle bin shows different records, so start over
   useEffect(() => {
     setPicked(new Set());
+    setSelectMode(false);
     lastPicked.current = null;
   }, [debounced, archived, sorts, activeViewId]);
 
   const shown = data?.results ?? [];
   const pickedCount = shown.filter((r) => picked.has(r.id)).length;
   const allPicked = shown.length > 0 && pickedCount === shown.length;
+  const picking = isMobile && (selectMode || picked.size > 0);
+
+  function togglePick(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearPicked() {
+    setPicked(new Set());
+    setSelectMode(false);
+  }
+
+  // a long press on a card starts picking with that card
+  function pressStart(e: React.TouchEvent, id: string) {
+    const t = e.touches[0];
+    clearTimeout(press.current.timer);
+    press.current = {
+      fired: false, x: t.clientX, y: t.clientY,
+      timer: setTimeout(() => {
+        press.current.fired = true;
+        navigator.vibrate?.(10);
+        setSelectMode(true);
+        togglePick(id);
+      }, LONG_PRESS_MS)
+    };
+  }
+  function pressMove(e: React.TouchEvent) {
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - press.current.x) > 10 || Math.abs(t.clientY - press.current.y) > 10) clearTimeout(press.current.timer);
+  }
+  function pressEnd() {
+    clearTimeout(press.current.timer);
+  }
 
   function pickAll() {
     setPicked(allPicked ? new Set() : new Set(shown.map((r) => r.id)));
@@ -235,7 +281,7 @@ function ObjectTableFor({ object }: { object: string }) {
 
   function bulkDone(message: string, clear: boolean) {
     setBulk(null);
-    if (clear) setPicked(new Set());
+    if (clear) clearPicked();
     toast(message);
     fetchPage();
   }
@@ -495,6 +541,20 @@ function ObjectTableFor({ object }: { object: string }) {
       <Plus size={16} /> Create {singular}
     </button>
   );
+  // phones: the view's columns, minus the name, sortable from the Sort menu or shown on the cards
+  const sortable = [...new Map(columns.flatMap((c) => {
+    if (c.type !== 'property') return [];
+    const p = schema.properties.find((x) => x.api_name === c.property);
+    return p && !(p.type === 'dropdown' && p.options.single_value !== true) && p.type !== 'file' ? [[p.api_name, p] as const] : [];
+  })).values()];
+  const cardColumns = columns.flatMap((c, index): { column: Column; index: number; label: string }[] => {
+    if (c.type === 'association') {
+      const other = objectByName.get(c.object);
+      return other ? [{ column: c, index, label: associationColumnLabel(c, other, labels, object, objectByName) }] : [];
+    }
+    const p = schema.properties.find((x) => x.api_name === c.property);
+    return p && !NAME_PARTS.has(p.api_name) ? [{ column: c, index: Math.max(index, 1), label: p.label }] : [];
+  }).slice(0, CARD_FIELDS);
   const searchedFields = schema.search_properties.map((n) => schema.properties.find((p) => p.api_name === n)?.label.toLowerCase() ?? n).join(', ');
 
   return (
@@ -545,31 +605,36 @@ function ObjectTableFor({ object }: { object: string }) {
         </button>
       </nav>
 
-      {picked.size > 0 ? (
+      {picked.size > 0 || picking ? (
         <div className="table-toolbar selection-bar" role="region" aria-label="Selected records">
           <span className="selection-count" role="status">{picked.size.toLocaleString()} selected</span>
           {archived && schema?.permissions.delete && (
-            <button className="btn small ghost" onClick={restorePicked} disabled={restoring}>
+            <button className="btn small ghost" onClick={restorePicked} disabled={restoring || picked.size === 0}>
               <RotateCcw size={14} /> {restoring ? 'Restoring…' : 'Restore all'}
             </button>
           )}
           {archived && me?.is_admin && (
-            <button className="btn small ghost danger-text" onClick={() => setBulk('remove')}>
+            <button className="btn small ghost danger-text" onClick={() => setBulk('remove')} disabled={picked.size === 0}>
               <Trash2 size={14} /> Delete permanently
             </button>
           )}
           {!archived && schema?.permissions.edit && (
-            <button className="btn small ghost" onClick={() => setBulk('edit')}>
+            <button className="btn small ghost" onClick={() => setBulk('edit')} disabled={picked.size === 0}>
               <Pencil size={14} /> Edit all
             </button>
           )}
           {!archived && schema?.permissions.delete && (
-            <button className="btn small ghost danger-text" onClick={() => setBulk('delete')}>
+            <button className="btn small ghost danger-text" onClick={() => setBulk('delete')} disabled={picked.size === 0}>
               <Trash2 size={14} /> Delete all
             </button>
           )}
-          <button className="btn small ghost selection-clear" onClick={() => setPicked(new Set())}>
-            <X size={14} /> Clear selection
+          {isMobile && (
+            <button className="btn small ghost" onClick={pickAll} disabled={shown.length === 0}>
+              {allPicked ? 'Unselect all' : 'Select all'}
+            </button>
+          )}
+          <button className="btn small ghost selection-clear" onClick={clearPicked}>
+            <X size={14} /> {isMobile ? 'Done' : 'Clear selection'}
           </button>
         </div>
       ) : (
@@ -589,121 +654,218 @@ function ObjectTableFor({ object }: { object: string }) {
             <button type="button" aria-pressed={archived} onClick={() => !archived && showArchived(true)}>Archived</button>
           </div>
           {dirty && <span className="table-note">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
-          <button className="btn table-columns" onClick={() => setShowColumns(true)}>
-            <Columns3 size={16} /> Edit columns
-          </button>
+          {isMobile ? (
+            <div className="table-phone-actions">
+              <button className="btn" onClick={() => setSelectMode(true)} disabled={shown.length === 0}>Select</button>
+              <Menu
+                align="right"
+                trigger={(toggle) => (
+                  <button className="btn icon-only" onClick={toggle} aria-label="Sort">
+                    <ArrowUpDown size={16} />
+                  </button>
+                )}
+              >
+                {(close) => (
+                  <>
+                    <div className="menu-label">Sort by</div>
+                    {sortable.map((p) => {
+                      const dir = sorts[0]?.property === p.api_name ? sorts[0].direction : null;
+                      return (
+                        <button key={p.api_name} className={dir ? 'sort-current' : undefined} onClick={() => { close(); clickHeader(p.api_name); }}>
+                          <span className="sort-option-label">{p.label}</span>
+                          {dir && <span className="sort-option-dir">{dir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />} {directionWords(p, dir)}</span>}
+                        </button>
+                      );
+                    })}
+                    {sortable.length === 0 && <div className="menu-label">Add a column to sort by it.</div>}
+                  </>
+                )}
+              </Menu>
+              <button className="btn icon-only" onClick={() => setShowColumns(true)} aria-label="Edit columns">
+                <Columns3 size={16} />
+              </button>
+            </div>
+          ) : (
+            <button className="btn table-columns" onClick={() => setShowColumns(true)}>
+              <Columns3 size={16} /> Edit columns
+            </button>
+          )}
         </div>
       )}
 
       {error && <div className="error">{error}</div>}
 
-      <div className="table-frame">
-        <table className="data-grid">
-          <thead>
-            <tr>
-              <th className="pick-cell">
-                <input
-                  type="checkbox"
-                  aria-label={`Select all ${shown.length.toLocaleString()} shown`}
-                  title={`Select all ${shown.length.toLocaleString()} shown`}
-                  checked={allPicked}
-                  disabled={shown.length === 0}
-                  ref={(el) => {
-                    if (el) el.indeterminate = pickedCount > 0 && !allPicked;
-                  }}
-                  onChange={pickAll}
-                />
-              </th>
-              {columns.map((c, i) => {
-                if (c.type === 'association') {
-                  const other = objectByName.get(c.object);
-                  if (!other) return null;
-                  const hp = headerProps(i);
-                  return (
-                    <th key={i} {...hp}>
-                      {headerHandles(i)}
-                      <div className="dg-head">
-                        <span className="dg-label">{associationColumnLabel(c, other, labels, object, objectByName)}</span>
-                        <ColumnMenu onRemove={() => changeView({ columns: columns.filter((_, j) => j !== i) })} />
-                      </div>
-                    </th>
-                  );
-                }
-                const prop = schema.properties.find((p) => p.api_name === c.property);
-                if (!prop) return null;
-                const sorted = sorts[0]?.property === prop.api_name ? sorts[0].direction : null;
-                const hp = headerProps(i);
-                return (
-                  <th key={i} {...hp} className={`${hp.className}${sorted ? ' sorted' : ''}`} aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}>
-                    {headerHandles(i)}
-                    <div className="dg-head">
-                      <button className="dg-sort" onClick={() => clickHeader(prop.api_name)}>
-                        <span className="dg-label">{prop.label}</span>
-                        {sorted === 'asc' ? <ArrowUp size={13} /> : sorted === 'desc' ? <ArrowDown size={13} /> : <ArrowUpDown size={13} className="dg-sort-idle" />}
-                      </button>
-                      <ColumnMenu
-                        onSort={(direction) => changeView({ sorts: [{ property: prop.api_name, direction }] })}
-                        onRemove={() => changeView({ columns: columns.filter((_, j) => j !== i) })}
-                      />
-                    </div>
-                  </th>
-                );
-              })}
-              <th
-                className="dg-fill"
-                aria-hidden="true"
-                onDragOver={(e) => {
-                  if (dragFrom.current === null) return;
-                  e.preventDefault();
-                  setDropAt(columns.length);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  dropColumn();
-                }}
-              />
-            </tr>
-          </thead>
-          <tbody>
-            {data?.results.map((r, ri) => (
-              <tr key={r.id} className={picked.has(r.id) ? 'picked' : undefined}>
-                <td className="pick-cell">
-                  <input type="checkbox" aria-label={`Select ${recordName(r)}`} checked={picked.has(r.id)} onChange={() => undefined} onClick={(e) => pickRow(e, ri)} />
-                </td>
+      <div className={`table-frame${isMobile ? ' cards' : ''}`}>
+        {isMobile ? (
+          <ul className="record-cards">
+            {shown.map((r) => {
+              const title = recordName(r);
+              const on = picked.has(r.id);
+              const fields = cardColumns
+                .map((f) => ({ label: f.label, text: cellText(r, f.column, f.index) }))
+                .filter((f) => f.text && f.text !== title);
+              const body = (
+                <>
+                  {picking && <span className="record-card-check" aria-hidden="true">{on && <Check size={14} strokeWidth={3} />}</span>}
+                  <span className="record-card-body">
+                    <span className="record-card-title">{title}</span>
+                    {fields.map((f, k) => (
+                      <span key={k} className="record-card-field">
+                        <span className="record-card-label">{f.label}</span>
+                        <span className="record-card-value">{f.text}</span>
+                      </span>
+                    ))}
+                  </span>
+                </>
+              );
+              const touch = {
+                onTouchStart: (e: React.TouchEvent) => pressStart(e, r.id),
+                onTouchMove: pressMove,
+                onTouchEnd: pressEnd,
+                onTouchCancel: pressEnd,
+                onContextMenu: (e: React.MouseEvent) => e.preventDefault()
+              };
+              return (
+                <li key={r.id}>
+                  {picking ? (
+                    <button
+                      type="button"
+                      className={`record-card${on ? ' picked' : ''}`}
+                      aria-pressed={on}
+                      {...touch}
+                      onClick={() => {
+                        if (press.current.fired) press.current.fired = false; // the long press already picked it
+                        else togglePick(r.id);
+                      }}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <Link
+                      className="record-card"
+                      to={`/objects/${object}/${r.id}`}
+                      {...touch}
+                      onClick={(e) => {
+                        if (!press.current.fired) return;
+                        press.current.fired = false;
+                        e.preventDefault();
+                      }}
+                    >
+                      {body}
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <table className="data-grid">
+            <thead>
+              <tr>
+                <th className="pick-cell">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select all ${shown.length.toLocaleString()} shown`}
+                    title={`Select all ${shown.length.toLocaleString()} shown`}
+                    checked={allPicked}
+                    disabled={shown.length === 0}
+                    ref={(el) => {
+                      if (el) el.indeterminate = pickedCount > 0 && !allPicked;
+                    }}
+                    onChange={pickAll}
+                  />
+                </th>
                 {columns.map((c, i) => {
                   if (c.type === 'association') {
                     const other = objectByName.get(c.object);
                     if (!other) return null;
+                    const hp = headerProps(i);
                     return (
-                      <td key={i} {...cellProps(ri, i, c)}>
-                        <AssociationCell record={r} column={c} pluralLabel={other.label_plural} />
-                      </td>
+                      <th key={i} {...hp}>
+                        {headerHandles(i)}
+                        <div className="dg-head">
+                          <span className="dg-label">{associationColumnLabel(c, other, labels, object, objectByName)}</span>
+                          <ColumnMenu onRemove={() => changeView({ columns: columns.filter((_, j) => j !== i) })} />
+                        </div>
+                      </th>
                     );
                   }
                   const prop = schema.properties.find((p) => p.api_name === c.property);
                   if (!prop) return null;
-                  const editable = !archived && schema.permissions.edit && isEditable(prop);
-                  const extra = [editable ? 'editable' : '', editing?.record.id === r.id && editing.property.api_name === prop.api_name ? 'editing' : ''].filter(Boolean);
-                  if (i === 0 || prop.api_name === 'name') {
+                  const sorted = sorts[0]?.property === prop.api_name ? sorts[0].direction : null;
+                  const hp = headerProps(i);
+                  return (
+                    <th key={i} {...hp} className={`${hp.className}${sorted ? ' sorted' : ''}`} aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : undefined}>
+                      {headerHandles(i)}
+                      <div className="dg-head">
+                        <button className="dg-sort" onClick={() => clickHeader(prop.api_name)}>
+                          <span className="dg-label">{prop.label}</span>
+                          {sorted === 'asc' ? <ArrowUp size={13} /> : sorted === 'desc' ? <ArrowDown size={13} /> : <ArrowUpDown size={13} className="dg-sort-idle" />}
+                        </button>
+                        <ColumnMenu
+                          onSort={(direction) => changeView({ sorts: [{ property: prop.api_name, direction }] })}
+                          onRemove={() => changeView({ columns: columns.filter((_, j) => j !== i) })}
+                        />
+                      </div>
+                    </th>
+                  );
+                })}
+                <th
+                  className="dg-fill"
+                  aria-hidden="true"
+                  onDragOver={(e) => {
+                    if (dragFrom.current === null) return;
+                    e.preventDefault();
+                    setDropAt(columns.length);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    dropColumn();
+                  }}
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {data?.results.map((r, ri) => (
+                <tr key={r.id} className={picked.has(r.id) ? 'picked' : undefined}>
+                  <td className="pick-cell">
+                    <input type="checkbox" aria-label={`Select ${recordName(r)}`} checked={picked.has(r.id)} onChange={() => undefined} onClick={(e) => pickRow(e, ri)} />
+                  </td>
+                  {columns.map((c, i) => {
+                    if (c.type === 'association') {
+                      const other = objectByName.get(c.object);
+                      if (!other) return null;
+                      return (
+                        <td key={i} {...cellProps(ri, i, c)}>
+                          <AssociationCell record={r} column={c} pluralLabel={other.label_plural} />
+                        </td>
+                      );
+                    }
+                    const prop = schema.properties.find((p) => p.api_name === c.property);
+                    if (!prop) return null;
+                    const editable = !archived && schema.permissions.edit && isEditable(prop);
+                    const extra = [editable ? 'editable' : '', editing?.record.id === r.id && editing.property.api_name === prop.api_name ? 'editing' : ''].filter(Boolean);
+                    if (i === 0 || prop.api_name === 'name') {
+                      return (
+                        <td key={i} {...cellProps(ri, i, c, ['primary-cell', ...extra])}>
+                          <Link className="dg-name" to={`/objects/${object}/${r.id}`}>{cellText(r, c, i)}</Link>
+                          {editable && editButton(r, prop)}
+                        </td>
+                      );
+                    }
                     return (
-                      <td key={i} {...cellProps(ri, i, c, ['primary-cell', ...extra])}>
-                        <Link className="dg-name" to={`/objects/${object}/${r.id}`}>{cellText(r, c, i)}</Link>
+                      <td key={i} {...cellProps(ri, i, c, extra)}>
+                        {displayValue(prop, r.properties[prop.api_name]) || <span className="muted empty-value">--</span>}
                         {editable && editButton(r, prop)}
                       </td>
                     );
-                  }
-                  return (
-                    <td key={i} {...cellProps(ri, i, c, extra)}>
-                      {displayValue(prop, r.properties[prop.api_name]) || <span className="muted empty-value">--</span>}
-                      {editable && editButton(r, prop)}
-                    </td>
-                  );
-                })}
-                <td className="dg-fill" aria-hidden="true" />
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  })}
+                  <td className="dg-fill" aria-hidden="true" />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
         {/* first load, or a new search while nothing is shown */}
         {(!data || (loading && data.results.length === 0)) && !error && <TableSkeleton rows={8} />}
         {data && data.results.length === 0 && !loading && (
@@ -870,6 +1032,14 @@ function ObjectTableFor({ object }: { object: string }) {
 }
 
 type Cell = { row: number; col: number };
+
+// how a sort reads in the phone Sort menu
+function directionWords(p: Property, dir: 'asc' | 'desc'): string {
+  const t = valueType(p);
+  if (t === 'number') return dir === 'asc' ? 'Low to high' : 'High to low';
+  if (t === 'date' || t === 'datetime') return dir === 'asc' ? 'Oldest first' : 'Newest first';
+  return dir === 'asc' ? 'A to Z' : 'Z to A';
+}
 
 // a field Google Sheets reads back as one cell: quoted when it has tabs, line breaks or quotes
 function tsvField(s: string): string {
