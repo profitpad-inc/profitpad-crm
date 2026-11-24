@@ -161,10 +161,14 @@ body.dg-resizing, body.dg-resizing * { cursor: col-resize !important; user-selec
 
 /* the box over a cell while it is edited (rendered on <body>) */
 .grid-editor {
-  position: fixed; z-index: 46; display: flex; flex-direction: column; gap: 8px; padding: 6px;
+  position: fixed; z-index: 46; display: flex; flex-direction: column; gap: 8px; padding: 6px 10px;
   border: 1px solid var(--primary-line); border-radius: var(--radius); background: var(--page-background);
   box-shadow: var(--shadow-pop), 0 0 0 3px var(--primary-soft); animation: panel-in 100ms ease-out;
 }
+/* a single text box (SKU, name, a number): the frame is the cell itself, the
+   same height, the text where the cell's text was */
+.grid-editor:has(> input:only-child) { padding: 0 11px; }
+.grid-editor:has(> input:only-child) > input { padding-block: 0; height: 36px; }
 .grid-editor .checks { max-height: 220px; overflow: auto; }
 .grid-editor-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .grid-editor-foot .error-text { margin-right: auto; color: var(--danger); font-size: 12px; }
