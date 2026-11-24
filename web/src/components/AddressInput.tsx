@@ -4,9 +4,13 @@ import { MapPin } from 'lucide-react';
 import { api, type Property } from '../lib/api';
 
 // Address autocomplete (api/src/address.ts, Settings → Address autocomplete).
-// The street box of an address group suggests addresses from Google Places as
-// people type; picking one fills the group's other properties too, through
-// PropertyInput's onFill. The Google key stays on the API server.
+// The text boxes of an address group suggest places from Google Places as
+// people type: the street box whole addresses, the city, province, postal
+// code and country boxes places of their own kind. Picking one fills that box
+// and the broader parts of the group through PropertyInput's onFill (a postal
+// code fills the province and country, a street everything). Street 2 holds
+// suites and units, which Google can't search, so it stays a plain box. The
+// Google key stays on the API server.
 
 export interface AddressGroup {
   object: string;
@@ -68,11 +72,30 @@ function useAddressConfig(object: string | undefined): AddressConfig | null {
   return object ? config : null;
 }
 
-// The address group whose street box this property is, when autocomplete is on.
-export function useAddressGroup(object: string | undefined, property: string): AddressGroup | null {
+// The parts of a group whose box suggests places (street 2 does not).
+export type AddressPart = 'street_1' | 'city' | 'province' | 'postal_code' | 'country';
+const SEARCH_PARTS: AddressPart[] = ['street_1', 'city', 'province', 'postal_code', 'country'];
+
+// What a pick in each box fills: the box itself and the broader parts.
+const FILLS: Record<AddressPart, (keyof Omit<AddressGroup, 'object'>)[]> = {
+  street_1: ['street_1', 'street_2', 'city', 'province', 'postal_code', 'country'],
+  city: ['city', 'province', 'country'],
+  postal_code: ['postal_code', 'province', 'country'],
+  province: ['province', 'country'],
+  country: ['country']
+};
+
+// The address group this property suggests places for, and which part of it
+// it is, when autocomplete is on.
+export function useAddressGroup(object: string | undefined, property: string): { group: AddressGroup; part: AddressPart } | null {
   const config = useAddressConfig(object);
   if (!config?.enabled) return null;
-  return config.groups.find((g) => g.object === object && g.street_1 === property) ?? null;
+  for (const group of config.groups) {
+    if (group.object !== object) continue;
+    const part = SEARCH_PARTS.find((k) => group[k] === property);
+    if (part) return { group, part };
+  }
+  return null;
 }
 
 // This object's address groups, whether or not autocomplete is on.
@@ -101,11 +124,13 @@ export function withAddressesTogether<P extends { api_name: string }>(props: P[]
 
 // ---- picked address → input values ----
 
-// The group's properties as input strings (PropertyInput's format). A
-// dropdown province or country takes the option whose value is Google's code
-// or whose label is its name; with no such option it is left as it is.
-// Street 2 is only set when Google has one (a typed suite stays otherwise).
-export function addressValues(group: AddressGroup, a: PlaceAddress, properties: Property[], fallbackStreet: string): Record<string, string> {
+// The group's properties a pick in the `part` box fills, as input strings
+// (PropertyInput's format). A dropdown province or country takes the option
+// whose value is Google's code or whose label is its name; with no such option
+// it is left as it is. Street 2 is only set when Google has one (a typed suite
+// stays otherwise). The picked box falls back to the suggestion's text when
+// Google's details have no value for it.
+export function addressValues(group: AddressGroup, a: PlaceAddress, properties: Property[], part: AddressPart, fallback: string): Record<string, string> {
   const out: Record<string, string> = {};
   const byName = (n?: string) => (n ? properties.find((p) => p.api_name === n && p.record_status === 'active') : undefined);
   const text = (n: string | undefined, v: string) => {
@@ -124,20 +149,25 @@ export function addressValues(group: AddressGroup, a: PlaceAddress, properties: 
     if (hit) out[p.api_name] = hit.api_value;
     else if (!code && !name) out[p.api_name] = '';
   };
-  out[group.street_1] = a.street_1 || fallbackStreet;
+  out[group.street_1] = a.street_1;
   if (a.street_2) text(group.street_2, a.street_2);
   text(group.city, a.city);
   text(group.postal_code, a.postal_code);
   choice(group.province, a.province_code, a.province_name, a.province_code);
   choice(group.country, a.country_code, a.country_name, a.country_name);
-  return out;
+  const own = group[part]!;
+  if (!out[own]) out[own] = fallback;
+  const keep = new Set(FILLS[part].map((k) => group[k]).filter(Boolean));
+  return Object.fromEntries(Object.entries(out).filter(([k]) => keep.has(k)));
 }
 
 // ---- the box ----
 
 const newSession = () => (crypto.randomUUID?.() ?? `${Date.now()}${Math.random()}`.replace(/\D/g, '')).replace(/-/g, '');
 
-export function AddressInput({ value, onChange, onPick, autoFocus, onFocus, onCommit, onBlur }: {
+export function AddressInput({ part = 'street_1', value, onChange, onPick, autoFocus, onFocus, onCommit, onBlur }: {
+  // the box's part of its group: what Google searches for
+  part?: AddressPart;
   value: string;
   onChange: (v: string) => void;
   // the picked address; the caller fills the group
@@ -162,7 +192,7 @@ export function AddressInput({ value, onChange, onPick, autoFocus, onFocus, onCo
   useEffect(() => {
     if (!typed.current) return;
     const q = value.trim();
-    if (q.length < 3) {
+    if (q.length < (part === 'province' || part === 'country' ? 2 : 3)) {
       setSuggestions([]);
       setOpen(false);
       return;
@@ -170,7 +200,7 @@ export function AddressInput({ value, onChange, onPick, autoFocus, onFocus, onCo
     const n = ++seq.current;
     const t = window.setTimeout(async () => {
       try {
-        const res = await api<{ suggestions: Suggestion[] }>('POST', '/v1/address/autocomplete', { query: q, session: session.current });
+        const res = await api<{ suggestions: Suggestion[] }>('POST', '/v1/address/autocomplete', { query: q, session: session.current, part });
         if (n !== seq.current) return;
         setSuggestions(res.suggestions);
         setActive(-1);
@@ -181,7 +211,7 @@ export function AddressInput({ value, onChange, onPick, autoFocus, onFocus, onCo
       }
     }, 250);
     return () => window.clearTimeout(t);
-  }, [value]);
+  }, [value, part]);
 
   useLayoutEffect(() => {
     if (!open) return;

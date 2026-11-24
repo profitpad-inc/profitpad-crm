@@ -1,15 +1,48 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Page, Grid, Stack, Row, Card, Stat, Table, Tabs, Badge, Button, Select, TextInput, TextArea, PhoneInput, Loading, ErrorBox, Empty,
+  Page, Grid, Stack, Row, Card, Stat, Table, Badge, Button, Select, TextInput, TextArea, PhoneInput, Loading, ErrorBox, Empty,
   useQuery, useParams, setParams, createRecord, updateRecord, associateRecords, openRecord, editLineItems,
   formatMoney, formatDate, formatNumber, type BadgeTone
 } from '@pcrm/view'
 
 // Quotations, as in Matt's app: a Quote Tracker (period buttons, totals, the
-// quotes of the period) and a New Quote builder in sections (details,
-// customer, line items through the CRM's own line items editor, kit BOM,
-// shipping and terms, notes, totals). Address params: tab (tracker | new),
-// period, quote (the quote open in the builder).
+// quotes of the period) and the quote builder in sections (details, customer,
+// line items through the CRM's own line items editor, kit BOM, shipping and
+// terms, notes, totals). Clicking a quote, or New Quote, opens the builder in a
+// panel beside the tracker (full screen below 900px; Escape closes).
+// Address params: period, quote (the quote open in the panel, or "new"). The
+// old tab=new links still open the panel.
+export const frame = 'fill'
+
+// The side panel layout, as in OEM Integrations and Partnerships, with a
+// wider panel because the builder is big.
+const CSS = `
+.sp-root { height: 100vh; }
+.sp-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.sp-layout.open { grid-template-columns: minmax(0, 1fr) min(780px, 58%); }
+.sp-main { min-height: 0; overflow-y: auto; padding: 2px; margin: -2px; }
+.sp-panel { min-height: 0; display: flex; flex-direction: column; background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+.sp-head { padding: 14px 18px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.sp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 24px; }
+.sp-foot { display: flex; gap: 8px; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.sp-foot .grow { flex: 1; min-width: 0; }
+.q-stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); }
+.q-field .v-input, .q-field .v-phone { width: 100%; box-sizing: border-box; }
+.q-field .v-phone .v-input { width: auto; flex: 1; }
+.q-field .v-phone .phone-country { flex: none; }
+@media (max-width: 900px) {
+  .sp-layout.open { grid-template-columns: minmax(0, 1fr); }
+  .sp-panel { position: fixed; inset: 0; z-index: 40; border: 0; border-radius: 0; }
+}
+`
+
+function useEscape(onClose) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.flatpickr-calendar.open, .select-menu')) onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+}
 
 const PERIODS = [
   { key: 'this_month', label: 'This Month' },
@@ -55,6 +88,8 @@ function periodRange(key) {
 const money = (v, cur) => (v == null ? '--' : formatMoney(v, cur || 'USD'))
 const num = (v) => (v === '' || v == null || !isFinite(Number(v)) ? null : Number(v))
 const str = (v) => (v == null ? '' : String(v))
+// a form's values as one comparable string (strings trimmed), for "has anything changed"
+const norm = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])))
 // what the quote's own discount takes off the lines' total (never more than it)
 function discountOff(type, value, subtotal) {
   if (!value || (type !== 'percent' && type !== 'amount')) return 0
@@ -86,7 +121,7 @@ function Field({ label, children, wide = false }) {
 
 // ---- Quote Tracker ----------------------------------------------------------------
 
-function Tracker({ params }) {
+function Tracker({ params, open }) {
   const period = params.period || 'this_year'
   const quotes = useQuery('quotes')
   const range = periodRange(period)
@@ -107,20 +142,21 @@ function Tracker({ params }) {
             <Button key={p.key} small variant={period === p.key ? 'primary' : undefined} onClick={() => setParams({ period: p.key === 'this_year' ? '' : p.key })}>{p.label}</Button>
           ))}
         </Row>
-        <Button small variant="primary" onClick={() => setParams({ tab: 'new', quote: '' })}>+ New Quote</Button>
+        <Button small variant="primary" onClick={() => setParams({ quote: 'new' })}>+ New Quote</Button>
       </Row>
-      <Grid columns={4}>
+      <div className="q-stats">
         <Stat label="Total quotes" value={formatNumber(shown.length)} />
         <Stat label="Total value" value={formatMoney(total, 'USD')} tone="money" />
         <Stat label="Awarded" value={formatNumber(awarded)} hint="Accepted by the customer" />
         <Stat label="Sent to customer" value={formatNumber(sent)} />
-      </Grid>
+      </div>
       <Card title={`Quotes, ${label} (${shown.length})`}>
         <Table
           loading={quotes.loading}
           error={quotes.error}
           rows={shown}
-          onRowClick={(r) => setParams({ tab: 'new', quote: r.id })}
+          onRowClick={(r) => setParams({ quote: r.id })}
+          selected={(r) => r.id === open}
           defaultSort={{ key: 'created_at', direction: 'desc' }}
           empty="No quotes found for this period."
           columns={[
@@ -151,8 +187,8 @@ const BLANK = {
   discount_type: 'none', discount_value: ''
 }
 
-function Builder({ params }) {
-  const editing = params.quote || ''
+function Builder({ open, onClose }) {
+  const editing = open === 'new' ? '' : open
   const quote = useQuery('quote', { id: editing }, { enabled: !!editing })
   const lines = useQuery('lines', { id: editing }, { enabled: !!editing })
   const companies = useQuery('companies')
@@ -167,6 +203,13 @@ function Builder({ params }) {
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState('')
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }))
+  // Save stays greyed out until something changed (since the form loaded or last saved)
+  const [start, setStart] = useState(null)
+  const ready = !editing || loadedFor === editing
+  useEffect(() => { setStart(null) }, [loadedFor, editing])
+  useEffect(() => { if (start === null && ready) setStart(norm(f)) }, [start, ready, f])
+  const dirty = start !== null && norm(f) !== start
+  useEscape(onClose)
   const opts = (prop) => options.data.filter((o) => o.property === prop).map((o) => ({ value: o.api_value, label: o.label }))
 
   // an existing quote fills the form once it has loaded (and its contact's details)
@@ -285,6 +328,7 @@ function Builder({ params }) {
         setLoadedFor(id)
         await setParams({ quote: id })
       } else quote.refresh()
+      setStart(null)
       await after?.(id)
     } catch (e) {
       setError(e.message)
@@ -303,13 +347,36 @@ function Builder({ params }) {
     if (res?.saved) setNotice('Line items saved.')
   })
 
-  if (editing && quote.loading && !q) return <Loading />
-  if (editing && !quote.loading && !q) return <Empty>This quote was not found. It may have been archived.</Empty>
   const cur = f.currency || 'USD'
+  const statusLabel = opts('status').find((o) => o.value === f.status)?.label
+  const head = (
+    <header className="sp-head">
+      <div style={{ minWidth: 0 }}>
+        <Row gap={8} align="center">
+          <h2 style={{ fontSize: 18, overflowWrap: 'anywhere' }}>{editing ? (f.name.trim() || q?.name || 'Quote') : 'New quote'}</h2>
+          {editing && statusLabel && <Badge tone={STATUS_TONE[f.status]}>{statusLabel}</Badge>}
+        </Row>
+        {editing && q?.customer && <div className="small muted" style={{ marginTop: 2 }}>{q.customer}</div>}
+      </div>
+      <Row gap={6} wrap={false}>
+        {editing && <Button small onClick={() => openRecord('quotes', editing)}>Open record</Button>}
+        <Button small onClick={onClose} aria-label="Close panel">✕</Button>
+      </Row>
+    </header>
+  )
+  if (editing && !q) {
+    return (
+      <section className="sp-panel" role="region" aria-label="Quote">
+        {head}
+        <div className="sp-body">{quote.loading ? <Loading /> : <Empty>This quote was not found. It may have been archived.</Empty>}</div>
+      </section>
+    )
+  }
 
   return (
-    <Card>
-      <style>{'.q-field .v-input, .q-field .v-phone { width: 100%; box-sizing: border-box; } .q-field .v-phone .v-input { width: auto; flex: 1; } .q-field .v-phone .phone-country { flex: none; }'}</style>
+    <section className="sp-panel" role="region" aria-label={editing ? `Quote ${f.name || ''}` : 'New quote'}>
+      {head}
+      <div className="sp-body">
       <Stack gap={20}>
         <Section title="Quote details">
           <Grid columns={4}>
@@ -428,31 +495,32 @@ function Builder({ params }) {
           </div>
         </Row>
 
-        {error && <ErrorBox error={error} />}
-        {notice && <div className="small" style={{ color: 'var(--money)', textAlign: 'right' }}>{notice}</div>}
-        <Row gap={8} wrap style={{ justifyContent: 'flex-end' }}>
-          <Button disabled={busy} onClick={() => setParams({ tab: '', quote: '' })}>Cancel</Button>
-          <Button disabled={busy || !customerOk} onClick={() => run(() => setNotice(editing ? 'Saved.' : 'Draft saved.'))}>{busy ? 'Saving…' : editing ? 'Save' : 'Save draft'}</Button>
-          <Button variant="primary" disabled={busy || !customerOk} onClick={() => run((id) => openRecord('quotes', id))}>Save & open quote (PDF, send)</Button>
-        </Row>
       </Stack>
-    </Card>
+      </div>
+      <footer className="sp-foot">
+        <div className="grow">
+          {error ? <ErrorBox error={error} /> : notice ? <span className="small" style={{ color: 'var(--money)' }}>{notice}</span> : !customerOk ? <span className="small muted">Pick the customer organization to save.</span> : null}
+        </div>
+        <Button disabled={busy} onClick={onClose}>Cancel</Button>
+        <Button disabled={busy || !customerOk || (!!editing && !dirty)} onClick={() => run(() => setNotice(editing ? 'Saved.' : 'Draft saved.'))}>{busy ? 'Saving…' : editing ? 'Save' : 'Save draft'}</Button>
+        <Button variant="primary" disabled={busy || !customerOk} onClick={() => run((id) => openRecord('quotes', id))}>Save & open quote (PDF, send)</Button>
+      </footer>
+    </section>
   )
 }
 
 export default function Quotations() {
   const params = useParams()
-  const tab = params.tab === 'new' ? 'new' : 'tracker'
+  // the old tab=new links open the panel (an empty builder, or the quote named)
+  const open = params.quote || (params.tab === 'new' ? 'new' : '')
+  const close = useCallback(() => setParams({ quote: '', tab: '' }), [])
   return (
-    <Page title="Quotations" subtitle="Build, export, and track product quotations">
-      <Stack gap={12}>
-        <Tabs
-          tabs={[{ key: 'tracker', label: 'Quote Tracker' }, { key: 'new', label: params.quote ? 'Edit Quote' : 'New Quote' }]}
-          value={tab}
-          onChange={(k) => setParams({ tab: k === 'tracker' ? '' : k, quote: k === 'tracker' ? '' : params.quote })}
-        />
-        {tab === 'tracker' ? <Tracker params={params} /> : <Builder params={params} />}
-      </Stack>
+    <Page className="sp-root" title="Quotations" subtitle="Build, export, and track product quotations">
+      <style>{CSS}</style>
+      <div className={open ? 'sp-layout open' : 'sp-layout'}>
+        <div className="sp-main"><Tracker params={params} open={open} /></div>
+        {open && <Builder open={open} onClose={close} />}
+      </div>
     </Page>
   )
 }

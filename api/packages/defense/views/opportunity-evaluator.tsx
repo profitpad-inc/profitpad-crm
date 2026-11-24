@@ -457,8 +457,8 @@ function Evaluator({ params, products, cats }) {
         <Stack gap={12}>
           {inbox.data.length > 0 && (
             <Field label="From the lead inbox (optional)">
-              <Select value={leadId} onChange={pickLead} placeholder="Leads pushed to the evaluator"
-                options={[{ value: '', label: 'None: a new opportunity' }, ...inbox.data.map((l) => ({ value: l.id, label: [l.name, l.agency].filter(Boolean).join(' · ') }))]} />
+              <Select value={leadId} onChange={pickLead} placeholder="None: a new opportunity"
+                options={[...inbox.data.map((l) => ({ value: l.id, label: [l.name, l.agency].filter(Boolean).join(' · ') }))]} />
             </Field>
           )}
           <Field label="Select category *">

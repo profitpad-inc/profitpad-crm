@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addressFrom, suggestionsFrom } from './address.js';
+import { addressFrom, autocompleteBody, searchPart, suggestionsFrom } from './address.js';
 
 // Shapes are Google Places (New) responses, as the n8n flow "Test CRM: address autocomplete" handled them.
 
@@ -42,4 +42,14 @@ test('suggestions: at most six, place predictions only', () => {
   assert.equal(s.length, 6);
   assert.deepEqual(s[0], { place_id: 'ChIJ1xxxxxxxx', main: '1 Main St', secondary: 'Toronto, ON', label: '1 Main St, Toronto' });
   assert.deepEqual(suggestionsFrom({}), []);
+});
+
+test('each box searches its own kind of place', () => {
+  assert.deepEqual(autocompleteBody('90210', ['US'], undefined, 'postal_code'), { input: '90210', includedPrimaryTypes: ['postal_code'], includedRegionCodes: ['us'] });
+  assert.deepEqual(autocompleteBody('Otta', [], 'abcdefgh', 'city'), { input: 'Otta', includedPrimaryTypes: ['(cities)'], sessionToken: 'abcdefgh' });
+  assert.deepEqual(autocompleteBody('1 Main', []), { input: '1 Main' });
+  assert.equal(searchPart('country'), 'country');
+  assert.equal(searchPart('street_2'), 'street_1');
+  assert.equal(searchPart('__proto__'), 'street_1');
+  assert.equal(searchPart(undefined), 'street_1');
 });

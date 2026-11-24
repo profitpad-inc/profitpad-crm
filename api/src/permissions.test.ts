@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hasPermission, recordFilter, type ObjectPermission, type Permissions, type Principal } from './auth.js';
+import { hasPermission, optionChangeByEditor, recordFilter, type ObjectPermission, type Permissions, type Principal } from './auth.js';
 import { normalizeObjectSwitches } from './routes/admin.js';
 import type { ObjectDef } from './registry.js';
 
@@ -80,4 +80,17 @@ test('object switches: all includes own, changes include read', () => {
   assert.deepEqual(normalizeObjectSwitches({ ...off, can_delete_all: true }), { ...off, can_read: true, can_delete: true, can_read_all: true, can_delete_all: true });
   assert.deepEqual(normalizeObjectSwitches({ ...off, can_create: true }), { ...off, can_read: true, can_create: true });
   assert.deepEqual(normalizeObjectSwitches({ ...off, can_read_all: true }), { ...off, can_read: true, can_read_all: true });
+});
+
+test('optionChangeByEditor: editors manage choices only on user-add dropdowns, label and archiving only', () => {
+  const folder = { type: 'dropdown', options: { single_value: true, allow_user_add: true }, option_list: null } as const;
+  assert.equal(optionChangeByEditor(folder, ['api_value', 'label']), null);
+  assert.equal(optionChangeByEditor(folder, ['label']), null);
+  assert.equal(optionChangeByEditor(folder, ['record_status']), null);
+  assert.match(optionChangeByEditor(folder, ['label', 'color'])!, /not color/);
+  assert.match(optionChangeByEditor(folder, ['display_order'])!, /not display_order/);
+  assert.match(optionChangeByEditor({ ...folder, options: { single_value: true } }, ['label'])!, /may not add/);
+  assert.match(optionChangeByEditor({ ...folder, options: { allow_user_add: true, auto_append_users: true } }, ['label'])!, /lists users/);
+  assert.match(optionChangeByEditor({ ...folder, option_list: { id: '1', api_name: 'x', label: 'X' } }, ['label'])!, /option list/);
+  assert.match(optionChangeByEditor({ ...folder, type: 'text' }, ['label'])!, /not a dropdown/);
 });

@@ -126,6 +126,15 @@ export const linkRecords = associateRecords;
 // the view, for a record with line items (deals, quotes, invoices, ...).
 // Resolves when the viewer closes it: saved says whether lines were saved.
 export const editLineItems = (object: string, id: string) => call<{ saved: boolean }>('editLineItems', [object, id]);
+// Choices of a dropdown that lets users add them (allow_user_add, like a
+// library's Folder): anyone who may edit the object's records may add, rename
+// and archive them; other dropdowns need an admin. addOption makes the
+// internal value from the label unless one is given, and resolves with it.
+export const addOption = (object: string, property: string, label: string, value?: string) =>
+  call<{ value: string; label: string }>('addOption', [object, property, label, value ?? null]);
+export const renameOption = (object: string, property: string, value: string, label: string) => call<void>('updateOption', [object, property, value, { label }]);
+// archived: no longer offered, but records keep the value until changed
+export const archiveOption = (object: string, property: string, value: string) => call<void>('updateOption', [object, property, value, { record_status: 'archived' }]);
 // Sends data to an integration an admin set up (an n8n webhook, say); the
 // API makes the request and resolves with the endpoint's answer.
 export const callIntegration = <T = unknown>(key: string, data?: unknown) => call<{ status: number; data: T }>('callIntegration', [key, data ?? null]);
@@ -682,7 +691,8 @@ export function Select({ value, onChange, options, placeholder, small, style, cl
       style={style}
       value={value}
       onChange={onChange}
-      options={placeholder !== undefined ? [{ value: '', label: placeholder }, ...options] : options}
+      // the placeholder is the empty choice, unless the view lists its own ("All regions")
+      options={placeholder !== undefined && !options.some((o) => o.value === '') ? [{ value: '', label: placeholder }, ...options] : options}
     />
   );
 }

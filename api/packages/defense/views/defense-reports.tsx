@@ -248,7 +248,7 @@ function TradeShow({ params }) {
         <div className="small muted">Prioritized contact follow-up plan from Trade Show Mode in the Card Scanner.</div>
         <Row gap={6} wrap>
           <Select small value={params.event || ''} placeholder="All events" style={{ minWidth: 'min(220px, 100%)' }}
-            options={[{ value: '', label: 'All events' }, ...events.data.map((e) => ({ value: e.id, label: `${e.name}${e.start_at ? ` (${formatDate(e.start_at)})` : ''}` }))]}
+            options={[...events.data.map((e) => ({ value: e.id, label: `${e.name}${e.start_at ? ` (${formatDate(e.start_at)})` : ''}` }))]}
             onChange={(v) => setParams({ event: v })} />
           <Button small variant="primary" onClick={() => navigate('/scan')}>Scan a card</Button>
         </Row>

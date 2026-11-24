@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
-import { propertyAccess, requirePropertyChange, requireScope, type Principal } from '../auth.js';
+import { optionChangeByEditor, propertyAccess, requireObjectPermission, requirePropertyChange, requireScope, type Principal } from '../auth.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
 import { createForm } from '../native-ui.js';
 import { ICON_NAMES } from '../icons.js';
@@ -147,12 +147,29 @@ function pickDetails(b: OptionDetails): Record<string, unknown> | null {
   return Object.keys(out).length ? out : null;
 }
 
+// Choices of a dropdown are a property change (the Properties permission),
+// except on dropdowns that let users add choices (allow_user_add, like a
+// library's Folder): there anyone who may edit the object's records may add,
+// rename and archive choices, and nothing else about them (optionChangeByEditor).
+function requireOptionChange(p: Principal, obj: ObjectDef, prop: PropertyDef, b: object) {
+  try {
+    requirePropertyChange(p);
+    return;
+  } catch (err) {
+    const why = p.permissions ? optionChangeByEditor(prop, Object.keys(b).filter((k) => (b as Record<string, unknown>)[k] !== undefined)) : 'not a user';
+    if (why !== null) throw err;
+    requireScope(p, 'write');
+    requireObjectPermission(p, obj, 'edit');
+    if (propertyAccess(p, prop) !== 'full') throw err;
+  }
+}
+
 export async function addOption(
   p: Principal, objectKey: string, name: string,
   b: { api_value: string; label: string; display_order?: number; description?: string } & OptionDetails, source?: string
 ) {
-  requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
+  requireOptionChange(p, obj, prop, b);
   const details = pickDetails(b);
   await withTx({ principal: p, source }, async (c) => {
     await c.query('select meta.add_option($1, $2, $3, $4, $5, $6)', [obj.object_type_id, prop.api_name, b.api_value, b.label, b.display_order ?? null, b.description ?? null]);
@@ -165,8 +182,8 @@ export async function updateOption(
   p: Principal, objectKey: string, name: string, value: string,
   b: { label?: string; display_order?: number; description?: string; record_status?: 'active' | 'archived' } & OptionDetails, source?: string
 ) {
-  requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
+  requireOptionChange(p, obj, prop, b);
   const details = pickDetails(b);
   await withTx({ principal: p, source }, async (c) => {
     if (b.label !== undefined || b.display_order !== undefined || b.description !== undefined || b.record_status !== undefined || !details) {

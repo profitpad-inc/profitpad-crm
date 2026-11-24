@@ -113,29 +113,43 @@ export function Select({ value: raw, onChange, options, children, id, className,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const onBlurRef = useRef(onBlur);
+  onBlurRef.current = onBlur;
+
   useEffect(() => {
     if (!open) return;
     if (searchable) searchRef.current?.focus();
+    // Closing the list removes the search box; if focus was in it, it vanishes
+    // without a blur event, so `leave` never runs. Hand focus back to the button
+    // instead, or, for a click outside, treat it as leaving the whole dropdown.
+    const focusInList = () => !!popRef.current?.contains(document.activeElement);
+    const dismiss = () => {
+      if (focusInList()) faceRef.current?.focus();
+      close();
+    };
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (!faceRef.current?.contains(t) && !popRef.current?.contains(t)) close();
+      if (faceRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      const wasInList = focusInList();
+      close();
+      if (wasInList) onBlurRef.current?.();
     };
     const onScroll = (e: Event) => {
-      if (!popRef.current?.contains(e.target as Node)) close();
+      if (!popRef.current?.contains(e.target as Node)) dismiss();
     };
     // a click inside an iframe never reaches mousedown above; the window
     // loses focus to the frame instead (same as lib/frame-focus.ts)
-    const onBlur = () => setTimeout(() => {
+    const onWindowBlur = () => setTimeout(() => {
       if (document.activeElement instanceof HTMLIFrameElement) close();
     });
     document.addEventListener('mousedown', onDown);
-    window.addEventListener('blur', onBlur);
-    window.addEventListener('resize', close);
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('resize', dismiss);
     window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
-      window.removeEventListener('blur', onBlur);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('resize', dismiss);
       window.removeEventListener('scroll', onScroll, true);
     };
   }, [open, searchable]);

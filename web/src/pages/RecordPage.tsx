@@ -996,6 +996,29 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     };
   });
 
+  // A row opens for the row the mouse went down on, not the one it comes up
+  // on: pressing on another row closes the open editor first (blur, or the
+  // click-outside above), the list shrinks, and the row under the mouse moves
+  // away before the button comes up, so a plain click would never reach it.
+  const pressed = useRef<Property | null>(null);
+  const startRef = useRef(start);
+  startRef.current = start;
+  useEffect(() => {
+    const onUp = () => {
+      const p = pressed.current;
+      pressed.current = null;
+      // dragging to select a value's text is not a request to edit it
+      if (p && !window.getSelection()?.toString()) startRef.current(p);
+    };
+    document.addEventListener('mouseup', onUp);
+    return () => document.removeEventListener('mouseup', onUp);
+  }, []);
+  const press = (p: Property) => (e: React.MouseEvent) => {
+    if (e.button !== 0 || editing === p.api_name) return;
+    if ((e.target as HTMLElement).closest('.prop-tools, button, a, input, textarea')) return;
+    pressed.current = p;
+  };
+
   const section = (key: string, title: string, props: Property[]) => {
     const open = !closed[key];
     const Chevron = open ? ChevronDown : ChevronRight;
@@ -1016,7 +1039,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   // showLock: mark properties nobody can edit here (calculations, read-only),
   // in the main section only; System is all set by the CRM
   const row = (p: Property, showLock: boolean) => (
-    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}${flash?.has(p.api_name) && editing !== p.api_name ? ' live-changed' : ''}`} onClick={() => editing !== p.api_name && start(p)}>
+    <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}${flash?.has(p.api_name) && editing !== p.api_name ? ' live-changed' : ''}`} onMouseDown={press(p)}>
       <div className="prop-label">
         <span>{p.label}</span>
         {editing !== p.api_name && (

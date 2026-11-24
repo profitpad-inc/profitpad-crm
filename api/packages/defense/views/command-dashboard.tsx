@@ -229,7 +229,7 @@ export default function CommandDashboard() {
   return (
     <Page title="Command dashboard" subtitle={`Defense pipeline${regionLabel ? ` in ${regionLabel}` : ''} · amounts in ${base}`}
       actions={<Row gap={6}>
-        <Select small value={params.region || ''} placeholder="All regions" options={[{ value: '', label: 'All regions' }, ...regions.data.map((r) => ({ value: r.api_value, label: r.label }))]} onChange={(v) => setParams({ region: v })} />
+        <Select small value={params.region || ''} placeholder="All regions" options={[...regions.data.map((r) => ({ value: r.api_value, label: r.label }))]} onChange={(v) => setParams({ region: v })} />
         <Button small onClick={() => navigate('/view/#defense-pipeline')}>Pipeline</Button>
       </Row>}>
       <Stack gap={12}>

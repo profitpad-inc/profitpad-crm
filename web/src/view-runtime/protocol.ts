@@ -29,7 +29,9 @@ type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'cre
   // the CRM's own line items editor over a deal, quote, invoice, ... (a change: asked like createRecord)
   | 'editLineItems'
   // the old name of associateRecords, from a frame loaded before the rename
-  | 'linkRecords';
+  | 'linkRecords'
+  // choices of a dropdown that lets users add them (a library's folders): add, rename, archive (a change: asked like createRecord)
+  | 'addOption' | 'updateOption';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

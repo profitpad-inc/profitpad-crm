@@ -220,8 +220,23 @@ export function addressFrom(res: any): PlaceAddress {
   };
 }
 
-const autocompleteBody = (query: string, countries: string[], session?: string) => ({
+// Which box is being typed in. The street box searches every address; the
+// others search only places of their own kind, so a postal code box suggests
+// postal codes and a city box cities.
+export type SearchPart = 'street_1' | 'city' | 'province' | 'postal_code' | 'country';
+const PRIMARY_TYPES: Record<SearchPart, string[] | null> = {
+  street_1: null,
+  city: ['(cities)'],
+  province: ['administrative_area_level_1'],
+  postal_code: ['postal_code'],
+  country: ['country']
+};
+export const searchPart = (v: unknown): SearchPart =>
+  typeof v === 'string' && Object.hasOwn(PRIMARY_TYPES, v) ? (v as SearchPart) : 'street_1';
+
+export const autocompleteBody = (query: string, countries: string[], session?: string, part: SearchPart = 'street_1') => ({
   input: query,
+  ...(PRIMARY_TYPES[part] ? { includedPrimaryTypes: PRIMARY_TYPES[part] } : {}),
   ...(countries.length ? { includedRegionCodes: countries.map((c) => c.toLowerCase()) } : {}),
   ...(session ? { sessionToken: session } : {})
 });
@@ -267,15 +282,18 @@ export async function addressRoutes(app: FastifyInstance) {
     return { enabled: s.enabled && !!s.key, groups: await liveGroups(s.groups ?? DEFAULT_GROUPS) };
   });
 
-  app.post<{ Body: { query?: unknown; session?: unknown } }>('/v1/address/autocomplete', async (req) => {
+  // part: the box being typed in (street_1, city, province, postal_code,
+  // country); street_1 when left out.
+  app.post<{ Body: { query?: unknown; session?: unknown; part?: unknown } }>('/v1/address/autocomplete', async (req) => {
     const p = req.principal!;
     requireScope(p, 'write');
+    const part = searchPart(req.body?.part);
     const query = typeof req.body?.query === 'string' ? req.body.query.trim().slice(0, 200) : '';
-    if (query.length < 3) return { suggestions: [] };
+    if (query.length < (part === 'province' || part === 'country' ? 2 : 3)) return { suggestions: [] };
     const s = await loadSettings();
     if (!s.enabled || !s.key) throw new ApiError(503, 'Address autocomplete is not set up.', 'address_autocomplete_off');
     try {
-      const res = await google(s.key, '/places:autocomplete', { method: 'POST', body: autocompleteBody(query, s.countries, cleanSession(req.body?.session)) });
+      const res = await google(s.key, '/places:autocomplete', { method: 'POST', body: autocompleteBody(query, s.countries, cleanSession(req.body?.session), part) });
       return { suggestions: suggestionsFrom(res) };
     } catch (err) {
       if (err instanceof GoogleError) throw new ApiError(502, `Google Places: ${err.message}`, 'google_places_error');

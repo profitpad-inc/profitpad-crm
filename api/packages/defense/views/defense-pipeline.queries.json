@@ -6,15 +6,22 @@
   "base": "select code from currencies where is_base",
   "detail_contacts": {
     "sql": "select distinct ct.pc_0010_id as id, ct.name, ct.job_title, ct.email, ct.phone, a.label from associations a join contacts ct on ct.pc_0010_id = a.other_record_id where a.object = 'deals' and a.other_object = 'contacts' and a.record_id = :deal order by ct.name",
-    "params": { "deal": "text" }
+    "params": {
+      "deal": "text"
+    }
   },
   "detail_stage_since": {
     "sql": "select h.changed_at from property_history h where h.object = 'deals' and h.property = 'stage' and h.record_id = :deal order by h.changed_at desc, h.history_id desc limit 1",
-    "params": { "deal": "text" }
+    "params": {
+      "deal": "text"
+    }
   },
   "detail_escalations": {
     "sql": "select e.{{id:escalations}} as id, e.name, e.status, e.status__label as status_label, e.roadblocks__label as roadblocks, e.created_at from associations a join escalations e on e.{{id:escalations}} = a.other_record_id where a.object = 'deals' and a.other_object = 'escalations' and a.record_id = :deal order by e.created_at desc",
-    "params": { "deal": "text" }
+    "params": {
+      "deal": "text"
+    }
   },
-  "roadblocks": "select api_value, label from property_options where object_type_id = '{{code:escalations}}' and property = 'roadblocks' and record_status = 'active' order by display_order"
+  "roadblocks": "select api_value, label from property_options where object_type_id = '{{code:escalations}}' and property = 'roadblocks' and record_status = 'active' order by display_order",
+  "companies": "select c.pc_0011_id as id, c.name from companies c where c.name is not null order by c.name limit 2000"
 }

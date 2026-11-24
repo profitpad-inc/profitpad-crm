@@ -137,12 +137,12 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit, 
   property: Property; value: string; onChange: (v: string) => void; autoFocus?: boolean; onCommit?: (value?: string) => void;
   // the object's api_name, for per-object rules such as no past quote expiration dates
   object?: string;
-  // Street boxes of an address group (Settings → Address autocomplete) suggest
-  // addresses; picking one calls this with every property of the group as
+  // Text boxes of an address group (Settings → Address autocomplete) suggest
+  // places; picking one calls this with the group's properties it fills as
   // input strings, this one included. Without it the box is a plain input.
   onFill?: (values: Record<string, string>) => void;
 }) {
-  const addressGroup = useAddressGroup(onFill ? object : undefined, property.api_name);
+  const address = useAddressGroup(onFill ? object : undefined, property.api_name);
   const t = valueType(property);
   const selectAll = autoFocus ? (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => e.currentTarget.select() : undefined;
   const keyDown = (e: React.KeyboardEvent) => {
@@ -193,18 +193,19 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit, 
   if (t === 'date' || t === 'datetime') {
     return <DatePicker value={value} onChange={onChange} withTime={t === 'datetime'} autoFocus={autoFocus} onCommit={onCommit} noPastDays={noPastDays(object, property)} />;
   }
-  if (addressGroup && onFill && object && property.type === 'text') {
+  if (address && onFill && object && property.type === 'text') {
     return (
       <AddressInput
+        part={address.part}
         value={value}
         onChange={onChange}
         autoFocus={autoFocus}
         onFocus={selectAll}
         onCommit={onCommit ? () => onCommit() : undefined}
         onBlur={blur}
-        onPick={async (address, s) => {
+        onPick={async (picked, s) => {
           const schema = await getSchema(object);
-          onFill(addressValues(addressGroup, address, schema.properties, s.main));
+          onFill(addressValues(address.group, picked, schema.properties, address.part, s.main));
         }}
       />
     );

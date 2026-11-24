@@ -465,6 +465,19 @@ export function requirePropertyChange(p: Principal): void {
 // Every permission the caller has (for /v1/me)
 export const grantedPermissions = (p: Principal): RolePermission[] => ROLE_PERMISSIONS.filter((x) => hasPermission(p, x, { write: false }));
 
+// Why someone who may only edit records cannot change this dropdown's
+// choices with these fields, or null when they can: the dropdown lets users
+// add choices (allow_user_add), does not list users or share an option list,
+// and only the label, the internal value (adding) and archiving change.
+export function optionChangeByEditor(prop: Pick<PropertyDef, 'type' | 'options' | 'option_list'>, fields: string[]): string | null {
+  if (prop.type !== 'dropdown') return 'not a dropdown';
+  if (prop.options.allow_user_add !== true) return 'users may not add choices to this dropdown';
+  if (prop.options.auto_append_users === true) return 'this dropdown lists users';
+  if (prop.option_list) return 'this dropdown shares an option list';
+  const extra = fields.filter((f) => !['api_value', 'label', 'record_status'].includes(f));
+  return extra.length ? `only the label and archiving: not ${extra.join(', ')}` : null;
+}
+
 export function propertyAccess(p: Principal, prop: PropertyDef): 'full' | 'read_only' | 'hidden' {
   if (!p.permissions) return 'full';
   return p.permissions.propertyAccess.get(prop.pc_0002_id) ?? 'full';

@@ -66,6 +66,8 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .tone-muted { color: var(--muted-text); }
 
 .v-table-wrap { overflow: auto; margin: 0 -14px -12px; }
+/* a table that opens a card with no title starts at the card's top edge, not below its padding */
+.v-card > .v-table-wrap:first-child { margin-top: -12px; border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0; }
 .v-table { width: 100%; border-collapse: collapse; }
 .v-table th { position: sticky; top: 0; background: var(--surface); color: var(--muted-text); font-size: 12px; font-weight: 600; padding: 7px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .v-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }

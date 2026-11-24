@@ -86,7 +86,7 @@ export function AddressSettings() {
     }
   }
 
-  const description = 'Street boxes suggest addresses from Google Maps as people type. Picking one fills in the rest of the address: street 2, city, state or province, postal code and country.';
+  const description = 'Address boxes suggest places from Google Maps as people type. Picking a street fills in the rest of the address. The city, state or province, postal code and country boxes suggest places of their own kind, and picking one fills in that box and the broader parts (a postal code fills the state or province and the country). Street 2 stays a plain box.';
   if (!state || !draft) {
     return <SettingsPage title="Address autocomplete" description={description}>{error ? <div className="error">{error}</div> : <TableSkeleton rows={3} />}</SettingsPage>;
   }

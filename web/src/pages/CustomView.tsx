@@ -52,7 +52,7 @@ function parseHash(hash: string): { slug: string; params: Params } {
 type Ask = { title: string; lines: string[] };
 
 // What a view asks to change, in words for the confirmation (values cut short)
-function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'associateRecords' | 'uploadFile' | 'editLineItems', args: unknown[]): Ask {
+function describeChange(label: (o: string) => string, method: 'createRecord' | 'updateRecord' | 'associateRecords' | 'uploadFile' | 'editLineItems' | 'addOption' | 'updateOption', args: unknown[]): Ask {
   const short = (v: unknown) => {
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 79) + '…' : s;
@@ -67,6 +67,11 @@ function describeChange(label: (o: string) => string, method: 'createRecord' | '
   }
   const obj = String(args[0] ?? '');
   if (method === 'editLineItems') return { title: `Edit the line items of ${label(obj)} record ${String(args[1] ?? '')}`, lines: ['in the line items editor, where you see each change before saving'] };
+  if (method === 'addOption') return { title: `Add a choice to ${String(args[1] ?? '')} on ${label(obj)}`, lines: [short(args[2])] };
+  if (method === 'updateOption') {
+    const b = (args[3] ?? {}) as { label?: unknown; record_status?: unknown };
+    return { title: `Change a choice of ${String(args[1] ?? '')} on ${label(obj)}`, lines: [String(args[2] ?? ''), b.record_status === 'archived' ? 'archive it' : `label: ${short(b.label)}`] };
+  }
   if (method === 'createRecord') return { title: `Create a record in ${label(obj)}`, lines: props(args[1]) };
   if (method === 'updateRecord') return { title: `Change ${label(obj)} record ${String(args[1] ?? '')}`, lines: props(args[2]) };
   return { title: 'Associate two records', lines: [`${label(obj)} ${String(args[1] ?? '')}`, `with ${label(String(args[2] ?? ''))} ${String(args[3] ?? '')}`] };
@@ -416,6 +421,8 @@ export function CustomView() {
       case 'uploadFile':
       case 'createRecord':
       case 'updateRecord':
+      case 'addOption':
+      case 'updateOption':
       case 'associateRecords':
       case 'linkRecords': {
         if (method === 'uploadFile') {
@@ -463,6 +470,31 @@ export function CustomView() {
         const id = await uploadFile(file, target, (fraction) => send({ type: 'pcrm:progress', id: callId, fraction }));
         const [info] = await fileInfo([id]);
         return info ? asViewFile(info) : { id, name, mime_type: file.type || null, size_bytes: file.size };
+      }
+      case 'addOption': {
+        const label = typeof args[2] === 'string' ? args[2].trim() : '';
+        if (!label) throw new Error('addOption needs a label');
+        const base = `/v1/schema/${str(args[0], 'object')}/properties/${str(args[1], 'property')}`;
+        let value = typeof args[3] === 'string' && args[3] ? args[3] : '';
+        if (!value) {
+          // the internal value from the label, unused even among archived choices
+          const prop = await api<{ dropdown_options?: { api_value: string }[] }>('GET', base);
+          const taken = new Set((prop.dropdown_options ?? []).map((o) => o.api_value));
+          const stem = label.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 56) || 'choice';
+          value = stem;
+          for (let n = 2; taken.has(value); n++) value = `${stem}_${n}`;
+        }
+        await api('POST', `${base}/options`, { api_value: value, label });
+        return { value, label };
+      }
+      case 'updateOption': {
+        const b = (args[3] ?? {}) as { label?: unknown; record_status?: unknown };
+        const body: Record<string, unknown> = {};
+        if (typeof b.label === 'string' && b.label.trim()) body.label = b.label.trim();
+        if (b.record_status === 'archived' || b.record_status === 'active') body.record_status = b.record_status;
+        if (!Object.keys(body).length) throw new Error('updateOption takes { label } or { record_status }');
+        await api('PATCH', `/v1/schema/${str(args[0], 'object')}/properties/${str(args[1], 'property')}/options/${str(args[2], 'value')}`, body);
+        return undefined;
       }
       case 'associateRecords':
       case 'linkRecords':
