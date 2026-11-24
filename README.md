@@ -136,6 +136,8 @@ Installs apply new migrations on their own when they update. To apply them to a 
 git tag v1.4.0 && git push origin v1.4.0
 ```
 
+Do not create the release by hand (`gh release create`): the workflow's release job fails if one already exists. The full release and deploy checklist is in `AGENTS.md`.
+
 To try local changes in the full setup, build the images yourself (`docker build -t ghcr.io/profitpad-inc/profitpad-crm-api:dev api`, likewise `web`, `db` as `-migrate` and `deploy/renderer` as `-renderer`) and set `PCRM_VERSION=dev` in an install's `.env`.
 
 ## ProfitPad's own server
