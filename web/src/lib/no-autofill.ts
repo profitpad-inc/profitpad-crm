@@ -38,6 +38,21 @@ export function installNoAutofill(): void {
   if (typeof document === 'undefined' || (window as { __noAutofill?: boolean }).__noAutofill) return;
   (window as { __noAutofill?: boolean }).__noAutofill = true;
 
+  // The observer below runs a beat after a box is inserted, but React's autoFocus
+  // (click-to-edit cells) focuses it synchronously on mount, and password
+  // managers decide what to offer on that first focus. So tag a box right before
+  // it can take focus: when code calls .focus(), and when focus lands on it.
+  for (const proto of [HTMLInputElement.prototype, HTMLTextAreaElement.prototype]) {
+    const focus = proto.focus;
+    proto.focus = function (this: HTMLElement, options?: FocusOptions) {
+      tag(this);
+      return focus.call(this, options);
+    };
+  }
+  window.addEventListener('focusin', (e) => {
+    if (e.target instanceof Element) tag(e.target);
+  }, true);
+
   const start = () => {
     tagTree(document.body);
     new MutationObserver((records) => {
