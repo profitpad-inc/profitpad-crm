@@ -83,6 +83,14 @@ function monthBounds(ym) {
   const last = new Date(Date.UTC(y, m, 0))
   return { from: first.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10), first, days: last.getUTCDate() }
 }
+// Deals open in the pipeline workspace and trips in Travel ops, each with the
+// record selected, rather than on their record pages.
+function dealHref(id) {
+  return `/view/#defense-pipeline?owner=me&mode=workspace&deal=${encodeURIComponent(id)}`
+}
+function tripHref(id) {
+  return `/view/#travel-ops?trip=${encodeURIComponent(id)}&when=all`
+}
 function shiftMonth(ym, by) {
   const [y, m] = ym.split('-').map(Number)
   const d = new Date(Date.UTC(y, m - 1 + by, 1))
@@ -98,9 +106,9 @@ function Calendar({ ym, all, me }) {
   const lead = b.first.getUTCDay()
   const cells = [...Array(lead).fill(null), ...Array.from({ length: b.days }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`)]
   const on = (day) => [
-    ...steps.data.filter((s) => s.day === day).map((s) => ({ key: 's' + s.id, color: 'var(--primary)', text: s.next_step || s.name, object: 'deals', id: s.id })),
-    ...tasks.data.filter((t) => t.day === day).map((t) => ({ key: 't' + t.id, color: '#d97706', text: t.name, object: 'tasks', id: t.id })),
-    ...trips.data.filter((t) => t.start_date <= day && t.end_date >= day).map((t) => ({ key: 'r' + t.id + day, color: '#0e9f6e', text: t.name, object: 'trips', id: t.id }))
+    ...steps.data.filter((s) => s.day === day).map((s) => ({ key: 's' + s.id, color: 'var(--primary)', text: s.next_step || s.name, href: dealHref(s.id) })),
+    ...tasks.data.filter((t) => t.day === day).map((t) => ({ key: 't' + t.id, color: '#d97706', text: t.name, href: `/objects/tasks/${t.id}` })),
+    ...trips.data.filter((t) => t.start_date <= day && t.end_date >= day).map((t) => ({ key: 'r' + t.id + day, color: '#0e9f6e', text: t.name, href: tripHref(t.id) }))
   ]
   const err = steps.error || tasks.error || trips.error
   return (
@@ -119,7 +127,7 @@ function Calendar({ ym, all, me }) {
             <div key={day ?? `x${i}`} style={{ minHeight: 64, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 4, background: day === today ? 'var(--surface)' : 'transparent', overflow: 'hidden' }}>
               {day && <div className="small figures" style={{ fontWeight: day === today ? 700 : 400 }}>{Number(day.slice(8))}</div>}
               {day && on(day).slice(0, 3).map((e) => (
-                <div key={e.key} onClick={() => navigate(`/objects/${e.object}/${e.id}`)} title={e.text}
+                <div key={e.key} onClick={() => navigate(e.href)} title={e.text}
                   style={{ fontSize: 11, lineHeight: 1.3, borderLeft: `3px solid ${e.color}`, paddingLeft: 4, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.text}</div>
               ))}
               {day && on(day).length > 3 && <div className="small muted">{`+${on(day).length - 3} more`}</div>}
@@ -206,7 +214,7 @@ function Home({ me, params }) {
             {overdue.map((d) => (
               <Row key={'d' + d.id} gap={6}>
                 <Badge tone="danger">Due {formatDate(d.next_step_date)}</Badge>
-                <span className="small">{d.next_step || 'Next step'} · <RecordLink object="deals" id={d.id}>{d.name}</RecordLink></span>
+                <span className="small">{d.next_step || 'Next step'} · <a className="v-link" href="#" onClick={(e) => { e.preventDefault(); navigate(dealHref(d.id)) }}>{d.name}</a></span>
               </Row>
             ))}
             {myTasks.loading ? <Loading /> : myTasks.error ? <ErrorBox error={myTasks.error} /> : myTasks.data.map((task) => (
@@ -221,7 +229,7 @@ function Home({ me, params }) {
         </Card>
         <Card title="My opportunities" subtitle="Open, next step first" actions={<Button small onClick={() => navigate('/view/#defense-pipeline?owner=me')}>Pipeline</Button>}>
           <Table rows={myDeals.data} loading={myDeals.loading} error={myDeals.error} empty="No open opportunities are yours. Ask your team to make you the owner." columns={[
-            { key: 'name', label: 'Opportunity', render: (r) => <RecordLink object="deals" id={r.id}>{r.name || '--'}</RecordLink> },
+            { key: 'name', label: 'Opportunity', render: (r) => <a className="v-link" href="#" onClick={(e) => { e.preventDefault(); navigate(dealHref(r.id)) }}>{r.name || '--'}</a> },
             { key: 'stage', label: 'Stage', hideOnMobile: true },
             { key: 'pwin', label: 'PWIN', align: 'right', render: (r) => (r.pwin == null ? '--' : `${formatNumber(r.pwin)}%`) },
             { key: 'next_step_date', label: 'Next step', render: (r) => (r.next_step_date ? formatDate(r.next_step_date) : '--') }

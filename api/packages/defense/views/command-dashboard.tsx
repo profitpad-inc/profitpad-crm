@@ -17,6 +17,9 @@ const BANDS = [
 ]
 const bandOf = (pwin) => BANDS.find((b) => (pwin ?? -1) >= b.min) ?? BANDS[3]
 const money = (v) => Number(v) || 0
+const dealHref = (id) => `/view/#defense-pipeline?mode=workspace&deal=${encodeURIComponent(id)}`
+// The tenant's primary is green, so drop the kit's green and lime to keep stacked series apart
+const SERIES = chartColors.filter((c) => c !== '#0e9f6e' && c !== '#65a30d')
 const QUOTE_TONE: Record<string, BadgeTone> = { accepted: 'money', rejected: 'danger', expired: 'muted', sent: 'primary', pending_countersign: 'warning' }
 const INVOICE_TONE: Record<string, BadgeTone> = { paid: 'money', open: 'primary', uncollectible: 'danger', void: 'muted' }
 
@@ -120,7 +123,7 @@ function Overview({ deals, stages, contacts, partnerships, base, params }) {
               <YAxis fontSize={12} tickFormatter={(v) => formatMoney(v, base).replace(/\.00$/, '')} width={80} />
               <Tooltip formatter={(v) => formatMoney(v, base)} />
               <Legend />
-              {forecast.keys.map((k, i) => <Bar key={k} dataKey={k} stackId="a" fill={chartColors[i % chartColors.length]} />)}
+              {forecast.keys.map((k, i) => <Bar key={k} dataKey={k} stackId="a" fill={SERIES[i % SERIES.length]} />)}
             </BarChart>
           </ResponsiveContainer>
         )}
@@ -158,7 +161,7 @@ function Overview({ deals, stages, contacts, partnerships, base, params }) {
         </Card>
         <Card title="Recent opportunities" subtitle="Newest first">
           <Table rows={recent} sortable={false} stickyHeader={false} empty="No opportunities yet." columns={[
-            { key: 'name', label: 'Opportunity', render: (r) => <div><RecordLink object="deals" id={r.id}>{r.name || '--'}</RecordLink><div className="small muted">{[r.company, r.category].filter(Boolean).join(' · ')}</div></div> },
+            { key: 'name', label: 'Opportunity', render: (r) => <div><a className="v-link" href="#" onClick={(e) => { e.preventDefault(); navigate(dealHref(r.id)) }}>{r.name || '--'}</a><div className="small muted">{[r.company, r.category].filter(Boolean).join(' · ')}</div></div> },
             { key: 'pwin', label: 'PWIN', align: 'right', render: (r) => (r.pwin == null ? '--' : `${formatNumber(r.pwin)}%`) },
             { key: 'amount', label: 'Value', align: 'right', render: (r) => (r.amount == null ? '--' : formatMoney(r.amount, r.currency || base)) }
           ]} />
