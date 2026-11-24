@@ -3,9 +3,11 @@ import { pool } from '../db.js';
 import { badRequest } from '../errors.js';
 import { requireScope } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { getRecord } from '../records.js';
+import { getObject } from '../registry.js';
 import {
   createTemplate, listTemplates, loadTemplate, pdfPages, publishTemplate, renderPdf, renderTemplate, requireTemplateAdmin, revertTemplate,
-  sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateOut, type TemplateInput
+  sampleRecord, saveTemplateDraft, setDefaultTemplate, templateData, templateFor, templateOut, type TemplateInput
 } from '../templates.js';
 
 // Document templates (templates.ts): admins list, write, publish and preview
@@ -75,5 +77,19 @@ export async function templateRoutes(app: FastifyInstance) {
       return reply.type('application/pdf').send(pdf);
     }
     return { record_id: recordId, html: out.html, warnings: out.warnings };
+  });
+
+  // A quote drawn as the customer sees it (its linked template, else the
+  // default; the published version), for the Preview tab of its record page.
+  // Anyone who can see the quote may; getRecord refuses the rest.
+  app.get<{ Params: IdParams }>('/v1/quotes/:id/preview', async (req, reply) => {
+    requireScope(req.principal!, 'read');
+    const obj = await getObject('quotes');
+    const quote = await getRecord(pool, obj, req.principal!, req.params.id, ['name']);
+    reply.header('cache-control', 'no-store');
+    const template = await templateFor(obj, quote.id);
+    if (!template) return { template: null, html: null, warnings: [] };
+    const out = await renderTemplate(template, quote.id, false);
+    return { template: { id: template.id, name: template.name }, html: out.html, warnings: out.warnings };
   });
 }

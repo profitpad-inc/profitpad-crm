@@ -220,9 +220,10 @@ export function addressFrom(res: any): PlaceAddress {
   };
 }
 
-// Which box is being typed in. The street box searches every address; the
-// others search only places of their own kind, so a postal code box suggests
-// postal codes and a city box cities.
+// Which box is being typed in. The street box searches every place. The
+// others search only places of their own kind (a postal code box postal codes,
+// a city box cities) while the text looks like one; anything else, such as a
+// whole address typed in the postal code box, searches every place too.
 export type SearchPart = 'street_1' | 'city' | 'province' | 'postal_code' | 'country';
 const PRIMARY_TYPES: Record<SearchPart, string[] | null> = {
   street_1: null,
@@ -234,9 +235,16 @@ const PRIMARY_TYPES: Record<SearchPart, string[] | null> = {
 export const searchPart = (v: unknown): SearchPart =>
   typeof v === 'string' && Object.hasOwn(PRIMARY_TYPES, v) ? (v as SearchPart) : 'street_1';
 
+// A postal code has a digit and at most one space or dash ("90210",
+// "K2C 3P4", "90210-1234"); a city, province or country has no digits.
+function looksLike(part: SearchPart, query: string): boolean {
+  if (part === 'postal_code') return /\d/.test(query) && query.length <= 10 && /^[A-Za-z0-9]+(?:[ -][A-Za-z0-9]+)?$/.test(query);
+  return !/\d/.test(query);
+}
+
 export const autocompleteBody = (query: string, countries: string[], session?: string, part: SearchPart = 'street_1') => ({
   input: query,
-  ...(PRIMARY_TYPES[part] ? { includedPrimaryTypes: PRIMARY_TYPES[part] } : {}),
+  ...(PRIMARY_TYPES[part] && looksLike(part, query) ? { includedPrimaryTypes: PRIMARY_TYPES[part] } : {}),
   ...(countries.length ? { includedRegionCodes: countries.map((c) => c.toLowerCase()) } : {}),
   ...(session ? { sessionToken: session } : {})
 });

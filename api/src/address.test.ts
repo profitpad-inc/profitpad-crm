@@ -47,7 +47,11 @@ test('suggestions: at most six, place predictions only', () => {
 test('each box searches its own kind of place', () => {
   assert.deepEqual(autocompleteBody('90210', ['US'], undefined, 'postal_code'), { input: '90210', includedPrimaryTypes: ['postal_code'], includedRegionCodes: ['us'] });
   assert.deepEqual(autocompleteBody('Otta', [], 'abcdefgh', 'city'), { input: 'Otta', includedPrimaryTypes: ['(cities)'], sessionToken: 'abcdefgh' });
+  assert.deepEqual(autocompleteBody('K2C 3P4', [], undefined, 'postal_code').includedPrimaryTypes, ['postal_code']);
   assert.deepEqual(autocompleteBody('1 Main', []), { input: '1 Main' });
+  // a whole address in the postal code or city box searches every place
+  assert.equal('includedPrimaryTypes' in autocompleteBody('1200 Merivale Rd, Ottawa', [], undefined, 'postal_code'), false);
+  assert.equal('includedPrimaryTypes' in autocompleteBody('1200 Merivale Rd', [], undefined, 'city'), false);
   assert.equal(searchPart('country'), 'country');
   assert.equal(searchPart('street_2'), 'street_1');
   assert.equal(searchPart('__proto__'), 'street_1');

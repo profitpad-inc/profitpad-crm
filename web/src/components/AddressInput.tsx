@@ -5,10 +5,12 @@ import { api, type Property } from '../lib/api';
 
 // Address autocomplete (api/src/address.ts, Settings → Address autocomplete).
 // The text boxes of an address group suggest places from Google Places as
-// people type: the street box whole addresses, the city, province, postal
-// code and country boxes places of their own kind. Picking one fills that box
-// and the broader parts of the group through PropertyInput's onFill (a postal
-// code fills the province and country, a street everything). Street 2 holds
+// people type: the street box any place, the city, province, postal code and
+// country boxes places of their own kind (any place once the text doesn't look
+// like one, so a whole address works in every box). Picking one fills the box
+// and what the picked place knows at its level and broader, through
+// PropertyInput's onFill: a street address fills everything, a postal code its
+// box, the province and the country, a city its box, province and country. Street 2 holds
 // suites and units, which Google can't search, so it stays a plain box. The
 // Google key stays on the API server.
 
@@ -76,7 +78,7 @@ function useAddressConfig(object: string | undefined): AddressConfig | null {
 export type AddressPart = 'street_1' | 'city' | 'province' | 'postal_code' | 'country';
 const SEARCH_PARTS: AddressPart[] = ['street_1', 'city', 'province', 'postal_code', 'country'];
 
-// What a pick in each box fills: the box itself and the broader parts.
+// What a picked place of each level fills (plus the box it was picked in).
 const FILLS: Record<AddressPart, (keyof Omit<AddressGroup, 'object'>)[]> = {
   street_1: ['street_1', 'street_2', 'city', 'province', 'postal_code', 'country'],
   city: ['city', 'province', 'country'],
@@ -124,12 +126,23 @@ export function withAddressesTogether<P extends { api_name: string }>(props: P[]
 
 // ---- picked address → input values ----
 
+// How specific a picked place is: a street address, a postal code, a city,
+// a province or a country.
+function placeLevel(a: PlaceAddress): AddressPart {
+  if (a.street_1) return 'street_1';
+  if (a.postal_code) return 'postal_code';
+  if (a.city) return 'city';
+  if (a.province_code || a.province_name) return 'province';
+  return 'country';
+}
+
 // The group's properties a pick in the `part` box fills, as input strings
-// (PropertyInput's format). A dropdown province or country takes the option
+// (PropertyInput's format): the box itself, and the parts the picked place
+// fills at its level (FILLS). A dropdown province or country takes the option
 // whose value is Google's code or whose label is its name; with no such option
 // it is left as it is. Street 2 is only set when Google has one (a typed suite
-// stays otherwise). The picked box falls back to the suggestion's text when
-// Google's details have no value for it.
+// stays otherwise). The street box keeps the suggestion's text when the place
+// has no street (a landmark); other boxes take Google's value or go empty.
 export function addressValues(group: AddressGroup, a: PlaceAddress, properties: Property[], part: AddressPart, fallback: string): Record<string, string> {
   const out: Record<string, string> = {};
   const byName = (n?: string) => (n ? properties.find((p) => p.api_name === n && p.record_status === 'active') : undefined);
@@ -155,9 +168,8 @@ export function addressValues(group: AddressGroup, a: PlaceAddress, properties: 
   text(group.postal_code, a.postal_code);
   choice(group.province, a.province_code, a.province_name, a.province_code);
   choice(group.country, a.country_code, a.country_name, a.country_name);
-  const own = group[part]!;
-  if (!out[own]) out[own] = fallback;
-  const keep = new Set(FILLS[part].map((k) => group[k]).filter(Boolean));
+  if (!out[group.street_1]) out[group.street_1] = fallback;
+  const keep = new Set([group[part], ...FILLS[placeLevel(a)].map((k) => group[k])].filter(Boolean));
   return Object.fromEntries(Object.entries(out).filter(([k]) => keep.has(k)));
 }
 

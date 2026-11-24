@@ -17,6 +17,7 @@ import { FileCard } from '../components/FileCard';
 import { FilePreviewModal, FileViewer } from '../components/FileViewer';
 import { ViewCode } from '../components/ViewCode';
 import { LandingPageCard } from '../components/LandingPageCard';
+import { QuotePreview } from '../components/QuotePreview';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
 import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
 import { EmailTracking } from '../components/EmailTracking';
@@ -557,7 +558,14 @@ export function RecordPage() {
       <Comments object={object} id={record.id} readOnly={record.record_status === 'archived'} highlight={new URLSearchParams(location.search).get('comment')} />
     </div>
   );
-  const streamProps = { linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, canSend, onCompose: (o: ComposeObject | null, mode?: 'send') => { if (o) void startCompose(o, mode); else { composeDirty.current = false; setCompose(null); } } };
+  // Landing pages and quotes lead their middle column with a Preview tab (the page,
+  // or the quote as the customer sees it), then Activity and Changes
+  const preview = object === 'landing_pages'
+    ? (record.record_status === 'archived'
+      ? <div className="card muted">Archived landing pages do not open. Restore this page to see it.</div>
+      : <LandingPageCard record={record} onChanged={setRecord} />)
+    : object === 'quotes' ? <QuotePreview record={record} /> : undefined;
+  const streamProps = { preview, linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, canSend, onCompose: (o: ComposeObject | null, mode?: 'send') => { if (o) void startCompose(o, mode); else { composeDirty.current = false; setCompose(null); } } };
   const propertyList = <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} flash={flash} changedBy={changedBy} />;
   // the right column: this object's own cards (public link, signing, file, ...), then the linked records
   const ownCards = (
@@ -616,14 +624,8 @@ export function RecordPage() {
         ? archivedNote('templates are not used', 'template to see its code')
         : <DocumentTemplateEditor record={record} onChanged={setRecord} />
     }
-    : object === 'landing_pages' ? {
-      label: 'Page',
-      content: record.record_status === 'archived'
-        ? archivedNote('landing pages do not open', 'page to see it')
-        : <LandingPageCard record={record} onChanged={setRecord} />
-    }
     : null;
-  const phoneTabbed = mobile && !tabbed && !isView && (isUser || !!editorPanel);
+  const phoneTabbed = mobile && !tabbed && !isView && (isUser || !!editorPanel || object === 'landing_pages');
   const phonePanels: StreamPanel[] = phoneTabbed ? [
     { key: 'properties', label: 'Properties', content: <>{userRoles}<div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
     ...(editorPanel ? [{ key: 'editor' as const, ...editorPanel }] : []),
@@ -779,13 +781,6 @@ export function RecordPage() {
                   : <DocumentTemplateEditor record={record} onChanged={setRecord} />}
                 <ActivityStream {...streamProps} />
               </>
-            ) : object === 'landing_pages' ? (
-              <>
-                {record.record_status === 'archived'
-                  ? <div className="card muted">Archived landing pages do not open. Restore this page to see it.</div>
-                  : <LandingPageCard record={record} onChanged={setRecord} />}
-                <ActivityStream {...streamProps} />
-              </>
             ) : isView ? (
               <ActivityStream {...streamProps} panels={viewPanels} bare />
             ) : (
@@ -813,6 +808,21 @@ const isCode = (p: Property) => p.type === 'text' && p.options.display === 'code
 
 // A left-side value: code in a grey monospace box, anything else as text;
 // both cut to six lines with Show more when longer.
+// a refused save naming the record that already has the value
+// ("x is already the email of another contact (0000000068). ..."): the id
+// links to that record, in a new tab so the edit here stays put
+function linkOtherRecord(message: string, object: string): ReactNode {
+  const m = /^(.* of another [^(]+ \()([0-9a-z]+)(\).*)$/s.exec(message);
+  if (!m) return message;
+  return (
+    <>
+      {m[1]}
+      <a href={`/objects/${object}/${m[2]}`} target="_blank" rel="noopener noreferrer">{m[2]}</a>
+      {m[3]}
+    </>
+  );
+}
+
 function propValue(p: Property, value: unknown): ReactNode {
   if (isCode(p) && typeof value === 'string' && value) return <ShowMore as="pre" className="prop-code">{value}</ShowMore>;
   const shown = displayValue(p, value);
@@ -1089,7 +1099,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
           {changedBy[p.api_name] ?? 'Someone else'} changed this to {displayValue(p, record.properties[p.api_name]) || 'nothing'} while you were editing. Saving replaces it.
         </div>
       )}
-      {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
+      {error?.property === p.api_name && <div className="error prop-error" role="alert">{linkOtherRecord(error.message, schema.api_name)}</div>}
     </div>
   );
 
@@ -1195,7 +1205,9 @@ function activitySearch(params: URLSearchParams, tab: Tab, open: { code: string;
   return q ? `?${q}` : '';
 }
 
-function ActivityStream({ linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend, panels = [], bare = false }: {
+function ActivityStream({ preview, linksLoaded, object, id, record, associated, onChanged, schema, compose, onCompose, onComposeDirty, canSend, panels = [], bare = false }: {
+  // the Preview tab's content (landing pages, quotes); files show the file
+  preview?: ReactNode;
   linksLoaded: boolean; object: string; id: string; record: CrmRecord; associated: Associated[]; onChanged: () => Promise<void>; schema: ObjectDef;
   compose: { object: ComposeObject; key: number; mode?: 'send' } | null; onCompose: (o: ComposeObject | null, mode?: 'send') => void; onComposeDirty: (dirty: boolean) => void;
   canSend: boolean; panels?: StreamPanel[];
@@ -1207,8 +1219,9 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
   const [params] = useSearchParams();
   const liveStamp = useLiveStamp();
   const linksTo = objectByName.get(object)?.links_to ?? [];
-  // file records lead with a Preview tab holding the file itself
-  const previewFirst = object === 'files';
+  // file records lead with a Preview tab holding the file itself, landing pages
+  // and quotes with theirs (preview)
+  const previewFirst = object === 'files' || !!preview;
   const tabs: Tab[] = bare
     ? [...panels.map((p) => p.key), 'changes']
     : [...(previewFirst ? ['preview' as const] : []), ...panels.map((p) => p.key), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
@@ -1526,7 +1539,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
       {panel ? (
         <div className="stream-panel">{panel.content}</div>
       ) : tab === 'preview' ? (
-        <FileViewer fileId={id} />
+        preview ?? <FileViewer fileId={id} />
       ) : tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
       ) : (

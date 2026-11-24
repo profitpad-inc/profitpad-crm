@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Star, Trash2 } from 'lucide-react';
 import { Select } from './Select';
 import { confirmDialog } from './confirm';
@@ -60,6 +60,17 @@ interface Row extends MultiEntry {
 
 const CUSTOM = '__custom';
 
+// Marks a value box whose text runs past its edges (data-clip left, right
+// or both), so the CSS can fade the side that is cut off.
+function markClipped(input: HTMLInputElement) {
+  const left = input.scrollLeft > 1;
+  const right = input.scrollLeft + input.clientWidth < input.scrollWidth - 1;
+  const clip = left && right ? 'both' : left ? 'left' : right ? 'right' : '';
+  if (clip) input.dataset.clip = clip;
+  else delete input.dataset.clip;
+}
+const valueInputs = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HTMLInputElement>('.mv-value input')] : []);
+
 // Editing: rows of value, label, make primary and remove, then "+ Add".
 // value and onChange carry the list as JSON (encodeEntries), like every
 // property editor's one string; the caller saves it.
@@ -109,11 +120,31 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
       onCancel();
     }
   };
+  // fade cut-off text: after edits, resizes, scrolling and caret moves
+  const editorRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    valueInputs(editorRef.current).forEach(markClipped);
+  }, [rows]);
+  useLayoutEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => valueInputs(el).forEach(markClipped));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const recheck = (e: React.SyntheticEvent) => {
+    const t = e.target;
+    if (t instanceof HTMLInputElement && t.closest('.mv-value')) requestAnimationFrame(() => markClipped(t));
+  };
+
   const noun = type === 'email' ? 'email' : 'phone';
   const filled = rows.filter((r) => r.value.trim() !== '').length;
 
   return (
-    <div className="mv-editor" onKeyDown={keyDown}>
+    <div
+      className="mv-editor" ref={editorRef} onKeyDown={keyDown}
+      onKeyUp={recheck} onMouseUp={recheck} onInput={recheck} onFocus={recheck} onBlur={recheck} onScrollCapture={recheck}
+    >
       <table className="mv-table editing">
         <tbody>
           {rows.map((r, i) => (
