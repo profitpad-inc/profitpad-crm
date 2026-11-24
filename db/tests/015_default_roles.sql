@@ -30,7 +30,7 @@ begin
   end if;
 
   insert into crm.pc_0000 (name, first_name, last_name, email)
-  values ('Test Viewer', 'Test', 'Viewer', 'viewer@roles.example') returning pc_0000_id into v_user;
+  values ('Test Viewer', 'Test', 'Viewer', '[{"value": "viewer@roles.example"}]') returning pc_0000_id into v_user;
   if not exists (select 1 from auth.role_assignments where role_id = v_view and user_id = v_user) then
     raise exception 'a new user did not get View Only';
   end if;
@@ -43,7 +43,7 @@ begin
 
   update auth.roles set is_default = false where id = v_view;
   insert into crm.pc_0000 (name, first_name, last_name, email)
-  values ('No Role', 'No', 'Role', 'norole@roles.example') returning pc_0000_id into v_user;
+  values ('No Role', 'No', 'Role', '[{"value": "norole@roles.example"}]') returning pc_0000_id into v_user;
   if exists (select 1 from auth.role_assignments where user_id = v_user) then
     raise exception 'a user got a role with no default role set';
   end if;
@@ -67,7 +67,7 @@ begin
     raise exception 'roles is not read-only';
   end if;
 
-  insert into crm.pc_0000 (name, email) values ('Roles Col', 'rolescol@roles.example') returning pc_0000_id into v_user;
+  insert into crm.pc_0000 (name, email) values ('Roles Col', '[{"value": "rolescol@roles.example"}]') returning pc_0000_id into v_user;
   if (select roles from crm.pc_0000 where pc_0000_id = v_user) is distinct from 'View Only' then
     raise exception 'new user roles: %', (select roles from crm.pc_0000 where pc_0000_id = v_user);
   end if;

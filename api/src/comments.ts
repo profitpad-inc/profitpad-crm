@@ -29,7 +29,7 @@ export const COMMENT_TARGETS = new Set([
 const MAX_BODY = 10000;
 const TOKEN_RE = /@\[([^\]\n]{1,100})\]\(([^)\s]{1,40})\)/g;
 
-const USER_NAME = `coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email)`;
+const USER_NAME = `coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email -> 0 ->> 'value')`;
 
 type Source = 'api' | 'mcp';
 

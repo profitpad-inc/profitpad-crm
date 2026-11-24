@@ -171,9 +171,6 @@ export async function recordRoutes(app: FastifyInstance) {
     return getRecord(pool, obj, p, winner_id);
   });
 
-  // properties kept unique by a trigger rather than options.unique
-  const CLONE_SKIP: Record<string, string[]> = { contacts: ['additional_emails'] };
-
   // A new record with the same values, leaving out unique properties (email,
   // domain, page address...), calculations, files, read-only and system ones.
   // associations lists linked records ({object, id}) the copy is linked to as
@@ -190,7 +187,7 @@ export async function recordRoutes(app: FastifyInstance) {
     for (const prop of obj.properties) {
       if (prop.record_status !== 'active' || prop.type === 'calculation' || prop.type === 'file' || prop.type === 'actor') continue;
       if (prop.is_base ? prop.api_name !== 'name' : prop.read_only) continue;
-      if (prop.options.unique === true || CLONE_SKIP[obj.api_name]?.includes(prop.api_name)) continue;
+      if (prop.options.unique === true) continue;
       let v = source.properties[prop.api_name];
       if (v === null || v === undefined || v === '') continue;
       if (prop.type === 'dropdown') {

@@ -13,6 +13,7 @@ import { applyEdits, parseQueries, runQuery, analyzeQuery, type Queries, type So
 import { callFromTemplate, guardedLookup } from './integrations.js';
 import { formatProperty } from './format.js';
 import { getBrowser, slot } from './render.js';
+import { primaryValue } from './multi-values.js';
 
 // Document templates (migration 0075, pc_0057): how a record is drawn as a
 // document. Each template is for one object type (quotes for now) and is an
@@ -370,6 +371,8 @@ function plain(p: PropertyDef, v: unknown): unknown {
   if (v instanceof Date) return v.toISOString();
   const t = p.type === 'calculation' ? p.calc_output_type : p.type;
   if (p.type === 'dropdown' && Array.isArray(v) && p.options.single_value === true) return v[0] ?? null;
+  // email and phone lists: the primary ({{ contact.email }} is an address)
+  if (p.type === 'email' || p.type === 'phone') return primaryValue(v);
   if (t === 'number' && typeof v === 'string' && Number.isFinite(Number(v))) return Number(v);
   return v;
 }

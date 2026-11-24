@@ -33,7 +33,7 @@ async function requireCampaignEdit(p: Principal): Promise<void> {
 
 async function myEmail(p: Principal): Promise<string> {
   if (!p.userId) throw badRequest('Tests go to the signed-in user, and this caller is not a user.');
-  const { rows } = await pool.query('select email from crm.pc_0000 where pc_0000_id = $1', [p.userId]);
+  const { rows } = await pool.query("select email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.userId]);
   const email = rows[0]?.email;
   if (!email) throw badRequest('Your user has no email address to send the test to.');
   return email;
@@ -202,7 +202,7 @@ export async function emailRoutes(app: FastifyInstance) {
     const t = readUnsubscribeToken(token);
     if (!t) throw notFound('This unsubscribe link is not valid.');
     const { rows } = await pool.query(
-      `select pc_0010_id as id, email, email_opt_out[1] = 'true' as opted_out from crm.pc_0010 where pc_0010_id = $1 and record_status = 'active'`,
+      `select pc_0010_id as id, email -> 0 ->> 'value' as email, email_opt_out[1] = 'true' as opted_out from crm.pc_0010 where pc_0010_id = $1 and record_status = 'active'`,
       [t.contactId]
     );
     if (!rows[0]) throw notFound('This unsubscribe link is not valid.');

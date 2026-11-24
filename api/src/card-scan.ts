@@ -10,6 +10,7 @@ import { assertAccessible, createRecord, drainCalcQueue, updateRecord } from './
 import { readFileBytes } from './files.js';
 import { contactIdByEmail } from './contact-emails.js';
 import { checkPhone, isRegion } from './phone.js';
+import { MAX_LABEL, entriesOf, primaryValue, type MultiEntry } from './multi-values.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
 import { logEvent } from './audit.js';
 import { parseCard, wordsFromTsv, wordsToLines } from './card-parse.js';
@@ -349,16 +350,16 @@ async function matchContacts(p: Principal, fields: { email: string; first_name: 
     const params: unknown[] = [email || null, first || null, last || null];
     const access = recordFilter(p, contacts, params);
     const { rows } = await pool.query(
-      `select t.pc_0010_id as id, t.name, t.email, t.job_title, t.phone,
-         case when $1::text is not null and lower(t.email) = $1 then 'email' else 'name' end as why,
+      `select t.pc_0010_id as id, t.name, t.email -> 0 ->> 'value' as email, t.job_title, t.phone -> 0 ->> 'value' as phone,
+         case when $1::text is not null and t.email @> jsonb_build_array(jsonb_build_object('value', $1::text)) then 'email' else 'name' end as why,
          (select c.name from crm.associations_both a join crm.pc_0011 c on c.pc_0011_id = a.other_record_id
           where a.object_type_id = 'pc_0010' and a.record_id = t.pc_0010_id and a.other_object_type_id = 'pc_0011' and c.record_status = 'active'
           order by a.created_at limit 1) as company
        from crm.pc_0010 t
        where t.record_status = 'active' and ${access}
-         and (($1::text is not null and lower(t.email) = $1)
+         and (($1::text is not null and t.email @> jsonb_build_array(jsonb_build_object('value', $1::text)))
            or ($2::text is not null and $3::text is not null and lower(t.first_name) = $2 and lower(t.last_name) = $3))
-       order by (lower(t.email) = $1) desc nulls last, t.row_updated_at desc
+       order by ($1::text is not null and t.email @> jsonb_build_array(jsonb_build_object('value', $1::text))) desc, t.row_updated_at desc
        limit 5`,
       params
     );
@@ -419,20 +420,65 @@ function knownOption(obj: ObjectDef, prop: string, value: string): string | null
   return hit?.api_value ?? null;
 }
 
+// A card's label for a number as a phone entry label: Mobile -> cell,
+// Office -> work, anything else kept as written (Fax, Toll free).
+export function phoneLabel(label: string): string | undefined {
+  const l = label.trim().replace(/\s+/g, ' ').slice(0, MAX_LABEL);
+  if (!l) return undefined;
+  const k = l.toLowerCase();
+  if (/^(mobile|mob|cell|cellular|m|c)$/.test(k)) return 'cell';
+  if (/^(office|work|direct|direct line|business|o|w|d|t|tel|telephone|phone|main)$/.test(k)) return 'work';
+  if (/^(landline|home|h)$/.test(k)) return k === 'landline' ? 'landline' : 'Home';
+  return l;
+}
+
+// The card's main number (phone, phone_label) and its other numbers
+// (other_phones: [{label, number}]) as a phone list, numbers read in the
+// card's country first. Numbers that do not check out are dropped.
+function phoneEntries(input: Record<string, unknown>): MultiEntry[] {
+  const country = clean(input.address_country).toUpperCase();
+  const read = (n: string) => {
+    for (const region of isRegion(country) ? [country, undefined] : [undefined]) {
+      const c = checkPhone(n, region);
+      if (c.valid) return c.value!;
+    }
+    return null;
+  };
+  const out: MultiEntry[] = [];
+  const add = (number: unknown, label: unknown) => {
+    const v = read(clean(number));
+    if (!v || out.some((e) => e.value === v)) return;
+    const l = phoneLabel(clean(label));
+    out.push(l ? { value: v, label: l } : { value: v });
+  };
+  // the review form sends its edited list ([{value, label}]); older clients
+  // the main number as text plus other_phones
+  if (Array.isArray(input.phone)) {
+    for (const e of input.phone.slice(0, 20)) if (e && typeof e === 'object') add((e as { value?: unknown }).value, (e as { label?: unknown }).label);
+    return out;
+  }
+  if (clean(input.phone)) add(input.phone, input.phone_label);
+  if (Array.isArray(input.other_phones)) {
+    for (const o of input.other_phones.slice(0, 10)) if (o && typeof o === 'object') add((o as { number?: unknown }).number, (o as { label?: unknown }).label);
+  }
+  return out;
+}
+
 function contactProperties(contacts: ObjectDef, input: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  if (getProperty(contacts, 'phone')) {
+    const phones = phoneEntries(input);
+    if (phones.length) out.phone = phones;
+  }
   for (const key of CONTACT_FIELDS) {
+    if (key === 'phone') continue; // phoneEntries
     const v = clean(input[key]);
     if (!v || !getProperty(contacts, key)) continue;
     if (key === 'address_province' || key === 'address_country') {
       const opt = knownOption(contacts, key, v);
       if (opt) out[key] = opt;
-    } else if (key === 'phone') {
-      const country = clean(input.address_country).toUpperCase();
-      const check = checkPhone(v, isRegion(country) ? country : undefined);
-      if (check.valid) out.phone = check.value;
     } else if (key === 'email') {
-      out.email = v.toLowerCase();
+      out.email = [{ value: v.toLowerCase() }];
     } else {
       out[key] = v;
     }
@@ -468,7 +514,7 @@ async function save(p: Principal, b: SaveBody) {
   } else {
     requireObjectPermission(p, contacts, 'create');
     if (props.email) {
-      const existing = await contactIdByEmail(pool, props.email as string, ['active', 'archived']);
+      const existing = await contactIdByEmail(pool, primaryValue(props.email), ['active', 'archived']);
       if (existing) throw new ApiError(409, 'A contact with this email already exists. Update that contact instead.', 'contact_exists', { contact_id: existing });
     }
   }
@@ -490,11 +536,18 @@ async function save(p: Principal, b: SaveBody) {
     let contactId: string;
     let created = false;
     if (existingId) {
-      // an existing contact keeps what it has: only blanks are filled
+      // an existing contact keeps what it has: only blanks are filled, and
+      // the card's addresses and numbers it lacks are added after its own
       contactId = existingId;
       const row = await rowById(c, contacts, contactId);
       const fill: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(props)) if (isEmpty(row[k])) fill[k] = v;
+      for (const [k, v] of Object.entries(props)) {
+        if (k === 'email' || k === 'phone') {
+          const had = entriesOf(row[k]);
+          const added = entriesOf(v).filter((e) => !had.some((h) => h.value === e.value));
+          if (added.length) fill[k] = [...had, ...added];
+        } else if (isEmpty(row[k])) fill[k] = v;
+      }
       if (fileId && getProperty(contacts, 'business_card')) {
         const cards = (row.business_card as string[] | null) ?? [];
         if (!cards.includes(fileId) && cards.length < 5) fill.business_card = [...cards, fileId];
@@ -535,7 +588,7 @@ async function save(p: Principal, b: SaveBody) {
       }
       // a new contact's name is a calculation, filled in after this commits
       const contactName = (await rowById(c, contacts, contactId)).name
-        || [props.first_name, props.last_name].filter(Boolean).join(' ') || String(props.email ?? '');
+        || [props.first_name, props.last_name].filter(Boolean).join(' ') || (primaryValue(props.email) ?? '');
       const eventName = (await rowById(c, events, eventId)).name ?? '';
       participationId = await createRecord(c, participations, p, {
         name: [contactName, eventName].filter(Boolean).join(' at ') || 'Card scan',

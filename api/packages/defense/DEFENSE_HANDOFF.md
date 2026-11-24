@@ -53,7 +53,7 @@ Smoke test: on a throwaway cluster (`db/test-local.sh` with its own `PCRM_TEST_P
 
 Demo data on a tenant: `/usr/bin/python3 scripts/seed_defense_data.py`. `PCRM_API_URL` defaults to `https://crm.defense.profitpad.com`; it asks for an API key (read and write, or admin) unless `PCRM_API_KEY` is set. Each run adds a new tagged set. On 2026-11-22 the key was made with `src/cli/create-key.ts` in `pc-defense-api` and revoked right after.
 
-Deploy the CRM itself to the defense install: `./scripts/deploy.sh defense` (newest release; same flow as `demo`). Migrations run when the containers start. Installing or changing the package is a separate step.
+Deploy the CRM itself to the defense install: `./scripts/deploy.sh defense` (newest release). Migrations run when the containers start. Installing or changing the package is a separate step.
 
 ### Changing the package after it is installed
 
@@ -133,7 +133,7 @@ All 18 are published on the defense CRM. "Menu" is where the package's default m
 | `product-pricing` | Resources, Product Pricing | MSRP, GSA and distributor prices, margins, expiring price lists | |
 | `materials-library` | Resources, Marketing Materials | Marketing materials and documents by folder and type, with upload | file upload |
 | `org-chart` | Operations, Team Hierarchy | Customer contacts by organization; our teams under their leads | |
-| `operations-bom` | Operations, Operations | BOM cards (COGS, target margin, price and profit at target, parts), margin projection matrix, New/Edit BOM in a side panel beside the list (with its parts, Edit parts opening the CRM line items editor, and the matrix; the address param focus=parts opens the panel at the parts; part cost reads unit_cost, else unit_price, because the seeded BOM lines only have unit_price) with "Read with AI" (PDF or CSV; fills COGS and saves parts as line items; Excel must be saved as CSV) | integration `bom-reader`, file upload |
+| `operations-bom` | Operations, Operations | BOM cards (COGS, target margin, price and profit at target, parts), margin projection matrix, New/Edit BOM in a side panel beside the list (with its parts, Edit parts opening the CRM line items editor, and the matrix; the address param focus=parts opens the panel at the parts; part cost reads unit_cost, else unit_price, as a fallback for BOM lines seeded before the seed set unit_cost) with "Read with AI" (PDF or CSV; fills COGS and saves parts as line items; Excel must be saved as CSV) | integration `bom-reader`, file upload |
 | `travel-ops` | Operations, Travel Ops | Trips with itinerary, budget against spend and approval; expenses with receipt upload (camera on phones) | file upload |
 | `defense-velocity` | not in menu | Days per stage, bottleneck, days to win and lose | `property_history` |
 | `opportunity-discovery` | not in menu | Sources directory (opens outside links), lead inbox with push to pipeline, intel topics | `openUrl` / `ExternalLink` |

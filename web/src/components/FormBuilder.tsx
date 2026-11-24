@@ -91,7 +91,7 @@ function parse(raw: unknown): Definition {
 function formProperties(schema: ObjectDef | undefined): Property[] {
   return (schema?.properties ?? []).filter((p) =>
     p.record_status === 'active' && !p.read_only && (!p.is_base || p.api_name === 'name') &&
-    ['text', 'number', 'dropdown', 'date', 'datetime'].includes(p.type) && p.options.auto_append_users !== true);
+    ['text', 'number', 'dropdown', 'date', 'datetime', 'email', 'phone'].includes(p.type) && p.options.auto_append_users !== true);
 }
 
 function typeFor(p: Property): FieldType {
@@ -99,6 +99,8 @@ function typeFor(p: Property): FieldType {
   if (p.type === 'date') return 'date';
   if (p.type === 'datetime') return 'datetime';
   if (p.type === 'dropdown') return p.options.single_value === true ? 'select' : 'multiselect';
+  // email and phone lists are asked as one address or number
+  if (p.type === 'email' || p.type === 'phone') return 'text';
   return p.options.single_line === true ? 'text' : 'textarea';
 }
 
@@ -177,7 +179,7 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
     const make = (prop: Property, required = false): Field => {
       const type = typeFor(prop);
       const format: Format | undefined = type === 'text' || type === 'textarea'
-        ? /email/.test(prop.api_name) ? 'email' : /phone/.test(prop.api_name) ? 'phone' : undefined
+        ? prop.type === 'email' || prop.type === 'phone' ? prop.type : /email/.test(prop.api_name) ? 'email' : /phone/.test(prop.api_name) ? 'phone' : undefined
         : undefined;
       return {
         name: `${object === 'contacts' ? 'contact' : 'ticket'}_${prop.api_name}`,

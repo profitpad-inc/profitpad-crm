@@ -6,7 +6,7 @@ import { checkManifest, fillSettings, loadManifest, readSettings, settingsIn, ty
 
 const API_RE = /^[a-z][a-z0-9_]{0,62}$/;
 const OPTION_RE = /^[A-Za-z0-9._]{1,63}$/;
-const TYPES = ['text', 'number', 'dropdown', 'date', 'datetime', 'calculation', 'file'];
+const TYPES = ['text', 'number', 'dropdown', 'date', 'datetime', 'calculation', 'file', 'email', 'phone'];
 
 test('every package in api/packages loads and passes the manifest check', async () => {
   // the folders only: listPackages also reads the database, which tests never touch

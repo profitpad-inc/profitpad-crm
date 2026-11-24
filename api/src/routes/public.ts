@@ -344,7 +344,7 @@ async function linkedParts(table: 'pc_0022' | 'pc_0023', id: string) {
     ).rows;
   const lines = await linked('pc_0020', 'o.pc_0020_id as id, o.name, o.sku, o.quantity, o.unit_price, o.discount, o.amount', 'pc_0020_id');
   const companies = await linked('pc_0011', 'o.name', 'pc_0011_id');
-  const contacts = await linked('pc_0010', 'o.name, o.email', 'pc_0010_id');
+  const contacts = await linked('pc_0010', "o.name, o.email -> 0 ->> 'value' as email", 'pc_0010_id');
   return {
     lines: lines.map((l) => ({
       id: l.id as string,

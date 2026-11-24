@@ -131,7 +131,7 @@ async function actorNames(actors: string[]): Promise<Map<string, string | null>>
   if (missing.length) {
     const { rows } = await pool.query(
       `select u.pc_0000_id as id,
-         coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as name
+         coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email -> 0 ->> 'value') as name
        from crm.pc_0000 u where u.pc_0000_id = any ($1)`,
       [missing]
     );

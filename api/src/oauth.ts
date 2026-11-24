@@ -418,7 +418,7 @@ function signInPage(req: FastifyRequest, reply: FastifyReply, a: AuthRequest) {
 }
 
 async function consentPage(req: FastifyRequest, reply: FastifyReply, p: Principal, a: AuthRequest) {
-  const { rows } = await pool.query('select name, email from crm.pc_0000 where pc_0000_id = $1', [p.userId]);
+  const { rows } = await pool.query("select name, email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.userId]);
   const who = rows[0]?.email || rows[0]?.name || p.userId;
   const redirect = new URL(a.redirectUri);
   const loopbackOnly = a.client.redirectUris.every((r) => LOOPBACK_HOSTS.has(new URL(r).hostname));
@@ -754,7 +754,7 @@ export async function oauthRoutes(app: FastifyInstance) {
     if (all) requireScope(p, 'admin');
     else if (!p.userId) throw badRequest('this API key is not linked to a user; use ?all=true with an admin key');
     const { rows } = await pool.query(
-      `select g.id, g.user_id, u.name as user_name, u.email as user_email, g.scopes, g.created_at, g.updated_at, g.last_used_at,
+      `select g.id, g.user_id, u.name as user_name, u.email -> 0 ->> 'value' as user_email, g.scopes, g.created_at, g.updated_at, g.last_used_at,
               c.id as app_id, c.name as app_name, c.kind as app_kind, c.client_id, c.client_uri, c.blocked_at is not null as app_blocked
        from auth.oauth_grants g join auth.oauth_clients c on c.id = g.client_id left join crm.pc_0000 u on u.pc_0000_id = g.user_id
        where g.revoked_at is null and ($1 or g.user_id = $2)

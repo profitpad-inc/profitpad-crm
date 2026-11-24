@@ -130,7 +130,7 @@ export function sensitiveWarning(p: Principal, a: { title: string; body: string;
 }
 
 // The name of whoever an actor string ("user:<id>", "api:<prefix>") is.
-const SELECT = `select a.*, coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as updated_by_name
+const SELECT = `select a.*, coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email -> 0 ->> 'value') as updated_by_name
   from ui.knowledge_articles a
   left join crm.pc_0000 u on a.updated_by like 'user:%' and u.pc_0000_id = substr(a.updated_by, 6)`;
 
@@ -208,7 +208,7 @@ export async function listRevisions(p: Principal, id: string) {
   if (!canSee(p, a)) throw notFound('article not found');
   const { rows } = await pool.query(
     `select r.id, r.title, r.body, r.admins_only, r.saved_at, r.saved_via, r.saved_by,
-       coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as saved_by_name
+       coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email -> 0 ->> 'value') as saved_by_name
      from ui.knowledge_revisions r
      left join crm.pc_0000 u on r.saved_by like 'user:%' and u.pc_0000_id = substr(r.saved_by, 6)
      where r.article_id = $1 order by r.id desc`,

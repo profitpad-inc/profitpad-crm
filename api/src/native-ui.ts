@@ -80,7 +80,8 @@ export function describeCreateForm(obj: ObjectDef, p: Principal) {
       return {
         api_name: n, label: pr.label, type: pr.type,
         ...(pr.options.single_value !== undefined ? { single_value: pr.options.single_value } : {}),
-        ...(pr.type === 'text' && pr.options.display === 'phone' ? { display: 'phone', input: 'PhoneInput from @pcrm/view: a country picker and the number, checked and formatted when the viewer leaves it' } : {}),
+        ...(pr.type === 'phone' ? { input: 'PhoneInput from @pcrm/view for one number (a country picker and the number, checked and formatted when the viewer leaves it); the property holds a list, and writing one number as a string adds it at the top' } : {}),
+        ...(pr.type === 'email' ? { input: 'one address as a string adds it at the top of the list; send the whole list ([{value, label?}]) to replace it' } : {}),
         ...(form.starts_as_me.includes(n) ? { starts_as: 'the signed-in user' } : {})
       };
     }),

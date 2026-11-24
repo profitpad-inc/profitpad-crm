@@ -26,6 +26,7 @@ import { confirmDialog } from '../components/confirm';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Loading } from '../components/Loading';
 import { useIsMobile } from '../lib/use-mobile';
+import { confirmPrimaryChange } from '../components/MultiValueField';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -1072,8 +1073,9 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
   const draftRef = useRef(draft);
   const done = useRef(false);
   const singleChoice = property.type === 'dropdown' && property.options.single_value === true;
-  // multi-choice dropdowns and long text (a textarea) save with a button
-  const needsSave = property.type === 'dropdown'
+  // multi-choice dropdowns, email and phone lists and long text (a textarea) save with a button
+  const needsSave = property.type === 'email' || property.type === 'phone' ? true
+    : property.type === 'dropdown'
     ? !singleChoice
     : !['number', 'date', 'datetime'].includes(valueType(property)) && property.options.single_line !== true && !property.is_base;
 
@@ -1084,6 +1086,11 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
     const value = fromInput(property, draftRef.current);
     if (JSON.stringify(value) === JSON.stringify(record.properties[property.api_name] ?? null)) {
       onClose();
+      return;
+    }
+    // a new primary address or number is confirmed first; No keeps the editor open
+    if ((property.type === 'email' || property.type === 'phone') && !(await confirmPrimaryChange(property.type, record.properties[property.api_name], value))) {
+      done.current = false;
       return;
     }
     setSaving(true);
@@ -1157,7 +1164,8 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
     };
   }, [commit, onClose]);
 
-  const width = Math.max(rect.width, 240);
+  // email and phone lists edit as a small table of rows
+  const width = Math.min(Math.max(rect.width, property.type === 'email' || property.type === 'phone' ? 460 : 240), window.innerWidth - 16);
   const style: React.CSSProperties = {
     top: Math.max(8, Math.min(rect.top, window.innerHeight - 240)),
     left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
@@ -1218,7 +1226,7 @@ function BulkEditModal({ object, schema, ids, onClose, onDone }: {
   object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number, property: string) => void;
 }) {
   const properties = useMemo(
-    () => schema.properties.filter((p) => isEditable(p) && p.options.unique !== true).sort((a, b) => a.label.localeCompare(b.label)),
+    () => schema.properties.filter((p) => isEditable(p) && p.options.unique !== true && p.type !== 'email' && p.type !== 'phone').sort((a, b) => a.label.localeCompare(b.label)),
     [schema]
   );
   const [name, setName] = useState('');

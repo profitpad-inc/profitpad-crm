@@ -50,17 +50,19 @@ test('matchDropdownInput: single and multi values', () => {
 });
 
 const textProp = (api_name: string, options: Record<string, unknown> = {}): PropertyDef => ({ api_name, label: api_name, type: 'text', options, dropdown_options: [] } as unknown as PropertyDef);
+const listProp = (type: 'email' | 'phone', api_name: string = type): PropertyDef => ({ api_name, label: api_name === 'email' ? 'Email' : 'Phone', type, options: {}, dropdown_options: [] } as unknown as PropertyDef);
 
 test('importValueProblem: emails and phone numbers', () => {
   assert.equal(importValueProblem(textProp('email'), 'ada@example.com'), null);
   assert.equal(importValueProblem(textProp('email'), 'ada@example'), 'not a valid email address');
   assert.equal(importValueProblem(textProp('payer_email'), 'ada example.com'), 'not a valid email address');
-  assert.equal(importValueProblem(textProp('additional_emails'), 'a@x.com; b@x.com'), null);
-  assert.equal(importValueProblem(textProp('additional_emails'), 'a@x.com, nope'), 'not valid email addresses: nope');
+  assert.equal(importValueProblem(listProp('email'), 'a@x.com; b@x.com'), null);
+  assert.equal(importValueProblem(listProp('email'), 'a@x.com, nope'), 'not valid email addresses: nope');
   assert.equal(importValueProblem(textProp('emailer'), 'whatever'), null);
-  assert.match(importValueProblem(textProp('phone', { display: 'phone' }), '504222032') ?? '', /^not a valid phone number/);
-  assert.equal(importValueProblem(textProp('phone', { display: 'phone' }), '+1 888 234 5678'), null);
-  assert.equal(importValueProblem(textProp('phone', { display: 'phone' }), '  '), null);
+  assert.match(importValueProblem(listProp('phone'), '504222032') ?? '', /^not a valid phone number/);
+  assert.equal(importValueProblem(listProp('phone'), '+1 888 234 5678'), null);
+  assert.equal(importValueProblem(listProp('phone'), '+1 888 234 5678; +44 20 7946 0958'), null);
+  assert.equal(importValueProblem(listProp('phone'), '  '), null);
 });
 
 test('record writes: email properties need a valid, non-typo address, except what is already there', () => {
@@ -68,8 +70,9 @@ test('record writes: email properties need a valid, non-typo address, except wha
   assert.match(emailValueProblem(textProp('email'), 'bob', null) ?? '', /^email: bob is not a valid email address/);
   assert.match(emailValueProblem(textProp('email'), 'a@b..com', null) ?? '', /not a valid email address/);
   assert.match(emailValueProblem(textProp('payer_email'), 'bob@x', null) ?? '', /not a valid/);
-  assert.match(emailValueProblem(textProp('additional_emails'), 'b@x.com; c@gnail.com', null) ?? '', /c@gnail\.com/);
-  assert.equal(emailValueProblem(textProp('additional_emails'), 'old@x; new@y.com', 'old@x'), null);
+  const list = (...v: string[]) => JSON.stringify(v.map((value) => ({ value })));
+  assert.match(emailValueProblem(listProp('email'), list('b@x.com', 'c@gnail.com'), null) ?? '', /c@gnail\.com/);
+  assert.equal(emailValueProblem(listProp('email'), list('old@gnail.com', 'new@y.com'), [{ value: 'old@gnail.com' }]), null);
   assert.equal(emailValueProblem(textProp('email'), 'a@gmail.co', 'a@gmail.co'), null);
   assert.equal(emailValueProblem(textProp('email'), 'a@gmail.com', null), null);
   assert.equal(emailValueProblem(textProp('attendee_email'), 'bob', null), null);
@@ -85,4 +88,35 @@ test('imports refuse double dots in email addresses', () => {
   assert.equal(importValueProblem(textProp('email'), 'a@b..com'), 'not a valid email address');
   assert.equal(importValueProblem(textProp('email'), 'a..b@x.com'), 'not a valid email address');
   assert.equal(importValueProblem(textProp('email'), 'a.b@x.co.uk'), null);
+});
+
+test('email and phone lists: what toDb stores', () => {
+  const email = listProp('email');
+  const phone = listProp('phone');
+  const stored = (prop: PropertyDef, input: unknown, existing?: unknown) => {
+    const v = toDb(prop, input, existing).value;
+    return v === null ? null : JSON.parse(v as string);
+  };
+  // a list replaces; labels trimmed, presets lowercased, custom kept
+  assert.deepEqual(stored(email, [{ value: ' Ann@Work.Example ', label: ' Work ' }, { value: 'ann@home.example', label: 'Old  school' }, 'x@y.example']),
+    [{ value: 'ann@work.example', label: 'work' }, { value: 'ann@home.example', label: 'Old school' }, { value: 'x@y.example' }]);
+  // a string adds at the top, unless already there
+  const had = [{ value: 'a@x.example', label: 'work' }, { value: 'b@x.example' }];
+  assert.deepEqual(stored(email, 'B@x.example', had), had);
+  assert.deepEqual(stored(email, 'c@x.example', had), [{ value: 'c@x.example' }, ...had]);
+  assert.deepEqual(stored(email, 'c@x.example; d@x.example', null), [{ value: 'c@x.example' }, { value: 'd@x.example' }]);
+  // clearing
+  assert.equal(stored(email, null, had), null);
+  assert.equal(stored(email, [], had), null);
+  assert.equal(stored(email, '', had), null);
+  // refused
+  assert.throws(() => toDb(email, [{ value: 'nope' }]), /not a valid email address/);
+  assert.throws(() => toDb(email, ['a@x.example', 'A@x.example']), /listed twice/);
+  assert.throws(() => toDb(email, [{ value: 'a@x.example', kind: 'x' }]), /unknown entry field/);
+  assert.throws(() => toDb(email, [{ value: 'a@x.example', label: 'x'.repeat(41) }]), /at most 40/);
+  assert.throws(() => toDb(email, 5), /expected a list/);
+  // phones normalized
+  assert.deepEqual(stored(phone, [{ value: '(888) 234-5678 x9', label: 'Cell' }]), [{ value: '+18882345678ext9', label: 'cell' }]);
+  assert.deepEqual(stored(phone, '+1 888 234 5678', [{ value: '+18882345678', label: 'work' }]), [{ value: '+18882345678', label: 'work' }]);
+  assert.throws(() => toDb(phone, '504222032'), /not a valid phone number/);
 });

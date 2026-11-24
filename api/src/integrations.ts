@@ -392,7 +392,7 @@ function parseAnswer(a: OutsideAnswer): unknown {
 }
 
 async function payloadFor(p: Principal, key: string | null, data: unknown, view: { slug: string; name: string | null; draft: boolean } | null, dryRun = false) {
-  const { rows } = p.userId ? await pool.query('select name, email from crm.pc_0000 where pc_0000_id = $1', [p.userId]) : { rows: [] };
+  const { rows } = p.userId ? await pool.query("select name, email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.userId]) : { rows: [] };
   const payload = JSON.stringify({
     integration: key,
     data: data ?? null,

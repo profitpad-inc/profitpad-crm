@@ -589,7 +589,7 @@ export async function uiRoutes(app: FastifyInstance) {
     let user = null;
     if (p.userId) {
       const { rows } = await pool.query(
-        'select pc_0000_id as id, name, first_name, last_name, email, email_signature from crm.pc_0000 where pc_0000_id = $1',
+        "select pc_0000_id as id, name, first_name, last_name, email -> 0 ->> 'value' as email, email_signature from crm.pc_0000 where pc_0000_id = $1",
         [p.userId]
       );
       user = rows[0] ? { ...rows[0], ...(await photoInfo(p.userId)) } : null;
@@ -597,7 +597,7 @@ export async function uiRoutes(app: FastifyInstance) {
     // the Super Admin behind a "Sign in as" session (the UI shows a banner)
     let signedInAsBy = null;
     if (p.session?.impersonatedBy) {
-      const { rows } = await pool.query('select pc_0000_id as id, name, email from crm.pc_0000 where pc_0000_id = $1', [p.session.impersonatedBy]);
+      const { rows } = await pool.query("select pc_0000_id as id, name, email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.session.impersonatedBy]);
       signedInAsBy = rows[0] ?? { id: p.session.impersonatedBy, name: null, email: null };
     }
     return {

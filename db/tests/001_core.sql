@@ -189,20 +189,21 @@ end $t$;
 -- 8. History, archive, merge, delete
 do $t$
 begin
-  update crm.pc_0010 set email = 'a@x.com' where pc_0010_id = '0000000010';
+  update crm.pc_0010 set email = '[{"value": "a@x.com"}]' where pc_0010_id = '0000000010';
   perform meta._test_check(exists (select 1 from meta.record_history where object_type_id = 'pc_0010' and record_id = '0000000010'
-    and property = 'email' and new_value = '"a@x.com"' and changed_by = 'test'), 'history records the change and actor');
+    and property = 'email' and new_value = '[{"value": "a@x.com"}]' and changed_by = 'test'), 'history records the change and actor');
 
   perform meta._test_check(meta.set_record_status('contacts', array['0000000010'], 'archived') = 1, 'archive');
   perform meta._test_check(not exists (select 1 from reporting.contacts where pc_0010_id = '0000000010'), 'archived records leave reporting');
   perform meta.set_record_status('contacts', array['0000000010'], 'active');
 
-  update crm.pc_0010 set email = 'b@x.com', job_title = 'CEO' where pc_0010_id = '0000000011';
+  update crm.pc_0010 set email = '[{"value": "b@x.com"}]', job_title = 'CEO' where pc_0010_id = '0000000011';
   perform meta.associate('contacts', '0000000011', 'companies', '0000000002');
   perform meta.merge_records('contacts', '0000000010', '0000000011');
   perform meta._test_check((select record_status || merged_into_id from crm.pc_0010 where pc_0010_id = '0000000011') = 'merged0000000010', 'loser marked merged');
   perform meta._test_check((select job_title from crm.pc_0010 where pc_0010_id = '0000000010') = 'CEO', 'winner fills empty values');
-  perform meta._test_check((select email from crm.pc_0010 where pc_0010_id = '0000000010') = 'a@x.com', 'winner keeps its own values');
+  perform meta._test_check((select meta.primary_value(email) from crm.pc_0010 where pc_0010_id = '0000000010') = 'a@x.com', 'winner keeps its own values');
+  perform meta._test_check((select email from crm.pc_0010 where pc_0010_id = '0000000010') = '[{"value": "a@x.com"}, {"value": "b@x.com"}]'::jsonb, 'merge combines email lists');
   perform meta._test_check((select merged_ids from crm.pc_0010 where pc_0010_id = '0000000010') = array['0000000011'], 'merged_ids');
   perform meta._test_check(exists (select 1 from crm.associations_both where record_id = '0000000010' and object_type_id = 'pc_0010' and other_record_id = '0000000002'), 'associations move to winner');
 
@@ -229,7 +230,7 @@ end $t$;
 set local role pc_api;
 do $t$
 begin
-  insert into crm.pc_0010 (first_name, email) values ('Via API', 'api@x.com');
+  insert into crm.pc_0010 (first_name, email) values ('Via API', '[{"value": "api@x.com"}]');
   perform meta._test_expect_error($$insert into crm.pc_0010 (name) values ('x')$$, 'permission denied');
   perform meta._test_expect_error($$update crm.pc_0010 set record_status = 'deleted'$$, 'permission denied');
   perform meta._test_expect_error($$insert into crm.pc_0010 (pc_0010_id, name) values ('00000000ff', 'x')$$, 'permission denied');
@@ -261,9 +262,9 @@ declare
   v_role bigint := (select id from auth.roles where name = 'Super Admin');
 begin
   delete from auth.role_assignments;
-  insert into crm.pc_0000 (name, email) values ('Keep Admin A', 'keep.admin.a@test.example') returning pc_0000_id into v_a;
-  insert into crm.pc_0000 (name, email) values ('Keep Admin B', 'keep.admin.b@test.example') returning pc_0000_id into v_b;
-  insert into crm.pc_0000 (name, email) values ('Not An Admin', 'not.an.admin@test.example') returning pc_0000_id into v_plain;
+  insert into crm.pc_0000 (name, email) values ('Keep Admin A', '[{"value": "keep.admin.a@test.example"}]') returning pc_0000_id into v_a;
+  insert into crm.pc_0000 (name, email) values ('Keep Admin B', '[{"value": "keep.admin.b@test.example"}]') returning pc_0000_id into v_b;
+  insert into crm.pc_0000 (name, email) values ('Not An Admin', '[{"value": "not.an.admin@test.example"}]') returning pc_0000_id into v_plain;
   perform meta._test_check(not meta.has_active_admin(), 'no admin user yet');
   -- with no admin user at all, nothing is blocked
   update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_a;
@@ -712,7 +713,7 @@ declare
   v_deal text;
   v_status text;
 begin
-  insert into crm.pc_0000 (name, email) values ('Gone Soon', 'gone.soon@test.example') returning pc_0000_id into v_user;
+  insert into crm.pc_0000 (name, email) values ('Gone Soon', '[{"value": "gone.soon@test.example"}]') returning pc_0000_id into v_user;
   insert into crm.pc_0012 (name, owner) values ('Owned deal', array[v_user]) returning pc_0012_id into v_deal;
   update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_user;
   select o.record_status into v_status from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
@@ -750,10 +751,10 @@ begin
   update crm.pc_0010 set first_name = null where pc_0010_id = v_b;
   perform meta.process_calc_queue();
   perform meta._test_check((select name is null from crm.pc_0010 where pc_0010_id = v_b), 'no names, email or phone gives an empty name');
-  update crm.pc_0010 set phone = '+1 555 0100' where pc_0010_id = v_b;
+  update crm.pc_0010 set phone = '[{"value": "+1 555 0100"}]' where pc_0010_id = v_b;
   perform meta.process_calc_queue();
   perform meta._test_check((select name = '+1 555 0100' from crm.pc_0010 where pc_0010_id = v_b), 'phone when nothing else');
-  update crm.pc_0010 set email = 'robert@name.example' where pc_0010_id = v_b;
+  update crm.pc_0010 set email = '[{"value": "robert@name.example"}]' where pc_0010_id = v_b;
   perform meta.process_calc_queue();
   perform meta._test_check((select name = 'robert@name.example' from crm.pc_0010 where pc_0010_id = v_b), 'email before phone');
   update crm.pc_0010 set email = null, phone = null where pc_0010_id = v_b;

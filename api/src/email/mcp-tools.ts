@@ -101,7 +101,7 @@ export function registerEmailTools(server: McpServer, p: Principal): void {
     requireScope(p, 'write');
     requireObjectPermission(p, await getObject('email_campaigns'), 'edit');
     if (!p.userId) throw badRequest('Tests go to the signed-in user, and this connection is not a user.');
-    const { rows } = await pool.query('select email from crm.pc_0000 where pc_0000_id = $1', [p.userId]);
+    const { rows } = await pool.query("select email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.userId]);
     if (!rows[0]?.email) throw badRequest('Your user has no email address.');
     const out = await previewCampaign(campaign, contact_id);
     const res = await sendEmail({ to: rows[0].email, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test' });

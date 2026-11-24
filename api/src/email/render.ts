@@ -2,6 +2,7 @@ import { pool } from '../db.js';
 import { badRequest } from '../errors.js';
 import { getObject } from '../registry.js';
 import { liquidRecord, renderLiquid } from '../templates.js';
+import { primaryValue } from '../multi-values.js';
 import type { EmailSettings } from './settings.js';
 
 // A campaign's email for one contact: the campaign's email template (subject
@@ -76,7 +77,7 @@ export async function contactData(ids: string[]): Promise<Map<string, ContactDat
   const companyOf = new Map(cos.map((r) => [r.contact_id as string, liquidRecord(companies, r)]));
   const ownerIds = [...new Set(rows.map((r) => (Array.isArray(r.owner) ? r.owner[0] : null)).filter(Boolean))];
   const { rows: users } = ownerIds.length
-    ? await pool.query('select pc_0000_id as id, name, first_name, last_name, email from crm.pc_0000 where pc_0000_id = any($1)', [ownerIds])
+    ? await pool.query("select pc_0000_id as id, name, first_name, last_name, email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = any($1)", [ownerIds])
     : { rows: [] as { id: string; name: string | null; first_name: string | null; last_name: string | null; email: string | null }[] };
   const ownerOf = new Map(users.map((u) => [u.id, { name: u.name, first_name: u.first_name, last_name: u.last_name, email: u.email }]));
   for (const r of rows) {
@@ -85,7 +86,7 @@ export async function contactData(ids: string[]): Promise<Map<string, ContactDat
       contact: liquidRecord(contacts, r),
       company: companyOf.get(id) ?? null,
       owner: Array.isArray(r.owner) && r.owner[0] ? ownerOf.get(r.owner[0]) ?? null : null,
-      email: typeof r.email === 'string' && r.email ? r.email : null
+      email: primaryValue(r.email)
     });
   }
   return out;

@@ -76,9 +76,9 @@ begin
   if v_edited is null then raise exception 'changing the body sets edited_at'; end if;
 
   -- mentions
-  insert into crm.pc_0000 (name, email) values ('Ann Lee', 'ann-c@example.com') returning pc_0000_id into v_ann;
-  insert into crm.pc_0000 (name, email) values ('Bob Ray', 'bob-c@example.com') returning pc_0000_id into v_bob;
-  insert into crm.pc_0000 (name, email) values ('Old User', 'old-c@example.com') returning pc_0000_id into v_old;
+  insert into crm.pc_0000 (name, email) values ('Ann Lee', '[{"value": "ann-c@example.com"}]') returning pc_0000_id into v_ann;
+  insert into crm.pc_0000 (name, email) values ('Bob Ray', '[{"value": "bob-c@example.com"}]') returning pc_0000_id into v_bob;
+  insert into crm.pc_0000 (name, email) values ('Old User', '[{"value": "old-c@example.com"}]') returning pc_0000_id into v_old;
   update crm.pc_0000 set record_status = 'archived' where pc_0000_id = v_old;
 
   perform set_config('crm.actor', 'user:' || v_bob, true);

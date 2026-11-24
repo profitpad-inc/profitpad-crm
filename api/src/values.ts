@@ -2,6 +2,7 @@ import { checkPhone } from './phone.js';
 import { badRequest } from './errors.js';
 import { isGmailTypo } from './email-typo.js';
 import { isSingleValue, type PropertyDef } from './registry.js';
+import { EMAIL_RE, MultiValueError, addedValues, isMultiType, normalizeMultiValue, splitMultiText, toMulti } from './multi-values.js';
 
 const HEX_ID = /^[0-9a-f]{10}$/;
 const NUMERIC = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/;
@@ -35,13 +36,18 @@ export function toDb(prop: PropertyDef, input: unknown, existing?: unknown): Coe
 
   if (type === 'text') {
     if (typeof input !== 'string') throw fail('expected a string');
-    // phone properties: any format in, only valid numbers stored (+18882345678ext9)
-    if (prop.options.display === 'phone') {
-      const phone = checkPhone(input);
-      if (!phone.valid) throw badRequest(`${prop.label}: "${input}" is not a valid phone number (${phone.reason})`, { property: prop.api_name });
-      return { value: phone.value, newOptions: [] };
-    }
     return { value: input, newOptions: [] };
+  }
+  // email and phone lists (multi-values.ts): any phone format in, only valid
+  // numbers stored (+18882345678ext9); emails lowercased
+  if (type === 'email' || type === 'phone') {
+    try {
+      const list = toMulti(type, input, existing);
+      return { value: list === null ? null : JSON.stringify(list), newOptions: [] };
+    } catch (err) {
+      if (err instanceof MultiValueError) throw badRequest(`${prop.label}: ${err.message}`, { property: prop.api_name });
+      throw err;
+    }
   }
   if (type === 'number') {
     if (typeof input === 'number' && Number.isFinite(input)) return { value: String(input), newOptions: [] };
@@ -124,12 +130,11 @@ export function matchDropdownInput(prop: PropertyDef, input: unknown): unknown {
   return isSingleValue(prop) ? (out[0] ?? null) : out;
 }
 
-// Imports check addresses in email properties before anything is written
-// (the API itself stores any text): properties named email, *_email or
-// additional_emails (several addresses split by ; , or spaces).
-const EMAIL_RE = /^(?!.*\.\.)[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Email properties: the email type (always checked when written), and text
+// properties named *_email or email that are not lists (imports and the CRM
+// UI check those; the API itself stores any text in them).
 export function isEmailProperty(prop: PropertyDef): boolean {
-  return prop.type === 'text' && (prop.api_name === 'email' || prop.api_name.endsWith('_email') || prop.api_name === 'additional_emails');
+  return prop.type === 'email' || (prop.type === 'text' && (prop.api_name === 'email' || prop.api_name.endsWith('_email')));
 }
 
 // Record writes from the CRM UI (card scans included) and MCP: every email
@@ -141,9 +146,10 @@ export function isEmailProperty(prop: PropertyDef): boolean {
 const SYNCED_EMAIL_PROPS = new Set(['attendee_email', 'organizer_email']);
 export function emailValueProblem(prop: PropertyDef, value: unknown, existing: unknown): string | null {
   if (!isEmailProperty(prop) || SYNCED_EMAIL_PROPS.has(prop.api_name) || typeof value !== 'string') return null;
-  const split = (v: unknown) => (typeof v !== 'string' ? [] : prop.api_name === 'additional_emails' ? v.split(/[;,\s]+/).filter(Boolean) : [v.trim()].filter(Boolean));
-  const before = new Set(split(existing));
-  const added = split(value).filter((e) => !before.has(e));
+  // email lists reach here as the stored JSON (toDb); toDb already checked the format
+  const added = prop.type === 'email'
+    ? addedValues(JSON.parse(value), existing)
+    : [value.trim()].filter((e) => e && e !== (typeof existing === 'string' ? existing.trim() : ''));
   const bad = added.filter((e) => !EMAIL_RE.test(e));
   if (bad.length > 0) return `${prop.label}: ${bad.join(', ')} ${bad.length > 1 ? 'are not valid email addresses' : 'is not a valid email address'}`;
   const typos = added.filter(isGmailTypo);
@@ -157,19 +163,34 @@ export function emailValueProblem(prop: PropertyDef, value: unknown, existing: u
 // column's own check does.
 export function importValueProblem(prop: PropertyDef, input: string): string | null {
   const text = input.trim();
-  if (text === '' || prop.type !== 'text') return null;
+  if (text === '' || (prop.type !== 'text' && !isMultiType(prop))) return null;
   if (isEmailProperty(prop)) {
-    const parts = prop.api_name === 'additional_emails' ? text.split(/[;,\s]+/).filter(Boolean) : [text];
+    const parts = prop.type === 'email' ? splitMultiText('email', text) : [text];
     const bad = parts.filter((e) => !EMAIL_RE.test(e));
     if (bad.length > 0) return parts.length > 1 ? `not valid email addresses: ${bad.join(', ')}` : 'not a valid email address';
     const typos = parts.filter(isGmailTypo);
     if (typos.length > 0) return `looks like a typo, did you mean @gmail.com? (${typos.join(', ')})`;
   }
-  if (prop.options.display === 'phone') {
-    const phone = checkPhone(text);
-    if (!phone.valid) return `not a valid phone number (${phone.reason})`;
+  if (prop.type === 'phone') {
+    for (const part of splitMultiText('phone', text)) {
+      const phone = checkPhone(part);
+      if (!phone.valid) return `not a valid phone number (${phone.reason})`;
+    }
   }
   return null;
+}
+
+// A single typed value for an email or phone property, as it would be stored,
+// or the reason it can't be (MultiValueError message).
+export function multiValueProblem(prop: PropertyDef, input: string): string | null {
+  if (!isMultiType(prop)) return null;
+  try {
+    normalizeMultiValue(prop.type, input);
+    return null;
+  } catch (err) {
+    if (err instanceof MultiValueError) return err.message;
+    throw err;
+  }
 }
 
 // Converts a stored value into its API shape.

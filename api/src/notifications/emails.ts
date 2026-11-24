@@ -151,7 +151,7 @@ export function layout(o: { heading: string; quote?: string | null; bodyHtml?: s
 
 async function userNameOf(userId: string | null): Promise<string | null> {
   if (!userId) return null;
-  const { rows } = await pool.query(`select trim(concat_ws(' ', first_name, last_name)) as name, email from crm.pc_0000 where pc_0000_id = $1`, [userId]);
+  const { rows } = await pool.query(`select trim(concat_ws(' ', first_name, last_name)) as name, email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1`, [userId]);
   return rows[0]?.name || rows[0]?.email || null;
 }
 
@@ -308,7 +308,7 @@ async function write(row: QueuedRow): Promise<Written> {
   }
   if (row.kind === 'invite') {
     const { rows } = await pool.query(
-      `select lower(trim(email)) as email, first_name, record_status, coalesce(status, '{}') @> '{deactivated}' as deactivated
+      `select email -> 0 ->> 'value' as email, first_name, record_status, coalesce(status, '{}') @> '{deactivated}' as deactivated
        from crm.pc_0000 where pc_0000_id = $1`,
       [row.source_id]
     );
@@ -339,7 +339,7 @@ export async function queueInvite(p: Principal, userId: string): Promise<{ id: s
   const sender = await loadSender();
   if (!sender?.enabled) throw new ApiError(409, 'notification emails are not set up or are turned off (Settings → Notification emails)', 'not_configured');
   const { rows: u } = await pool.query(
-    `select lower(trim(email)) as email, record_status, coalesce(status, '{}') @> '{deactivated}' as deactivated from crm.pc_0000 where pc_0000_id = $1`,
+    `select email -> 0 ->> 'value' as email, record_status, coalesce(status, '{}') @> '{deactivated}' as deactivated from crm.pc_0000 where pc_0000_id = $1`,
     [userId]
   );
   if (!u[0] || u[0].record_status !== 'active') throw notFound('user not found');
@@ -447,16 +447,18 @@ async function recipients(to: unknown): Promise<{ id: string; email: string }[]>
   if (list.length > MAX_RECIPIENTS) throw badRequest(`at most ${MAX_RECIPIENTS} recipients at a time`, { property: 'to' });
   const wanted = list.map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : ''));
   if (wanted.some((v) => !v)) throw badRequest('every recipient must be a user ID or an email address', { property: 'to' });
-  const { rows } = await pool.query<{ id: string; email: string }>(
-    `select pc_0000_id as id, lower(trim(email)) as email from crm.pc_0000
+  const { rows } = await pool.query<{ id: string; email: string; emails: string[] }>(
+    `select pc_0000_id as id, email -> 0 ->> 'value' as email, array(select e ->> 'value' from jsonb_array_elements(email) e) as emails from crm.pc_0000
      where record_status = 'active' and not coalesce(status, '{}') @> '{deactivated}'
-       and email ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$' and (pc_0000_id = any ($1) or lower(trim(email)) = any ($1))`,
+       and (email -> 0 ->> 'value') ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'
+       and (pc_0000_id = any ($1) or exists (select 1 from jsonb_array_elements(email) e where e ->> 'value' = any ($1)))`,
     [wanted]
   );
-  const unknown = wanted.filter((w) => !rows.some((r) => r.id === w || r.email === w));
+  // a user named by any of their addresses gets the email at their primary one
+  const unknown = wanted.filter((w) => !rows.some((r) => r.id === w || r.emails.includes(w)));
   if (unknown.length) throw badRequest(`not an active CRM user with an email address: ${unknown.join(', ')} (notification emails go to CRM users only)`, { property: 'to' });
   const seen = new Set<string>();
-  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true))).map(({ id, email }) => ({ id, email }));
 }
 
 const textToHtml = (t: string) =>

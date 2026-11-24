@@ -158,7 +158,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
 
   // ---- step 2: columns ----------------------------------------------------------
   function isDedupeProp(p: Property | undefined): boolean {
-    return !!p && p.type === 'text' && p.options.unique === true;
+    return !!p && (p.type === 'text' || p.type === 'email' || p.type === 'phone') && p.options.unique === true;
   }
 
   const dedupeChoices = mapping.filter((n) => isDedupeProp(propByName.get(n)));
@@ -211,7 +211,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     for (const [col, name] of mapping.entries()) {
       const p = propByName.get(name);
       if (!p || p.type === 'dropdown') continue;
-      if (p.type === 'text') {
+      if (p.type === 'text' || p.type === 'email' || p.type === 'phone') {
         const counts = new Map<string, number>();
         for (const r of s.rows) {
           const t = cellText(r[col]);
@@ -271,7 +271,7 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
     const col = mapping.indexOf(name);
     let why: string | null = null;
     if (typed.trim() === '') why = 'type a value, or pick Leave empty';
-    else if (p.type === 'text') why = (await checkTexts(name, [typed.trim()]).catch(() => new Map<string, string>())).get(typed.trim()) ?? null;
+    else if (p.type === 'text' || p.type === 'email' || p.type === 'phone') why = (await checkTexts(name, [typed.trim()]).catch(() => new Map<string, string>())).get(typed.trim()) ?? null;
     else {
       const c = convertCell(p, typed, dateOrders[col] ?? 'mdy');
       why = c.ok ? null : c.error;

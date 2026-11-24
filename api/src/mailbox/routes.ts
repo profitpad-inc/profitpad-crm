@@ -119,7 +119,7 @@ async function myLogging(userId: string) {
 async function activeUsers() {
   const users = await getObject('users');
   const { rows } = await pool.query(
-    `select ${quoteIdent(users.id_column)} as id, trim(concat_ws(' ', first_name, last_name)) as name, lower(email) as email
+    `select ${quoteIdent(users.id_column)} as id, trim(concat_ws(' ', first_name, last_name)) as name, email -> 0 ->> 'value' as email
      from crm.${quoteIdent(users.object_type_id)}
      where record_status = 'active' and coalesce(status[1], 'active') = 'active' order by 2, 3`
   );

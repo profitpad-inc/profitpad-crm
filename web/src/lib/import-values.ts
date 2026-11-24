@@ -4,7 +4,7 @@
 import type { Property } from './api';
 import { cellText, isSheetDate, type Cell } from './import-parse';
 
-export const IMPORTABLE_TYPES = ['text', 'number', 'date', 'datetime', 'dropdown'] as const;
+export const IMPORTABLE_TYPES = ['text', 'number', 'date', 'datetime', 'dropdown', 'email', 'phone'] as const;
 
 export type DateOrder = 'mdy' | 'dmy';
 
@@ -106,7 +106,8 @@ export type Converted = { ok: true; value: unknown } | { ok: false; error: strin
 export function convertCell(p: Property, c: Cell, order: DateOrder): Converted {
   const text = cellText(c);
   if (text === '') return { ok: true, value: undefined };
-  if (p.type === 'text') return { ok: true, value: text };
+  // email and phone cells may hold several values (a; b): each is added to the record's list
+  if (p.type === 'text' || p.type === 'email' || p.type === 'phone') return { ok: true, value: text };
   if (p.type === 'number') {
     if (typeof c === 'number') return { ok: true, value: c };
     let t = text.replace(/[\s,$€£¥]/g, '');

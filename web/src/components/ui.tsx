@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { api, API_BASE, getSchema, type Property } from '../lib/api';
 import { loadPhoneRegions } from '../public/phone-regions';
-import { PhoneInput, type PhoneResult, type PhoneSource } from './PhoneInput';
-import { displayPhone, valueType } from '../lib/display';
+import type { PhoneResult, PhoneSource } from './PhoneInput';
+import { MultiValueEditor } from './MultiValueField';
+import { decodeEntries, encodeEntries, entriesOf } from '../lib/multi-values';
+import { valueType } from '../lib/display';
 import { DatePicker } from './DatePicker';
 import { Select } from './Select';
 import { onFrameFocus } from '../lib/frame-focus';
@@ -100,13 +102,18 @@ export function toInput(p: Property, v: unknown): string {
     const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
     return local.toISOString().slice(0, 16);
   }
+  // email and phone lists travel as JSON (lib/multi-values.ts)
+  if (p.type === 'email' || p.type === 'phone') return encodeEntries(entriesOf(v));
   if (Array.isArray(v)) return v.join(';');
-  if (p.type === 'text' && p.options.display === 'phone' && typeof v === 'string') return displayPhone(v);
   return String(v);
 }
 
 export function fromInput(p: Property, s: string): unknown {
   if (s.trim() === '') return null;
+  if (p.type === 'email' || p.type === 'phone') {
+    const list = decodeEntries(s);
+    return list.length ? list : null;
+  }
   const t = valueType(p);
   if (t === 'number') return Number(s);
   if (t === 'datetime') return new Date(s).toISOString();
@@ -115,7 +122,7 @@ export function fromInput(p: Property, s: string): unknown {
 }
 
 // Phone pickers in the CRM read the regions and check numbers through the API.
-const APP_PHONE: PhoneSource = {
+export const APP_PHONE: PhoneSource = {
   regions: () => loadPhoneRegions(API_BASE),
   check: (number) => api<PhoneResult>('POST', '/v1/phone/validate', { number })
 };
@@ -177,9 +184,10 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit, 
       </div>
     );
   }
-  if (property.type === 'text' && property.options.display === 'phone') {
-    // without onCommit the value is saved later (Create, Add line, Edit all), so it is checked on leaving the box
-    return <PhoneInput value={value} onChange={onChange} autoFocus={autoFocus} onCommit={onCommit} source={APP_PHONE} check={!onCommit} />;
+  if (property.type === 'email' || property.type === 'phone') {
+    // the list is saved with a Save button (record page, table cell) or with
+    // the form (Create); Enter saves where there is one
+    return <MultiValueEditor type={property.type} value={value} onChange={onChange} autoFocus={autoFocus} phoneSource={APP_PHONE} onSave={onCommit ? () => onCommit() : undefined} />;
   }
   if (t === 'number') return <input type="number" step="any" value={value} onFocus={selectAll} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} onKeyDown={keyDown} onBlur={blur} />;
   if (t === 'date' || t === 'datetime') {

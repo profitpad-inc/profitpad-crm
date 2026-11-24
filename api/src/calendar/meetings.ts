@@ -119,9 +119,9 @@ const plain = (s: string) => sanitizeHtml(s.replace(/<br\s*\/?>/gi, '\n').replac
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/\n{3,}/g, '\n\n').trim();
 
-// Active contacts having any of these addresses as their primary Email or one
-// of their Additional emails (crm.contact_emails, migration 0109), with the
-// address that matched, oldest contact first.
+// Active contacts having any of these addresses among their Email list
+// (crm.contact_emails, migrations 0109 and 0128), with the address that
+// matched, oldest contact first.
 async function contactsOf(c: pg.PoolClient, addresses: string[]): Promise<{ id: string; email: string; name: string | null }[]> {
   const wanted = [...new Set(addresses.map((a) => a.trim().toLowerCase()).filter(Boolean))];
   if (!wanted.length) return [];

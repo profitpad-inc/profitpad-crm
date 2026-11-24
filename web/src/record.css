@@ -79,12 +79,7 @@
 .prop-lock { opacity: 0.55; }
 .record-page .prop-value { font-size: 14px; line-height: 1.45; }
 .record-page .prop-value .empty-value { opacity: 0.7; }
-.record-page .additional-emails { display: flex; flex-direction: column; gap: 4px; }
-.record-page .additional-email { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.record-page .additional-email span { overflow-wrap: anywhere; }
-.record-page .additional-email .btn { visibility: hidden; flex: none; }
-.record-page .additional-email:hover .btn, .record-page .additional-email .btn:focus-visible { visibility: visible; }
-@media (hover: none) { .record-page .additional-email .btn { visibility: visible; } }
+.record-page .prop-edit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 /* the property being edited, framed like the kit's EditPanel */
 .record-page .prop-row.editing, .record-page .prop-row.editing:hover {
   background: var(--page-background); cursor: default;
@@ -827,7 +822,11 @@ a.comment-author:hover { color: var(--primary); }
 .rich-box.empty::before { content: attr(data-placeholder); color: var(--muted-text); pointer-events: none; position: absolute; top: 7px; left: 10px; right: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rich-box .mention { cursor: default; }
 .comment-editor-foot { display: flex; justify-content: flex-end; gap: 8px; }
-.activity-comment-count { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted-text); }
+/* sits right after the activity title, like HubSpot */
+.activity-comment-count {
+  display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; align-self: center;
+  margin-left: 4px; font-size: 12px; font-weight: 500; color: var(--primary);
+}
 /* the thread on an activity's own page */
 .record-comments.card { padding: 4px 16px 16px; margin-bottom: 16px; }
 .record-comments .comments { border-top: 0; }

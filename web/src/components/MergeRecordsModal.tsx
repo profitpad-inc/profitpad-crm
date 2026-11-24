@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, Search } from 'lucide-react';
 import { api, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { displayName, displayValue, formatValue, initials, nameProperties, recordName } from '../lib/display';
+import { isMultiType, primaryValue } from '../lib/multi-values';
 import { Modal, isEditable } from './ui';
 import { Loading } from './Loading';
 
@@ -16,9 +17,8 @@ type Side = 'a' | 'b';
 
 const SUBTITLE_PROPS = ['email', 'domain', 'job_title'];
 
-// properties the database combines on a merge (both contacts' addresses end up
-// as the winner's additional emails, migration 0109), so they are not picked
-const COMBINED: Record<string, string[]> = { contacts: ['additional_emails'] };
+// Email and phone lists are combined by the database on a merge (the
+// winner's entries, then the loser's, migration 0128), so they are not picked.
 
 function isEmpty(v: unknown): boolean {
   return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
@@ -30,7 +30,7 @@ function same(x: unknown, y: unknown): boolean {
 
 function subtitleOf(r: CrmRecord): string | undefined {
   const name = recordName(r);
-  const s = SUBTITLE_PROPS.map((k) => r.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
+  const s = SUBTITLE_PROPS.map((k) => (k === 'email' ? primaryValue(r.properties[k]) : r.properties[k])).find((v) => typeof v === 'string' && v) as string | undefined;
   return s && s !== name ? s : undefined;
 }
 
@@ -53,7 +53,7 @@ export function MergeRecordsModal({ object, schema, record, onClose, onMerged }:
   const createdProp = schema.properties.find((p) => p.api_name === 'created_at');
   // what can be picked: the editable properties (calculations, files and system ones follow the primary)
   const props = useMemo(
-    () => schema.properties.filter((p) => isEditable(p) && p.api_name !== 'created_at' && !COMBINED[object]?.includes(p.api_name)),
+    () => schema.properties.filter((p) => isEditable(p) && p.api_name !== 'created_at' && !isMultiType(p)),
     [schema, object]
   );
   const sides = { a: record, b: other };
@@ -136,8 +136,8 @@ export function MergeRecordsModal({ object, schema, record, onClose, onMerged }:
     const preferred = typeof picked.preferred_name === 'string' && picked.preferred_name.trim() ? picked.preferred_name.trim() : null;
     previewName = preferred ?? displayName(picked, winner.id);
   }
-  const subValue = SUBTITLE_PROPS.map((k) => props.find((p) => p.api_name === k))
-    .filter((p): p is Property => !!p).map((p) => valueOf(p)).find((v) => typeof v === 'string' && v);
+  const subValue = [primaryValue(winner?.properties.email) ?? primaryValue(loser?.properties.email), ...SUBTITLE_PROPS.map((k) => props.find((p) => p.api_name === k))
+    .filter((p): p is Property => !!p).map((p) => valueOf(p))].find((v) => typeof v === 'string' && v);
   const previewSub = typeof subValue === 'string' && subValue !== previewName ? subValue : undefined;
 
   return (

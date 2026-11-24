@@ -6,7 +6,9 @@ import { useApp } from '../lib/app-context';
 import { uploadFile } from '../lib/files';
 import { useIsMobile } from '../lib/use-mobile';
 import { forOcr, insetQuad, loadPhoto, straighten, toBase64, toBlob, type Point, type Quad } from '../lib/card-image';
-import { PropertyInput } from '../components/ui';
+import { APP_PHONE, PropertyInput } from '../components/ui';
+import { MultiValueEditor } from '../components/MultiValueField';
+import { decodeEntries, encodeEntries, type MultiEntry } from '../lib/multi-values';
 import { Select } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
 import '../scanner.css';
@@ -89,6 +91,32 @@ const FIELDS: { key: keyof CardFields; label: string; wide?: boolean }[] = [
 type Form = Record<string, string>;
 const EMPTY_FORM: Form = Object.fromEntries(FIELDS.map((f) => [f.key, '']));
 
+// A card's label for a number as a phone label (as api/src/card-scan.ts
+// phoneLabel): Mobile -> cell, Office -> work, others kept as written.
+function phoneLabel(label: string): string | undefined {
+  const l = label.trim().replace(/\s+/g, ' ').slice(0, 40);
+  if (!l) return undefined;
+  const k = l.toLowerCase();
+  if (/^(mobile|mob|cell|cellular|m|c)$/.test(k)) return 'cell';
+  if (/^(office|work|direct|direct line|business|o|w|d|t|tel|telephone|phone|main)$/.test(k)) return 'work';
+  if (k === 'landline') return 'landline';
+  if (/^(home|h)$/.test(k)) return 'Home';
+  return l;
+}
+
+// The card's numbers as the Phone list the review form edits: the main one
+// first, then the others with their labels.
+function cardPhones(fields: CardFields): string {
+  const list: MultiEntry[] = [];
+  if (fields.phone?.trim()) list.push({ value: fields.phone.trim() });
+  for (const o of fields.other_phones ?? []) {
+    if (!o.number?.trim() || list.some((e) => e.value === o.number.trim())) continue;
+    const label = phoneLabel(o.label ?? '');
+    list.push(label ? { value: o.number.trim(), label } : { value: o.number.trim() });
+  }
+  return encodeEntries(list);
+}
+
 const PRIORITIES: { value: Priority; label: string }[] = [
   { value: 'hot', label: 'Hot' },
   { value: 'warm', label: 'Warm' },
@@ -165,6 +193,7 @@ export function CardScanner() {
   const startReview = (fields: CardFields | null, m: Matches, d: string | null, cardUrl: string | null, fileId: string | null, scanId: string | null = null, pic: Pic | null = null) => {
     const f: Form = { ...EMPTY_FORM };
     if (fields) for (const { key } of FIELDS) f[key] = String(fields[key] ?? '');
+    if (fields) f.phone = cardPhones(fields);
     setForm(f);
     setRead(fields);
     setMatches(m);
@@ -332,7 +361,8 @@ export function CardScanner() {
         scan_id: s.scanId,
         file_id: (await cardFile.current) ?? s.fileId,
         contact_id: contactChoice === 'new' ? null : contactChoice,
-        contact: form,
+        // phone: the list as edited (main number first, labels kept)
+        contact: { ...form, phone: decodeEntries(form.phone) },
         company: companyChoice === 'none' ? null : companyChoice === 'new' ? { name: form.company, domain } : { id: companyChoice },
         event: eventOn ? (trade.eventId === NEW_EVENT ? { name: trade.newEvent.trim() } : { id: trade.eventId }) : null,
         priority: eventOn ? priority : null,
@@ -474,7 +504,12 @@ export function CardScanner() {
                 return (
                   <label key={key} className={`field${wide ? ' wide' : ''}`}>
                     <span>{label}</span>
-                    {prop ? <PropertyInput key={`${key}-${step.fileId}`} property={prop} value={value} onChange={onChange} /> : <input value={value} onChange={(e) => onChange(e.target.value)} />}
+                    {key === 'phone' && prop
+                      ? <MultiValueEditor key={`${key}-${step.fileId}`} type="phone" value={value} onChange={onChange} phoneSource={APP_PHONE} />
+                      : key === 'email'
+                        // one address: it is matched to existing contacts as it is typed
+                        ? <input type="email" value={value} onChange={(e) => onChange(e.target.value)} />
+                        : prop ? <PropertyInput key={`${key}-${step.fileId}`} property={prop} value={value} onChange={onChange} /> : <input value={value} onChange={(e) => onChange(e.target.value)} />}
                   </label>
                 );
               })}
@@ -636,10 +671,9 @@ function Choice({ title, value, onChange, options }: { title: string; value: str
   );
 }
 
-// What the card shows beyond the contact fields: shown so nothing is lost; copy what you need into the note.
+// What the card shows beyond the contact fields (its other numbers are in the Phone list): shown so nothing is lost; copy what you need into the note.
 function Extras({ read }: { read: CardFields }) {
   const items: [string, string][] = [
-    ...read.other_phones.map((p): [string, string] => [p.label || 'Phone', p.number]),
     ...(read.website ? [['Website', read.website] as [string, string]] : []),
     ...(read.linkedin_url ? [['LinkedIn', read.linkedin_url] as [string, string]] : []),
     ...(read.department ? [['Department', read.department] as [string, string]] : []),

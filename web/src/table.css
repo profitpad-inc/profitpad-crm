@@ -198,14 +198,21 @@ body.dg-resizing, body.dg-resizing * { cursor: col-resize !important; user-selec
 .colpick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 600; flex: none; }
 .colpick-hint { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted-text); flex: none; }
 .colpick-none { margin: 12px 8px; font-size: 13px; color: var(--muted-text); }
-.colpick-list { display: flex; flex-direction: column; gap: 6px; padding-top: 2px; padding-bottom: 2px; }
+.colpick-list { display: flex; flex-direction: column; gap: 6px; padding-top: 5px; padding-bottom: 5px; }
 .colpick-chip {
+  position: relative;
   display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 2px 4px 2px 2px; flex: none;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background);
 }
 .colpick-chip:first-child { border-color: var(--primary-line); }
-.colpick-chip.drop-before { box-shadow: 0 -2px 0 var(--primary); }
-.colpick-chip.drop-after { box-shadow: 0 2px 0 var(--primary); }
+/* Drop marker: a straight 2px line centred in the 6px gap between chips */
+.colpick-chip.drop-before::before,
+.colpick-chip.drop-after::after {
+  content: ''; position: absolute; left: -1px; right: -1px; height: 2px;
+  border-radius: 1px; background: var(--primary); pointer-events: none;
+}
+.colpick-chip.drop-before::before { top: -5px; }
+.colpick-chip.drop-after::after { bottom: -5px; }
 .colpick-grip { display: grid; place-items: center; padding: 4px 2px; border-radius: var(--radius-sm); color: var(--muted-text); cursor: grab; }
 .colpick-grip:hover { background: var(--surface); color: var(--text); }
 .colpick-chip-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

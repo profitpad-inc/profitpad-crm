@@ -1,9 +1,9 @@
 import type { Db } from './db.js';
 
-// Finding contacts by email address. A contact is matched by its primary
-// Email or any of its Additional emails (migration 0109): crm.contact_emails
-// has one row per address of every active or archived contact, and an address
-// belongs to at most one contact.
+// Finding contacts by email address. A contact is matched by any address in
+// its Email list (migrations 0109, 0128): crm.contact_emails (a view over
+// crm.unique_values) has one row per address of every active or archived
+// contact, and an address belongs to at most one contact.
 
 export type ContactStatus = 'active' | 'archived';
 

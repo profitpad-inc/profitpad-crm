@@ -59,11 +59,12 @@ export function parseAudience(raw: unknown): Audience {
 async function audienceSql(a: Audience, params: unknown[]): Promise<string> {
   const contacts = await getObject('contacts');
   const where = a.all_contacts ? null : compileFilterGroups(contacts, a.filter_groups ?? [], params, noneHidden);
-  return `select distinct on (lower(t.email)) t.pc_0010_id as contact_id, t.email
+  // the primary address (the first of the contact's Email list)
+  return `select distinct on (t.email -> 0 ->> 'value') t.pc_0010_id as contact_id, t.email -> 0 ->> 'value' as email
           from crm.pc_0010 t
-          where t.record_status = 'active' and coalesce(btrim(t.email), '') <> ''
+          where t.record_status = 'active' and t.email -> 0 ->> 'value' is not null
             and t.email_opt_out is distinct from '{true}' ${where ? `and ${where}` : ''}
-          order by lower(t.email), t.created_at`;
+          order by t.email -> 0 ->> 'value', t.created_at`;
 }
 
 export async function countAudience(raw: unknown): Promise<number> {

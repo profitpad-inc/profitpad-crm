@@ -437,19 +437,35 @@ class Seeder(base.Generator):
                 self.link("marketing_materials", mid, "products", pid)
 
         # BOMs: three, each for one product, with component lines
-        bom_products = random.sample([i for i, c in enumerate(product_cat) if c != "contract_manufacturing"], 3)
+        # Parts are picked against a cost budget so COGS stays under the product's MSRP at the BOM's
+        # target margin. Only products of $10,000 or more get a BOM: a part costs at most $4,200
+        # (contract manufacturing MSRP tops out at $6,000, cost at 70% of it), so the budget
+        # (at least 45% of MSRP) always fits one.
+        big = [i for i, c in enumerate(product_cat) if c != "contract_manufacturing" and products[i]["msrp"] >= 10000]
+        if len(big) < 3:
+            big = sorted((i for i, c in enumerate(product_cat) if c != "contract_manufacturing"),
+                         key=lambda i: -products[i]["msrp"])[:3]
+        bom_products = random.sample(big, 3)
         cm = [i for i, c in enumerate(product_cat) if c == "contract_manufacturing"]
         boms, bom_lines = [], []
         for p in bom_products:
+            margin = random.choice([30, 35, 40])
+            left = products[p]["msrp"] * (1 - margin / 100.0) * random.uniform(0.75, 1.0)
             comps = []
             for _ in range(random.randint(4, 6)):
-                c = random.choice(cm)
-                comps.append({"name": products[c]["name"], "sku": products[c]["sku"], "quantity": random.randint(1, 8),
-                              "unit_price": products[c]["unit_cost"], "_product": product_ids[c]})
-            cogs = round(sum(x["quantity"] * x["unit_price"] for x in comps), 2)
+                fits = [c for c in cm if products[c]["unit_cost"] <= left]
+                if not fits:
+                    break
+                c = random.choice(fits)
+                cost = products[c]["unit_cost"]
+                qty = random.randint(1, min(8, int(left // cost)))
+                left -= qty * cost
+                comps.append({"name": products[c]["name"], "sku": products[c]["sku"], "quantity": qty,
+                              "unit_cost": cost, "unit_price": products[c]["unit_price"], "_product": product_ids[c]})
+            cogs = round(sum(x["quantity"] * x["unit_cost"] for x in comps), 2)
             bom_lines.append(comps)
             boms.append({"name": "%s BOM" % products[p]["name"], "product_category": product_cat[p],
-                         "total_cogs": cogs, "target_margin": random.choice([30, 35, 40]),
+                         "total_cogs": cogs, "target_margin": margin,
                          "notes": "Rev B. Costs from current supplier quotes."})
         bom_ids = self.create("boms", boms)
         rows, parents = [], []

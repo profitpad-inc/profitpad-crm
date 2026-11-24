@@ -15,7 +15,7 @@ const REQUIRED: { key: string; label: string }[] = [
   { key: 'email', label: 'Email' }
 ];
 
-const blank = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+const blank = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0);
 
 // Every write to a user (record page, API, MCP, imports): first name, last
 // name and email are required, and the signature is stored cleaned.
@@ -177,7 +177,7 @@ export async function userRoutes(app: FastifyInstance) {
     const target = req.params.id;
     if (target === p.userId) throw badRequest('that is you');
     const { rows } = await pool.query(
-      `select pc_0000_id as id, name, email, ${USER_CAN_SIGN_IN('u')} as can_sign_in from crm.pc_0000 u where pc_0000_id = $1`,
+      `select pc_0000_id as id, name, email -> 0 ->> 'value' as email, ${USER_CAN_SIGN_IN('u')} as can_sign_in from crm.pc_0000 u where pc_0000_id = $1`,
       [target]
     );
     if (rows.length === 0) throw notFound('user not found');

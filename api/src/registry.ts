@@ -45,7 +45,7 @@ export interface PropertyDef {
   description: string | null;
   // actor: who did it (created_by, updated_by), as stored in crm.actor:
   // user:<id>, api:<key prefix>, system:<what> or public
-  type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list' | 'actor';
+  type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list' | 'actor' | 'email' | 'phone';
   options: Record<string, unknown>;
   calc_sql: string | null;
   calc_output_type: string | null;

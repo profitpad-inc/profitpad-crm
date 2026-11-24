@@ -92,7 +92,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     requireAdmin(p);
     let address = typeof req.body?.address === 'string' ? req.body.address.trim() : '';
     if (!address && p.userId) {
-      const { rows } = await pool.query(`select lower(trim(email)) as email from crm.pc_0000 where pc_0000_id = $1`, [p.userId]);
+      const { rows } = await pool.query(`select email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1`, [p.userId]);
       address = rows[0]?.email ?? '';
     }
     if (!address) throw badRequest('enter an address to send the test to', { property: 'address' });

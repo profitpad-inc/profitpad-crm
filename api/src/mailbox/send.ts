@@ -69,7 +69,7 @@ export interface SendResult {
   error: string | null;
 }
 
-// Contacts (that the sender can see) whose email is one of the recipients.
+// Contacts (that the sender can see) having one of the recipients among their addresses.
 async function matchingContacts(db: Db, p: Principal, addresses: string[]): Promise<string[]> {
   if (!addresses.length) return [];
   const contacts = await getObject('contacts');
@@ -78,7 +78,8 @@ async function matchingContacts(db: Db, p: Principal, addresses: string[]): Prom
   const access = recordFilter(p, contacts, params, 't', 'read');
   const { rows } = await db.query(
     `select t.${quoteIdent(contacts.id_column)} as id from crm.${quoteIdent(contacts.object_type_id)} t
-     where lower(t.email) = any ($1) and t.record_status = 'active' and ${access} limit 100`,
+     where exists (select 1 from jsonb_array_elements(t.email) e where e ->> 'value' = any ($1))
+       and t.record_status = 'active' and ${access} limit 100`,
     params
   );
   return rows.map((r) => r.id as string);

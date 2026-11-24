@@ -5,7 +5,7 @@ import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode,
 import { activeProperties, getObject, getProperty, getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { compileSearch, nextCursor, type SearchRequest } from './search.js';
 import { emailValueProblem, fromDb, isWritable, toDb } from './values.js';
-import { contactIdByEmail } from './contact-emails.js';
+import { MultiValueError, isMultiType, normalizeMultiValue, splitMultiText } from './multi-values.js';
 
 export interface RecordOut {
   id: string;
@@ -467,6 +467,7 @@ export async function bulkUpdateRecords(
     const prop = getProperty(obj, key);
     if (!prop) continue; // planWrite reports unknown names
     if (prop.options.unique === true) throw badRequest(`"${prop.api_name}" is unique, so it can't be set on several records at once`, { property: prop.api_name });
+    if (isMultiType(prop)) throw badRequest(`"${prop.api_name}" is a list of ${prop.type === 'email' ? 'addresses' : 'numbers'}; edit it on each record`, { property: prop.api_name });
     const mode = modes[key] ?? 'replace';
     if (!['append', 'remove', 'replace'].includes(mode)) throw badRequest(`mode for "${key}" must be append, remove or replace`, { property: prop.api_name });
     if (mode === 'replace') continue;
@@ -531,12 +532,29 @@ export async function canEditRecord(db: Db, obj: ObjectDef, principal: Principal
 
 export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, value: unknown): Promise<string | null> {
   const prop = getProperty(obj, propName);
-  if (!prop || prop.type !== 'text' || prop.options.unique !== true) {
-    throw badRequest(`id_property "${propName}" must be a unique text property`);
+  if (!prop || (prop.type !== 'text' && !isMultiType(prop)) || prop.options.unique !== true) {
+    throw badRequest(`id_property "${propName}" must be a unique text, email or phone property`);
   }
   if (typeof value !== 'string' || value === '') throw badRequest(`missing "${prop.api_name}" value to match on`);
-  // a contact's email also matches its additional emails
-  if (obj.object_type_id === 'pc_0010' && prop.api_name === 'email') return contactIdByEmail(db, value, ['active', 'archived']);
+  // email and phone lists: any of the record's entries matches (crm.unique_values,
+  // migration 0128); a cell with several values matches on the first one found
+  if (isMultiType(prop)) {
+    let wanted: string[];
+    try {
+      wanted = splitMultiText(prop.type, value).map((v) => normalizeMultiValue(prop.type as 'email' | 'phone', v));
+    } catch (err) {
+      if (err instanceof MultiValueError) throw badRequest(`${prop.label}: ${err.message}`, { property: prop.api_name });
+      throw err;
+    }
+    const { rows } = await db.query(
+      `select u.record_id as id from crm.unique_values u
+       join crm.${quoteIdent(obj.object_type_id)} t on t.${quoteIdent(obj.id_column)} = u.record_id
+       where u.property_id = $1 and u.value = any ($2) and t.record_status in ('active', 'archived')
+       order by array_position($2, u.value), t.created_at limit 1`,
+      [prop.pc_0002_id, wanted]
+    );
+    return rows[0]?.id ?? null;
+  }
   const ci = prop.options.case_insensitive === true;
   const col = quoteIdent(prop.api_name);
   const { rows } = await db.query(
@@ -548,15 +566,11 @@ export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, v
 }
 
 // For an upsert matched by findIdByUnique: the properties to update it with.
-// A contact matched through one of its additional emails keeps its primary
-// Email (the upsert's address is already one of its additional emails).
-export async function upsertProperties<T extends Record<string, unknown>>(db: Db, obj: ObjectDef, propName: string, id: string, props: T): Promise<T> {
-  if (obj.object_type_id !== 'pc_0010' || propName !== 'email' || typeof props.email !== 'string') return props;
-  const { rows } = await db.query('select lower(btrim(email)) as email from crm.pc_0010 where pc_0010_id = $1', [id]);
-  const primary = rows[0]?.email as string | null | undefined;
-  if (!primary || primary === props.email.trim().toLowerCase()) return props;
-  const { email: _matched, ...rest } = props;
-  return rest as T;
+// Nothing to change since email and phone became lists (migration 0128): a
+// plain string written to a list only adds values the record lacks, so a
+// contact matched through one of its other addresses keeps its primary.
+export async function upsertProperties<T extends Record<string, unknown>>(_db: Db, _obj: ObjectDef, _propName: string, _id: string, props: T): Promise<T> {
+  return props;
 }
 
 // Calculations are recomputed by a queue. Draining one batch right after a

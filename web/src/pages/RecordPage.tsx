@@ -22,6 +22,8 @@ import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
 import { EmailTracking } from '../components/EmailTracking';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
+import { MultiValueTable, confirmPrimaryChange } from '../components/MultiValueField';
+import { entriesOf, isMultiType, primaryValue } from '../lib/multi-values';
 import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import { AMOUNT_PARENTS, DISCOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
 import { LineItemsEditor, type LineTarget } from '../components/LineItemsEditor';
@@ -47,7 +49,6 @@ import { useIsMobile, useMediaQuery } from '../lib/use-mobile';
 import { Loading, Spinner } from '../components/Loading';
 
 // a contact's additional emails, as stored ("a@x.com; b@y.com")
-const splitEmails = (s: string) => s.split(/[;,\s]+/).filter(Boolean);
 
 interface Link_ {
   association_id: string;
@@ -359,7 +360,7 @@ export function RecordPage() {
   async function cloneRecord() {
     if (!schema || !record) return;
     const skipped = schema.properties.filter((p) => p.record_status === 'active'
-      && (p.options.unique === true || (object === 'contacts' && p.api_name === 'additional_emails'))
+      && p.options.unique === true
       && formatValue(p, record.properties[p.api_name]) !== '');
     const singular = schema.label_singular.toLowerCase();
     const systemLinks = objectByName.get(object)?.system_links ?? [];
@@ -489,7 +490,7 @@ export function RecordPage() {
   if (error) return <div className="page"><div className="error">{error}</div></div>;
   if (!schema || !record) return <RecordSkeleton />;
   const name = recordName(record);
-  const subtitle = ['email', 'domain', 'job_title'].map((k) => record.properties[k]).find((v) => typeof v === 'string' && v) as string | undefined;
+  const subtitle = ['email', 'domain', 'job_title'].map((k) => (k === 'email' ? primaryValue(record.properties[k]) : record.properties[k])).find((v) => typeof v === 'string' && v) as string | undefined;
   const linksTo = objectByName.get(object)?.links_to ?? [];
   // every object that can hold line items (custom ones too) shows the card
   const lineCard = object !== 'products' && object !== 'lines' && linksTo.includes('lines') ? ['lines'] : [];
@@ -904,6 +905,13 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       setFocusEditor(false);
       return;
     }
+    // a new primary address or number is confirmed first; No keeps the editor open
+    if (isMultiType(p) && !(await confirmPrimaryChange(p.type, record.properties[p.api_name], value))) {
+      setDraft(text);
+      setEditing(p.api_name);
+      setFocusEditor(false);
+      return;
+    }
     try {
       onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties: { [p.api_name]: value } }));
       setError(null);
@@ -953,21 +961,13 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     }
   }
 
-  // contacts: an additional email becomes the primary Email, the old primary
-  // an additional one (one save, so the address never belongs to two fields)
-  const isAdditionalEmails = (p: Property) => schema.api_name === 'contacts' && p.api_name === 'additional_emails';
-  async function makePrimary(addr: string) {
-    const primary = typeof record.properties.email === 'string' ? record.properties.email : '';
-    const rest = splitEmails(String(record.properties.additional_emails ?? '')).filter((x) => x !== addr);
-    const properties = { email: addr, additional_emails: [primary, ...rest].filter(Boolean).join('; ') || null };
-    try {
-      onSaved(await api<CrmRecord>('PATCH', `/v1/objects/${schema.api_name}/${record.id}`, { properties }));
-      setError(null);
-      toast(`${addr} is now the primary email`);
-    } catch (err) {
-      setError({ property: 'additional_emails', message: (err as Error).message, failed: '' });
-    }
-  }
+  // email and phone lists and multi-choice dropdowns are saved with a button
+  const savesWithButton = (p: Property) => isMultiType(p) || (p.type === 'dropdown' && p.options.single_value !== true);
+  const cancel = (p: Property) => {
+    if (editing !== p.api_name) return;
+    setEditing(null);
+    setError(null);
+  };
 
   const section = (key: string, title: string, props: Property[]) => {
     const open = !closed[key];
@@ -1012,8 +1012,11 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
           <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} onFill={(values) => fill(p, values)} />
-          {p.type === 'dropdown' && p.options.single_value !== true && (
-            <button className="btn small" onClick={() => commit(p)} disabled={JSON.stringify(fromInput(p, draft)) === startValue.current}>Save</button>
+          {savesWithButton(p) && (
+            <div className="prop-edit-actions">
+              {isMultiType(p) && <button className="btn small ghost" onClick={() => cancel(p)}>Cancel</button>}
+              <button className="btn small" onClick={() => commit(p)} disabled={JSON.stringify(fromInput(p, draft)) === startValue.current}>Save</button>
+            </div>
           )}
         </div>
       ) : p.type === 'file' ? (
@@ -1024,16 +1027,9 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
         <div className="prop-value">
           <HtmlValue html={record.properties[p.api_name] as string} title={p.label} onEdit={editable(p) ? () => start(p) : undefined} />
         </div>
-      ) : isAdditionalEmails(p) && typeof record.properties[p.api_name] === 'string' && record.properties[p.api_name] ? (
-        <div className="prop-value additional-emails">
-          {splitEmails(record.properties[p.api_name] as string).map((addr) => (
-            <div key={addr} className="additional-email">
-              <span>{addr}</span>
-              {editable(p) && editable(schema.properties.find((x) => x.api_name === 'email') ?? p) && (
-                <button className="btn small" onClick={(e) => { e.stopPropagation(); void makePrimary(addr); }}>Make primary</button>
-              )}
-            </div>
-          ))}
+      ) : isMultiType(p) ? (
+        <div className="prop-value">
+          <MultiValueTable type={p.type} value={record.properties[p.api_name]} />
         </div>
       ) : (
         <div className="prop-value">{propValue(p, record.properties[p.api_name])}</div>
@@ -1280,15 +1276,16 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
     </span>
   );
   // who to suggest in To, Cc and Bcc, and which files to offer as attachments
-  const contactOf = (r: CrmRecord): Recipient | null => {
-    const email = typeof r.properties.email === 'string' ? r.properties.email.trim().toLowerCase() : '';
-    return email ? { email, name: displayName(r.properties, r.id) || null } : null;
+  // every address of a contact is offered; the primary is the one filled in
+  const addressesOf = (r: CrmRecord): Recipient[] => {
+    const name = displayName(r.properties, r.id) || null;
+    return entriesOf(r.properties.email).map((e) => ({ email: e.value.trim().toLowerCase(), name }));
   };
-  const pageContact = object === 'contacts' ? contactOf(record) : null;
+  const pageContact = object === 'contacts' ? addressesOf(record)[0] ?? null : null;
   const recipients = [
-    ...(pageContact ? [pageContact] : []),
-    ...(associated.find((a) => a.object === 'contacts')?.records.map((r) => contactOf(r.record)) ?? [])
-  ].filter((c, i, all): c is Recipient => !!c && all.findIndex((x) => x?.email === c.email) === i);
+    ...(object === 'contacts' ? addressesOf(record) : []),
+    ...(associated.find((a) => a.object === 'contacts')?.records.flatMap((r) => addressesOf(r.record)) ?? [])
+  ].filter((c, i, all) => all.findIndex((x) => x.email === c.email) === i);
   const attachable: Attachable[] = (associated.find((a) => a.object === 'files')?.records ?? []).map((r) => ({
     id: r.record.id, name: displayName(r.record.properties, r.record.id), size_bytes: typeof r.record.properties.size_bytes === 'number' ? r.record.properties.size_bytes : null
   }));
@@ -1405,6 +1402,11 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
             <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); toggle(); }}>
               <ChevronRight size={14} className="activity-chevron" aria-hidden="true" />
               <strong>{title}</strong>
+              {(commentCounts[key] ?? 0) > 0 && (
+                <span className="activity-comment-count" title={`${commentCounts[key]} comment${commentCounts[key] === 1 ? '' : 's'}`}>
+                  <MessageSquare size={13} strokeWidth={1.75} aria-hidden /> {commentCounts[key]}
+                </span>
+              )}
             </button>
             {o === 'emails' && <EmailDirection value={p.direction} />}
             {open ? (
@@ -1423,12 +1425,7 @@ function ActivityStream({ linksLoaded, object, id, record, associated, onChanged
                     <Mails size={12} strokeWidth={1.75} aria-hidden /> Thread ({threadSizes.get(threadOf(r))})
                   </button>
                 )}
-                {(commentCounts[key] ?? 0) > 0 && (
-                  <span className="activity-comment-count" title={`${commentCounts[key]} comment${commentCounts[key] === 1 ? '' : 's'}`}>
-                    <MessageSquare size={12} strokeWidth={1.75} aria-hidden /> {commentCounts[key]}
-                  </span>
-                )}
-                {' '}{objectByName.get(o)?.label_singular}
+                {objectByName.get(o)?.label_singular}
               </span>
             )}
             {at && <time className="ledger-time" dateTime={at}>{open ? when(at) : timeOf(at)}</time>}
@@ -2176,7 +2173,7 @@ function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string
   const total = (groups ?? []).reduce((n, g) => n + g.records.length, 0);
   const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const secondary = (r: CrmRecord) => {
-    const v = r.properties.email ?? r.properties.domain;
+    const v = primaryValue(r.properties.email) ?? r.properties.domain;
     return typeof v === 'string' && v && v !== recordName(r) ? v : null;
   };
   const matches = (r: CrmRecord) => words.every((w) => `${recordName(r)} ${secondary(r) ?? ''}`.toLowerCase().includes(w));
@@ -2357,7 +2354,8 @@ function changeBatches(entries: ChangeEntry[]): ChangeEntry[][] {
 function historyValue(p: Property | undefined, value: unknown): ReactNode {
   if (p) {
     // a button property's history shows the link itself
-    const shown = isButton(p) ? formatValue(p, value) : displayValue(p, value);
+    // email and phone lists: every entry
+    const shown = isButton(p) || isMultiType(p) ? formatValue(p, value) : displayValue(p, value);
     if (shown !== '') return shown;
   }
   if (typeof value === 'string' || typeof value === 'number') return String(value);

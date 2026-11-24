@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Updates an install on ProfitPad's own server.
 #
-#   ./scripts/deploy.sh          the live CRM (/opt/profitpad-crm, :main):
-#                                after a push to main
-#   ./scripts/deploy.sh demo     the demo (/opt/profitpad-crm-demo, :latest):
-#                                after tagging a release
-#   ./scripts/deploy.sh defense  the defense CRM (/opt/profitpad-defense-crm,
-#                                :latest): after tagging a release
+#   ./scripts/deploy.sh          the live CRM, crm.profitpad.com
+#                                (/opt/profitpad-crm, :main): after a push
+#                                to main
+#   ./scripts/deploy.sh defense  the defense CRM, crm.defense.profitpad.com
+#                                (/opt/profitpad-defense-crm, :latest): after
+#                                tagging a release
 #
 # 1. picks the commit: origin/main (checking your main has nothing unpushed),
-#    or the newest release's tag for demo and defense
+#    or the newest release's tag for defense
 # 2. waits for the GitHub Actions runs on it (CI and Images; Images on the
-#    tag for demo and defense) to finish, and stops if any of them failed
+#    tag for defense) to finish, and stops if any of them failed
 # 3. runs install.sh in that install's folder on the server (pulls the new
 #    images, migrates, restarts)
 # 4. checks that every container of that install runs that commit
@@ -30,9 +30,8 @@ die() { printf 'deploy: %s\n' "$*" >&2; exit 1; }
 target=${1:-live}
 case "$target" in
   live) dir=/opt/profitpad-crm; prefix=pc ;;
-  demo) dir=/opt/profitpad-crm-demo; prefix=pc-demo ;;
   defense) dir=/opt/profitpad-defense-crm; prefix=pc-defense ;;
-  *) die "usage: deploy.sh [live|demo|defense]" ;;
+  *) die "usage: deploy.sh [live|defense]" ;;
 esac
 
 cd "$(dirname "$0")/.."

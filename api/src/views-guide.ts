@@ -203,7 +203,7 @@ Sizes: Button, TextInput, DateInput and Select are 34px tall, or 28px with small
 - <DateInput value onChange={(v) => ...} withTime? small />: the CRM's date picker, the same calendar as record pages and every other date in the CRM. Use it for every date and datetime (date and datetime properties, filters, ranges). value and onChange use "YYYY-MM-DD", or "YYYY-MM-DDTHH:MM" in the viewer's local time with withTime; "" is no date. Widen or narrow it with style like TextInput. Never write <input type="date">, "datetime-local", "month" or "week" in a view: saving refuses it.
 - <TextArea value onChange={(v) => ...} placeholder rows={4} snippets? />: several lines of text (notes, messages). Typing # in any textarea a view draws offers the viewer's snippets (saved text such as #welcome_email, kept in Settings, Snippets) when the view's "Allow snippets" setting is on (the default; update_view_settings allow_snippets). Snippet merge fields about a record ({{r.first_name|there}}) use their fallback in views. snippets={false} (or data-snippets="off" on a raw textarea) turns it off for one box, for code or ids.
 - <Markdown text={row.content} />: markdown drawn as formatted text (headings, bold, italics, strike, lists, tables, quotes, rules, code, links), the CRM's own renderer, built as elements, never as HTML, so record text and AI answers are safe to show. Links open through openUrl (the viewer confirms the site). Use it to show every markdown property (display: markdown in describe_object and the schema topic) and any markdown an integration returns; never write your own markdown parser or set innerHTML. Where people also edit the text, give a small Rendered / Code switch: Markdown to read, a TextArea (snippets={false}) to edit. style and className as on other pieces.
-- <PhoneInput value onChange={(v) => ...} small />: the CRM's phone box, for every phone property (display: phone in describe_object, get_object_create_form and the schema topic). A country picker (flag) beside the number; when the viewer leaves it, the number is checked and shown formatted (+1 888-234-5678 ext9), or a message under it says why it is not valid. onChange gets the value to save. Never use a TextInput for a phone property.
+- <PhoneInput value onChange={(v) => ...} small />: the CRM's phone box, for a number of a phone property (type phone in describe_object, get_object_create_form and the schema topic; saving one number as a string adds it at the top of the list). A country picker (flag) beside the number; when the viewer leaves it, the number is checked and shown formatted (+1 888-234-5678 ext9), or a message under it says why it is not valid. onChange gets the value to save. Never use a TextInput for a phone property.
 - <Select value onChange options={[{ value, label }]} placeholder? small />: the CRM's dropdown. It opens a menu-style list like every other dropdown in the CRM (a check beside the current choice, a search box from 11 choices, arrow keys, Enter and Escape), never the browser's own list. onChange gets the picked value as a string. Widen it with style={{ minWidth: 200 }}. Never write a raw <select> in a view: use Select for every single choice.
 - <Button variant="primary"|"danger" small disabled onClick>text</Button>
 
@@ -346,6 +346,7 @@ A plain string is a query without params. Names: lowercase letters, digits, unde
 - One view per object, named after the object's api_name (contacts, companies, deals, tickets, ...), active records only.
 - The id column is <object code>_id, e.g. pc_0010_id for contacts (see topic schema). Alias it "as id" for tables and openRecord.
 - Base columns on every object: object_type_id, <code>_id, name, created_at, updated_at, merged_ids, record_status.
+- Email and phone properties are text (the primary address or number) plus <name>__all, the whole list as jsonb ([{"value", "label"}]); e.g. select ct.email, jsonb_array_length(ct.email__all) from contacts ct.
 - Single-value dropdowns are text (the api_value) plus <name>__label (the label). Multi-value dropdowns are text[] plus <name>__label (text[] of labels). Filter on the api_value, show the label.
 - owner is a dropdown of user ids (owner__label is the user's name).
 - users: the CRM's users (pc_0000_id, name, first_name, last_name, email, status: active or deactivated). For an owner filter that lists everyone, not just people who own something: "select pc_0000_id as id, name from users where status = 'active' order by name". Records can be owned by users who are archived or deactivated, and those are not in that list (or, when archived, not in users at all), so add the owners found on the records: "select pc_0000_id as id, name from users where status = 'active' union select owner, owner__label from deals where owner is not null order by 2".
@@ -393,7 +394,9 @@ Ask the admin before creating or changing properties: it changes the CRM for eve
 - Option values: letters, digits, dots, underscores, at most 63; unique per property.
 
 ## Types and options
-- text: single_line, display (plain, url, markdown, json, html, code: a grey monospace box, phone: checked with Google's libphonenumber and stored as +18882345678ext9, button: the value is a link (https, http, mailto, tel) shown as a button that opens it), button_label (the button's text, display button only; the property's label when unset), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
+- text: single_line, display (plain, url, markdown, json, html, code: a grey monospace box, button: the value is a link (https, http, mailto, tel) shown as a button that opens it), button_label (the button's text, display button only; the property's label when unset), regex, regex_scope (all, ui), json_only, unique, case_insensitive (with unique).
+- email: a list of addresses, [{"value": "jane@acme.com", "label": "work"}, {"value": "jane@gmail.com"}]. The first is the primary (the CRM sends to it). label is optional: work, personal or any text up to 40 characters. Addresses are stored lowercase. Option: unique (no two records share any address; contacts' and users' email are unique). Writing a plain string adds that address at the top (it becomes the primary) unless the record already has it; a list replaces the whole list.
+- phone: a list of numbers, like email, each checked with Google's libphonenumber and stored as +18882345678ext9. Labels: cell, landline, work or any text. Option: unique.
 - number: min, max, decimals (0 to 10), format (formatted, unformatted, currency, percentage), prefix, suffix, currency_code (fixed currency) or currency_property (a dropdown holding the currency).
 - dropdown: single_value, allow_user_add, auto_append_users (users as options), default_value (an option value; never empty), parent_property (another single-value dropdown on the same object that this one depends on, like stage on pipeline), color_display (how choice colours show: none (default), dot for a large dot left of the label (single_value only) or pill). A yes/no is a single-value dropdown with options true and false.
 
@@ -496,6 +499,8 @@ function columnType(p: PropertyDef): string {
   if (t === 'id') return 'text (record ID)';
   if (t === 'id_list') return 'text[]';
   if (t === 'actor') return 'text (who: user:<user id>, api:<key prefix>, system:<what> or public)';
+  if (t === 'email') return `text (the primary address) plus ${p.api_name}__all (jsonb list)`;
+  if (t === 'phone') return `text (the primary number, +18882345678ext9) plus ${p.api_name}__all (jsonb list)`;
   return t;
 }
 
@@ -507,7 +512,7 @@ function describeObject(o: ObjectDef, p: Principal, detailed: boolean): string {
   if (FEATURE_LINKS[o.api_name]) lines.push(`How it is associated: ${FEATURE_LINKS[o.api_name]}`);
   for (const pr of props) {
     let line = `- ${pr.api_name}: ${columnType(pr)}${pr.label !== pr.api_name ? `, "${pr.label}"` : ''}`;
-    if (pr.type === 'text' && pr.options.display === 'phone') line += ', a phone number (use PhoneInput)';
+    if (pr.type === 'phone') line += ', phone numbers (use PhoneInput for one)';
     if (pr.type === 'text' && pr.options.display === 'markdown') line += ', markdown (show with Markdown)';
     if (pr.type === 'date') line += ' (edit with DateInput)';
     if (pr.type === 'datetime') line += ' (edit with DateInput withTime)';

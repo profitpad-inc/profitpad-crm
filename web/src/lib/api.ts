@@ -111,7 +111,7 @@ export interface Property {
   api_name: string;
   label: string;
   description: string | null;
-  type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list' | 'actor';
+  type: 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'calculation' | 'file' | 'id' | 'id_list' | 'actor' | 'email' | 'phone';
   options: Record<string, unknown>;
   dropdown_options?: DropdownOption[];
   // the shared option list this dropdown follows (Settings, Option lists)

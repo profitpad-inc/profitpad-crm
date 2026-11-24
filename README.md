@@ -148,7 +148,7 @@ It runs the `:main` images from `/opt/profitpad-crm`, behind the server's nginx.
 
 That waits for CI and the Images workflow on the pushed commit (and stops if either fails), runs `install.sh` on the server, then checks that every container runs that commit.
 
-The demo (`/opt/profitpad-crm-demo`, `PCRM_INSTANCE=demo`) follows releases instead. After tagging one: `./scripts/deploy.sh demo`.
+That is the live CRM, `crm.profitpad.com`. The defense CRM (`crm.defense.profitpad.com`, `/opt/profitpad-defense-crm`, `PCRM_INSTANCE=defense`) follows releases instead. After tagging one: `./scripts/deploy.sh defense`. There is no demo install any more.
 
 Database access through the SSH tunnel and backups are in `CLAUDE.md`; the history of the server is in `docs/deploy.md`.
 

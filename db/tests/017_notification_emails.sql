@@ -15,9 +15,9 @@ declare
   v_n int;
 begin
   perform set_config('crm.actor', 'test', true);
-  insert into crm.pc_0000 (name, email) values ('Ann Lee', 'Ann@Example.com') returning pc_0000_id into v_ann;
-  insert into crm.pc_0000 (name, email) values ('Bob Ray', 'bob@example.com') returning pc_0000_id into v_bob;
-  insert into crm.pc_0000 (name, email) values ('Gone User', 'gone@example.com') returning pc_0000_id into v_gone;
+  insert into crm.pc_0000 (name, email) values ('Ann Lee', '[{"value": "ann@example.com"}]') returning pc_0000_id into v_ann;
+  insert into crm.pc_0000 (name, email) values ('Bob Ray', '[{"value": "bob@example.com"}]') returning pc_0000_id into v_bob;
+  insert into crm.pc_0000 (name, email) values ('Gone User', '[{"value": "gone@example.com"}]') returning pc_0000_id into v_gone;
   update crm.pc_0000 set status = '{deactivated}' where pc_0000_id = v_gone;
 
   -- off: nothing is queued
@@ -80,11 +80,11 @@ begin
   update crm.pc_0000 set notify_mentions = '{email}', notify_tasks = '{email}' where pc_0000_id = v_ann;
 
   -- invites: only when turned on, not for users made by system jobs
-  insert into crm.pc_0000 (name, email) values ('Cy New', 'cy@example.com') returning pc_0000_id into v_task;
+  insert into crm.pc_0000 (name, email) values ('Cy New', '[{"value": "cy@example.com"}]') returning pc_0000_id into v_task;
   perform 1 from auth.notification_emails where kind = 'invite';
   if found then raise exception 'no invite while invite_new_users is off'; end if;
   update auth.notification_sender set invite_new_users = true;
-  insert into crm.pc_0000 (name, email) values ('Di New', 'Di@Example.com') returning pc_0000_id into v_task;
+  insert into crm.pc_0000 (name, email) values ('Di New', '[{"value": "di@example.com"}]') returning pc_0000_id into v_task;
   perform 1 from auth.notification_emails where kind = 'invite' and source_object = 'pc_0000' and source_id = v_task
     and user_id = v_task and actor_user_id = v_bob and to_address = 'di@example.com';
   if not found then raise exception 'a new user gets an invite'; end if;
@@ -92,7 +92,7 @@ begin
   perform 1 from auth.notification_emails where source_id = v_task;
   if found then raise exception 'a user without an email gets no invite'; end if;
   perform set_config('crm.actor', 'system:migration', true);
-  insert into crm.pc_0000 (name, email) values ('Seeded', 'seeded@example.com') returning pc_0000_id into v_task;
+  insert into crm.pc_0000 (name, email) values ('Seeded', '[{"value": "seeded@example.com"}]') returning pc_0000_id into v_task;
   perform 1 from auth.notification_emails where source_id = v_task;
   if found then raise exception 'users made by system jobs get no invite'; end if;
   perform set_config('crm.actor', 'user:' || v_bob, true);

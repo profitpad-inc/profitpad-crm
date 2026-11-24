@@ -83,7 +83,7 @@ export function formProperty(obj: ObjectDef, name: string): PropertyDef | null {
   const p = obj.byName.get(name);
   if (!p || p.record_status !== 'active' || p.read_only) return null;
   if (p.is_base && p.api_name !== 'name') return null;
-  if (!['text', 'number', 'dropdown', 'date', 'datetime'].includes(p.type)) return null;
+  if (!['text', 'number', 'dropdown', 'date', 'datetime', 'email', 'phone'].includes(p.type)) return null;
   if (p.options.auto_append_users === true) return null; // user pickers (owner) are not for visitors
   return p;
 }
@@ -96,6 +96,10 @@ function typeFor(p: PropertyDef, wanted?: FieldType): FieldType {
     case 'date': return 'date';
     case 'datetime': return 'datetime';
     case 'dropdown': return p.options.single_value === true ? 'select' : 'multiselect';
+    // email and phone lists are asked as one address or number; a submission
+    // adds it to the record's list (values.ts toDb)
+    case 'email':
+    case 'phone': return 'text';
     default:
       return wanted === 'textarea' && p.options.single_line !== true ? 'textarea' : 'text';
   }
@@ -163,6 +167,7 @@ export async function readDefinition(raw: unknown, strict: boolean): Promise<For
       format = rawFormat as TextFormat;
     }
     if (property?.object === 'contacts' && property.name === 'email') format = 'email';
+    if (prop?.type === 'email' || prop?.type === 'phone') format = prop.type;
     let pattern: string | undefined;
     if (format === 'regex') {
       pattern = typeof f.pattern === 'string' ? f.pattern : '';

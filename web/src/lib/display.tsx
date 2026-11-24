@@ -10,6 +10,7 @@ import { ViewIcon } from './lucide-icons';
 import type { CrmRecord, Property } from './api';
 import { ColorPill } from '../components/ColorPicker';
 import { dateFmt, dateTimeFmt } from './date-format';
+import { entriesOf, primaryValue } from './multi-values';
 
 const OBJECT_ICONS: Record<string, LucideIcon> = {
   users: User,
@@ -98,7 +99,11 @@ export function moreGroups(objects: string[]) {
 // domain or subject, else its id.
 export function displayName(props: Record<string, unknown> | undefined, id: string): string {
   if (!props) return `#${id}`;
-  const pick = (k: string) => (typeof props[k] === 'string' && (props[k] as string).trim() ? (props[k] as string).trim() : null);
+  const pick = (k: string) => {
+    // email lists: the primary address
+    const v = Array.isArray(props[k]) ? primaryValue(props[k]) : props[k];
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  };
   const full = [pick('first_name'), pick('last_name')].filter(Boolean).join(' ');
   return pick('name') ?? (full || null) ?? pick('email') ?? pick('domain') ?? pick('subject') ?? `#${id}`;
 }
@@ -158,7 +163,9 @@ export function displayPhone(v: string): string {
 
 export function formatValue(p: Property, value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
-  if (p.type === 'text' && p.options.display === 'phone' && typeof value === 'string') return displayPhone(value);
+  // email and phone lists: every entry, primary first
+  if (p.type === 'email') return entriesOf(value).map((e) => e.value).join(', ');
+  if (p.type === 'phone') return entriesOf(value).map((e) => displayPhone(e.value)).join(', ');
   if (p.type === 'file' && Array.isArray(value)) return value.length === 1 ? '1 file' : `${value.length} files`;
   if (p.type === 'actor') return actorLabel(p, String(value));
   const t = valueType(p);
@@ -213,6 +220,13 @@ function PropertyButton({ p, href }: { p: Property; href: string }) {
 // large dot or a pill, as the property's color_display says ('' when empty,
 // like formatValue).
 export function displayValue(p: Property, value: unknown): ReactNode {
+  // email and phone lists (tables, merge, history): the primary, then how many more
+  if (p.type === 'email' || p.type === 'phone') {
+    const list = entriesOf(value);
+    if (list.length === 0) return '';
+    const first = p.type === 'phone' ? displayPhone(list[0].value) : list[0].value;
+    return list.length === 1 ? first : <span className="mv-short">{first} <span className="muted" title={formatValue(p, value)}>+{list.length - 1}</span></span>;
+  }
   if (isButton(p) && typeof value === 'string' && BUTTON_LINK.test(value.trim())) return <PropertyButton p={p} href={value.trim()} />;
   const style = p.options.color_display;
   if (p.type !== 'dropdown' || (style !== 'dot' && style !== 'pill') || value === null || value === undefined || value === '') return formatValue(p, value);

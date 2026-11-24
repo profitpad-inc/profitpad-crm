@@ -1319,7 +1319,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
       object: objectArg,
       api_name: z.string(),
       label: z.string(),
-      type: z.enum(['text', 'number', 'dropdown', 'date', 'datetime', 'calculation', 'file']),
+      type: z.enum(['text', 'number', 'dropdown', 'date', 'datetime', 'calculation', 'file', 'email', 'phone']),
       description: z.string().optional(),
       options: optionsArg,
       dropdown_options: z.array(z.object({ api_value: z.string(), label: z.string(), display_order: z.number().int().optional() })).optional(),

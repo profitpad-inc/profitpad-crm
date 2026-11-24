@@ -16,7 +16,7 @@ import { useUrlSearch } from '../lib/use-url-search';
 // /v1/schema endpoints, so the database (meta.* functions) enforces the
 // naming and option rules; its messages are shown as they come back.
 
-type PropType = 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'file' | 'calculation';
+type PropType = 'text' | 'number' | 'dropdown' | 'date' | 'datetime' | 'file' | 'calculation' | 'email' | 'phone';
 type Options = Record<string, unknown>;
 
 const TYPE_LABELS: Record<string, string> = {
@@ -27,17 +27,18 @@ const TYPE_LABELS: Record<string, string> = {
   datetime: 'Date and time',
   calculation: 'Calculation',
   file: 'File',
+  email: 'Email addresses',
+  phone: 'Phone numbers',
   id: 'Record ID',
   id_list: 'Record IDs',
   actor: 'User or process'
 };
 
-const NEW_TYPES: PropType[] = ['text', 'number', 'dropdown', 'date', 'datetime', 'file', 'calculation'];
+const NEW_TYPES: PropType[] = ['text', 'number', 'dropdown', 'date', 'datetime', 'email', 'phone', 'file', 'calculation'];
 
 const TEXT_DISPLAYS = [
   { value: 'plain', label: 'Plain text' },
   { value: 'url', label: 'Web address' },
-  { value: 'phone', label: 'Phone number' },
   { value: 'markdown', label: 'Markdown' },
   { value: 'json', label: 'JSON' },
   { value: 'html', label: 'HTML' },
@@ -411,6 +412,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       date: [],
       datetime: ['timezone'],
       file: ['max_files'],
+      email: ['unique'],
+      phone: ['unique'],
       calculation: ['display', 'button_label', 'format', 'prefix', 'suffix', 'decimals', 'timezone']
     };
     const out: Options = {};
@@ -675,6 +678,18 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         )}
 
         {!locked && type === 'number' && numberOptions}
+
+        {!locked && (type === 'email' || type === 'phone') && (
+          <>
+            <p className="muted small">
+              Each record can have several {type === 'email' ? 'addresses' : 'numbers'}, each with an optional label
+              ({type === 'email' ? 'Work, Personal' : 'Cell, Landline, Work'} or your own). The first is the primary.
+            </p>
+            <div className="checks">
+              <label><input type="checkbox" checked={bool('unique')} onChange={(e) => set('unique', e.target.checked)} /> Unique: no two records may share {type === 'email' ? 'an address' : 'a number'}</label>
+            </div>
+          </>
+        )}
 
         {!locked && type === 'file' && (
           <label className="field">

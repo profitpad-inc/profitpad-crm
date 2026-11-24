@@ -1,4 +1,5 @@
 import type { PropertyDef } from './registry.js';
+import { primaryValue } from './multi-values.js';
 
 // How a property value reads in a customer document (document templates' _text),
 // like the CRM shows it (formatValue in web/src/lib/display.tsx) but in a fixed
@@ -43,6 +44,12 @@ export function money(v: number | null, currency: string | null): string {
 export function formatProperty(p: PropertyDef, value: unknown, row: Record<string, unknown>, currency: string | null): string {
   if (value === null || value === undefined || value === '') return '';
   if (p.type === 'actor') return ACTOR(p, String(value));
+  // email and phone lists show their primary entry
+  if (p.type === 'email') return primaryValue(value) ?? '';
+  if (p.type === 'phone') {
+    const v = primaryValue(value);
+    return v ? phone(v) : '';
+  }
   if (p.type === 'dropdown') {
     const values = Array.isArray(value) ? value : [value];
     return values.map((x) => p.dropdown_options.find((o) => o.api_value === String(x))?.label ?? String(x)).join(', ');
@@ -81,7 +88,6 @@ export function formatProperty(p: PropertyDef, value: unknown, row: Record<strin
       return d.toISOString();
     }
   }
-  if (p.type === 'text' && o.display === 'phone') return phone(String(value));
   if (Array.isArray(value)) return value.join(', ');
   return String(value);
 }

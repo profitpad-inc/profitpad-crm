@@ -60,7 +60,7 @@ function snippetOut(s: SnippetRow, p: Principal) {
 }
 
 // The author's name, as mentions show it.
-const SELECT_SNIPPETS = `select s.*, coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as owner_name
+const SELECT_SNIPPETS = `select s.*, coalesce(nullif(btrim(u.name), ''), nullif(btrim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email -> 0 ->> 'value') as owner_name
   from ui.snippets s left join crm.pc_0000 u on u.pc_0000_id = s.owner_user_id`;
 
 function cleanInput(raw: { shortcut?: unknown; name?: unknown; body?: unknown; shared?: unknown }, partial: boolean) {
@@ -171,7 +171,7 @@ export const mentionText = (body: string) => body.replace(TOKEN_RE, '@$1').repla
 // Who can be @mentioned: users who can sign in, with the name a mention shows.
 export async function mentionableUsers(): Promise<{ id: string; name: string }[]> {
   const { rows } = await pool.query(
-    `select pc_0000_id as id, coalesce(nullif(btrim(name), ''), nullif(btrim(concat_ws(' ', first_name, last_name)), ''), email) as name
+    `select pc_0000_id as id, coalesce(nullif(btrim(name), ''), nullif(btrim(concat_ws(' ', first_name, last_name)), ''), email -> 0 ->> 'value') as name
      from crm.pc_0000 u
      where ${USER_CAN_SIGN_IN('u')}
      order by 2`

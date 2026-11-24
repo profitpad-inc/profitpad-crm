@@ -13,6 +13,7 @@ import { logEvent } from '../audit.js';
 import { createRecord, drainCalcQueue, findIdByUnique, objectForWrite, searchRecords, updateRecord, upsertProperties, visibleProperties } from '../records.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
 import { importValueProblem, matchDropdownInput } from '../values.js';
+import { multiText } from '../multi-values.js';
 import { compileFilterGroups, type FilterGroup, type SearchRequest } from '../search.js';
 import { isAdmin } from './ui.js';
 
@@ -890,10 +891,10 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!Array.isArray(list) || !list.every((v) => typeof v === 'string')) throw badRequest(`values.${name} must be a list of texts`);
       total += list.length;
       if (total > 50000) throw badRequest('check at most 50000 values at once');
-      if (prop.type !== 'text') continue;
+      if (prop.type !== 'text' && prop.type !== 'email' && prop.type !== 'phone') continue;
       const values = [...new Set(list as string[])].filter((v) => v.trim() !== '');
       const out: { value: string; error: string }[] = [];
-      const pattern = typeof prop.options.regex === 'string' && prop.options.regex_scope !== 'ui' ? prop.options.regex : null;
+      const pattern = prop.type === 'text' && typeof prop.options.regex === 'string' && prop.options.regex_scope !== 'ui' ? prop.options.regex : null;
       const failsPattern = new Set<string>();
       if (pattern && values.length > 0) {
         const { rows } = await pool.query<{ v: string }>('select v from unnest($1::text[]) v where not (v ~ $2)', [values, pattern]);
@@ -934,6 +935,8 @@ export async function adminRoutes(app: FastifyInstance) {
           const vals = (list ?? [v]).map((x) => (labels ? prop.dropdown_options.find((o) => o.api_value === x)?.label ?? String(x) : String(x)));
           return vals.join(labels ? '; ' : ';');
         }
+        // email and phone lists: every value, primary first, labels left out
+        if (prop.type === 'email' || prop.type === 'phone') return multiText(v) || null;
         return list ? list.join(';') : v;
       };
       const rows: unknown[][] = [];

@@ -18,7 +18,7 @@ begin
   insert into crm.pc_0051 (name) values ('Newsletter') returning pc_0051_id into v_tpl;
   insert into crm.pc_0051 (name) values ('Other') returning pc_0051_id into v_tpl2;
   insert into crm.pc_0058 (name) values ('November news') returning pc_0058_id into v_camp;
-  insert into crm.pc_0010 (name, email) values ('Ann', 'ann@example.com') returning pc_0010_id into v_contact;
+  insert into crm.pc_0010 (name, email) values ('Ann', '[{"value": "ann@example.com"}]') returning pc_0010_id into v_contact;
   insert into crm.pc_0031 (name, direction, status, stream, provider_message_id, reply_token)
   values ('November news', '{outbound}', '{queued}', '{broadcast}', 'pm-1', 'tok1') returning pc_0031_id into v_email;
 

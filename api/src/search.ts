@@ -2,6 +2,8 @@ import { quoteIdent } from './db.js';
 import { badRequest } from './errors.js';
 import { getProperty, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { toDb } from './values.js';
+import { checkPhone } from './phone.js';
+import { isMultiType } from './multi-values.js';
 
 export interface Filter {
   property: string;
@@ -51,6 +53,28 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => '\\' + c);
 }
 
+// Email and phone lists: true when any entry matches. A phone is compared
+// as stored (+15550100) for eq and in; contains and starts_with also match
+// its digits, so "555 0100" finds +15550100.
+function multiMatch(col: string, op: 'like' | 'eq', param: string, digitsParam?: string): string {
+  if (op === 'eq') return `exists (select 1 from jsonb_array_elements(${col}) e where e ->> 'value' = ${param})`;
+  const digits = digitsParam ? ` or regexp_replace(e ->> 'value', '[^0-9]', '', 'g') like ${digitsParam}` : '';
+  return `exists (select 1 from jsonb_array_elements(${col}) e where e ->> 'value' ilike ${param}${digits})`;
+}
+
+function multiScalar(prop: PropertyDef, v: unknown): string {
+  if (typeof v !== 'string') throw badRequest(`filter on "${prop.api_name}" expects a string`);
+  const t = v.trim();
+  if (prop.type === 'email') return t.toLowerCase();
+  const phone = checkPhone(t);
+  return phone.valid ? phone.value! : t;
+}
+
+function phoneDigits(v: string): string | null {
+  const d = v.replace(/[^0-9]/g, '');
+  return d.length >= 3 ? d : null;
+}
+
 function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't'): string {
   const prop = getProperty(obj, f.property);
   if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
@@ -74,6 +98,35 @@ function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (
       return `${col} is not null`;
     case 'not_has_property':
       return `${col} is null`;
+  }
+
+  if (isMultiType(prop)) {
+    switch (f.operator) {
+      case 'eq':
+        return multiMatch(col, 'eq', p(multiScalar(prop, f.value), 'text'));
+      case 'neq':
+        return `not ${multiMatch(col, 'eq', p(multiScalar(prop, f.value), 'text'))}`;
+      case 'in':
+      case 'not_in': {
+        const vals = f.values ?? (Array.isArray(f.value) ? f.value : undefined);
+        if (!Array.isArray(vals) || vals.length === 0) throw badRequest(`"${f.operator}" on "${f.property}" needs values: [...]`);
+        const any = `exists (select 1 from jsonb_array_elements(${col}) e where e ->> 'value' = any (${p(vals.map((v) => multiScalar(prop, v)), 'text[]')}))`;
+        return f.operator === 'in' ? any : `not ${any}`;
+      }
+      case 'contains':
+      case 'not_contains':
+      case 'starts_with': {
+        if (typeof f.value !== 'string') throw badRequest(`filter on "${prop.api_name}" expects a string`);
+        const s = f.value.trim();
+        const pattern = f.operator === 'starts_with' ? escapeLike(s) + '%' : '%' + escapeLike(s) + '%';
+        const d = prop.type === 'phone' ? phoneDigits(s) : null;
+        const dp = d ? p(f.operator === 'starts_with' ? d + '%' : '%' + d + '%', 'text') : undefined;
+        const m = multiMatch(col, 'like', p(pattern, 'text'), dp);
+        return f.operator === 'not_contains' ? `not ${m}` : m;
+      }
+      default:
+        throw badRequest(`operator "${f.operator}" does not apply to ${prop.type} properties`);
+    }
   }
 
   if (isArray) {
@@ -156,10 +209,23 @@ export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknow
     // the object's search properties, plus "first last" when both exist
     params.push('%' + escapeLike(req.query) + '%');
     const n = params.length;
+    // phone search properties also match the query's digits ("555 0100")
+    let digitsAt = 0;
+    const digitsParam = () => {
+      const d = phoneDigits(req.query!);
+      if (!d) return undefined;
+      if (!digitsAt) {
+        params.push('%' + d + '%');
+        digitsAt = params.length;
+      }
+      return `$${digitsAt}`;
+    };
     const cols = obj.search_properties
       .map((name) => getProperty(obj, name))
       .filter((p): p is PropertyDef => !!p && p.record_status === 'active' && !isHidden(p))
-      .map((p) => `t.${quoteIdent(p.api_name)} ilike $${n}`);
+      .map((p) => isMultiType(p)
+        ? multiMatch(`t.${quoteIdent(p.api_name)}`, 'like', `$${n}`, p.type === 'phone' ? digitsParam() : undefined)
+        : `t.${quoteIdent(p.api_name)} ilike $${n}`);
     if (getProperty(obj, 'first_name') && getProperty(obj, 'last_name') && obj.search_properties.includes('first_name')) {
       cols.push(`concat_ws(' ', t."first_name", t."last_name") ilike $${n}`);
     }
@@ -174,7 +240,9 @@ export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknow
     if ((prop.type === 'dropdown' && !isSingleValue(prop)) || prop.type === 'file' || prop.type === 'id_list') {
       throw badRequest(`cannot sort by multi-value property "${s.property}"`);
     }
-    const expr = prop.type === 'dropdown' ? `t.${quoteIdent(prop.api_name)}[1]` : `t.${quoteIdent(prop.api_name)}`;
+    // email and phone lists sort by their primary entry
+    const expr = prop.type === 'dropdown' ? `t.${quoteIdent(prop.api_name)}[1]`
+      : isMultiType(prop) ? `(t.${quoteIdent(prop.api_name)} -> 0 ->> 'value')` : `t.${quoteIdent(prop.api_name)}`;
     return `${expr} ${s.direction === 'desc' ? 'desc nulls last' : 'asc nulls last'}`;
   });
   orders.push(`t.${quoteIdent(obj.id_column)} asc`);
