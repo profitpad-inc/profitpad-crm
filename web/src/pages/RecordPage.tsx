@@ -1,12 +1,12 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Tag, Unlink, X } from 'lucide-react';
+import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MapPin, MessageSquare, Mails, Paperclip, Pencil, Plus, Tag, Unlink, X } from 'lucide-react';
 import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, can, getAssociationLabels, getSchema, type AssociationLabel, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
-import { useAddressGroups, withAddressesTogether } from '../components/AddressInput';
+import { GROUP_ORDER, addressText, useAddressGroups, withAddressesTogether, type AddressGroup } from '../components/AddressInput';
 import { PublicLinkCard } from '../components/PublicLinkCard';
 import { QuoteTemplateCard } from '../components/QuoteTemplateCard';
 import { QuoteSigningCard } from '../components/QuoteSigningCard';
@@ -868,6 +868,20 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     }
   }
   const addressGroups = useAddressGroups(schema.api_name);
+  // the address group a property belongs to (any of its parts)
+  const groupOf = (p: Property) => addressGroups.find((g) => GROUP_ORDER.some((k) => g[k] === p.api_name));
+  const fullAddress = (g: AddressGroup) => addressText(g, (name) => {
+    const prop = schema.properties.find((x) => x.api_name === name);
+    return prop ? formatValue(prop, record.properties[name]) : '';
+  });
+  async function copyAddress(g: AddressGroup) {
+    try {
+      await navigator.clipboard.writeText(fullAddress(g));
+      toast('Address copied');
+    } catch {
+      toast('Could not copy');
+    }
+  }
   const shown = schema.properties.filter((p) => p.record_status === 'active' && !['object_type_id', 'merged_ids', ...(HIDDEN_PROPS[schema.api_name] ?? [])].includes(p.api_name));
   // each address group's properties together, in order (Settings → Address autocomplete)
   const extraSections = (PROP_SECTIONS[schema.api_name] ?? [])
@@ -1061,6 +1075,12 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
             {formatValue(p, record.properties[p.api_name]) !== '' && (
               <button type="button" className="prop-tool" onClick={() => void copyValue(p)} aria-label={`Copy ${p.label}`} title="Copy"><Copy size={13} /></button>
             )}
+            {(() => {
+              const g = groupOf(p);
+              return g && fullAddress(g) !== '' && (
+                <button type="button" className="prop-tool" onClick={() => void copyAddress(g)} aria-label="Copy full address" title="Copy full address"><MapPin size={13} /></button>
+              );
+            })()}
           </span>
         )}
         {showLock && !editable(p) && p.type !== 'file' && (

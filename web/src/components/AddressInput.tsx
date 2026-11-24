@@ -106,7 +106,7 @@ export function useAddressGroups(object: string | undefined): AddressGroup[] {
   return config?.groups.filter((g) => g.object === object) ?? [];
 }
 
-const GROUP_ORDER = ['street_1', 'street_2', 'city', 'province', 'postal_code', 'country'] as const;
+export const GROUP_ORDER = ['street_1', 'street_2', 'city', 'province', 'postal_code', 'country'] as const;
 
 // Properties in their usual order, except that each address group's
 // properties sit together, street to country, where the first of them was.
@@ -323,4 +323,67 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
       )}
     </>
   );
+}
+
+// ---- a whole address as one block of text (the record page's copy button) ----
+
+// Province and state names to their postal codes (Canada and the US). A value
+// that is already a code, or a name not listed, stays as written.
+const REGION_CODES: Record<string, string> = {
+  alberta: 'AB', 'british columbia': 'BC', manitoba: 'MB', 'new brunswick': 'NB',
+  'newfoundland and labrador': 'NL', newfoundland: 'NL', 'nova scotia': 'NS', ontario: 'ON',
+  'prince edward island': 'PE', quebec: 'QC', québec: 'QC', saskatchewan: 'SK',
+  'northwest territories': 'NT', nunavut: 'NU', yukon: 'YT',
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
+  connecticut: 'CT', delaware: 'DE', 'district of columbia': 'DC', florida: 'FL', georgia: 'GA',
+  hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY',
+  louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN',
+  mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH',
+  'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND',
+  ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI',
+  'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
+  virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
+  'puerto rico': 'PR'
+};
+
+// Street types to their short forms; only the street's last type word is
+// shortened ("Avenue Road" becomes "Avenue Rd.").
+const STREET_TYPES: Record<string, string> = {
+  avenue: 'Ave.', boulevard: 'Blvd.', circle: 'Cir.', court: 'Ct.', crescent: 'Cres.', drive: 'Dr.',
+  expressway: 'Expy.', freeway: 'Fwy.', gardens: 'Gdns.', heights: 'Hts.', highway: 'Hwy.', lane: 'Ln.',
+  parkway: 'Pkwy.', place: 'Pl.', road: 'Rd.', square: 'Sq.', street: 'St.', terrace: 'Terr.'
+};
+const DIRECTIONS = new Set(['north', 'south', 'east', 'west', 'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']);
+
+function shortStreet(street: string): string {
+  const words = street.split(/\s+/);
+  for (let i = words.length - 1; i > 0; i--) {
+    const w = words[i].toLowerCase().replace(/[.,]$/, '');
+    if (STREET_TYPES[w]) {
+      words[i] = STREET_TYPES[w];
+      break;
+    }
+    if (!DIRECTIONS.has(w)) break;
+  }
+  return words.join(' ');
+}
+
+// "unit 607" -> "Unit 607"; a bare number ("607", "#607") -> "Unit 607"
+function unitText(s: string): string {
+  if (/^#?\s*\d+[a-z]?$/i.test(s)) return `Unit ${s.replace(/^#\s*/, '')}`;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// The group's address in two lines, e.g.
+//   51 Trolley Cres. Unit 607
+//   Toronto, ON, M5A 0E9, Canada
+// Empty parts are skipped.
+export function addressText(group: AddressGroup, read: (property: string) => string): string {
+  const part = (k: keyof Omit<AddressGroup, 'object'>) => (group[k] ? read(group[k]!).trim() : '');
+  const street1 = part('street_1');
+  const street2 = part('street_2');
+  const province = part('province');
+  const line1 = [street1 && shortStreet(street1), street2 && unitText(street2)].filter(Boolean).join(' ');
+  const line2 = [part('city'), REGION_CODES[province.toLowerCase()] ?? province, part('postal_code').toUpperCase(), part('country')].filter(Boolean).join(', ');
+  return [line1, line2].filter(Boolean).join('\n');
 }
