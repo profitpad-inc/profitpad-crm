@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  Page, Grid, Stack, Row, Card, Badge, Button, Select, TextInput, TextArea, Loading, ErrorBox, Empty, FileInput, FileLink,
-  useQuery, useParams, setParams, createRecord, updateRecord, uploadFile, openRecord, callIntegration,
+  Page, Stack, Row, Card, Badge, Button, Select, TextInput, TextArea, Loading, ErrorBox, Empty, FileInput, FileLink,
+  useQuery, useParams, setParams, createRecord, updateRecord, uploadFile, openRecord, callIntegration, editLineItems,
   formatMoney, formatNumber
 } from '@pcrm/view'
 
@@ -9,8 +9,10 @@ import {
 // margin projection matrix (the price that gives each margin, less each
 // discount). A BOM file (PDF or CSV) can be read by Claude (the "bom-reader"
 // integration, an n8n flow) to fill the COGS and add its parts as the BOM's
-// line items. Address params: edit (a BOM id, or "new"), open (a BOM whose
-// matrix is shown).
+// line items. Adding or editing a BOM opens a panel beside the list (full
+// screen on phones; Escape closes), with its parts and margin matrix. Address
+// params: edit (a BOM id, or "new"), focus (parts: the panel
+// opens at the BOM's parts, which the CRM's line items editor changes).
 export const frame = 'fill'
 
 const DISCOUNTS = [0, 5, 10, 15, 20, 25, 30]
@@ -19,6 +21,53 @@ const MAX_DOC = 7 * 1024 * 1024
 const num = (v) => (v === '' || v == null || !isFinite(Number(v)) ? null : Number(v))
 const usd = (v) => (v == null ? '--' : formatMoney(v, 'USD'))
 const atMargin = (cogs, m) => cogs / (1 - m / 100)
+
+// The side panel layout, shared in spirit with the RFP Generator: the BOMs on
+// the left, the open record in a full-height panel on the right.
+const CSS = `
+.sp-root { height: 100vh; }
+.sp-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.sp-layout.open { grid-template-columns: minmax(0, 1fr) min(620px, 50%); }
+.sp-main { min-height: 0; overflow-y: auto; padding: 2px; margin: -2px; }
+.sp-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+.sp-on { outline: 2px solid var(--primary); outline-offset: -1px; }
+.sp-click { display: flex; flex-direction: column; cursor: pointer; border-radius: var(--radius-lg); }
+.sp-click > .v-card { flex: 1; transition: border-color 0.12s; }
+.sp-click:hover > .v-card { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.sp-panel { min-height: 0; display: flex; flex-direction: column; background: var(--page-background); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+.sp-head { padding: 14px 18px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.sp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 24px; }
+.sp-foot { display: flex; gap: 8px; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.sp-foot .grow { flex: 1; min-width: 0; }
+.sp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sp-field { min-width: 0; }
+.sp-field.wide { grid-column: 1 / -1; }
+.sp-field .v-input { width: 100%; box-sizing: border-box; }
+.sp-label { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+@media (max-width: 900px) {
+  .sp-layout.open { grid-template-columns: minmax(0, 1fr); }
+  .sp-panel { position: fixed; inset: 0; z-index: 40; border: 0; border-radius: 0; }
+}
+@media (max-width: 520px) { .sp-fields { grid-template-columns: minmax(0, 1fr); } }
+`
+
+function useEscape(onClose) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.flatpickr-calendar.open')) onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+}
+
+// The whole card opens the panel; its own buttons and links keep their job
+// (the Edit button stays the keyboard route).
+function ClickCard({ onOpen, children }) {
+  return (
+    <div className="sp-click" onClick={(e) => { if (!(e.target as HTMLElement).closest('button, a, input, textarea, select, label')) onOpen() }}>
+      {children}
+    </div>
+  )
+}
 
 function readAs(file, how) {
   return new Promise((resolve, reject) => {
@@ -34,7 +83,7 @@ function Matrix({ cogs, target }) {
   if (!cogs) return <div className="small muted">Enter the total COGS to see margin projections.</div>
   return (
     <Stack gap={6}>
-      <div className="small muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 11 }}>Margin projection matrix (USD)</div>
+      <h3>Margin projection matrix (USD)</h3>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
           <thead>
@@ -51,7 +100,7 @@ function Matrix({ cogs, target }) {
                 <td style={{ padding: '6px 8px', fontWeight: 600, color: '#b54708', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }}>{`${d}% off`}</td>
                 {MARGINS.map((m) => (
                   <td key={m} style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)', background: m === target ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : undefined }}>
-                    {formatMoney(Math.round(atMargin(cogs, m) * (1 - d / 100)), 'USD')}
+                    {`$${formatNumber(Math.round(atMargin(cogs, m) * (1 - d / 100)))}`}
                   </td>
                 ))}
               </tr>
@@ -66,14 +115,17 @@ function Matrix({ cogs, target }) {
 
 function Field({ label, children, wide = false }) {
   return (
-    <div className="bom-field" style={wide ? { gridColumn: '1 / -1' } : undefined}>
-      <div className="small" style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
+    <div className={wide ? 'sp-field wide' : 'sp-field'}>
+      <div className="sp-label">{label}</div>
       {children}
     </div>
   )
 }
 
-function BomForm({ row, cats, onClose, onSaved }) {
+// a form's values as one comparable string (strings trimmed), for "has anything changed"
+const norm = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])))
+
+function BomPanel({ row, cats, focus, onClose, onSaved, onPartsChanged }) {
   const [f, setF] = useState(() => ({
     name: row?.name ?? '', product_category: row?.product_category ?? '', target_margin: row?.target_margin != null ? String(row.target_margin) : '30',
     total_cogs: row?.total_cogs != null ? String(row.total_cogs) : '', notes: row?.notes ?? '', bom_file: row?.bom_file ?? []
@@ -83,6 +135,38 @@ function BomForm({ row, cats, onClose, onSaved }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState(null)
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }))
+  // Save stays greyed out until something changed (a picked file or parts Claude read count)
+  const [start] = useState(() => norm(f))
+  const dirty = norm(f) !== start || !!file || !!parsed
+  useEscape(onClose)
+  const parts = useQuery('parts', { id: row?.id || '' }, { enabled: !!row })
+  const partsRef = useRef(null)
+  useEffect(() => {
+    if (focus !== 'parts') return
+    // after the panel has laid out
+    const t = setTimeout(() => {
+      const el = partsRef.current
+      const body = el?.closest('.sp-body')
+      if (el && body) body.scrollTo({ top: body.scrollTop + el.getBoundingClientRect().top - body.getBoundingClientRect().top - 12, behavior: 'smooth' })
+    }, 60)
+    return () => clearTimeout(t)
+  }, [focus, row?.id, parts.loading])
+
+  // the CRM's own line items editor, on the BOM's lines
+  async function editParts() {
+    if (!row) return
+    if (typeof editLineItems !== 'function') return openRecord('boms', row.id)
+    setError(null)
+    try {
+      const res = await editLineItems('boms', row.id)
+      if (res?.saved) {
+        parts.refresh()
+        onPartsChanged()
+      }
+    } catch (e) {
+      setError(e.message)
+    }
+  }
 
   async function pick(files) {
     const picked = files[0]
@@ -150,21 +234,29 @@ function BomForm({ row, cats, onClose, onSaved }) {
   }
 
   const cogs = num(f.total_cogs)
+  const category = cats.find((c) => c.api_value === f.product_category)?.label
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 12px', overflowY: 'auto', zIndex: 50 }}>
-      <div onClick={(e) => e.stopPropagation()} role="dialog"
-        style={{ width: 'min(760px, 100%)', background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', padding: 20 }}>
-        <style>{'.bom-field .v-input { width: 100%; box-sizing: border-box; }'}</style>
-        <Stack gap={14}>
-          <Row style={{ justifyContent: 'space-between' }} align="center">
-            <h2 style={{ margin: 0, fontSize: 18 }}>{row ? 'Edit BOM' : 'New BOM'}</h2>
-            <Button small onClick={onClose}>×</Button>
+    <section className="sp-panel" role="region" aria-label={row ? `BOM: ${f.name || 'untitled'}` : 'New BOM'}>
+      <header className="sp-head">
+        <div style={{ minWidth: 0 }}>
+          <Row gap={8} align="center">
+            <h2 style={{ fontSize: 18, overflowWrap: 'anywhere' }}>{f.name.trim() || (row ? 'Untitled BOM' : 'New BOM')}</h2>
+            {category && <Badge tone="primary">{category}</Badge>}
           </Row>
-          <Grid columns={2} gap={12}>
+          <div className="small muted" style={{ marginTop: 2 }}>{cogs ? `COGS ${usd(cogs)}` : 'No COGS yet'}</div>
+        </div>
+        <Row gap={6} wrap={false}>
+          {row && <Button small onClick={() => openRecord('boms', row.id)}>Open record</Button>}
+          <Button small onClick={onClose} aria-label="Close panel">✕</Button>
+        </Row>
+      </header>
+      <div className="sp-body">
+        <Stack gap={16}>
+          <div className="sp-fields">
             <Field label="Product name *" wide><TextInput value={f.name} onChange={set('name')} /></Field>
             <Field label="Category"><Select value={f.product_category} onChange={set('product_category')} placeholder="Select" options={cats.map((c) => ({ value: c.api_value, label: c.label }))} /></Field>
             <Field label="Target margin %"><TextInput type="number" value={f.target_margin} onChange={set('target_margin')} /></Field>
-            <Field label="Upload BOM file (CSV, Excel, PDF)" wide>
+            <Field label="BOM file (CSV, Excel, PDF)" wide>
               <Stack gap={6}>
                 {file ? (
                   <Row gap={8} wrap align="center" style={{ border: '1px dashed var(--border)', borderRadius: 8, padding: '8px 12px' }}>
@@ -178,14 +270,14 @@ function BomForm({ row, cats, onClose, onSaved }) {
                 {f.bom_file.map((id, i) => <FileLink key={id} id={id}>{`BOM file ${i + 1}`}</FileLink>)}
               </Stack>
             </Field>
-            <Field label="Total COGS ($)"><TextInput type="number" value={f.total_cogs} onChange={set('total_cogs')} placeholder="0" /></Field>
-            <Field label="Description / notes" wide><TextArea value={f.notes} onChange={set('notes')} rows={2} /></Field>
-          </Grid>
-          {busy && <Loading label={busy} />}
+            <Field label="Total COGS ($)" wide><TextInput type="number" value={f.total_cogs} onChange={set('total_cogs')} placeholder="0" /></Field>
+            <Field label="Description / notes" wide><TextArea value={f.notes} onChange={set('notes')} rows={3} /></Field>
+          </div>
+          {busy && busy !== 'Saving…' && <Loading label={busy} />}
           {parsed && (
             <Card title={`Claude read ${parsed.items.length} ${parsed.items.length === 1 ? 'part' : 'parts'}`} subtitle="They are added as this BOM's line items when you save.">
               <Stack gap={6}>
-                <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
                   <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
                     <thead><tr>{['Part', 'Description', 'Qty', 'Unit cost', 'Extended'].map((h) => <th key={h} style={{ textAlign: h === 'Part' || h === 'Description' ? 'left' : 'right', padding: '4px 6px', color: 'var(--muted-text)', borderBottom: '1px solid var(--border)' }}>{h}</th>)}</tr></thead>
                     <tbody>
@@ -205,24 +297,61 @@ function BomForm({ row, cats, onClose, onSaved }) {
               </Stack>
             </Card>
           )}
+          {row && (
+            <div ref={partsRef} style={{ scrollMarginTop: 8 }}>
+              <Stack gap={8}>
+                <Row style={{ justifyContent: 'space-between' }} align="center">
+                  <h3>{parts.loading ? 'Parts' : `Parts (${parts.data.length})`}</h3>
+                  <Button small onClick={editParts}>Edit parts</Button>
+                </Row>
+                {parts.loading ? <Loading /> : parts.error ? <ErrorBox error={parts.error} /> : !parts.data.length ? (
+                  <div className="small muted">No parts yet. Add them with Edit parts, or read a BOM file with AI.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                      <thead><tr>{['Part', 'Qty', 'Unit cost', 'Extended'].map((h) => <th key={h} style={{ textAlign: h === 'Part' ? 'left' : 'right', padding: '6px 8px', color: 'var(--muted-text)', fontWeight: 600, fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {parts.data.map((l) => (
+                          <tr key={l.id}>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+                              <div>{l.name || '--'}</div>
+                              {l.sku && <div className="small muted">{l.sku}</div>}
+                            </td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>{l.quantity == null ? '--' : formatNumber(l.quantity)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>{usd(num(l.unit_cost))}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>{usd(num(l.extended))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={3} style={{ padding: '6px 8px', fontWeight: 600 }}>Parts total</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{usd(parts.data.reduce((s, l) => s + (num(l.extended) ?? 0), 0))}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </Stack>
+            </div>
+          )}
           <Matrix cogs={cogs} target={num(f.target_margin)} />
-          {error && <ErrorBox error={error} />}
-          <Row gap={8} style={{ justifyContent: 'flex-end' }}>
-            {row && <Button onClick={() => openRecord('boms', row.id)}>Open record</Button>}
-            <Button onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!!busy} onClick={save}>{row ? 'Save' : 'Create'}</Button>
-          </Row>
         </Stack>
       </div>
-    </div>
+      <footer className="sp-foot">
+        <div className="grow">{error ? <ErrorBox error={error} /> : !f.name.trim() ? <span className="small muted">Add a product name to save.</span> : null}</div>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="primary" disabled={!!busy || !dirty || !f.name.trim()} onClick={save}>{busy === 'Saving…' ? 'Saving…' : row ? 'Save changes' : 'Create BOM'}</Button>
+      </footer>
+    </section>
   )
 }
 
-function BomCard({ b, open, onToggle, onEdit }) {
+function BomCard({ b, on, onEdit }) {
   const cogs = num(b.total_cogs) ?? num(b.parts_cost)
   const target = num(b.target_margin)
   return (
-    <Card>
+    <Card className={on ? 'sp-on' : undefined}>
       <Stack gap={10}>
         <Row gap={8} wrap align="flex-start" style={{ justifyContent: 'space-between' }}>
           <div style={{ minWidth: 0 }}>
@@ -235,8 +364,6 @@ function BomCard({ b, open, onToggle, onEdit }) {
           </div>
           <Row gap={6} wrap>
             <Button small onClick={onEdit}>Edit</Button>
-            <Button small onClick={() => openRecord('boms', b.id)}>Parts</Button>
-            <Button small variant={open ? 'primary' : undefined} onClick={onToggle}>{open ? 'Hide matrix' : 'Margin matrix'}</Button>
           </Row>
         </Row>
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))' }}>
@@ -254,7 +381,6 @@ function BomCard({ b, open, onToggle, onEdit }) {
           ))}
         </div>
         {b.notes && <div className="small" style={{ whiteSpace: 'pre-wrap' }}>{b.notes}</div>}
-        {open && <Matrix cogs={cogs} target={target} />}
       </Stack>
     </Card>
   )
@@ -265,22 +391,30 @@ export default function OperationsBom() {
   const boms = useQuery('boms')
   const cats = useQuery('categories')
   const editing = params.edit === 'new' ? 'new' : boms.data.find((b) => b.id === params.edit) || null
+  const close = useCallback(() => setParams({ edit: '', focus: '' }), [])
   return (
-    <Page title="Operations: BOM & Margin Analysis" subtitle="Upload product BOMs and model margin projections at various discounts"
+    <Page className="sp-root" title="Operations: BOM & Margin Analysis" subtitle="Upload product BOMs and model margin projections at various discounts"
       actions={<Button variant="primary" onClick={() => setParams({ edit: 'new' })}>+ Add BOM</Button>}>
-      {boms.error || cats.error ? <ErrorBox error={boms.error || cats.error} /> : boms.loading ? <Loading /> : !boms.data.length ? (
-        <Empty>No BOMs yet. Upload a product BOM to see margin projections.</Empty>
-      ) : (
-        <Stack gap={12}>
-          {boms.data.map((b) => (
-            <BomCard key={b.id} b={b} open={params.open === b.id} onToggle={() => setParams({ open: params.open === b.id ? '' : b.id })}
-              onEdit={() => setParams({ edit: b.id })} />
-          ))}
-        </Stack>
-      )}
-      {editing && (
-        <BomForm key={editing === 'new' ? 'new' : editing.id} row={editing === 'new' ? null : editing} cats={cats.data}
-          onClose={() => setParams({ edit: '' })} onSaved={() => { setParams({ edit: '' }); boms.refresh() }} />
+      <style>{CSS}</style>
+      {boms.error || cats.error ? <ErrorBox error={boms.error || cats.error} /> : boms.loading ? <Loading /> : (
+        <div className={editing ? 'sp-layout open' : 'sp-layout'}>
+          <div className="sp-main">
+            {!boms.data.length ? <Empty>No BOMs yet. Upload a product BOM to see margin projections.</Empty> : (
+              <Stack gap={12}>
+                {boms.data.map((b) => (
+                  <ClickCard key={b.id} onOpen={() => setParams({ edit: b.id, focus: '' })}>
+                    <BomCard b={b} on={editing !== 'new' && editing?.id === b.id}
+                      onEdit={() => setParams({ edit: b.id, focus: '' })} />
+                  </ClickCard>
+                ))}
+              </Stack>
+            )}
+          </div>
+          {editing && (
+            <BomPanel key={editing === 'new' ? 'new' : editing.id} row={editing === 'new' ? null : editing} cats={cats.data} focus={params.focus}
+              onClose={close} onSaved={() => { setParams({ edit: '', focus: '' }); boms.refresh() }} onPartsChanged={boms.refresh} />
+          )}
+        </div>
       )}
     </Page>
   )

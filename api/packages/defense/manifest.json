@@ -429,8 +429,8 @@
     { "slug": "product-pricing", "name": "Product pricing", "icon": "tags", "description": "MSRP, GSA and distributor prices by product, margins and expiring price lists." },
     { "slug": "materials-library", "name": "Materials library", "icon": "book-open", "description": "Marketing materials and business documents by folder and type, with upload." },
     { "slug": "quotations", "name": "Quotations", "icon": "file-text", "description": "Quote Tracker by period with totals, and a New Quote builder with the CRM's line items editor." },
-    { "slug": "oem-integrations", "name": "OEM Integrations", "icon": "link", "description": "Integration status with OEM partners: counters by status, cards by status, and a two-column form to add or edit one." },
-    { "slug": "rfp-generator", "name": "RFP Generator", "icon": "file-pen-line", "description": "Proposals as cards, and a New/Edit dialog that drafts an RFP or RFQ response with Claude and checks a product's fit against it." },
+    { "slug": "oem-integrations", "name": "OEM Integrations", "icon": "link", "description": "Integration status with OEM partners: counters by status, cards by status, and a side panel to add or edit one." },
+    { "slug": "rfp-generator", "name": "RFP Generator", "icon": "file-pen-line", "description": "Proposals in a list with a side panel that drafts an RFP or RFQ response with Claude and checks a product's fit against it." },
     { "slug": "opportunity-evaluator", "name": "Opportunity Evaluator", "icon": "sparkles", "description": "Product catalog by category, product upkeep, and a Claude fit check of a product against an uploaded RFP, with history." },
     { "slug": "defense-reports", "name": "Reports", "icon": "chart-column", "description": "Six AI quick reports from the filtered pipeline, and the trade show follow-up plan." },
     { "slug": "operations-bom", "name": "Operations", "icon": "factory", "description": "Product BOMs with COGS and a margin projection matrix; Claude can read a BOM file for its COGS and parts." }

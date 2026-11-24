@@ -221,7 +221,7 @@ function Home({ me, params }) {
               <Row key={task.id} gap={6}>
                 <Button small onClick={() => complete(task.id)}>Done</Button>
                 <RecordLink object="tasks" id={task.id}>{task.name || '--'}</RecordLink>
-                {task.due_at && <span className={`small ${task.due_at.slice(0, 10) < today ? '' : 'muted'}`} style={task.due_at.slice(0, 10) < today ? { color: 'var(--danger)' } : undefined}>{formatDate(task.due_at)}</span>}
+                {task.due_at && <span className={`small ${formatDate(task.due_at) < today ? '' : 'muted'}`} style={formatDate(task.due_at) < today ? { color: 'var(--danger)' } : undefined}>{formatDate(task.due_at)}</span>}
               </Row>
             ))}
             {!myTasks.loading && !myTasks.data.length && !overdue.length && <Empty>Nothing waiting on you.</Empty>}

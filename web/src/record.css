@@ -626,6 +626,122 @@ button.le-tile:hover { border-color: var(--primary); }
 .le-sum-figs strong { font-size: 17px; }
 .le-sum-figs .small { color: color-mix(in srgb, var(--primary) 70%, var(--text)); }
 .modal.custom-line { width: min(620px, calc(100vw - 32px)); }
+/* phone-only pieces of a line: labels and the qty - / + */
+.le-ml, .le-step { display: none; }
+.le-stepper { display: block; }
+
+/* Phones (same idea as Fairbank's order placement page): no header row,
+   every line is its own card. Product (the x at the end of that row),
+   description, then unit price | qty, unit cost | ext., each with a small
+   label. Qty gets - / + buttons. A blank line shows only the product search. */
+@media (max-width: 767px) {
+  .overlay:has(> .modal.line-editor) { padding: 8px; }
+  .modal.line-editor { width: 100%; max-height: 100%; }
+  .line-editor .modal-body { padding-left: 12px; padding-right: 12px; }
+  .line-editor .modal-foot { flex-wrap: wrap; }
+  .line-editor .le-amount { flex: 1 1 100%; margin-right: 0; }
+  .le-scroll { overflow: visible; border: 0; border-radius: 0; }
+  .le-grid { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .le-head { display: none; }
+  .le-row {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "prod  prod"
+      "desc  desc"
+      "price qty"
+      "cost  ext";
+    gap: 4px 10px; padding: 10px 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--page-background);
+  }
+  .le-row:first-child, .le-row.le-head + .le-row { border-top: 1px solid var(--border); }
+  .le-row:not(.le-head):focus-within { box-shadow: inset 3px 0 0 var(--primary); }
+  .le-num { display: none; }
+  .le-c-prod { grid-area: prod; display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 40px; }
+  .le-c-prod .le-ml { flex: none; }
+  .le-c-prod .le-search { flex: 1; min-width: 0; }
+  .le-c-desc { grid-area: desc; font-size: 14px; }
+  .le-c-desc:empty { display: none; }
+  .le-c-price { grid-area: price; text-align: left; }
+  .le-c-qty { grid-area: qty; text-align: left; }
+  .le-c-cost { grid-area: cost; text-align: left; }
+  .le-c-ext { grid-area: ext; text-align: right; }
+  .le-c-del { position: absolute; top: 6px; right: 6px; }
+  .le-c-del .icon-btn { width: 36px; height: 36px; }
+  .le-row .faint-btn { opacity: 1; }
+  .le-blank .le-c-desc, .le-blank .le-c-price, .le-blank .le-c-qty, .le-blank .le-c-cost, .le-blank .le-c-ext { display: none; }
+  .le-row.le-blank { grid-template-areas: "prod prod"; }
+
+  .le-ml { display: block; margin-bottom: 3px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text); text-align: left; }
+  .le-c-prod .le-ml { margin-bottom: 0; }
+  .le-c-price .le-in { text-align: left; }
+  .le-text { padding-right: 0; }
+
+  .le-stepper { display: flex; align-items: stretch; }
+  .le-stepper .le-qty { flex: 1; min-width: 0; }
+  /* the unit moves into the label ("Qty · ft"): the box is too narrow for both */
+  .le-stepper .le-in { height: 40px; text-align: center; border-radius: 0; padding-left: 4px; padding-right: 4px !important; }
+  .le-stepper .le-uom { display: none; }
+  .le-c-price .le-in { height: 40px; }
+  .le-step {
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 40px; height: 40px; padding: 0;
+    border: 1px solid var(--border); background: var(--primary-soft); color: var(--primary); font-size: 20px; line-height: 1; cursor: pointer;
+  }
+  .le-step:first-child { border-radius: var(--radius) 0 0 var(--radius); border-right: 0; }
+  .le-step:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-left: 0; }
+  .le-note { text-align: left; }
+
+  .le-foot { flex-direction: column; align-items: stretch; }
+  .le-tools .le-key { display: none; }
+  .le-tools .btn { flex: 1; justify-content: center; }
+  .le-sum { min-width: 0; }
+  .menu.le-ac { max-width: calc(100vw - 24px); }
+}
+/* Phones, lines not being edited (Fairbank's compact cards): the description
+   starts the card with the SKU tile (or Custom tag) top right, then qty, unit
+   price, unit cost and ext. in one row as plain values. No x, no - / +.
+   Tapping the card opens it (the fields ignore taps until then, so the
+   keyboard does not pop up). A line with focus in it always shows in full. */
+@media (max-width: 767px) {
+  .le-row.le-compact:not(:focus-within) {
+    cursor: pointer;
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-areas:
+      "desc desc  desc desc"
+      "qty  price cost ext";
+    gap: 6px 8px; padding: 10px 12px;
+  }
+  .le-compact:not(:focus-within) .le-c-prod { position: absolute; top: 10px; right: 12px; padding: 0; }
+  .le-compact:not(:focus-within) .le-c-prod .le-ml,
+  .le-compact:not(:focus-within) .le-c-del,
+  .le-compact:not(:focus-within) .le-step,
+  .le-compact:not(:focus-within) .le-note { display: none; }
+  .le-compact:not(:focus-within) .le-c-prod > *,
+  .le-compact:not(:focus-within) .le-in { pointer-events: none; }
+  .le-compact:not(:focus-within) .le-c-desc { display: block; padding-right: 96px; min-height: 24px; font-size: 15px; font-weight: 500; }
+  .le-compact:not(:focus-within) .le-sub { font-weight: 400; }
+  .le-compact:not(:focus-within) .le-c-qty,
+  .le-compact:not(:focus-within) .le-c-price,
+  .le-compact:not(:focus-within) .le-c-cost,
+  .le-compact:not(:focus-within) .le-c-ext { font-size: 15px; white-space: nowrap; }
+  .le-compact:not(:focus-within) .le-c-ext .le-ml { text-align: right; }
+  /* values as text ("2 each", "$1,249.50") in place of the boxes, lined up
+     along the bottom when a label wraps */
+  .le-row.le-compact:not(:focus-within) { align-items: end; }
+  .le-compact:not(:focus-within) .le-c-desc { align-self: start; }
+  .le-compact:not(:focus-within) .le-ml-unit,
+  .le-compact:not(:focus-within) .le-stepper,
+  .le-compact:not(:focus-within) .le-c-price > .le-in { display: none; }
+  .le-compact:not(:focus-within) .le-ctext { display: block; font-variant-numeric: tabular-nums; white-space: nowrap; }
+}
+.le-ctext { display: none; }
+
+/* the smallest phones: narrower - / + so a 4-digit qty still fits */
+@media (max-width: 359px) {
+  .le-step { flex-basis: 32px; }
+  .le-row { gap: 4px 8px; }
+}
+
 .cl-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .cl-wide { grid-column: 1 / -1; }
 .cl-switch { display: flex; align-items: center; gap: 8px; }

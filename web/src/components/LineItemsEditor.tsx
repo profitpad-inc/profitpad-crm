@@ -90,6 +90,9 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
   const [raised, setRaised] = useState<Record<number, string>>({});
   // the line (row key) and field opened from the card
   const [hl, setHl] = useState<{ key: number; field: LineTarget['field'] } | null>(null);
+  // phones: the line being edited shows in full, the others compact (CSS
+  // .le-compact): the last line focused or tapped, or the one the editor was opened from
+  const [sel, setSel] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const parentLabel = (objectByName.get(parent.object)?.label_singular ?? parent.object).toLowerCase();
   const withAmount = AMOUNT_PARENTS.includes(parent.object);
@@ -128,6 +131,7 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
       const t = target ? loaded.findIndex((r) => r.id === target.lineId) : -1;
       if (t >= 0) {
         setHl({ key: loaded[t].key, field: target!.field });
+        setSel(loaded[t].key);
         // a product line's quantity takes focus; a product only shows as highlighted
         // (focusing its tile would turn it into the search box)
         if (target!.field === 'qty' && !loaded[t].custom) focusCell(t, 1);
@@ -159,6 +163,13 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
 
   function patch(key: number, change: Partial<Row>) {
     setRows((rs) => rs && rs.map((r) => (r.key === key ? { ...r, ...change } : r)));
+  }
+
+  // phones: the - and + beside a quantity (never below 1)
+  function stepQty(row: Row, by: number) {
+    const q = num(row.qty) ?? 0;
+    const next = Math.max(1, Math.round((q + by) * 1000) / 1000);
+    if (next !== q) patch(row.key, { qty: String(next) });
   }
 
   // a new blank line after `at` (default: the end), unless the last line is already blank
@@ -338,14 +349,19 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
                   const hlField = hl?.key === row.key ? hl.field : null;
                   const hlCell = (f: LineTarget['field']) => (hlField === f ? ' le-hl-cell' : '');
                   return (
-                  <div key={row.key} className={`le-row${row.custom ? ' le-custom' : ''}${hlField ? ' le-hl' : ''}`} role="row">
+                  <div key={row.key} className={`le-row${row.custom ? ' le-custom' : ''}${hlField ? ' le-hl' : ''}${isBlank(row) ? ' le-blank' : ''}${!isBlank(row) && row.key !== sel ? ' le-compact' : ''}`}
+                    role="row"
+                    onFocusCapture={() => setSel(row.key)}
+                    onClick={() => setSel(row.key)}
+                  >
                     <div className="le-num" role="cell">{r + 1}</div>
                     {row.custom ? (
                       <>
-                        <div className={hlCell('product').trim() || undefined} role="cell">
+                        <div className={`le-c-prod${hlCell('product')}`} role="cell">
+                          <span className="le-ml">Product</span>
                           <button className="le-tag" data-r={r} data-c={0} onClick={() => setCustom({ key: row.key })} title="Edit custom line">Custom</button>
                         </div>
-                        <div className="le-desc" role="cell">
+                        <div className="le-desc le-c-desc" role="cell">
                           {row.name}
                           {(row.product || row.customizations.trim()) && (
                             <span className="le-sub">
@@ -356,12 +372,13 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
                             </span>
                           )}
                         </div>
-                        <div className={`le-r le-text${hlCell('qty')}`} role="cell">{row.qty}</div>
-                        <div className="le-r le-text" role="cell">{num(row.price) === null ? '' : money(num(row.price), currency)}</div>
+                        <div className={`le-r le-text le-c-qty${hlCell('qty')}`} role="cell"><span className="le-ml">Qty</span>{row.qty}</div>
+                        <div className="le-r le-text le-c-price" role="cell"><span className="le-ml">Unit price</span>{num(row.price) === null ? '' : money(num(row.price), currency)}</div>
                       </>
                     ) : (
                       <>
-                        <div className={hlCell('product').trim() || undefined} role="cell">
+                        <div className={`le-c-prod${hlCell('product')}`} role="cell">
+                          <span className="le-ml">Product</span>
                           <ProductSearch
                             product={row.product}
                             cell={{ r, c: 0 }}
@@ -369,8 +386,12 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
                             onEnter={() => (row.product ? focusCell(r, 1) : undefined)}
                           />
                         </div>
-                        <div className="le-desc" role="cell">{row.name}</div>
-                        <div className={hlCell('qty').trim() || undefined} role="cell">
+                        <div className="le-desc le-c-desc" role="cell">{row.name}</div>
+                        <div className={`le-c-qty${hlCell('qty')}`} role="cell">
+                          <span className="le-ml">Qty<span className="le-ml-unit">{row.uom ? ` · ${row.uom}` : ''}</span></span>
+                          <span className="le-ctext" aria-hidden="true">{row.qty}{row.uom ? ` ${row.uom}` : ''}</span>
+                          <span className="le-stepper">
+                          <button type="button" className="le-step" tabIndex={-1} onClick={() => stepQty(row, -1)} aria-label={`Decrease quantity, line ${r + 1}`}>−</button>
                           <span className="le-qty">
                             <input
                               className="le-in"
@@ -385,9 +406,14 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
                             />
                             {row.uom && <span className="le-uom">{row.uom}</span>}
                           </span>
+                          <button type="button" className="le-step" tabIndex={-1} onClick={() => stepQty(row, 1)} aria-label={`Increase quantity, line ${r + 1}`}>+</button>
+                          </span>
                         </div>
-                        <div role="cell">
+                        <div className="le-c-price" role="cell">
+                          <label className="le-ml" htmlFor={`le-price-${row.key}`}>Unit price</label>
+                          <span className="le-ctext" aria-hidden="true">{num(row.price) === null ? '' : money(num(row.price), currency)}</span>
                           <input
+                            id={`le-price-${row.key}`}
                             className={`le-in${!isBlank(row) && priceTooLow(row) ? ' invalid' : ''}`}
                             data-r={r}
                             data-c={2}
@@ -411,11 +437,12 @@ export function LineItemsEditor({ parent, target, onClose, onSaved }: {
                         </div>
                       </>
                     )}
-                    <div className="le-r le-text le-money" role="cell" title={row.custom ? 'Estimated unit cost' : undefined}>
+                    <div className="le-r le-text le-money le-c-cost" role="cell" title={row.custom ? 'Estimated unit cost' : undefined}>
+                      <span className="le-ml">{row.custom ? 'Est. unit cost' : 'Unit cost'}</span>
                       {num(row.cost) === null ? '' : money(num(row.cost), currency)}
                     </div>
-                    <div className="le-r le-text le-money" role="cell">{isBlank(row) ? '' : money(ext(row), currency)}</div>
-                    <div role="cell">
+                    <div className="le-r le-text le-money le-c-ext" role="cell"><span className="le-ml">Ext.</span>{isBlank(row) ? '' : money(ext(row), currency)}</div>
+                    <div className="le-c-del" role="cell">
                       <button className="icon-btn faint-btn" tabIndex={-1} onClick={() => removeLine(r)} aria-label={`Remove line ${r + 1}`}>
                         <X size={14} />
                       </button>
@@ -587,7 +614,7 @@ function ProductSearch({ product, onPick, cell, onEnter, invalid, id, autoFocus 
         }}
       />
       {open && createPortal(
-        <div className="menu le-ac" role="listbox" style={{ top: rect!.bottom + 4, left: rect!.left }}>
+        <div className="menu le-ac" role="listbox" style={{ top: rect!.bottom + 4, left: rect!.left, minWidth: rect!.width }}>
           {results.map((p, i) => (
             <button
               key={p.id}

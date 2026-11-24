@@ -24,13 +24,23 @@ const STATUS_TONE: Record<string, BadgeTone> = { draft: 'muted', sent: 'primary'
 const NEW = '__new__'
 const NONE = ''
 
+// A date as local YYYY-MM-DD. Timestamps reach the view as Date objects, not
+// strings, so never slice them as text.
+const localDay = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+function dayOf(v) {
+  if (!v) return ''
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v
+  const dt = v instanceof Date ? v : new Date(String(v))
+  return Number.isNaN(dt.getTime()) ? '' : localDay(dt)
+}
+
 // [from, to) as YYYY-MM-DD for a period, or null for all time
 function periodRange(key) {
   const now = new Date()
   const y = now.getFullYear()
   const m = now.getMonth()
   const q = Math.floor(m / 3) * 3
-  const d = (yy, mm) => new Date(yy, mm, 1).toISOString().slice(0, 10)
+  const d = (yy, mm) => localDay(new Date(yy, mm, 1))
   switch (key) {
     case 'this_month': return [d(y, m), d(y, m + 1)]
     case 'last_month': return [d(y, m - 1), d(y, m)]
@@ -82,7 +92,7 @@ function Tracker({ params }) {
   const range = periodRange(period)
   const shown = quotes.data.filter((q) => {
     if (!range) return true
-    const day = String(q.created_at).slice(0, 10)
+    const day = dayOf(q.created_at)
     return day >= range[0] && day < range[1]
   })
   const total = shown.reduce((s, q) => s + (Number(q.amount_base ?? q.amount) || 0), 0)

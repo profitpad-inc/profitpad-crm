@@ -131,6 +131,7 @@ Anything else fails to save.
 - useMe() returns { id, name, is_admin } of the viewer.
 - useViewport() returns { scrollTop, viewportHeight }: how many pixels of the view are scrolled out of sight above, and how tall the visible area is. Visible part of the view: scrollTop to scrollTop + viewportHeight. Use it for infinite scroll (load more when scrollTop + viewportHeight nears the bottom) or anything that depends on what is on screen.
 - useDebounced(value, ms = 300) returns value once it has stopped changing for ms (search boxes).
+- useDirty(value, resetKey?) returns { dirty, markSaved } for a form's Save button: dirty is true while value (the form's fields, as an object) differs from what it was when the form opened; strings are trimmed, null, undefined and "" count as empty, lists and objects compare by contents. A new resetKey (say the open record's id) makes the current values the new start; markSaved(saved?) does the same after a save that keeps the form open. Use it for every Save (topic design, Forms and saving).
 - useView() returns { id, name, slug, draft }.
 
 ## Actions (from @pcrm/view, all return promises)
@@ -286,6 +287,12 @@ A view should look like part of the CRM and answer one job quickly. These rules 
 ## Filters and selection
 - Filters sit in Page actions as small Select and TextInput (search with debounce), with a small "Clear" button when any is set. Keep every filter and the selected item in address params (setParams), so links, refreshes and render_view params keep them.
 - Say what the filters left: a count in the subtitle or card title ("12 deals").
+
+## Forms and saving
+- Save buttons stay disabled (greyed out) until something has actually changed, as everywhere in the CRM. Use useDirty (topic ui_kit): const { dirty, markSaved } = useDirty({ ...fields, file: picked?.name ?? null }, row?.id), then <Button variant="primary" disabled={busy || !dirty} ...>. It compares the current values to the ones the form opened with (strings trimmed; null, undefined and "" all empty; lists and objects by contents), so changing a field back disables Save again. Never hand-roll the comparison.
+- A new record's Save enables once its required fields are filled; say which field is missing in the button's title or a hint, not in an error after the click.
+- After a save that keeps the form open, call markSaved() (or markSaved(savedValues) if they differ from the screen) so Save greys out again; a new resetKey (another record opened) also starts over. While saving, disable Save and show "Saving…".
+- Work that is not a field (an AI draft or evaluation, files picked, parts read from a document) counts as a change when the form would save it.
 
 ## Words, numbers and states
 - Labels in sentence case and the user's words: property labels and __label columns, never api_names or ids.
