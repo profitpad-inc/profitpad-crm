@@ -398,6 +398,10 @@
 .knowledge-body h5, .knowledge-body h6 { font-size: 1em; }
 .knowledge-body ul, .knowledge-body ol { padding-left: 22px; }
 .knowledge-body li + li { margin-top: 2px; }
+.knowledge-body .md-table { overflow-x: auto; margin: 0 0 10px; }
+.knowledge-body table { border-collapse: collapse; font-size: 0.93em; }
+.knowledge-body th, .knowledge-body td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+.knowledge-body th { background: var(--surface); font-weight: 600; }
 .knowledge-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: var(--surface); padding: 1px 4px; border-radius: 4px; }
 .knowledge-body pre { background: var(--surface); padding: 10px 12px; border-radius: var(--radius-sm); overflow: auto; white-space: pre; }
 .knowledge-body pre code { background: none; padding: 0; }

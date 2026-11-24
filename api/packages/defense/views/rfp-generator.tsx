@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  Page, Grid, Stack, Row, Card, Badge, Button, Select, TextInput, TextArea, Loading, ErrorBox, Empty, FileInput, FileLink,
+  Page, Grid, Stack, Row, Card, Badge, Button, Select, TextInput, TextArea, Markdown, Loading, ErrorBox, Empty, FileInput, FileLink,
   useQuery, useParams, setParams, createRecord, updateRecord, associateRecords, uploadFile, getFileBlob, openRecord, callIntegration,
   formatDate, formatMoney, type BadgeTone
 } from '@pcrm/view'
@@ -116,6 +116,20 @@ function TabSwitch({ value, onChange }) {
   )
 }
 
+// Rendered or Code, for the draft
+function ModeSwitch({ value, onChange }) {
+  return (
+    <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+      {[['rendered', 'Rendered'], ['code', 'Code']].map(([k, label]) => (
+        <button key={k} onClick={() => onChange(k)}
+          style={{ cursor: 'pointer', border: 0, padding: '4px 10px', fontSize: 12, fontWeight: 600, background: value === k ? 'var(--primary)' : 'var(--page-background)', color: value === k ? 'var(--primary-text, #fff)' : 'var(--muted-text)' }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function FitResult({ ev, title }) {
   const score = Number(ev.fit_score) || 0
   const block = (label, items, tone) => (items?.length ? (
@@ -170,6 +184,7 @@ function ProposalForm({ row, opts, products, companies, tab, onClose, onSaved })
   const [busy, setBusy] = useState('')
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState('')
+  const [mode, setMode] = useState(() => (row?.content ? 'rendered' : 'code'))
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }))
   const product = products.find((p) => p.id === productId)
   const company = companies.find((c) => c.id === f.company_id)?.name || ''
@@ -218,6 +233,7 @@ function ProposalForm({ row, opts, products, companies, tab, onClose, onSaved })
       const data = res?.data as any
       if (!data || data.ok !== true || !data.content) throw new Error(data?.error || 'The generator gave no answer. Check that the RFP generator integration is turned on.')
       set('content')(String(data.content))
+      setMode('rendered')
     } catch (e) {
       setError(/not found|no integration|unknown integration/i.test(e.message) ? 'The RFP generator integration is not set up yet. An admin adds it in Settings, View integrations.' : e.message)
     } finally {
@@ -285,7 +301,7 @@ function ProposalForm({ row, opts, products, companies, tab, onClose, onSaved })
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 12px', overflowY: 'auto', zIndex: 50 }}>
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label={row ? 'Edit RFP / RFQ proposal' : 'New RFP / RFQ proposal'}
         style={{ width: 'min(720px, 100%)', background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', padding: 20 }}>
-        <style>{'.rfp-field .v-input { width: 100%; box-sizing: border-box; } .rfp-draft { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }'}</style>
+        <style>{'.rfp-field .v-input { width: 100%; box-sizing: border-box; } .rfp-draft { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; } .rfp-md-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); padding: 14px 16px; max-height: 480px; overflow-y: auto; }'}</style>
         <Stack gap={16}>
           <Row style={{ justifyContent: 'space-between' }} align="center">
             <h2 style={{ margin: 0, fontSize: 18 }}><span style={{ color: 'var(--primary)' }}>✨</span>{` ${row ? 'Edit' : 'New'} RFP / RFQ Proposal`}</h2>
@@ -319,8 +335,10 @@ function ProposalForm({ row, opts, products, companies, tab, onClose, onSaved })
                 <Button variant="primary" disabled={!!busy || !f.name.trim()} onClick={generate} style={{ width: '100%' }}>{busy && busy !== 'Saving…' ? busy : '✨ Generate Proposal with AI'}</Button>
               </div>
               {(f.content || row) && (
-                <Field label={<Row style={{ justifyContent: 'space-between' }} align="center"><span>Generated Proposal</span>{f.content && <Button small onClick={copy}>{copied || '⧉ Copy'}</Button>}</Row>} wide>
-                  <TextArea value={f.content} onChange={set('content')} rows={14} snippets={false} className="rfp-draft" placeholder="The proposal draft appears here. You can also write or paste it." />
+                <Field label={<Row style={{ justifyContent: 'space-between' }} align="center"><span>Generated Proposal</span><Row gap={6}>{f.content && <ModeSwitch value={mode} onChange={setMode} />}{f.content && <Button small onClick={copy}>{copied || '⧉ Copy'}</Button>}</Row></Row>} wide>
+                  {mode === 'rendered' && f.content
+                    ? <div className="rfp-md-box" onDoubleClick={() => setMode('code')} title="Double-click to edit"><Markdown text={f.content} /></div>
+                    : <TextArea value={f.content} onChange={set('content')} rows={14} snippets={false} className="rfp-draft" placeholder="The proposal draft appears here. You can also write or paste it." />}
                 </Field>
               )}
             </Grid>
@@ -343,7 +361,7 @@ function ProposalForm({ row, opts, products, companies, tab, onClose, onSaved })
                 : fitResult ? <FitResult ev={fitResult.ev} title={fitResult.title} />
                   : fit ? (
                     <Card title="Saved evaluation">
-                      <div className="small" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{fit}</div>
+                      <Markdown text={fit} />
                     </Card>
                   ) : (
                     <div style={{ textAlign: 'center', padding: '40px 12px' }} className="muted">

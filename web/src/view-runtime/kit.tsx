@@ -5,6 +5,7 @@ import { call, getInit, getParams, getViewport, report, subscribeParams, subscri
 import type { Params, ViewFile, Viewport } from './protocol';
 import { Select as Dropdown } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
+import { Markdown as BaseMarkdown } from '../components/Markdown';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
 
@@ -186,6 +187,13 @@ export function useViewSetting<T>(key: string, fallback: T): [T, (next: T | ((pr
 // ---- files (the page uploads and reads them as the viewer) -------------------------
 
 export type { ViewFile };
+
+// Markdown text (a markdown property, an AI answer), drawn as elements, never
+// as HTML: the CRM's own renderer (the knowledge base uses it too). Links go
+// through openUrl, so the viewer confirms the site as with ExternalLink.
+export function Markdown({ text, style, className }: { text: string | null | undefined } & Styled) {
+  return <div className={cx('v-md', className)} style={style}><BaseMarkdown onLink={(url) => void openUrl(url)}>{String(text ?? '')}</BaseMarkdown></div>;
+}
 
 export interface UploadOptions {
   // the file's name in the CRM (default: the File's own name, else "file")
