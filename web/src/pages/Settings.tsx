@@ -9,6 +9,8 @@ import { api, can, type CrmRecord, type NavItem, type RolePermission, type Searc
 import { useApp, type Themes } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type ColorMode, type Mode, type Theme, type ThemeKey } from '../lib/theme';
 import { displayName, moreGroups, objectIcon } from '../lib/display';
 import { UserAvatar, refreshUserPhotos } from '../components/UserAvatar';
@@ -1498,7 +1500,7 @@ function NavSettings() {
 
       <SaveBar dirty={dirty} message={message} error={error}>
         {hasOwn && <button className="btn" onClick={resetUser}>Reset to {fallbackName} menu</button>}
-        <button className="btn primary" onClick={save}>Save menu</button>
+        <button className="btn primary" onClick={save} disabled={!dirty}>Save menu</button>
       </SaveBar>
 
       {copyOpen && (
@@ -1722,8 +1724,11 @@ function GroupModal({ title, initialName = '', menuSources, onSave, onClose }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // a rename needs a different name; a new group just a name
+  const ready = !!name.trim() && (!!menuSources || name.trim() !== initialName.trim());
+
   async function submit() {
-    if (!name.trim()) return;
+    if (!ready) return;
     setBusy(true);
     setError(null);
     try {
@@ -1740,8 +1745,9 @@ function GroupModal({ title, initialName = '', menuSources, onSave, onClose }: {
       onClose={onClose}
       footer={
         <>
+          <SaveHint missing={[!name.trim() && 'a name']} />
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={submit} disabled={busy || !name.trim()}>{menuSources ? 'Create group' : 'Save'}</button>
+          <button className="btn primary" onClick={submit} disabled={busy || !ready}>{menuSources ? 'Create group' : 'Save'}</button>
         </>
       }
     >
@@ -1784,6 +1790,7 @@ function MembersModal({ group, groups, users, myId, onSave, onClose }: {
   const q = query.trim().toLowerCase();
   const shown = users.filter((u) => !q || u.name.toLowerCase().includes(q));
   const moving = [...picked].filter((id) => otherGroup(id)).length;
+  const { dirty } = useDirty(picked);
 
   async function submit() {
     setBusy(true);
@@ -1804,7 +1811,7 @@ function MembersModal({ group, groups, users, myId, onSave, onClose }: {
         <>
           <span className="muted small push-right-note">{picked.size} {picked.size === 1 ? 'member' : 'members'}{moving ? `, ${moving} moving from another group` : ''}</span>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={submit} disabled={busy}>Save members</button>
+          <button className="btn primary" onClick={submit} disabled={busy || !dirty}>Save members</button>
         </>
       }
     >

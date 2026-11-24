@@ -7,6 +7,7 @@ import { displayName } from '../lib/display';
 import { CopyField, EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton, type Tone } from '../components/settings';
 import { Select } from '../components/Select';
 import { confirmDialog, alertDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
 
 // Admin pages for API keys and the security log (migration 0019).
 
@@ -117,6 +118,7 @@ export function ApiKeySettings() {
             return res;
           })}
           footer={<>
+            <SaveHint missing={[!draft.name.trim() && 'a name', !draft.user_id && 'a user', draft.scopes.length === 0 && 'at least one scope']} />
             <button className="btn" type="button" onClick={() => setDraft(null)}>Cancel</button>
             <button className="btn primary" type="submit" disabled={!draft.name.trim() || !draft.user_id || draft.scopes.length === 0}>Create key</button>
           </>}

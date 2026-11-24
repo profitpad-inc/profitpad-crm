@@ -4,6 +4,8 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { useUrlSearch } from '../lib/use-url-search';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { Modal } from '../components/ui';
 import { ShowMore } from '../components/ShowMore';
 import { Markdown } from '../components/Markdown';
@@ -119,6 +121,7 @@ export function KnowledgeSettings() {
   const blank = (): Draft => ({ id: null, title: '', body: '', admins_only: false });
   const fromTopic = (t: typeof TOPICS[number]): Draft => ({ id: null, title: t.title, body: t.body, admins_only: !!t.admins_only && canAdminsOnly });
   const d = draft;
+  const { dirty } = useDirty(d, d ? d.id ?? 'new' : null);
 
   return (
     <SettingsPage
@@ -139,8 +142,9 @@ export function KnowledgeSettings() {
           title={d.id ? `Edit "${d.title || 'article'}"` : 'New article'}
           onSubmit={() => save(d)}
           footer={<>
+            <SaveHint missing={[!d.title.trim() && 'a title']} />
             <button className="btn" type="button" onClick={() => setDraft(null)}>Cancel</button>
-            <button className="btn primary" type="submit" disabled={busy || !d.title.trim()}>{d.id ? 'Save' : 'Add article'}</button>
+            <button className="btn primary" type="submit" disabled={busy || !d.title.trim() || (!!d.id && !dirty)}>{d.id ? 'Save' : 'Add article'}</button>
           </>}
         >
           <div className="field-row">

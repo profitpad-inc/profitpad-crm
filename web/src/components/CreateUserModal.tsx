@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SaveHint } from './SaveHint';
 import { api, ApiError, getSchema, type CrmRecord, type ObjectDef } from '../lib/api';
 import { Modal, PropertyInput, fromInput } from './ui';
 import { Select } from './Select';
@@ -99,7 +100,8 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
     }
   }
 
-  const ready = !!schema && !!roles;
+  const missing = [...FIELDS.filter((f) => f.required && !(values[f.key] ?? '').trim()).map((f) => `a ${f.label.toLowerCase()}`), !roleId && 'a role'];
+  const ready = !!schema && !!roles && missing.every((m) => !m);
 
   return (
     <Modal
@@ -107,6 +109,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
       onClose={onClose}
       footer={
         <>
+          {!!schema && !!roles && <SaveHint missing={missing} />}
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save} disabled={busy || !ready}>
             {busy ? 'Creating…' : 'Create'}

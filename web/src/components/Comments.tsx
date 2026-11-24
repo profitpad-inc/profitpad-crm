@@ -199,7 +199,7 @@ function CommentEditor({ initial, submitLabel, placeholder, autoFocus = false, o
       {showFoot && (
         <div className="comment-editor-foot">
           <button className="btn small" onClick={() => void cancel()} disabled={saving}>Cancel</button>
-          <button className="btn primary small" onClick={() => void submit()} disabled={saving || !body.trim()}>{saving ? 'Saving…' : submitLabel}</button>
+          <button className="btn primary small" onClick={() => void submit()} disabled={saving || !body.trim() || (!!onCancel && !changed)}>{saving ? 'Saving…' : submitLabel}</button>
         </div>
       )}
     </div>

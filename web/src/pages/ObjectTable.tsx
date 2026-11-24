@@ -7,6 +7,8 @@ import {
   type Property, type SearchResult, type Sort, type View
 } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { norm } from '../lib/use-dirty';
+import { SaveHint } from '../components/SaveHint';
 import { defaultSortDirection, displayName, displayValue, formatValue, nameProperties, objectIcon, recordName, valueType } from '../lib/display';
 import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 import { CreateRecordModal } from '../components/CreateRecordModal';
@@ -86,6 +88,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const viewId = searchParams.get('view');
   const activeView = views.find((v) => String(v.id) === viewId) ?? views[0];
   const activeViewId = activeView?.id;
+  // a rename needs a new name; a new view just a name
+  const viewDialogReady = !!viewDialog && !!viewDialog.name.trim() && (viewDialog.mode === 'create' || viewDialog.name.trim() !== activeView?.name);
 
   // creating users gives a role: the Users or Roles permission (Super Admins have both)
   const canAddUsers = can(me, 'users') || can(me, 'roles');
@@ -496,7 +500,7 @@ function ObjectTableFor({ object }: { object: string }) {
   }
 
   async function saveViewDialog() {
-    if (!viewDialog || !viewDialog.name.trim()) return;
+    if (!viewDialog || !viewDialogReady) return;
     if (viewDialog.mode === 'create') {
       const created = await api<View>('POST', '/v1/ui/views', { object, name: viewDialog.name.trim(), columns, sorts });
       setViews((vs) => [...vs, created]);
@@ -1016,7 +1020,7 @@ function ObjectTableFor({ object }: { object: string }) {
           footer={
             <>
               <button className="btn" onClick={() => setViewDialog(null)}>Cancel</button>
-              <button className="btn primary" onClick={saveViewDialog} disabled={!viewDialog.name.trim()}>Save</button>
+              <button className="btn primary" onClick={saveViewDialog} disabled={!viewDialogReady}>Save</button>
             </>
           }
         >
@@ -1181,7 +1185,7 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
           {needsSave && !saving && (
             <>
               <button className="btn small" onClick={() => { done.current = true; onClose(); }}>Cancel</button>
-              <button className="btn small primary" onClick={() => commit()}>Save</button>
+              <button className="btn small primary" onClick={() => commit()} disabled={norm(fromInput(property, draft)) === norm(record.properties[property.api_name])}>Save</button>
             </>
           )}
         </div>
@@ -1253,6 +1257,7 @@ function BulkEditModal({ object, schema, ids, onClose, onDone }: {
       onClose={onClose}
       footer={
         <>
+          <SaveHint missing={[!property && 'a property']} />
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save} disabled={!ready}>{saving ? 'Saving…' : `Update ${ids.length.toLocaleString()} ${noun}`}</button>
         </>

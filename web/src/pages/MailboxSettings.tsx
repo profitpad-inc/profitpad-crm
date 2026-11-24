@@ -5,6 +5,8 @@ import { useApp } from '../lib/app-context';
 import { CopyField, EmptyState, GoogleDelegationLink, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { confirmDialog } from '../components/confirm';
 
 // Settings → Mailboxes (admins): the organization service accounts that let
@@ -449,6 +451,7 @@ function SharedMailboxModal({ mailbox, providers, users, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const byId = new Map(users.map((u) => [u.id, u]));
   const domains = providers.find((p) => p.provider === provider)?.domains ?? [];
+  const { dirty } = useDirty({ name, picked: [...picked].sort() });
 
   async function save() {
     setBusy(true);
@@ -470,8 +473,9 @@ function SharedMailboxModal({ mailbox, providers, users, onClose, onSaved }: {
       onClose={onClose}
       footer={
         <>
+          {!mailbox && <SaveHint missing={[!address.trim() && 'an address']} />}
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={busy || (!mailbox && !address.trim())} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+          <button className="btn primary" disabled={busy || (!mailbox && !address.trim()) || (!!mailbox && !dirty)} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
         </>
       }
     >

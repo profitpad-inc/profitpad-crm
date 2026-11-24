@@ -6,6 +6,8 @@ import { AMOUNT_PARENTS, discountOff, money, parentTotals, setParentAmount, type
 import { useApp } from '../lib/app-context';
 import { Modal } from './ui';
 import { Loading } from './Loading';
+import { SaveHint } from './SaveHint';
+import { useDirty } from '../lib/use-dirty';
 
 // The Line items card's +: every line of a parent (deal, quote, invoice, ...)
 // in one grid, edited together and saved at once. A product line is picked by
@@ -660,7 +662,12 @@ function CustomLineModal({ row, currency, onClose, onSave }: {
     if (!cost.trim() && p.cost !== null) setCost(String(p.cost));
   }
 
+  const { dirty } = useDirty({ variation, product: product?.id ?? null, name, qty, price, cost, customizations });
+  const missingProduct = variation && !product;
+  const ready = !missingProduct && !!name.trim() && (!row || dirty);
+
   function save() {
+    if (!ready) return;
     const er: Record<string, string> = {};
     if (variation && !product) er.product = 'Pick the product this is a variation of.';
     if (!name.trim()) er.name = 'Give the line a name.';
@@ -701,8 +708,9 @@ function CustomLineModal({ row, currency, onClose, onSave }: {
       onClose={onClose}
       footer={
         <>
+          <SaveHint missing={[missingProduct && 'a product', !name.trim() && 'a name']} />
           <button className="btn le-pill" onClick={onClose}>Cancel <span className="le-key">Esc</span></button>
-          <button className="btn primary le-pill" onClick={save}>{row ? 'Save' : 'Add line'} <span className="le-key">Enter</span></button>
+          <button className="btn primary le-pill" onClick={save} disabled={!ready}>{row ? 'Save' : 'Add line'} <span className="le-key">Enter</span></button>
         </>
       }
     >

@@ -1013,7 +1013,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
           <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} onFill={(values) => fill(p, values)} />
           {p.type === 'dropdown' && p.options.single_value !== true && (
-            <button className="btn small" onClick={() => commit(p)}>Save</button>
+            <button className="btn small" onClick={() => commit(p)} disabled={JSON.stringify(fromInput(p, draft)) === startValue.current}>Save</button>
           )}
         </div>
       ) : p.type === 'file' ? (
@@ -2108,7 +2108,7 @@ function BodyEditor({ initial, mentions, placeholder, onSave, onCancel }: {
       {error && <div className="error">{error}</div>}
       <div className="activity-body-edit-foot">
         <button className="btn small" onClick={cancel} disabled={saving}>Cancel</button>
-        <button className="btn primary small" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        <button className="btn primary small" onClick={save} disabled={saving || !changed}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
   );

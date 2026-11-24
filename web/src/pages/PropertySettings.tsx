@@ -5,6 +5,8 @@ import { api, clearSchemaCache, getSchema, type DropdownOption, type OptionList,
 import { useApp } from '../lib/app-context';
 import { nameProperties, recordName } from '../lib/display';
 import { Menu, Modal } from '../components/ui';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { EmptyState, SettingsPage, TableSkeleton } from '../components/settings';
 import { ColorPicker } from '../components/ColorPicker';
 import { Select } from '../components/Select';
@@ -363,9 +365,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   // once something is edited, closing asks first so the work isn't lost by accident;
   // until then Escape, clicking outside, X and Cancel just close
-  const snapshot = JSON.stringify({ label, apiName, description, type, options, calcSql, calcType, choices, stages, listId });
-  const [initial] = useState(snapshot);
-  const dirty = snapshot !== initial;
+  const { dirty } = useDirty({ label, apiName, description, type, options, calcSql, calcType, choices, stages, listId });
   const [confirmClose, setConfirmClose] = useState(false);
   const requestClose = () => (dirty ? setConfirmClose(true) : onClose());
   // choices get a colour swatch once the dropdown shows colours
@@ -591,8 +591,9 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
       onClose={requestClose}
       footer={
         <>
+          <SaveHint missing={[!label.trim() && 'a label', !apiName.trim() && 'an internal name']} />
           <button className="btn" onClick={requestClose}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={busy || !label.trim() || !apiName.trim()}>{isNew ? 'Create' : 'Save'}</button>
+          <button className="btn primary" onClick={save} disabled={busy || (!isNew && !dirty) || !label.trim() || !apiName.trim()}>{isNew ? 'Create' : 'Save'}</button>
         </>
       }
     >

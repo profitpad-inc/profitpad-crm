@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronDown, Code, Eye, Globe, ListPlus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { API_BASE, api, getSchema, type CrmRecord, type ObjectDef, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { norm } from '../lib/use-dirty';
 import { OPERATORS, type Condition, type FieldType } from '../public/conditions';
 import { formHtml, injectFormCss, renderForm } from '../public/form-renderer';
 import { parseQueryParams } from '../public/public-api';
@@ -117,7 +118,8 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   const [def, setDef] = useState<Definition>(() => parse(record.properties.definition));
   const [open, setOpen] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  // touched: edited here, so edits made elsewhere no longer replace what is on screen
+  const [touched, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -128,6 +130,9 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   const [publicName, setPublicName] = useState(savedPublicName);
   const [description, setDescription] = useState(savedDescription);
   const pageDirty = publicName !== savedPublicName || description !== savedDescription;
+  // Save is on only while the form differs from the saved one (changing back counts as no change)
+  const savedDef = useMemo(() => norm(parse(record.properties.definition)), [record.properties.definition]);
+  const dirty = pageDirty || norm(def) !== savedDef;
 
   useEffect(() => {
     Promise.all([getSchema('contacts'), getSchema('tickets')])
@@ -136,12 +141,12 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   }, []);
 
   useEffect(() => {
-    if (!dirty) setDef(parse(record.properties.definition));
-  }, [record.properties.definition, dirty]);
+    if (!touched) setDef(parse(record.properties.definition));
+  }, [record.properties.definition, touched]);
   // edits made elsewhere (the properties on the left) come in when there is nothing unsaved here
   useEffect(() => {
-    if (!dirty) { setPublicName(savedPublicName); setDescription(savedDescription); }
-  }, [savedPublicName, savedDescription, dirty]);
+    if (!touched) { setPublicName(savedPublicName); setDescription(savedDescription); }
+  }, [savedPublicName, savedDescription, touched]);
 
   function changePage(next: { publicName?: string; description?: string }) {
     if (next.publicName !== undefined) setPublicName(next.publicName);

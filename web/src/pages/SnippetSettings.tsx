@@ -4,6 +4,8 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { clearSnippetCache } from '../lib/snippets';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 
 // Settings → Snippets: saved text pulled into any text box by typing # and
@@ -92,6 +94,7 @@ export function SnippetSettings() {
   }
 
   const d = draft;
+  const { dirty } = useDirty(d, d ? d.id ?? 'new' : null);
   const mineShortcuts = new Set(list?.filter((s) => !s.shared).map((s) => s.shortcut));
 
   const table = (rows: Snippet[]) => (
@@ -151,8 +154,9 @@ export function SnippetSettings() {
           title={d.id ? `Edit #${d.shortcut}` : 'New snippet'}
           onSubmit={() => save(d)}
           footer={<>
+            <SaveHint missing={[!d.name.trim() && 'a name', !d.shortcut && 'a shortcut', !d.body.trim() && 'the text']} />
             <button className="btn" type="button" onClick={() => setDraft(null)}>Cancel</button>
-            <button className="btn primary" type="submit" disabled={busy || !d.name.trim() || !d.shortcut || !d.body.trim()}>{d.id ? 'Save' : 'Add snippet'}</button>
+            <button className="btn primary" type="submit" disabled={busy || !d.name.trim() || !d.shortcut || !d.body.trim() || (!!d.id && !dirty)}>{d.id ? 'Save' : 'Add snippet'}</button>
           </>}
         >
           <div className="field-row">

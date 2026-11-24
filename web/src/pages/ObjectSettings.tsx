@@ -4,6 +4,7 @@ import { Boxes, MoreHorizontal, Plus } from 'lucide-react';
 import { api, clearSchemaCache, type NavItem, type ObjectSummary } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Menu, Modal } from '../components/ui';
+import { SaveHint } from '../components/SaveHint';
 import { EmptyState, SettingsPage } from '../components/settings';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Select } from '../components/Select';
@@ -207,8 +208,9 @@ function ObjectEditor({ object, onClose, onSaved }: {
       onClose={onClose}
       footer={
         <>
+          <SaveHint missing={[!singular.trim() && 'a singular name', !plural.trim() && 'a plural name', !apiName.trim() && 'an internal name']} />
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={busy || !singular.trim() || !plural.trim() || !apiName.trim()}>
+          <button className="btn primary" onClick={save} disabled={busy || (!isNew && !dirty) || !singular.trim() || !plural.trim() || !apiName.trim()}>
             {isNew ? 'Create' : 'Save'}
           </button>
         </>

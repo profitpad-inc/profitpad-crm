@@ -94,6 +94,12 @@ export function useDebounced<T>(value: T, ms = 300): T {
   return out;
 }
 
+// Save stays disabled until the form differs from what it opened with (the
+// CRM's rule): const { dirty, markSaved } = useDirty({ name, notes }, record?.id).
+// A changed resetKey, or markSaved() after a save, makes the current values
+// the new starting point; changing a field back makes it clean again.
+export { useDirty } from '../lib/use-dirty';
+
 export function useMe() {
   return getInit()?.me ?? { id: null, name: null, is_admin: false };
 }

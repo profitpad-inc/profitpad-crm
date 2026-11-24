@@ -5,6 +5,8 @@ import { useApp } from '../lib/app-context';
 import { ApprovalNote, EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton, useReview, type Approval } from '../components/settings';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 
 // Settings → View integrations (admins, migration 0036): outside endpoints such as
 // n8n webhooks that custom views send data to with callIntegration(key, data).
@@ -135,6 +137,7 @@ export function IntegrationSettings() {
   // a header with no stored or new value cannot be saved
   const secretMissing = !!d && !!d.secret_header.trim() && !d.secret_value && !(d.had_secret && d.secret_header.trim());
   const badExample = !!d && parseExample(d.data_example) === undefined;
+  const { dirty } = useDirty(d, d ? d.editing ?? 'new' : null);
 
   return (
     <SettingsPage
@@ -154,8 +157,9 @@ export function IntegrationSettings() {
           title={d.editing ? `Edit ${d.label || d.key}` : 'New integration'}
           onSubmit={() => save(d)}
           footer={<>
+            <SaveHint missing={[!d.label.trim() && 'a label', !d.key && 'a key', !d.url.trim() && 'a URL', secretMissing && 'the secret value', badExample && 'a data example that is valid JSON']} />
             <button className="btn" type="button" onClick={() => setDraft(null)}>Cancel</button>
-            <button className="btn primary" type="submit" disabled={!d.label.trim() || !d.url.trim() || !d.key || secretMissing || badExample}>{d.editing ? 'Save' : 'Add integration'}</button>
+            <button className="btn primary" type="submit" disabled={(!!d.editing && !dirty) || !d.label.trim() || !d.url.trim() || !d.key || secretMissing || badExample}>{d.editing ? 'Save' : 'Add integration'}</button>
           </>}
         >
           <div className="field-row">

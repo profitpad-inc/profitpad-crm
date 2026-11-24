@@ -6,6 +6,8 @@ import { useApp } from '../lib/app-context';
 import { Menu } from '../components/ui';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { EditPanel, EmptyState, SettingsPage, StatusPill, TableSkeleton } from '../components/settings';
 
 // Settings -> Association labels: names for the links between records
@@ -127,6 +129,7 @@ export function AssociationLabelSettings() {
   const one = (o: ObjectSummary | undefined, fallback: string) => (o?.label_singular ?? fallback).toLowerCase();
   const many = (o: ObjectSummary | undefined, fallback: string) => (o?.label_plural ?? fallback).toLowerCase();
   const canSave = !!d && !!d.from && !!d.to && d.label.trim().length > 0 && limitOk(d.maxTo) && (d.symmetric || limitOk(d.maxFrom));
+  const { dirty } = useDirty(d, d ? d.editing?.id ?? 'new' : null);
 
   return (
     <SettingsPage
@@ -145,8 +148,9 @@ export function AssociationLabelSettings() {
           title={d.editing ? `Edit ${d.editing.label}` : 'New association label'}
           onSubmit={() => save(d)}
           footer={<>
+            <SaveHint missing={[!d.from && 'an object', !d.to && 'the other object', !d.label.trim() && 'a label', !(limitOk(d.maxTo) && (d.symmetric || limitOk(d.maxFrom))) && 'limits that are whole numbers of 1 or more']} />
             <button className="btn" type="button" onClick={() => { setDraft(null); setError(null); }}>Cancel</button>
-            <button className="btn primary" type="submit" disabled={busy || !canSave}>{d.editing ? 'Save' : 'Create label'}</button>
+            <button className="btn primary" type="submit" disabled={busy || !canSave || (!!d.editing && !dirty)}>{d.editing ? 'Save' : 'Create label'}</button>
           </>}
         >
           {d.editing ? (

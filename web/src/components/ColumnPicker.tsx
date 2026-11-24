@@ -81,7 +81,7 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={() => onSave(selected)} disabled={selected.length === 0}>Apply</button>
+          <button className="btn primary" onClick={() => onSave(selected)} disabled={selected.length === 0 || selected.map(key).join('|') === columns.map(key).join('|')}>Apply</button>
         </>
       }
     >

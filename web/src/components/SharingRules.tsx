@@ -7,6 +7,7 @@ import { EmptyState, SettingsSection } from './settings';
 import { Select } from './Select';
 import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
+import { useDirty } from '../lib/use-dirty';
 
 // Settings → Roles: sharing rules widen which records a role's users see (or
 // edit) beyond their own or their team's: records of one object that match
@@ -221,6 +222,7 @@ function RuleEditor({ roleId, draft, setDraft, schema, onSave }: {
   }, [labels, schema, objects]);
 
   const complete = !!schema && filtersComplete(draft.filter_groups, schema);
+  const { dirty } = useDirty(draft, draft.id ?? 'new');
 
   // live count of what the rule would share
   useEffect(() => {
@@ -314,7 +316,7 @@ function RuleEditor({ roleId, draft, setDraft, schema, onSave }: {
       {schema && !complete && <p className="muted small">Fill in every condition to see what this rule shares.</p>}
 
       <div className="actions">
-        <button className="btn primary" onClick={onSave} disabled={!complete}>{draft.id ? 'Save rule' : 'Create rule'}</button>
+        <button className="btn primary" onClick={onSave} disabled={!complete || (!!draft.id && !dirty)}>{draft.id ? 'Save rule' : 'Create rule'}</button>
         <button className="btn" onClick={() => setDraft(null)}>Cancel</button>
       </div>
     </div>

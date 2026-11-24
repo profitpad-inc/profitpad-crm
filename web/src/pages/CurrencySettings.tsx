@@ -3,6 +3,8 @@ import { Coins, MoreHorizontal, Plus } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Menu, Modal } from '../components/ui';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 
@@ -406,7 +408,10 @@ function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
     }
   }
 
-  const canSave = !busy && (isNew ? /^[A-Z]{3}$/.test(code) && !!name.trim() && (rate.trim() === '' ? !needRate : rateOk) : rateOk);
+  // a manual rate saves only when changed; with automatic rates, saving the
+  // fetched rate as it is pins it there, which is a change of its own
+  const { dirty } = useDirty(rate);
+  const canSave = !busy && (isNew ? /^[A-Z]{3}$/.test(code) && !!name.trim() && (rate.trim() === '' ? !needRate : rateOk) : rateOk && (automatic || dirty));
 
   return (
     <Modal
@@ -415,6 +420,7 @@ function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
       onClose={onClose}
       footer={
         <>
+          {isNew && <SaveHint missing={[!/^[A-Z]{3}$/.test(code) && 'a 3-letter code', !name.trim() && 'a name', rate.trim() === '' ? needRate && 'a rate' : !rateOk && 'a rate above 0']} />}
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn primary" onClick={save} disabled={!canSave}>{isNew ? 'Add' : 'Save rate'}</button>
         </>

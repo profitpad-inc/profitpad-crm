@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CalendarCheck, CircleAlert, Clock, Plus, Trash2 } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { norm } from '../lib/use-dirty';
 import { DatePicker } from './DatePicker';
 import { Select } from './Select';
 import '../editors.css';
@@ -312,7 +313,11 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   const [hours, setHours] = useState<Availability>(stored ?? DEFAULT);
   const [rows, setRows] = useState<Row[]>(() => rowsOf(stored ?? DEFAULT));
   const [zone, setZone] = useState(str(record.properties.timezone) || browserZone());
-  const [dirty, setDirty] = useState(!stored || !record.properties.timezone);
+  // touched: edited here, so a live update of the record no longer replaces the hours on screen
+  const [touched, setDirty] = useState(!stored || !record.properties.timezone);
+  // what Save would change: never saved yet, or the hours differ from the saved ones (changing back counts as no change)
+  const dirty = !stored || !record.properties.timezone
+    || norm({ weekly: hours.weekly, overrides: hours.overrides, rows, zone }) !== norm({ weekly: stored.weekly, overrides: stored.overrides, rows: rowsOf(stored), zone: str(record.properties.timezone) });
   // the save bar shows a shadow only while it is pinned over the hours; the marker just after it is on screen when
   // the bar sits at the end of its section
   const [barPinned, setBarPinned] = useState(false);
@@ -347,13 +352,13 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   useEffect(loadCheck, [loadCheck, record]);
 
   useEffect(() => {
-    if (dirty) return;
+    if (touched) return;
     if (stored) {
       setHours(stored);
       setRows(rowsOf(stored));
     }
     if (record.properties.timezone) setZone(str(record.properties.timezone));
-  }, [stored, record.properties.timezone, dirty]);
+  }, [stored, record.properties.timezone, touched]);
 
   async function save(properties: Record<string, unknown>, message = 'Saved') {
     setError(null);

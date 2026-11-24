@@ -6,6 +6,8 @@ import { useApp } from '../lib/app-context';
 import { Menu } from '../components/ui';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 import { EditPanel, EmptyState, SettingsPage, TableSkeleton } from '../components/settings';
 
 // Settings → Option lists: dropdowns on any objects that share one set of
@@ -128,6 +130,8 @@ export function OptionListSettings() {
     d?.kind === 'new' ? d.dropdowns.filter((_, i) => i !== skip).filter((x) => x.property).map((x) => `${x.object}.${x.property}`) : []);
   const newDraft = (): Draft => ({ kind: 'new', label: '', description: '', dropdowns: [{ object: '', property: '' }] });
   const d = draft;
+  // only an edit compares with where it started; new lists and links just need their fields
+  const { dirty } = useDirty(d, d ? (d.kind === 'new' ? 'new' : `${d.kind}:${d.list.id}`) : null);
 
   return (
     <SettingsPage
@@ -146,9 +150,10 @@ export function OptionListSettings() {
           title={d.kind === 'new' ? 'New option list' : d.kind === 'edit' ? `Edit ${d.list.label}` : `Link a dropdown to ${d.list.label}`}
           onSubmit={() => save(d)}
           footer={<>
+            <SaveHint missing={d.kind === 'link' ? [!d.dropdown.property && 'a dropdown'] : [!d.label.trim() && 'a name']} />
             <button className="btn" type="button" onClick={() => { setDraft(null); setError(null); }}>Cancel</button>
             <button className="btn primary" type="submit"
-              disabled={busy || (d.kind === 'link' ? !d.dropdown.property : !d.label.trim())}>
+              disabled={busy || (d.kind === 'link' ? !d.dropdown.property : !d.label.trim()) || (d.kind === 'edit' && !dirty)}>
               {d.kind === 'new' ? 'Create list' : d.kind === 'edit' ? 'Save' : 'Link dropdown'}
             </button>
           </>}

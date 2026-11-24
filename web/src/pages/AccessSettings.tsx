@@ -10,6 +10,7 @@ import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSk
 import { Select } from '../components/Select';
 import { Menu } from '../components/ui';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
 import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
 
 // Admin pages for who can see what: users get roles (directly; team
@@ -659,7 +660,8 @@ export function RoleSettings() {
             if (selected === 'new') { setSelected(null); if (roles.length) load(roles[0].id); return; }
             if (role) setDraft(draftOf(role));
           }}>{selected === 'new' ? 'Cancel' : 'Discard'}</button>
-          <button className="btn primary" disabled={!dirty} onClick={() => void save()}>{selected === 'new' ? 'Create role' : 'Save role'}</button>
+          {selected === 'new' && dirty && <SaveHint missing={[!draft.name.trim() && 'a name']} />}
+          <button className="btn primary" disabled={!dirty || (selected === 'new' && !draft.name.trim())} onClick={() => void save()}>{selected === 'new' ? 'Create role' : 'Save role'}</button>
         </SaveBar>
       )}
     </SettingsPage>

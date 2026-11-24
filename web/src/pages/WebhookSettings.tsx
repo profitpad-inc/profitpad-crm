@@ -10,6 +10,8 @@ import {
 } from '../components/settings';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
+import { SaveHint } from '../components/SaveHint';
+import { useDirty } from '../lib/use-dirty';
 
 // Settings → Webhooks (admins, migration 0038): endpoints that receive record
 // events as signed JSON POSTs, their subscriptions (object, event, optional
@@ -186,6 +188,7 @@ export function WebhookSettings() {
   const d = endpointDraft;
   const secretMissing = !!d && !!d.secret_header.trim() && !d.secret_value && !d.had_secret;
   const batchOk = !!d && /^\d+$/.test(d.batch_max) && Number(d.batch_max) >= 1 && Number(d.batch_max) <= 1000;
+  const endpointDirty = useDirty(d, d ? d.editing ?? 'new' : null).dirty;
 
   const newEndpoint = () => setEndpointDraft(EMPTY_ENDPOINT);
   const endpointTone = (e: Endpoint): Tone => (e.awaiting_approval ? 'warn' : !e.enabled ? 'off' : e.consecutive_failures > 0 ? 'failed' : 'on');
@@ -230,8 +233,9 @@ export function WebhookSettings() {
           title={d.editing ? `Edit ${d.name || 'endpoint'}` : 'New endpoint'}
           onSubmit={() => saveEndpoint(d)}
           footer={<>
+            <SaveHint missing={[!d.name.trim() && 'a name', !d.url.trim() && 'a URL', secretMissing && 'the secret value', !batchOk && 'a batch size from 1 to 1000']} />
             <button className="btn" type="button" onClick={() => setEndpointDraft(null)}>Cancel</button>
-            <button className="btn primary" type="submit" disabled={!d.name.trim() || !d.url.trim() || secretMissing || !batchOk}>{d.editing ? 'Save' : 'Add endpoint'}</button>
+            <button className="btn primary" type="submit" disabled={(!!d.editing && !endpointDirty) || !d.name.trim() || !d.url.trim() || secretMissing || !batchOk}>{d.editing ? 'Save' : 'Add endpoint'}</button>
           </>}
         >
           <div className="field-row">
@@ -430,7 +434,9 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
   };
   const properties = schema ? schema.properties.filter((p) => p.record_status === 'active').sort((a, b) => a.label.localeCompare(b.label)) : [];
   const filtersOk = d.filter_groups.length === 0 || (!!schema && filtersComplete(d.filter_groups, schema));
-  const canSave = !!schema && filtersOk && (!PROPERTY_EVENTS.includes(d.event) || d.properties.length > 0);
+  const needsProperties = PROPERTY_EVENTS.includes(d.event) && d.properties.length === 0;
+  const canSave = !!schema && filtersOk && !needsProperties;
+  const { dirty } = useDirty(d, d.editing ?? 'new');
 
   async function save() {
     setError(null);
@@ -458,8 +464,9 @@ function SubscriptionForm({ draft, onChange, onCancel, onSaved }: {
       title={d.editing ? 'Edit subscription' : 'New subscription'}
       onSubmit={save}
       footer={<>
+        <SaveHint missing={[needsProperties && 'at least one property to watch', !filtersOk && 'complete conditions']} />
         <button className="btn" type="button" onClick={onCancel}>Cancel</button>
-        <button className="btn primary" type="submit" disabled={!canSave}>{d.editing ? 'Save' : 'Add subscription'}</button>
+        <button className="btn primary" type="submit" disabled={!canSave || (!!d.editing && !dirty)}>{d.editing ? 'Save' : 'Add subscription'}</button>
       </>}
     >
       {error && <div className="error">{error}</div>}
