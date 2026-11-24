@@ -76,7 +76,7 @@ Rules the installer enforces that are easy to trip on:
 |---|---|---|
 | `partnerships` | Teaming partners, VARs, distributors, alliances | partner_type, product_category, status (pill, default prospecting), agreement_type, agreement and renewal dates, rationale, value_to_us, value_to_partner, gaps_addressed, still_needed, notes, owner |
 | `oem_integrations` | Integration work with OEM partners | integration_type, status (pill), priority, target_completion, go_live_date, description, value_proposition, next_steps, notes, owner, contact_name, contact_email |
-| `proposals` | RFP, RFQ and RFI responses ("RFP Generator" in the menu, the plain object list) | solicitation_number, contract_type, status (pill), due_date, estimated_value, template (file), ai_context, content (markdown), fit_evaluation (markdown), owner |
+| `proposals` | RFP, RFQ and RFI responses (shown by the `rfp-generator` view) | solicitation_number, customer_organization (added 2026-11-24), contract_type, status (pill), due_date, estimated_value, template (file), ai_context, content (markdown), fit_evaluation (markdown), owner |
 | `boms` | A product's bill of materials; parts are its line items | product_category, total_cogs, target_margin, bom_file (up to 5 files), notes |
 | `trips` | Travel with the itinerary folded in | destination, purpose, status (pill), dates, est_airfare/hotel/meals/other, `est_total` (calculation), travel_poc, ooo_email, approver, approved_date, approval_notes, outbound and return from/to/departs/flight, hotel name/address, check-in/out, owner ("Traveller") |
 | `expenses` | Expenses with receipts | amount, expense_date, category, vendor, receipt (up to 3 files), notes, owner ("Spent by") |
@@ -128,6 +128,7 @@ All 18 are published on the defense CRM. "Menu" is where the package's default m
 | `defense-reports` | Business Development, Reports | Quick Reports: Base44's six report cards with filters, sent to the `ai-report` integration, shown as a structured report (last one kept per person). Trade Show Follow-Up Plan tab | integration `ai-report`, `property_history`, `useViewSetting` |
 | `bant-calculator` | Tools, BANT Calculator | Matt's questions and points; writes the four scores, `bant_answers` and PWIN to a deal, or creates the deal (company, customer type, category, vehicle, stage, value) | |
 | `scenario-generator` | Tools, Scenario Generator | BOM cost against bid and competitor price: margin, risk, position, discount table | |
+| `rfp-generator` | Tools, RFP Generator | Base44's RFP / RFQ Generator (added 2026-11-24): proposal cards (status, type, solicitation, due date, draft preview) and a New/Edit dialog with "Details & Generate" (fields, previous proposal template, notes for AI, Generate Proposal with AI, editable draft with Copy) and "Product Fit Evaluation" (a catalog product against the proposal, kept in `fit_evaluation` as markdown). Base44's PDF, Email, Share and Delete card buttons are not built (the view frame cannot print, download or email); Open goes to the record page | integrations `rfp-generator` (no n8n workflow yet) and `opportunity-evaluator` |
 | `opportunity-evaluator` | Tools, Opp. Evaluator | Catalog by category, Manage Products (feature and compliance chips, spec upload), Evaluator (product, optional lead, PDF or text upload plus pasted text) calling `opportunity-evaluator`; result card and History, stored on a `leads` record | integration `opportunity-evaluator`, file upload |
 | `product-pricing` | Resources, Product Pricing | MSRP, GSA and distributor prices, margins, expiring price lists | |
 | `materials-library` | Resources, Marketing Materials | Marketing materials and documents by folder and type, with upload | file upload |
@@ -138,7 +139,7 @@ All 18 are published on the defense CRM. "Menu" is where the package's default m
 | `opportunity-discovery` | not in menu | Sources directory (opens outside links), lead inbox with push to pipeline, intel topics | `openUrl` / `ExternalLink` |
 | `trade-show-follow-up` | not in menu (also a tab in Reports) | People met at events, hottest first, with follow-up buttons | |
 
-The menu also has object links: RFP Generator (`proposals`), Contacts, Documents, and the native Card Scanner. Sections: Business Development (briefcase), Tools (wrench), Resources (book-open), Operations (factory). Phone hotbar: Menu, Business Dev (with Command Dashboard and My Dashboard first), Tools, Resources, then Search; Operations is sidebar only.
+The menu also has object links: Contacts, Documents, and the native Card Scanner. Sections: Business Development (briefcase), Tools (wrench), Resources (book-open), Operations (factory). Phone hotbar: Menu, Business Dev (with Command Dashboard and My Dashboard first), Tools, Resources, then Search; Operations is sidebar only.
 
 View conventions used throughout: inputs with a fixed minimum width use `minWidth: 'min(Npx, 100%)'` so they fit a 360px phone. Four stat tiles stack one per row on phones in most views (left as is).
 
@@ -181,7 +182,7 @@ All built and on main. Listed so nobody rebuilds them.
 
 From Matt's app, not built:
 
-- **RFP Generator:** only the `proposals` object list. No AI draft from notes and a template, no product fit on a proposal, no proposal PDF.
+- **RFP Generator:** the view is built (2026-11-24) but the `rfp-generator` n8n workflow is not: Generate Proposal with AI fails until it exists and the CRM integration is added. No proposal PDF, email or share.
 - **Pipeline extras:** "Draft Follow-up" (AI email from outcomes and notes), the email button on cards, quick assign owner and region on cards.
 - **Red Star notifications:** an alert creates tasks for the notified people (which can send task notification emails if those are set up); it does not send its own alert.
 - **My Dashboard:** no Opportunity Discovery or Intel Feed tabs (discovery is the separate view); no "Ingest from Email" for leads; intel topics are a list only, nothing searches them.
@@ -213,7 +214,7 @@ Matt's app has 14 record types and these pages (sidebar order). Read 2026-11-03 
 | | OEM Integrations | `oem-integrations` |
 | | Reports (six AI reports, Trade Show Follow-Up Plan) | `defense-reports`, `trade-show-follow-up` |
 | Tools | BANT Calculator | `bant-calculator` |
-| | RFP Generator | `proposals` object |
+| | RFP Generator | `rfp-generator` |
 | | Scenario Generator | `scenario-generator` |
 | | Opp. Evaluator | `opportunity-evaluator` |
 | | Card Scanner (Trade Show Mode) | native Card Scanner |

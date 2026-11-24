@@ -313,7 +313,7 @@ async function validateBottom(items: unknown): Promise<NavItem[]> {
 
 // ---- menu groups and who may change their own menu ----------------------------
 
-type MenuBody = { items: unknown; bottom_left?: unknown; bottom?: unknown; more_hidden?: unknown };
+export type MenuBody = { items: unknown; bottom_left?: unknown; bottom?: unknown; more_hidden?: unknown };
 
 // objects left out of the sidebar's More menu (api_names); they stay reachable everywhere else
 async function validateMoreHidden(list: unknown): Promise<string[]> {
@@ -390,6 +390,68 @@ async function saveUserMenu(userId: string, body: MenuBody | undefined, actor: s
     [userId, JSON.stringify(items), left, bottom && JSON.stringify(bottom), actor, moreHidden && JSON.stringify(moreHidden)]
   );
   return { source: 'user' as const, items, bottom: storedHotbar(rows[0].bottom_left, rows[0].bottom_items), more_hidden: rows[0].more_hidden };
+}
+
+// Every menu (default, groups, users' own), the groups with their members, and the everyone setting.
+export async function listMenus(p: Principal) {
+  requireAdmin(p);
+  const [menus, groups, everyone] = await Promise.all([
+    pool.query(
+      `select m.scope, m.user_id, u.name as user_name, m.group_id, m.items, m.bottom_left, m.bottom_items as bottom, m.more_hidden, m.updated_at, m.updated_by
+       from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
+    ),
+    pool.query(
+      `select g.id, g.name, g.members_can_customize,
+         coalesce(array_agg(m.user_id order by m.added_at) filter (where m.user_id is not null), '{}') as members
+       from ui.nav_groups g left join ui.nav_group_members m on m.group_id = g.id
+       group by g.id order by lower(g.name)`
+    ),
+    everyoneCanCustomize()
+  ]);
+  const results = menus.rows.map(({ bottom_left, bottom, ...m }) => ({ ...m, bottom: storedHotbar(bottom_left, bottom) }));
+  return { results, groups: groups.rows, everyone_can_customize: everyone };
+}
+
+// bottom (the whole hotbar) is optional; left out, the hotbar stays as it is
+export async function saveDefaultMenu(p: Principal, body: MenuBody | undefined) {
+  requireAdmin(p);
+  const { items, left, bottom, moreHidden } = await validateMenuBody(body);
+  const { rows } = await pool.query(
+    `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
+       more_hidden = coalesce($5, more_hidden), updated_at = now(), updated_by = $4
+     where scope = 'default' returning bottom_left, bottom_items, more_hidden`,
+    [JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor, moreHidden && JSON.stringify(moreHidden)]
+  );
+  return { source: 'default' as const, items, bottom: storedHotbar(rows[0]?.bottom_left, rows[0]?.bottom_items), more_hidden: rows[0]?.more_hidden ?? [] };
+}
+
+export async function saveGroupMenu(p: Principal, rawId: string, body: MenuBody | undefined) {
+  requireAdmin(p);
+  const id = groupId(rawId);
+  const { items, left, bottom, moreHidden } = await validateMenuBody(body);
+  const { rows } = await pool.query(
+    `update ui.nav_menus set items = $2, bottom_left = coalesce($3, bottom_left), bottom_items = coalesce($4, bottom_items),
+       more_hidden = coalesce($6, more_hidden), updated_at = now(), updated_by = $5
+     where scope = 'group' and group_id = $1 returning bottom_left, bottom_items, more_hidden`,
+    [id, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor, moreHidden && JSON.stringify(moreHidden)]
+  );
+  if (rows.length === 0) throw notFound('group not found');
+  return { source: 'group' as const, items, bottom: storedHotbar(rows[0].bottom_left, rows[0].bottom_items), more_hidden: rows[0].more_hidden };
+}
+
+// bottom (the whole hotbar) is optional; left out, a new menu copies the hotbar the user sees now and an existing one keeps its own
+export async function saveUserMenuAsAdmin(p: Principal, userId: string, body: MenuBody | undefined) {
+  requireAdmin(p);
+  const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and record_status = 'active'", [userId]);
+  if (users.length === 0) throw notFound('user not found');
+  return saveUserMenu(userId, body, p.actor);
+}
+
+// back to the group's or the default menu
+export async function deleteUserMenu(p: Principal, userId: string): Promise<boolean> {
+  requireAdmin(p);
+  const { rowCount } = await pool.query("delete from ui.nav_menus where scope = 'user' and user_id = $1", [userId]);
+  return (rowCount ?? 0) > 0;
 }
 
 function validateGroupName(name: unknown): string {
@@ -599,24 +661,7 @@ export async function uiRoutes(app: FastifyInstance) {
   });
 
   // every menu, the groups with their members, and the everyone setting
-  app.get('/v1/ui/nav/menus', async (req) => {
-    requireAdmin(req.principal!);
-    const [menus, groups, everyone] = await Promise.all([
-      pool.query(
-        `select m.scope, m.user_id, u.name as user_name, m.group_id, m.items, m.bottom_left, m.bottom_items as bottom, m.more_hidden, m.updated_at, m.updated_by
-         from ui.nav_menus m left join crm.pc_0000 u on u.pc_0000_id = m.user_id order by m.scope, u.name`
-      ),
-      pool.query(
-        `select g.id, g.name, g.members_can_customize,
-           coalesce(array_agg(m.user_id order by m.added_at) filter (where m.user_id is not null), '{}') as members
-         from ui.nav_groups g left join ui.nav_group_members m on m.group_id = g.id
-         group by g.id order by lower(g.name)`
-      ),
-      everyoneCanCustomize()
-    ]);
-    const results = menus.rows.map(({ bottom_left, bottom, ...m }) => ({ ...m, bottom: storedHotbar(bottom_left, bottom) }));
-    return { results, groups: groups.rows, everyone_can_customize: everyone };
-  });
+  app.get('/v1/ui/nav/menus', async (req) => listMenus(req.principal!));
 
   app.put<{ Body: { everyone_can_customize?: unknown } }>('/v1/ui/nav/access', async (req) => {
     const p = req.principal!;
@@ -630,33 +675,12 @@ export async function uiRoutes(app: FastifyInstance) {
     return { everyone_can_customize: req.body.everyone_can_customize };
   });
 
-  // bottom (the whole hotbar) is optional; left out, the hotbar stays as it is
-  app.put<{ Body: MenuBody }>('/v1/ui/nav/default', async (req) => {
-    const p = req.principal!;
-    requireAdmin(p);
-    const { items, left, bottom, moreHidden } = await validateMenuBody(req.body);
-    const { rows } = await pool.query(
-      `update ui.nav_menus set items = $1, bottom_left = coalesce($2, bottom_left), bottom_items = coalesce($3, bottom_items),
-         more_hidden = coalesce($5, more_hidden), updated_at = now(), updated_by = $4
-       where scope = 'default' returning bottom_left, bottom_items, more_hidden`,
-      [JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor, moreHidden && JSON.stringify(moreHidden)]
-    );
-    return { source: 'default', items, bottom: storedHotbar(rows[0]?.bottom_left, rows[0]?.bottom_items), more_hidden: rows[0]?.more_hidden ?? [] };
-  });
+  app.put<{ Body: MenuBody }>('/v1/ui/nav/default', async (req) => saveDefaultMenu(req.principal!, req.body));
 
-  // bottom (the whole hotbar) is optional; left out, a new menu copies the hotbar the user sees now and an existing one keeps its own
-  app.put<{ Params: { userId: string }; Body: MenuBody }>('/v1/ui/nav/users/:userId', async (req) => {
-    const p = req.principal!;
-    requireAdmin(p);
-    const { rows: users } = await pool.query("select 1 from crm.pc_0000 where pc_0000_id = $1 and record_status = 'active'", [req.params.userId]);
-    if (users.length === 0) throw notFound('user not found');
-    return saveUserMenu(req.params.userId, req.body, p.actor);
-  });
+  app.put<{ Params: { userId: string }; Body: MenuBody }>('/v1/ui/nav/users/:userId', async (req) => saveUserMenuAsAdmin(req.principal!, req.params.userId, req.body));
 
-  // back to the group's or the default menu
   app.delete<{ Params: { userId: string } }>('/v1/ui/nav/users/:userId', async (req, reply) => {
-    requireAdmin(req.principal!);
-    await pool.query("delete from ui.nav_menus where scope = 'user' and user_id = $1", [req.params.userId]);
+    await deleteUserMenu(req.principal!, req.params.userId);
     reply.code(204);
   });
 
@@ -747,20 +771,7 @@ export async function uiRoutes(app: FastifyInstance) {
     return { members: userIds };
   });
 
-  app.put<{ Params: { id: string }; Body: MenuBody }>('/v1/ui/nav/groups/:id/menu', async (req) => {
-    const p = req.principal!;
-    requireAdmin(p);
-    const id = groupId(req.params.id);
-    const { items, left, bottom, moreHidden } = await validateMenuBody(req.body);
-    const { rows } = await pool.query(
-      `update ui.nav_menus set items = $2, bottom_left = coalesce($3, bottom_left), bottom_items = coalesce($4, bottom_items),
-         more_hidden = coalesce($6, more_hidden), updated_at = now(), updated_by = $5
-       where scope = 'group' and group_id = $1 returning bottom_left, bottom_items, more_hidden`,
-      [id, JSON.stringify(items), left, bottom && JSON.stringify(bottom), p.actor, moreHidden && JSON.stringify(moreHidden)]
-    );
-    if (rows.length === 0) throw notFound('group not found');
-    return { source: 'group', items, bottom: storedHotbar(rows[0].bottom_left, rows[0].bottom_items), more_hidden: rows[0].more_hidden };
-  });
+  app.put<{ Params: { id: string }; Body: MenuBody }>('/v1/ui/nav/groups/:id/menu', async (req) => saveGroupMenu(req.principal!, req.params.id, req.body));
 
   // views: shared ones plus the caller's own; a default shared view is created on first use
   app.get<{ Querystring: { object?: string } }>('/v1/ui/views', async (req) => {

@@ -44,7 +44,10 @@ import {
 import { describeCreateForm, listConfig } from './native-ui.js';
 import { approvalNextStep } from './approval.js';
 import { clientRequestIdArg, once } from './request-ids.js';
-import { isAdmin, loadFormsSettings, loadTheme, saveEmbedDomains, THEME_KEYS, updateTheme } from './routes/ui.js';
+import {
+  deleteUserMenu, HOTBAR_MAX, isAdmin, listMenus, loadFormsSettings, loadTheme, saveDefaultMenu, saveEmbedDomains, saveGroupMenu, saveUserMenuAsAdmin, THEME_KEYS,
+  updateTheme, type MenuBody
+} from './routes/ui.js';
 import {
   articleSummary, BODY_MAX, createArticle, deleteArticle, getArticle, knowledgeAccess, listArticles, missingTopics, searchWords, sensitiveWarning, snippet, TITLE_MAX,
   updateArticle
@@ -90,7 +93,7 @@ You can also add and change knowledge base articles. When the user tells you a l
 
 // for connections with the schema scope (admins)
 const ADMIN_INSTRUCTIONS = `
-You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. You can also build landing pages: public pages written in plain HTML (website pages, demo pages for clients) at /p/page/<slug>, anyone can open them once published; read view_guide topic landing_pages first, and never publish one unless the user asked. Landing page tools: list_landing_pages, get_landing_page, create_landing_page, save_landing_page_draft, render_landing_page, update_landing_page, duplicate_landing_page, upload_landing_page_asset, list_landing_page_assets, list_forms, list_booking_pages, create_form, create_landing_page_preview_link, list_landing_page_versions, restore_landing_page_version, get_landing_page_stats, publish_landing_page. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
+You are connected as an admin. You can also build custom views (pages in the CRM made of React and read-only SQL, no deploy needed) and add, change and archive properties and dropdown options. Before building or changing a view, call view_guide (start with the overview) and follow it. You can also build landing pages: public pages written in plain HTML (website pages, demo pages for clients) at /p/page/<slug>, anyone can open them once published; read view_guide topic landing_pages first, and never publish one unless the user asked. Landing page tools: list_landing_pages, get_landing_page, create_landing_page, save_landing_page_draft, render_landing_page, update_landing_page, duplicate_landing_page, upload_landing_page_asset, list_landing_page_assets, list_forms, list_booking_pages, create_form, create_landing_page_preview_link, list_landing_page_versions, restore_landing_page_version, get_landing_page_stats, publish_landing_page. Never publish a view unless the user asked you to publish it: after saving a draft, give them its draft_url to preview and ask whether to publish. Ask before changing properties. You can change the sidebar menus (the default menu, menu groups' and users' own) with get_nav_menus and update_nav_menu; confirm the change with the admin first. You can also set up webhooks (endpoints that receive record events, and their subscriptions), view integrations and embed domains (websites allowed to embed forms and booking pages). They send CRM data to outside addresses, so you can add them but never turn them on: what you add starts off, and changing where an enabled one sends data, or what it sends, turns it off again. Each result gives an approve_url; give it to the admin, who reviews and turns it on in the CRM. Confirm the URL and what will be sent with the admin before adding or changing one, and before deleting one.`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 
@@ -1610,6 +1613,54 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
     requireScope(p, 'schema');
     if (!b.light && !b.dark && !b.dropdown_colors && !b.reset?.length) throw badRequest('give light, dark, dropdown_colors or reset');
     return updateTheme(p, b as Parameters<typeof updateTheme>[1], req);
+  }));
+
+  // ---- sidebar menus (routes/ui.ts) ----
+
+  server.registerTool('get_nav_menus', {
+    title: 'Get sidebar menus',
+    description: 'Every sidebar menu (Settings, Navigation): the default menu everyone gets, each menu group\'s menu (with its members\' user ids), and the menus users made for themselves (scope user). Each has items (the sidebar), bottom (the phone hotbar) and more_hidden (objects left out of the More list). Also whether everyone may change their own menu. Call it before update_nav_menu and change only what was asked.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(async () => {
+    requireScope(p, 'schema');
+    return listMenus(p);
+  }));
+
+  const navItemArg = z.record(z.string(), z.unknown());
+  server.registerTool('update_nav_menu', {
+    title: 'Update a sidebar menu',
+    description: `Replaces a sidebar menu: the default menu (scope default), a menu group's (scope group, group_id) or one user's own menu (scope user, user_id; it is made if they have none). items is the whole sidebar, in order, so start from get_nav_menus and send it back with your change. Item shapes: {"type":"home"}, {"type":"divider"}, {"type":"object","object":"<api_name>","label"?}, {"type":"view","object":"<api_name>","view_id":<saved table view id>,"label"?}, {"type":"custom_view","slug":"<custom view slug>","label"?}, {"type":"card_scanner","label"?}, {"type":"section","label":"...","icon"?:"<Lucide name, see find_icons>","items":[...]} (sections hold the other types, not sections). Labels are 1 to 63 characters. bottom (optional, left out keeps it) is the whole phone hotbar: at most ${HOTBAR_MAX} items before Search, the first {"type":"menu"} or {"type":"home"}, then links or sections, no dividers. more_hidden (optional) replaces the objects left out of the More list. A custom view link shows only to people who can open the view, and an unpublished one to admins only. Takes effect at once: confirm the change with the admin first. Returns the saved menu.`,
+    inputSchema: z.object({
+      scope: z.enum(['default', 'group', 'user']),
+      group_id: z.string().optional().describe('For scope group: the group id from get_nav_menus'),
+      user_id: z.string().optional().describe('For scope user: the user id from get_nav_menus or find_users_to_mention'),
+      items: z.array(navItemArg).describe('The whole sidebar, in order'),
+      bottom: z.array(navItemArg).optional().describe('The whole phone hotbar; left out, it stays as it is'),
+      more_hidden: z.array(z.string()).optional().describe('Object api_names left out of the More list; left out, it stays as it is')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ scope, group_id, user_id, items, bottom, more_hidden }) => run(async () => {
+    requireScope(p, 'schema');
+    const body: MenuBody = { items, ...(bottom !== undefined ? { bottom } : {}), ...(more_hidden !== undefined ? { more_hidden } : {}) };
+    if (scope === 'default') return saveDefaultMenu(p, body);
+    if (scope === 'group') {
+      if (!group_id) throw badRequest('group_id is required for scope group');
+      return saveGroupMenu(p, group_id, body);
+    }
+    if (!user_id) throw badRequest('user_id is required for scope user');
+    return saveUserMenuAsAdmin(p, user_id, body);
+  }));
+
+  server.registerTool('reset_user_nav_menu', {
+    title: 'Reset a user\'s own menu',
+    description: 'Deletes the menu a user made for themselves, so they see their group\'s menu again, or the default. Their own menu cannot be got back: confirm with the admin first.',
+    inputSchema: z.object({ user_id: z.string().describe('The user id from get_nav_menus') }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: schemaChallenge
+  }, async ({ user_id }) => run(async () => {
+    requireScope(p, 'schema');
+    return { user_id, reset: await deleteUserMenu(p, user_id) };
   }));
 
   // ---- embed domains ----

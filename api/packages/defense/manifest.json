@@ -189,6 +189,7 @@
     { "object": "oem_integrations", "api_name": "contact_email", "label": "Contact email", "type": "text" },
 
     { "object": "proposals", "api_name": "solicitation_number", "label": "Solicitation number", "type": "text", "options": { "single_line": true } },
+    { "object": "proposals", "api_name": "customer_organization", "label": "Customer organization", "type": "text", "options": { "single_line": true } },
     { "object": "proposals", "api_name": "contract_type", "label": "Type", "type": "dropdown", "options": { "single_value": true, "default_value": "rfp" },
       "dropdown_options": [
         { "api_value": "rfp", "label": "RFP" }, { "api_value": "rfq", "label": "RFQ" }, { "api_value": "rfi", "label": "RFI" },
@@ -392,7 +393,7 @@
 
   "settings": [
     { "key": "n8n_url", "label": "n8n address", "type": "url", "example": "https://n8n.example.com",
-      "description": "Where your n8n runs, with the three Defense CRM workflows (Opportunity evaluator, AI report, BOM reader). Leave blank to skip them: Opp. Evaluator, Reports and the BOM reader in Operations will not work until an install with the address adds them." }
+      "description": "Where your n8n runs, with the four Defense CRM workflows (Opportunity evaluator, AI report, BOM reader, RFP generator). Leave blank to skip them: Opp. Evaluator, Reports, the BOM reader in Operations and the RFP Generator's AI buttons will not work until an install with the address adds them." }
   ],
 
   "integrations": [
@@ -407,7 +408,11 @@
     { "key": "bom-reader", "label": "BOM reader (Claude)", "audience": "everyone", "secret_header": "X-PCRM-Secret",
       "url": "{{setting:n8n_url}}/webhook/defense-crm-bom-reader",
       "description": "Operations: a BOM file (PDF as base64, or CSV text) to Claude; answers { ok, bom } with parts, quantities, costs and total COGS.",
-      "data_example": { "product_name": "", "document": null } }
+      "data_example": { "product_name": "", "document": null } },
+    { "key": "rfp-generator", "label": "RFP generator (Claude)", "audience": "everyone", "secret_header": "X-PCRM-Secret",
+      "url": "{{setting:n8n_url}}/webhook/defense-crm-rfp-generator",
+      "description": "RFP Generator: a proposal's details, notes for the AI and an optional previous proposal to follow (PDF as base64, or text) to Claude; answers { ok, content } with the proposal draft in markdown.",
+      "data_example": { "proposal": { "title": "", "solicitation_number": "", "customer_organization": "", "contract_type": "RFP", "due_date": "", "estimated_value": "" }, "context": "", "template": null } }
   ],
 
   "views": [
@@ -426,6 +431,7 @@
     { "slug": "materials-library", "name": "Materials library", "icon": "book-open", "description": "Marketing materials and business documents by folder and type, with upload." },
     { "slug": "quotations", "name": "Quotations", "icon": "file-text", "description": "Quote Tracker by period with totals, and a New Quote builder with the CRM's line items editor." },
     { "slug": "oem-integrations", "name": "OEM Integrations", "icon": "link", "description": "Integration status with OEM partners: counters by status, cards by status, and a two-column form to add or edit one." },
+    { "slug": "rfp-generator", "name": "RFP Generator", "icon": "file-pen-line", "description": "Proposals as cards, and a New/Edit dialog that drafts an RFP or RFQ response with Claude and checks a product's fit against it." },
     { "slug": "opportunity-evaluator", "name": "Opportunity Evaluator", "icon": "sparkles", "description": "Product catalog by category, product upkeep, and a Claude fit check of a product against an uploaded RFP, with history." },
     { "slug": "defense-reports", "name": "Reports", "icon": "chart-column", "description": "Six AI quick reports from the filtered pipeline, and the trade show follow-up plan." },
     { "slug": "operations-bom", "name": "Operations", "icon": "factory", "description": "Product BOMs with COGS and a margin projection matrix; Claude can read a BOM file for its COGS and parts." }
@@ -488,8 +494,8 @@
             "label": "BANT Calculator"
           },
           {
-            "type": "object",
-            "object": "proposals",
+            "type": "custom_view",
+            "slug": "rfp-generator",
             "label": "RFP Generator"
           },
           {
@@ -615,8 +621,8 @@
             "label": "BANT Calculator"
           },
           {
-            "type": "object",
-            "object": "proposals",
+            "type": "custom_view",
+            "slug": "rfp-generator",
             "label": "RFP Generator"
           },
           {
