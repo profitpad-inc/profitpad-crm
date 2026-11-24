@@ -81,6 +81,20 @@ begin
   end;
   if not v_failed then raise exception 'an unknown key was accepted'; end if;
 
+  -- 0127: the lines -> products "Product" label is gone; one product per line still holds
+  if exists (select 1 from meta.pc_0004 where from_object_type = 'pc_0020' and to_object_type = 'pc_0021' and label is not null) then
+    raise exception 'the Product label is still there';
+  end if;
+  insert into crm.pc_0020 (name) values ('Label line');
+  insert into crm.pc_0021 (name) values ('Label product 1'), ('Label product 2');
+  perform meta.associate('lines', (select max(pc_0020_id) from crm.pc_0020), 'products', (select min(pc_0021_id) from crm.pc_0021 where name like 'Label product%'));
+  v_failed := false;
+  begin
+    perform meta.associate('lines', (select max(pc_0020_id) from crm.pc_0020), 'products', (select max(pc_0021_id) from crm.pc_0021 where name like 'Label product%'));
+  exception when others then v_failed := position('has one product' in sqlerrm) > 0;
+  end;
+  if not v_failed then raise exception 'a line took a second product'; end if;
+
   if not exists (select 1 from meta.schema_changes where action = 'update_association_label' and changed_by = 'test') then
     raise exception 'change was not logged';
   end if;

@@ -325,10 +325,9 @@ class Seeder(base.Generator):
                 line_parent.append((qid, l.pop("_product")))
                 line_rows.append(l)
         line_ids = self.create("lines", line_rows)
-        product_label = label("lines", "products", "Product")
         for lid, (qid, pid) in zip(line_ids, line_parent):
             self.link("lines", lid, "quotes", qid)
-            self.link("lines", lid, "products", pid, product_label)
+            self.link("lines", lid, "products", pid)
         for qid, did in zip(quote_ids, quote_deals):
             self.link("quotes", qid, "deals", did)
             ci = deal_company[deal_ids.index(did)]
@@ -462,7 +461,7 @@ class Seeder(base.Generator):
         self.ids["lines"] = line_ids + comp_ids
         for lid, (bid, pid) in zip(comp_ids, parents):
             self.link("lines", lid, "boms", bid)
-            self.link("lines", lid, "products", pid, product_label)
+            self.link("lines", lid, "products", pid)
         for bid, p in zip(bom_ids, bom_products):
             self.link("boms", bid, "products", product_ids[p])
 
