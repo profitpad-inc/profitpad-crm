@@ -216,6 +216,23 @@ function PropertyButton({ p, href }: { p: Property; href: string }) {
   );
 }
 
+// Text with display "url" (a LinkedIn profile, a call recording): a web
+// address shows as a link that opens in a new tab; anything else as text.
+const WEB_LINK = /^https?:\/\/\S+$/i;
+
+export function isUrlDisplay(p: Property): boolean {
+  return p.options.display === 'url' && (p.type === 'text' || (p.type === 'calculation' && (p.calc_output_type ?? 'text') === 'text'));
+}
+
+function UrlLink({ href }: { href: string }) {
+  return (
+    // the row or cell around it opens the editor on click
+    <a className="url-value" href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+      {href}
+    </a>
+  );
+}
+
 // formatValue for showing on screen: dropdown choices with a colour get a
 // large dot or a pill, as the property's color_display says ('' when empty,
 // like formatValue).
@@ -228,6 +245,7 @@ export function displayValue(p: Property, value: unknown): ReactNode {
     return list.length === 1 ? first : <span className="mv-short">{first} <span className="muted" title={formatValue(p, value)}>+{list.length - 1}</span></span>;
   }
   if (isButton(p) && typeof value === 'string' && BUTTON_LINK.test(value.trim())) return <PropertyButton p={p} href={value.trim()} />;
+  if (isUrlDisplay(p) && typeof value === 'string' && WEB_LINK.test(value.trim())) return <UrlLink href={value.trim()} />;
   const style = p.options.color_display;
   if (p.type !== 'dropdown' || (style !== 'dot' && style !== 'pill') || value === null || value === undefined || value === '') return formatValue(p, value);
   const values = (Array.isArray(value) ? value : [value]).map(String);

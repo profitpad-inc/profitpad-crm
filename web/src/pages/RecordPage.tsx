@@ -969,15 +969,17 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     setError(null);
   };
 
-  // An email or phone list left as it was closes on Escape or a click outside
-  // its box, like the other fields; with changes it stays open for Save or
-  // Cancel, so nothing typed is lost by a stray click.
+  // A property left as it was closes on Escape; an email or phone list (saved
+  // with a button, not on leaving the box) also closes on a click outside its
+  // box. With changes it stays open (Save or Cancel for lists, leaving the box
+  // saves the rest), so nothing typed is lost by a stray key or click.
   const editingProp = editing ? schema.properties.find((x) => x.api_name === editing) : undefined;
   const unchanged = !!editingProp && JSON.stringify(fromInput(editingProp, draft)) === startValue.current;
   useEffect(() => {
-    if (!editingProp || !isMultiType(editingProp) || !unchanged) return;
+    if (!editingProp || !unchanged) return;
     const close = () => cancel(editingProp);
     const onDown = (e: MouseEvent) => {
+      if (!isMultiType(editingProp)) return;
       const t = e.target as HTMLElement;
       // dropdown lists and dialogs are rendered on <body>
       if (t.closest?.('.prop-row.editing, .select-menu, .modal, [role="dialog"]')) return;
@@ -994,7 +996,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     };
   });
 
-  const section =(key: string, title: string, props: Property[]) => {
+  const section = (key: string, title: string, props: Property[]) => {
     const open = !closed[key];
     const Chevron = open ? ChevronDown : ChevronRight;
     return (

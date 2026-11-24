@@ -900,6 +900,8 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 /* text shown as a button (display "button"): a link drawn like .btn */
 a.property-button { color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 a.property-button:hover { text-decoration: none; }
+/* display "url": a long address breaks anywhere rather than widening its column */
+a.url-value { overflow-wrap: anywhere; }
 .prop-edit textarea.code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
 
 /* CodeTextarea: an editable code box with line numbers that scroll with the text */

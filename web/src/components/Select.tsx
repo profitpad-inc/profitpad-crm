@@ -42,11 +42,15 @@ function optionsFrom(children: ReactNode): SelectOption[] {
   return out;
 }
 
-export function Select({ value: raw, onChange, options, children, id, className, style, disabled, autoFocus, onBlur, title, face, search, loading, 'aria-label': ariaLabel }: {
+export function Select({ value: raw, onChange, options, children, id, className, style, disabled, autoFocus, openOnMount, onBlur, title, face, search, loading, 'aria-label': ariaLabel }: {
   value: string | number; onChange: (value: string) => void; options?: SelectOption[]; children?: ReactNode;
   id?: string; className?: string; style?: CSSProperties; disabled?: boolean; autoFocus?: boolean; onBlur?: () => void; title?: string;
   // shown on the closed button instead of the picked choice's label
   face?: ReactNode;
+  // open the list as soon as it shows (a property being edited: the click
+  // that started the edit was already the click on the dropdown). Escape then
+  // also reaches whatever is around it, so one press ends the edit.
+  openOnMount?: boolean;
   // force the search box on or off (default: on for long lists)
   search?: boolean;
   // options are still coming: show the spinner (Loading.tsx's ring, inlined so
@@ -89,6 +93,25 @@ export function Select({ value: raw, onChange, options, children, id, className,
     close();
     onBlur?.();
   };
+
+  useEffect(() => {
+    if (!openOnMount) return;
+    openList();
+    // the frame around it may still be sliding in (panel-in): place the list
+    // again under the button once it settles
+    const face = faceRef.current;
+    const moving = document.getAnimations().filter((a) => {
+      const target = (a.effect as KeyframeEffect | null)?.target;
+      return target instanceof Element && target.contains(face);
+    });
+    if (moving.length) {
+      void Promise.all(moving.map((a) => a.finished)).then(
+        () => setRect((r) => (r && faceRef.current ? faceRef.current.getBoundingClientRect() : r)),
+        () => undefined
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -146,9 +169,12 @@ export function Select({ value: raw, onChange, options, children, id, className,
     else if (e.key === 'End') { e.preventDefault(); move(shown.length, -1); }
     else if (e.key === 'Enter' || (e.key === ' ' && !searchable)) { e.preventDefault(); pick(shown[active]); }
     else if (e.key === 'Escape') {
-      // stops a modal around it closing too
-      e.preventDefault();
-      e.stopPropagation();
+      // stops a modal around it closing too (not when it opened by itself,
+      // see openOnMount)
+      if (!openOnMount) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       close();
       faceRef.current?.focus();
     }

@@ -155,7 +155,7 @@ export function PropertyInput({ property, value, onChange, autoFocus, onCommit, 
       // a dropdown with a default (status on quotes, invoices, forms) is never empty
       const fallback = typeof property.options.default_value === 'string' ? property.options.default_value : null;
       return (
-        <Select value={value || fallback || ''} onChange={onChange} autoFocus={autoFocus} onBlur={blur}>
+        <Select value={value || fallback || ''} onChange={onChange} autoFocus={autoFocus} openOnMount={autoFocus && !!onCommit} onBlur={blur}>
           {fallback === null && <option value="">None</option>}
           {options.map((o) => (
             <option key={o.api_value} value={o.api_value}>{o.label}</option>
