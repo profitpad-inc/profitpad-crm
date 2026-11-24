@@ -732,10 +732,32 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 /* line numbers: each line is a grid row; unwrapped, the number column sticks to the left while scrolling sideways */
 .view-code.numbered { padding: 10px 12px 10px 0; }
 /* landing page record page (LandingPageCard): the page as visitors see it */
-.landing-preview { display: block; width: 100%; height: 640px; max-height: 75vh; margin-top: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
-.view-code.numbered .code-line { display: grid; grid-template-columns: calc(var(--gutter) + 24px) auto; }
-.view-code.numbered .ln { position: sticky; left: 0; padding: 0 12px; text-align: right; color: var(--muted-text); background: var(--surface); user-select: none; }
-.view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 24px) minmax(0, 1fr); }
+.landing-body { height: min(640px, 75vh); margin-top: 10px; }
+.landing-preview { display: block; width: 100%; height: 100%; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.landing-body > .code-block { height: 100%; }
+.landing-body > .code-block > .view-code { height: 100%; max-height: none; box-sizing: border-box; }
+.view-code.numbered .code-line { display: grid; grid-template-columns: calc(var(--gutter) + 16px) 18px auto; }
+.view-code.numbered .ln { position: sticky; left: 0; padding: 0 4px 0 12px; text-align: right; color: var(--muted-text); background: var(--surface); user-select: none; }
+/* fold chevrons (components/CodeBlock.tsx): shown while hovering the code, always on a folded line, always on touch screens */
+.view-code.numbered .fold { position: sticky; left: calc(var(--gutter) + 16px); display: flex; align-items: center; justify-content: center; background: var(--surface); user-select: none; }
+.view-code .fold button { display: flex; padding: 0; border: 0; background: none; color: var(--muted-text); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.view-code:hover .fold button, .view-code .folded .fold button { opacity: 1; }
+.view-code .fold button:hover { color: var(--text); }
+@media (hover: none) { .view-code .fold button { opacity: 1; } }
+.view-code .fold-dots {
+  display: inline-block; margin-left: 4px; padding: 0 5px; border: 0; border-radius: 4px; font: inherit; line-height: 1.3; cursor: pointer; user-select: none;
+  color: var(--muted-text); background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.view-code .fold-dots:hover { color: var(--text); background: var(--border); }
+/* the copy button in a code box's top right corner */
+.code-block { position: relative; }
+.code-copy {
+  position: absolute; top: 6px; right: 14px; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--muted-text); cursor: pointer; opacity: .7; transition: opacity .15s;
+}
+.code-block:hover .code-copy, .code-editor:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+.code-copy:hover { color: var(--text); }
+.view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 16px) 18px minmax(0, 1fr); }
 .view-code.numbered.wrap .lc { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code-wrap-toggle { display: flex; align-items: center; gap: 8px; margin-right: 12px; align-self: center; white-space: nowrap; }
 /* a custom view's Code card (components/ViewCode.tsx) */
@@ -906,7 +928,7 @@ a.url-value { overflow-wrap: anywhere; }
 
 /* CodeTextarea: an editable code box with line numbers that scroll with the text */
 .code-editor {
-  display: flex; align-items: stretch; width: 100%; box-sizing: border-box; overflow: hidden;
+  position: relative; display: flex; align-items: stretch; width: 100%; box-sizing: border-box; overflow: hidden;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }

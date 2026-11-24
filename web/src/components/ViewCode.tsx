@@ -8,6 +8,7 @@ import { useAddToMenu } from '../lib/use-add-to-menu';
 import { useViewIconPicker } from './IconPicker';
 import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
+import { CodeBlock } from './CodeBlock';
 
 interface ViewCodeOut {
   id: string;
@@ -29,22 +30,6 @@ function readWrap(): boolean {
   } catch {
     return false;
   }
-}
-
-// Code with line numbers (left out when copying). Unwrapped, long lines scroll
-// sideways and the numbers stay put; wrapped, a long line keeps one number.
-export function CodeBlock({ text, wrap }: { text: string; wrap: boolean }) {
-  const lines = text.split('\n');
-  return (
-    <pre className={`view-code numbered${wrap ? ' wrap' : ''}`} style={{ ['--gutter' as string]: `${String(lines.length).length}ch` }}>
-      {lines.map((line, i) => (
-        <span key={i} className="code-line">
-          <span className="ln" aria-hidden>{i + 1}</span>
-          <span className="lc">{line || ' '}</span>
-        </span>
-      ))}
-    </pre>
-  );
 }
 
 // An integration as GET /v1/view-integrations returns it (url and status for admins only)
@@ -228,7 +213,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
       {tab === 'integrations' ? (
         <ViewIntegrations source={source} />
       ) : tab === 'code' ? (
-        source ? <CodeBlock text={source} wrap={wrap} /> : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
+        source ? <CodeBlock text={source} wrap={wrap} lang="js" /> : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
       ) : Object.keys(queries ?? {}).length === 0 ? (
         <p className="muted">No queries.</p>
       ) : (
@@ -238,7 +223,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
               <strong>{name}</strong>
               {Object.keys(q.params).length > 0 && <span className="muted"> ({Object.entries(q.params).map(([p, t]) => `${p}: ${t}`).join(', ')})</span>}
             </div>
-            <CodeBlock text={q.sql} wrap={wrap} />
+            <CodeBlock text={q.sql} wrap={wrap} lang="sql" />
           </div>
         ))
       )}

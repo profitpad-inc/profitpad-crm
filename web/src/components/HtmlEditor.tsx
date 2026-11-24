@@ -5,6 +5,7 @@ import { uploadFile, type FileInfo } from '../lib/files';
 import { Menu, Modal } from './ui';
 import '../html-editor.css';
 import { Loading } from './Loading';
+import { CodeBlock } from './CodeBlock';
 
 // HTML values (text properties with display "html": email signatures, email
 // template bodies, form HTML): a sandboxed preview, and an editor with the
@@ -49,7 +50,7 @@ export function HtmlValue({ html, title, onEdit }: { html: string; title?: strin
         <button type="button" aria-pressed={view === 'code'} onClick={() => setView('code')}><Code size={13} /> HTML</button>
         {onEdit && <button type="button" onClick={onEdit}><Pencil size={13} /> Edit</button>}
       </div>
-      {view === 'preview' ? <HtmlPreview html={html} title={title} maxHeight={480} /> : <pre className="html-code">{html}</pre>}
+      {view === 'preview' ? <HtmlPreview html={html} title={title} maxHeight={480} /> : <CodeBlock text={html} wrap lang="html" className="html-code-block" />}
     </div>
   );
 }

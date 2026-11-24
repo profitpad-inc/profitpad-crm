@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Copy, ExternalLink } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { CodeBlock } from './ViewCode';
+import { CodeBlock } from './CodeBlock';
 import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
+import { useFillColumn } from '../lib/use-fill-column';
 
 interface LandingPageOut {
   id: string;
@@ -50,6 +51,9 @@ export function LandingPageCard({ record, onChanged }: { record: CrmRecord; onCh
       live = false;
     };
   }, [record.id, record.properties.updated_at]);
+
+  // the preview (or HTML) runs down to the bottom of the record's middle column
+  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([page, error, tab, which]);
 
   useEffect(() => {
     try {
@@ -127,10 +131,12 @@ export function LandingPageCard({ record, onChanged }: { record: CrmRecord; onCh
       </div>
       {!html ? (
         <p className="muted">No HTML yet. Ask your AI to build this page through the CRM's MCP connection (or PUT /v1/landing-pages/{page.slug}/draft).</p>
-      ) : tab === 'preview' ? (
-        <iframe key={`${which}-${record.properties.updated_at as string}`} className="landing-preview" title="Page preview" src={previewSrc} />
       ) : (
-        <CodeBlock text={html} wrap={wrap} />
+        <div ref={bodyRef} className="landing-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
+          {tab === 'preview'
+            ? <iframe key={`${which}-${record.properties.updated_at as string}`} className="landing-preview" title="Page preview" src={previewSrc} />
+            : <CodeBlock text={html} wrap={wrap} lang="html" />}
+        </div>
       )}
     </div>
   );
