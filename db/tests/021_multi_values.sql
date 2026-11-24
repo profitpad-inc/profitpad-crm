@@ -1,4 +1,4 @@
--- Email and phone list properties (0128): shape rules, uniqueness across every
+-- Email and phone list properties (0129): shape rules, uniqueness across every
 -- entry (crm.unique_values, crm.contact_emails), merges, the generated views,
 -- filters and converting a text property. Runs in a transaction that is
 -- rolled back.

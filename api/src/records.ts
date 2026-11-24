@@ -537,7 +537,7 @@ export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, v
   }
   if (typeof value !== 'string' || value === '') throw badRequest(`missing "${prop.api_name}" value to match on`);
   // email and phone lists: any of the record's entries matches (crm.unique_values,
-  // migration 0128); a cell with several values matches on the first one found
+  // migration 0129); a cell with several values matches on the first one found
   if (isMultiType(prop)) {
     let wanted: string[];
     try {
@@ -566,7 +566,7 @@ export async function findIdByUnique(db: Db, obj: ObjectDef, propName: string, v
 }
 
 // For an upsert matched by findIdByUnique: the properties to update it with.
-// Nothing to change since email and phone became lists (migration 0128): a
+// Nothing to change since email and phone became lists (migration 0129): a
 // plain string written to a list only adds values the record lacks, so a
 // contact matched through one of its other addresses keeps its primary.
 export async function upsertProperties<T extends Record<string, unknown>>(_db: Db, _obj: ObjectDef, _propName: string, _id: string, props: T): Promise<T> {

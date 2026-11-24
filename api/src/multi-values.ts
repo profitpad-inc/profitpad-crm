@@ -1,7 +1,7 @@
 import { checkPhone } from './phone.js';
 import type { PropertyDef } from './registry.js';
 
-// Email and phone properties (migration 0128) hold a list of entries:
+// Email and phone properties (migration 0129) hold a list of entries:
 //   [{ value: 'jane@acme.com', label: 'work' }, { value: 'jane@gmail.com' }]
 // The first entry is the primary (the CRM sends to it). label is optional: a
 // preset key below or any text the user typed (at most 40 characters).

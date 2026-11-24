@@ -18,7 +18,7 @@ type Side = 'a' | 'b';
 const SUBTITLE_PROPS = ['email', 'domain', 'job_title'];
 
 // Email and phone lists are combined by the database on a merge (the
-// winner's entries, then the loser's, migration 0128), so they are not picked.
+// winner's entries, then the loser's, migration 0129), so they are not picked.
 
 function isEmpty(v: unknown): boolean {
   return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);

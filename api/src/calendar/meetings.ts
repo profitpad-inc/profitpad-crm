@@ -120,7 +120,7 @@ const plain = (s: string) => sanitizeHtml(s.replace(/<br\s*\/?>/gi, '\n').replac
   .replace(/\n{3,}/g, '\n\n').trim();
 
 // Active contacts having any of these addresses among their Email list
-// (crm.contact_emails, migrations 0109 and 0128), with the address that
+// (crm.contact_emails, migrations 0109 and 0129), with the address that
 // matched, oldest contact first.
 async function contactsOf(c: pg.PoolClient, addresses: string[]): Promise<{ id: string; email: string; name: string | null }[]> {
   const wanted = [...new Set(addresses.map((a) => a.trim().toLowerCase()).filter(Boolean))];

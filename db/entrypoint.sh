@@ -62,7 +62,7 @@ case "$cmd" in
 begin;
 set local crm.actor = 'system:setup';
 set local crm.source = 'setup';
--- the user, unless one with this email already exists (email is a list, migration 0128)
+-- the user, unless one with this email already exists (email is a list, migration 0129)
 insert into crm.pc_0000 (name, first_name, last_name, email)
 select :'first' || ' ' || :'last', :'first', :'last', jsonb_build_array(jsonb_build_object('value', lower(btrim(:'email'))))
 where not exists (select 1 from crm.pc_0000 where email @> jsonb_build_array(jsonb_build_object('value', lower(btrim(:'email')))) and record_status = 'active');

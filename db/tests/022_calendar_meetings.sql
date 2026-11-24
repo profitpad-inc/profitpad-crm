@@ -31,7 +31,7 @@ begin
   update crm.pc_0010 set email = '[{"value": "ann@client.com"}]' where email @> '[{"value": "a@client.com"}]';
   if not exists (select 1 from auth.calendar_lookback where email = 'ann@client.com') then raise exception 'email change not queued'; end if;
 
-  -- every address of a new contact, only new ones on a change (0110, 0128)
+  -- every address of a new contact, only new ones on a change (0110, 0129)
   delete from auth.calendar_lookback;
   insert into crm.pc_0010 (first_name, email) values ('C', '[{"value": "c@client.com"}, {"value": "c2@client.com"}, {"value": "c3@client.com"}]');
   if (select array_agg(email order by email) from auth.calendar_lookback) <> '{c@client.com,c2@client.com,c3@client.com}' then
