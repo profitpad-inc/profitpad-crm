@@ -9,6 +9,7 @@ import { useAppMaybe } from './app-context';
 import { ViewIcon } from './lucide-icons';
 import type { CrmRecord, Property } from './api';
 import { ColorPill } from '../components/ColorPicker';
+import { dateFmt, dateTimeFmt } from './date-format';
 
 const OBJECT_ICONS: Record<string, LucideIcon> = {
   users: User,
@@ -124,8 +125,6 @@ export function defaultSortDirection(p: Property): 'asc' | 'desc' {
   return t === 'number' || t === 'date' || t === 'datetime' ? 'desc' : 'asc';
 }
 
-const dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
-const dateTimeFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 export function optionLabel(p: Property, value: string): string {
   return p.dropdown_options?.find((o) => o.api_value === value)?.label ?? value;

@@ -337,15 +337,19 @@ export async function schemaRoutes(app: FastifyInstance) {
   );
 
   // association labels
-  app.get<{ Querystring: { object?: string } }>('/v1/association-labels', async (req) => {
+  // ?include_archived=true (Settings -> Association labels) adds archived
+  // labels, each label's record_status and, for labelled ones, how many links use it
+  app.get<{ Querystring: { object?: string; include_archived?: string } }>('/v1/association-labels', async (req) => {
     requireScope(req.principal!, 'read');
     const code = req.query.object ? (await getObject(req.query.object)).object_type_id : null;
+    const all = req.query.include_archived === 'true' || req.query.include_archived === '1';
     const { rows } = await pool.query(
       `select pc_0004_id as id, from_object_type, to_object_type, label, inverse_label, is_default, is_symmetric, category,
-              max_to_per_from, max_from_per_to
-       from meta.pc_0004 where record_status = 'active' and ($1::text is null or $1 in (from_object_type, to_object_type))
+              max_to_per_from, max_from_per_to${all ? `, record_status,
+              case when is_default then null else (select count(*)::int from crm.pc_0005 a where a.label_id = l.pc_0004_id) end as link_count` : ''}
+       from meta.pc_0004 l where ($2 or record_status = 'active') and ($1::text is null or $1 in (from_object_type, to_object_type))
        order by from_object_type, to_object_type, label nulls first`,
-      [code]
+      [code, all]
     );
     return { results: rows };
   });
@@ -354,7 +358,7 @@ export async function schemaRoutes(app: FastifyInstance) {
     Body: { from_object: string; to_object: string; label: string; inverse_label?: string; is_symmetric?: boolean; max_to_per_from?: number; max_from_per_to?: number };
   }>('/v1/association-labels', async (req, reply) => {
     const p = req.principal!;
-    requireScope(p, 'schema');
+    requirePropertyChange(p);
     const b = req.body ?? ({} as never);
     if (!b.from_object || !b.to_object) throw badRequest('from_object and to_object are required');
     const id = await withTx({ principal: p }, async (c) => {
@@ -365,6 +369,31 @@ export async function schemaRoutes(app: FastifyInstance) {
     });
     reply.code(201);
     return { id };
+  });
+
+  // rename, change limits, archive or restore a custom label (meta.update_association_label)
+  app.patch<{
+    Params: { id: string };
+    Body: { label?: string; inverse_label?: string | null; max_to_per_from?: number | null; max_from_per_to?: number | null; record_status?: 'active' | 'archived' };
+  }>('/v1/association-labels/:id', async (req) => {
+    const p = req.principal!;
+    requirePropertyChange(p);
+    if (!/^[0-9a-f]{10}$/.test(req.params.id)) throw notFound('association label not found');
+    const b = req.body ?? {};
+    const keys = ['label', 'inverse_label', 'max_to_per_from', 'max_from_per_to', 'record_status'] as const;
+    const changes = Object.fromEntries(keys.filter((k) => k in b).map((k) => [k, b[k] ?? null]));
+    for (const k of ['max_to_per_from', 'max_from_per_to'] as const) {
+      const v = changes[k];
+      if (v !== null && v !== undefined && (!Number.isInteger(v) || (v as number) < 1)) throw badRequest(`${k} must be a whole number of 1 or more, or null`);
+    }
+    if (Object.keys(changes).length === 0) throw badRequest(`send any of ${keys.join(', ')}`);
+    await withTx({ principal: p }, (c) => c.query('select meta.update_association_label($1, $2)', [req.params.id, JSON.stringify(changes)]));
+    const { rows } = await pool.query(
+      `select pc_0004_id as id, from_object_type, to_object_type, label, inverse_label, is_default, is_symmetric, category,
+              max_to_per_from, max_from_per_to, record_status from meta.pc_0004 where pc_0004_id = $1`,
+      [req.params.id]
+    );
+    return rows[0];
   });
 
   app.get<{ Querystring: { object?: string; limit?: string } }>('/v1/schema-changes', async (req) => {

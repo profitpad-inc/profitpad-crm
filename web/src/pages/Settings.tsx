@@ -27,9 +27,10 @@ import { CardScannerSettings } from './CardScannerSettings';
 import { CurrencySettings } from './CurrencySettings';
 import { ImportHistory } from './ImportHistory';
 import { OptionListSettings } from './OptionListSettings';
+import { AssociationLabelSettings } from './AssociationLabelSettings';
 import { AddressSettings } from './AddressSettings';
 import { EmailSettings } from './EmailSettings';
-import { BookOpen, History, ListChecks, Send, Video } from 'lucide-react';
+import { BookOpen, History, ListChecks, Send, Tags, Video } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { KnowledgeSettings } from './KnowledgeSettings';
 import { MailboxSettings } from './MailboxSettings';
@@ -62,6 +63,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'objects', label: 'Objects', icon: <Boxes size={16} />, gate: 'admin', element: <ObjectSettings /> },
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: ['properties'], element: <PropertySettings /> },
     { path: 'option-lists', label: 'Option lists', icon: <ListChecks size={16} />, gate: ['properties'], element: <OptionListSettings /> },
+    { path: 'association-labels', label: 'Association labels', icon: <Tags size={16} />, gate: ['properties'], element: <AssociationLabelSettings /> },
     { path: 'currencies', label: 'Currencies', icon: <Coins size={16} />, gate: 'admin', element: <CurrencySettings /> },
     { path: 'imports', label: 'Imports and exports', icon: <History size={16} />, gate: 'all', element: <ImportHistory /> }
   ] },

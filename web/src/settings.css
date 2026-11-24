@@ -417,3 +417,9 @@
   .knowledge-history { grid-template-columns: 1fr; }
   .knowledge-history-list { max-height: 30vh; }
 }
+
+/* Settings -> Association labels */
+.label-settings-filter { display: flex; justify-content: flex-start; }
+.label-settings-filter .select-face { min-width: 200px; }
+.label-pair { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.label-pair svg { color: var(--muted-text); flex: none; }

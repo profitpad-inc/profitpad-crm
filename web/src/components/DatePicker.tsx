@@ -1,13 +1,17 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
 import flatpickr from 'flatpickr';
 import type { Instance } from 'flatpickr/dist/types/instance';
+import { friendlyDate } from '../lib/date-format';
 
 // Calendar dropdown for date and datetime values (the same flatpickr setup as
 // camo-cpq): the native date popup is browser chrome CSS can't restyle.
 // Values use the native inputs' formats, "2026-10-31" and "2026-10-31T12:24"
 // (local time), so it drops in where <input type="date|datetime-local"> was.
-// The visible box shows "2026-10-31" or "2026-10-31 12:24" (24-hour) so a
-// typed edit has an unambiguous format.
+// While it is being edited the visible box shows "2026-10-31" or "2026-10-31
+// 12:24" (24-hour) so a typed edit has an unambiguous format; otherwise it
+// shows the date as the CRM does everywhere else ("Oct 31, 2026", "Oct 31,
+// 2026, 12:24 PM"). flatpickr compares the box with its own format on blur,
+// so the friendly text only goes in after blur and after the calendar closes.
 // The calendar is rendered on <body> so flatpickr can keep it inside the
 // window (it opens upward or right-aligned when there's no room); editors that
 // close on outside clicks must treat clicks in `.flatpickr-calendar` as
@@ -28,6 +32,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
 }) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const fp = useRef<Instance | null>(null);
+  const showFriendlyRef = useRef<(() => void) | null>(null);
   const latest = useRef({ onChange, onCommit });
   latest.current = { onChange, onCommit };
 
@@ -58,15 +63,34 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
       onClose: (_dates, dateStr) => {
         window.removeEventListener('scroll', follow, true);
         latest.current.onCommit?.(dateStr);
-      }
+        setTimeout(showFriendly);
+      },
+      onValueUpdate: () => showFriendly()
     });
     fp.current = instance;
+    const box = instance.altInput;
+    // the box's text: friendly when idle, flatpickr's own format while editing
+    function showFriendly() {
+      if (!box || document.activeElement === box || instance.isOpen) return;
+      box.value = friendlyDate(instance.input.value, withTime);
+    }
+    function showEditable() {
+      if (box) box.value = instance.input.value ? instance.input.value.replace('T', ' ') : '';
+    }
+    const onBlur = () => setTimeout(showFriendly);
+    box?.addEventListener('focus', showEditable);
+    box?.addEventListener('blur', onBlur);
+    showFriendly();
+    showFriendlyRef.current = showFriendly;
     if (ariaLabel) instance.altInput?.setAttribute('aria-label', ariaLabel);
     if (autoFocus) {
       instance.altInput?.focus();
       instance.open();
     }
     return () => {
+      box?.removeEventListener('focus', showEditable);
+      box?.removeEventListener('blur', onBlur);
+      showFriendlyRef.current = null;
       window.removeEventListener('scroll', follow, true);
       instance.destroy(); // turns the hidden input back into a text box,
       fp.current = null;
@@ -90,7 +114,10 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
   // follow value changes made outside the calendar
   useEffect(() => {
     const instance = fp.current;
-    if (instance && instance.input.value !== value) instance.setDate(value || [], false);
+    if (instance && instance.input.value !== value) {
+      instance.setDate(value || [], false);
+      showFriendlyRef.current?.();
+    }
   }, [value]);
 
   return <span ref={hostRef} className="date-picker" />;

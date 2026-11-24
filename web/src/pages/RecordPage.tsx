@@ -1,8 +1,8 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Unlink, X } from 'lucide-react';
+import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MessageSquare, Mails, Paperclip, Pencil, Plus, Tag, Unlink, X } from 'lucide-react';
 import { fileInfo, formatBytes } from '../lib/files';
-import { api, ApiError, can, getSchema, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
+import { api, ApiError, can, getAssociationLabels, getSchema, type AssociationLabel, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName } from '../lib/display';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
@@ -53,13 +53,17 @@ interface Link_ {
   association_id: string;
   label_id: string;
   label: string | null;
+  // which end of the link this record is (a label reads from its "from" end)
+  side: 'from' | 'to';
   object_type_id: string;
   record_id: string;
 }
 
+interface LinkLabel { label_id: string; label: string | null; side: 'from' | 'to' }
+
 interface Associated {
   object: string;
-  records: { record: CrmRecord; labels: (string | null)[] }[];
+  records: { record: CrmRecord; labels: (string | null)[]; links: LinkLabel[] }[];
 }
 
 const ACTIVITY_OBJECTS = ['calls', 'emails', 'notes', 'tasks', 'form_submissions'] as const;
@@ -152,13 +156,13 @@ function recordLock(object: string, record: CrmRecord, associated: Associated[])
 // name properties (and, for activities, the stream's properties).
 async function loadLinked(object: string, id: string, codeToName: Map<string, string>): Promise<Associated[]> {
   const res = await api<{ results: Link_[] }>('GET', `/v1/objects/${object}/${id}/associations`);
-  const byObject = new Map<string, Map<string, (string | null)[]>>();
+  const byObject = new Map<string, Map<string, LinkLabel[]>>();
   for (const l of res.results) {
     const name = codeToName.get(l.object_type_id);
     // comments show in their own thread (components/Comments.tsx), not as links
     if (!name || name === 'comments') continue;
     const m = byObject.get(name) ?? new Map();
-    m.set(l.record_id, [...(m.get(l.record_id) ?? []), l.label]);
+    m.set(l.record_id, [...(m.get(l.record_id) ?? []), { label_id: l.label_id, label: l.label, side: l.side }]);
     byObject.set(name, m);
   }
   const groups = await Promise.all(
@@ -174,7 +178,10 @@ async function loadLinked(object: string, id: string, codeToName: Map<string, st
           const r = await api<{ results: CrmRecord[] }>('POST', `/v1/objects/${name}/batch/read`, { ids: all.slice(i, i + 100), properties: props });
           records.push(...r.results);
         }
-        return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => ({ record: r, labels: ids.get(r.requested_id ?? r.id) ?? [] })) };
+        return { object: name, records: records.filter((r) => r.record_status === 'active').map((r) => {
+          const links = ids.get(r.requested_id ?? r.id) ?? [];
+          return { record: r, labels: links.map((l) => l.label), links };
+        }) };
       } catch {
         return null;
       }
@@ -2756,8 +2763,42 @@ function UserHistory({ object, id, schema }: { object: string; id: string; schem
   );
 }
 
+// A label a link from this record to `other` can carry, named as the other
+// record is to this one ("Billing company" on a contact). An object linked to
+// itself offers both ends of a one-way label: reverse puts this record at the
+// label's "to" end ("Manager" / "Report").
+interface LabelChoice { key: string; id: string; text: string; reverse: boolean }
+
+function labelChoices(labels: AssociationLabel[], selfCode: string, otherCode: string): LabelChoice[] {
+  const out: LabelChoice[] = [];
+  for (const l of labels) {
+    if (l.is_default || !l.label) continue;
+    const forward = l.from_object_type === selfCode && l.to_object_type === otherCode;
+    const backward = l.from_object_type === otherCode && l.to_object_type === selfCode;
+    if (!forward && !backward) continue;
+    if (selfCode === otherCode) {
+      out.push({ key: l.id, id: l.id, text: l.label, reverse: false });
+      if (!l.is_symmetric && l.inverse_label) out.push({ key: `${l.id}:r`, id: l.id, text: l.inverse_label, reverse: true });
+    } else {
+      out.push({ key: l.id, id: l.id, text: forward ? l.label : l.inverse_label ?? l.label, reverse: false });
+    }
+  }
+  return out.sort((a, b) => a.text.localeCompare(b.text));
+}
+
+// the choices one existing link already has
+function appliedChoices(links: LinkLabel[], labels: AssociationLabel[], sameObject: boolean): Set<string> {
+  const out = new Set<string>();
+  for (const k of links) {
+    const l = labels.find((x) => x.id === k.label_id);
+    if (!l || l.is_default) continue;
+    out.add(sameObject && !l.is_symmetric && k.side === 'to' ? `${l.id}:r` : l.id);
+  }
+  return out;
+}
+
 function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, linked, onChanged }: {
-  self: string; selfId: string; selfRecord: CrmRecord; other: string; items: { record: CrmRecord; labels: (string | null)[] }[]; lineCount: number;
+  self: string; selfId: string; selfRecord: CrmRecord; other: string; items: { record: CrmRecord; labels: (string | null)[]; links: LinkLabel[] }[]; lineCount: number;
   // everything the page's record is linked to (a deal's companies and contacts, offered to a new quote)
   linked: Associated[];
   onChanged: () => Promise<void>;
@@ -2786,10 +2827,22 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
   const [results, setResults] = useState<CrmRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [otherSchema, setOtherSchema] = useState<ObjectDef | null>(null);
+  // labels this pair of objects can use, and the ones picked for the next link
+  const [labels, setLabels] = useState<AssociationLabel[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const selfCode = objectByName.get(self)?.object_type_id ?? '';
+  const otherCode = meta?.object_type_id ?? '';
+  const choices = useMemo(() => labelChoices(labels, selfCode, otherCode), [labels, selfCode, otherCode]);
 
   useEffect(() => {
     if (other === 'lines') getSchema(other).then(setOtherSchema).catch(() => undefined);
   }, [other]);
+
+  useEffect(() => {
+    let live = true;
+    getAssociationLabels(self).then((l) => { if (live) setLabels(l); }).catch(() => { if (live) setLabels([]); });
+    return () => { live = false; };
+  }, [self]);
 
   useEffect(() => {
     if (!adding) return;
@@ -2805,16 +2858,42 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
     return () => clearTimeout(h);
   }, [adding, q, other, items, self, selfId]);
 
+  // one labelled link; a reverse choice is made from the other record's end
+  const putLabel = (targetId: string, c: LabelChoice) => (c.reverse
+    ? api('PUT', `/v1/objects/${other}/${targetId}/associations/${self}/${selfId}`, { label_id: c.id })
+    : api('PUT', `/v1/objects/${self}/${selfId}/associations/${other}/${targetId}`, { label_id: c.id }));
+
+  // the plain link first, so the records stay linked whatever labels come and go
   async function link(targetId: string) {
     setError(null);
     try {
       await api('PUT', `/v1/objects/${self}/${selfId}/associations/${other}/${targetId}`, {});
+      for (const c of choices.filter((x) => picked.includes(x.key))) await putLabel(targetId, c);
       setAdding(false);
       setQ('');
+      setPicked([]);
       await onChanged();
     } catch (err) {
       setError((err as Error).message);
+      // the link (and any labels before the one refused) went through
+      await onChanged();
     }
+  }
+
+  async function toggleLabel(targetId: string, c: LabelChoice, on: boolean) {
+    setError(null);
+    try {
+      if (on) {
+        // keep the plain link, so taking off the last label leaves the records linked
+        await api('PUT', `/v1/objects/${self}/${selfId}/associations/${other}/${targetId}`, {});
+        await api('DELETE', `/v1/objects/${self}/${selfId}/associations/${other}/${targetId}?label_id=${encodeURIComponent(c.id)}`);
+      } else {
+        await putLabel(targetId, c);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    await onChanged();
   }
 
   async function unlink(targetId: string) {
@@ -2929,6 +3008,20 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
       )}
       {adding && (
         <div className="card-add">
+          {choices.length > 0 && (
+            <div className="card-add-labels" role="group" aria-label="Labels for the new association">
+              <span className="small muted">Label</span>
+              {choices.map((c) => {
+                const on = picked.includes(c.key);
+                return (
+                  <button key={c.key} type="button" className={`label-chip${on ? ' on' : ''}`} aria-pressed={on}
+                    onClick={() => setPicked((p) => (on ? p.filter((k) => k !== c.key) : [...p, c.key]))}>
+                    {on && <Check size={12} aria-hidden />}{c.text}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <input autoFocus placeholder={`Search ${meta.label_plural.toLowerCase()}`} value={q} onChange={(e) => setQ(e.target.value)} />
           {results.map((r) => (
             <button key={r.id} className="card-pick" onClick={() => link(r.id)}>{recordName(r)}</button>
@@ -2941,14 +3034,16 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
           No {meta.label_plural.toLowerCase()} yet.
         </div>
       )}
-      {items.map(({ record, labels }) => (
+      {items.map(({ record, labels: names, links }) => {
+        const applied = appliedChoices(links, labels, self === other);
+        return (
         <div key={record.id} className="card-row">
           <div className="card-row-main">
             {/* a deal's (quote's, ...) lines open the line items dialog on that line, not the line's page */}
             {newLines && editable
               ? <button className="link-btn" onClick={() => openLines({ lineId: record.id, field: 'product' })}>{recordName(record)}</button>
               : <Link to={`/objects/${other}/${record.id}`}>{recordName(record)}</Link>}
-            {labels.some(Boolean) && <div className="small muted">{labels.filter(Boolean).join(', ')}</div>}
+            {names.some(Boolean) && <div className="small muted">{names.filter(Boolean).join(', ')}</div>}
           </div>
           {(fileUrls.get(record.id) ?? publishedUrl(other, record)) && (
             <PublishedLinkIcons url={(fileUrls.get(record.id) ?? publishedUrl(other, record))!} />
@@ -2956,13 +3051,37 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
           {other === 'lines' && (
             <LineFigures record={record} schema={otherSchema} onQty={newLines && editable ? () => openLines({ lineId: record.id, field: 'qty' }) : undefined} />
           )}
+          {editable && choices.length > 0 && (
+            <Menu
+              align="right"
+              trigger={(toggle) => (
+                <button className="icon-btn push-right faint-btn" onClick={toggle} aria-label={`Labels for ${recordName(record)}`} title="Labels">
+                  <Tag size={14} />
+                </button>
+              )}
+            >
+              {() => (
+                <>
+                  {choices.map((c) => {
+                    const on = applied.has(c.key);
+                    return (
+                      <button key={c.key} className="label-menu-item" aria-pressed={on} onClick={() => toggleLabel(record.id, c, on)}>
+                        <Check size={14} aria-hidden style={{ visibility: on ? 'visible' : 'hidden' }} />{c.text}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </Menu>
+          )}
           {editable && (
-            <button className="icon-btn push-right faint-btn" onClick={() => unlink(record.id)} aria-label="Remove association">
+            <button className={`icon-btn faint-btn${choices.length > 0 ? '' : ' push-right'}`} onClick={() => unlink(record.id)} aria-label="Remove association">
               <X size={14} />
             </button>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

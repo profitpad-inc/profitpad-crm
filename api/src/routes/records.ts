@@ -422,7 +422,7 @@ export async function recordRoutes(app: FastifyInstance) {
     await assertAccessible(pool, obj, p, [req.params.id]);
     const to = req.query.to_object ? await objectForWrite(req.query.to_object) : null;
     const { rows } = await pool.query(
-      `select association_id, label_id, label, other_object_type_id as object_type_id, other_record_id as record_id, created_at
+      `select association_id, label_id, label, side, other_object_type_id as object_type_id, other_record_id as record_id, created_at
        from crm.associations_both where object_type_id = $1 and record_id = $2 and ($3::text is null or other_object_type_id = $3)
        order by created_at`,
       [obj.object_type_id, req.params.id, to?.object_type_id ?? null]

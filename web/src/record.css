@@ -395,6 +395,15 @@
 .card-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
 .card-pick:focus-visible { outline-offset: -2px; }
 .card-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* association labels to put on the next link (Settings -> Association labels) */
+.card-add-labels { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.card-add-labels > .small { margin-right: 4px; }
+.label-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border: 1px solid var(--hairline); border-radius: 999px;
+  background: var(--surface); color: var(--muted-text); font-size: 12px; line-height: 18px; cursor: pointer;
+}
+.label-chip:hover { color: var(--text); }
+.label-chip.on { border-color: color-mix(in srgb, var(--primary) 55%, var(--hairline)); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
 .record-right .line-deal-offer {
   margin: 10px 12px; padding: 10px 12px; gap: 8px;
   background: var(--primary-soft); border: 1px solid var(--primary-line); border-radius: var(--radius);

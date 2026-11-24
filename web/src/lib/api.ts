@@ -181,6 +181,12 @@ export interface AssociationLabel {
   inverse_label: string | null;
   is_default: boolean;
   is_symmetric: boolean;
+  category?: 'native' | 'custom';
+  max_to_per_from?: number | null;
+  max_from_per_to?: number | null;
+  // only with ?include_archived=true (Settings -> Association labels)
+  record_status?: 'active' | 'archived';
+  link_count?: number | null;
 }
 
 export type Column = (
@@ -254,4 +260,17 @@ export function getSchema(object: string): Promise<ObjectDef> {
 
 export function clearSchemaCache(): void {
   schemaCache.clear();
+  labelCache.clear();
+}
+
+// active association labels touching one object, cached like schemas
+const labelCache = new Map<string, Promise<AssociationLabel[]>>();
+export function getAssociationLabels(object: string): Promise<AssociationLabel[]> {
+  let p = labelCache.get(object);
+  if (!p) {
+    p = api<{ results: AssociationLabel[] }>('GET', `/v1/association-labels?object=${encodeURIComponent(object)}`).then((r) => r.results);
+    p.catch(() => labelCache.delete(object));
+    labelCache.set(object, p);
+  }
+  return p;
 }
