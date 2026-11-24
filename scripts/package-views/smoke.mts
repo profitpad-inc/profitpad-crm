@@ -66,7 +66,7 @@ const kit: any = {
   Page: wrap(), Grid: wrap(), Stack: wrap(), Row: wrap(), Card: wrap(), Stat: wrap(), Sticky: wrap(), ScrollX: wrap(),
   Badge: wrap('span'), Button: wrap('button'), Loading: () => h('i', null, 'loading'), Empty: wrap('p'), ErrorBox: (p: any) => h('b', null, String(p.error?.message ?? p.error ?? '')),
   RecordLink: wrap('a'), ExternalLink: wrap('a'), FileLink: wrap('a'), FileImage: () => h('img'), FileInput: () => h('input'),
-  TextInput: () => h('input'), TextArea: () => h('textarea'), PhoneInput: () => h('input'),
+  TextInput: () => h('input'), DateInput: () => h('input'), TextArea: () => h('textarea'), PhoneInput: () => h('input'),
   Select: (p: any) => h('select', null, (p.options ?? []).map((o: any) => h('option', { key: o.value }, o.label))),
   Tabs: (p: any) => h('nav', null, p.tabs.map((t: any) => h('span', { key: t.key }, t.label))),
   Table: (p: any) => h('table', null, (p.rows ?? []).map((row: any, i: number) => h('tr', { key: row.id ?? i }, p.columns.map((c: any) => h('td', { key: c.key }, c.render ? c.render(row) : row[c.key] == null ? '--' : typeof row[c.key] === 'object' ? JSON.stringify(row[c.key]) : String(row[c.key])))))),

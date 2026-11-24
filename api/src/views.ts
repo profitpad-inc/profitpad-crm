@@ -159,6 +159,19 @@ function checkParses(source: string, code: string) {
 }
 const compiled = new Map<string, string>();
 
+// Dates in views use the CRM's date picker (DateInput, or TextInput type="date",
+// which draws it), never the browser's own calendar. Checked when a draft is
+// saved or a package installs a view, not when a published view is served, so
+// views saved before this rule keep working until they are next saved.
+const NATIVE_DATE = /<input\b[^>]*?\btype\s*=\s*\{?\s*(['"`])(date|datetime-local|month|week)\1/i;
+export function checkInputs(source: string): void {
+  const m = NATIVE_DATE.exec(source);
+  if (!m) return;
+  const line = source.slice(0, m.index).split('\n').length;
+  throw badRequest(`line ${line}: views must use the CRM's date picker, not <input type="${m[2]}">. Use <DateInput value onChange />${m[2] === 'datetime-local' ? ' with withTime' : ''} from @pcrm/view (or <TextInput type="date" />, which draws it); see view_guide topic ui_kit`);
+}
+
+
 // TSX -> a CommonJS module whose require() only knows VIEW_MODULES and whose
 // default export is the page component. Cached by source hash.
 export function compileSource(source: string): string {
@@ -218,6 +231,7 @@ export async function analyzeQuery(name: string, spec: QuerySpec): Promise<Query
 export async function checkViewOn(c: pg.PoolClient, label: string, source: string, rawQueries: unknown): Promise<Queries> {
   try {
     compileSource(source);
+    checkInputs(source);
   } catch (err) {
     throw badRequest(`${label}: ${(err as Error).message}`);
   }
@@ -487,7 +501,10 @@ export async function runViewQuery(p: Principal, slug: string, name: string, par
 
 // Checks a draft: the code compiles and every query passes the analysis.
 export async function checkDraft(source: string | null, queries: Queries): Promise<void> {
-  if (source !== null) compileSource(source);
+  if (source !== null) {
+    compileSource(source);
+    checkInputs(source);
+  }
   for (const [name, spec] of Object.entries(queries)) await analyzeQuery(name, spec);
 }
 

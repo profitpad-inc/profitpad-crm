@@ -626,22 +626,6 @@ button.le-tile:hover { border-color: var(--primary); }
   .le-sum { min-width: 0; flex: 1; }
 }
 
-/* ---- date picker (components/DatePicker.tsx; the calendar is on <body>) -------------------- */
-.date-picker input:not([type='hidden']) {
-  padding-right: 34px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235d6878' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 11px center; background-size: 14px;
-}
-.flatpickr-calendar { border-radius: var(--radius-lg); padding: 10px 0 8px; }
-.flatpickr-months .flatpickr-month, .flatpickr-current-month .flatpickr-monthDropdown-months, .flatpickr-current-month input.cur-year { font-size: 14px; }
-span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
-.flatpickr-day { border-radius: var(--radius); font-size: 13px; }
-.flatpickr-day.today { border-color: transparent; background: var(--primary-soft); color: var(--primary); font-weight: 600; }
-.flatpickr-day.today:hover, .flatpickr-day.today:focus { background: color-mix(in srgb, var(--primary) 16%, var(--page-background)); border-color: transparent; color: var(--primary); }
-.flatpickr-day.selected, .flatpickr-day.selected:hover, .flatpickr-day.selected:focus,
-.flatpickr-day.today.selected { background: var(--primary); border-color: var(--primary); color: #fff; }
-.flatpickr-day:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-
 /* ---- smaller screens ---------------------------------------------------------------------- */
 @media (max-width: 1100px) {
   /* the associations row runs under both columns: cards side by side where they fit */

@@ -1,0 +1,54 @@
+/* The CRM's date picker (components/DatePicker.tsx, flatpickr), shared by the
+   app (main.tsx) and the custom view frame (view-runtime/main.tsx), so dates
+   look and work the same everywhere. Both import flatpickr.min.css first, so
+   equal specificity wins. Moved here from styles.css and record.css. */
+/* on-theme overrides ported from camo-cpq */
+.date-picker { display: block; width: 100%; }
+.date-picker input[type='hidden'] { display: none; }
+.flatpickr-calendar {
+  font-family: var(--font-body); background: var(--page-background); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-pop); padding: 12px 0;
+}
+.flatpickr-calendar.arrowTop::before, .flatpickr-calendar.arrowTop::after,
+.flatpickr-calendar.arrowBottom::before, .flatpickr-calendar.arrowBottom::after { display: none; }
+.flatpickr-months, .flatpickr-weekdays, .dayContainer { padding: 0 12px; box-sizing: border-box; }
+.flatpickr-months .flatpickr-month, .flatpickr-current-month .flatpickr-monthDropdown-months, .flatpickr-current-month input.cur-year {
+  color: var(--text); fill: var(--text); font-weight: 600; font-size: 15px;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months { background: var(--page-background); }
+.flatpickr-monthDropdown-months:hover, .numInputWrapper:hover { background: var(--surface); }
+.flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { color: var(--muted-text); fill: var(--muted-text); top: 12px; }
+.flatpickr-months .flatpickr-prev-month:hover svg, .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--primary); }
+span.flatpickr-weekday { color: var(--muted-text); font-weight: 600; background: transparent; }
+.flatpickr-day { color: var(--text); border-radius: 9999px; }
+.flatpickr-day.nextMonthDay, .flatpickr-day.prevMonthDay { color: color-mix(in srgb, var(--muted-text) 55%, transparent); }
+.flatpickr-day:hover, .flatpickr-day:focus,
+.flatpickr-day.nextMonthDay:hover, .flatpickr-day.prevMonthDay:hover { background: var(--surface); border-color: var(--surface); }
+.flatpickr-day.today { border-color: var(--primary); color: var(--primary); }
+.flatpickr-day.today:hover, .flatpickr-day.today:focus { background: var(--primary); border-color: var(--primary); color: #fff; }
+.flatpickr-day.selected, .flatpickr-day.selected:hover, .flatpickr-day.selected:focus,
+.flatpickr-day.selected.prevMonthDay, .flatpickr-day.selected.nextMonthDay {
+  background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: none;
+}
+.numInputWrapper span.arrowUp::after { border-bottom-color: var(--primary); }
+.numInputWrapper span.arrowDown::after { border-top-color: var(--primary); }
+.flatpickr-calendar.hasTime .flatpickr-time { border-top: 1px solid var(--border); margin-top: 8px; }
+.flatpickr-time input, .flatpickr-time .flatpickr-am-pm, .flatpickr-time .flatpickr-time-separator { color: var(--text); border: 0; }
+.flatpickr-time input:hover, .flatpickr-time .flatpickr-am-pm:hover,
+.flatpickr-time input:focus, .flatpickr-time .flatpickr-am-pm:focus { background: var(--surface); outline: none; }
+
+/* ---- date picker (components/DatePicker.tsx; the calendar is on <body>) -------------------- */
+.date-picker input:not([type='hidden']) {
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235d6878' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; background-size: 14px;
+}
+.flatpickr-calendar { border-radius: var(--radius-lg); padding: 10px 0 8px; }
+.flatpickr-months .flatpickr-month, .flatpickr-current-month .flatpickr-monthDropdown-months, .flatpickr-current-month input.cur-year { font-size: 14px; }
+span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
+.flatpickr-day { border-radius: var(--radius); font-size: 13px; }
+.flatpickr-day.today { border-color: transparent; background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.flatpickr-day.today:hover, .flatpickr-day.today:focus { background: color-mix(in srgb, var(--primary) 16%, var(--page-background)); border-color: transparent; color: var(--primary); }
+.flatpickr-day.selected, .flatpickr-day.selected:hover, .flatpickr-day.selected:focus,
+.flatpickr-day.today.selected { background: var(--primary); border-color: var(--primary); color: #fff; }
+.flatpickr-day:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }

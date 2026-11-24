@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Page, Grid, Stack, Row, Card, Badge, Button, Select, TextInput, TextArea, Loading, ErrorBox, Empty, FileInput, FileLink,
-  useQuery, useParams, setParams, createRecord, updateRecord, uploadFile, getFileBlob, openRecord, callIntegration,
+  useQuery, useParams, setParams, createRecord, updateRecord, associateRecords, uploadFile, getFileBlob, openRecord, callIntegration,
   formatDate, formatMoney, type BadgeTone
 } from '@pcrm/view'
 
@@ -18,7 +18,7 @@ export const frame = 'fill'
 const STATUS_TONE: Record<string, BadgeTone> = { draft: 'muted', in_review: 'warning', submitted: 'primary', awarded: 'money', lost: 'danger', no_bid: 'muted' }
 const RISK_TONE: Record<string, BadgeTone> = { low: 'money', medium: 'warning', high: 'danger' }
 const RECOMMENDATION: Record<string, string> = { bid: 'Bid', bid_with_partner: 'Bid with a partner', no_bid: 'No bid' }
-const BLANK = { name: '', solicitation_number: '', customer_organization: '', contract_type: 'rfp', status: 'draft', due_date: '', estimated_value: '', ai_context: '', content: '' }
+const BLANK = { name: '', solicitation_number: '', company_id: '', contract_type: 'rfp', status: 'draft', due_date: '', estimated_value: '', ai_context: '', content: '' }
 const MAX_DOC = 7 * 1024 * 1024
 const str = (v) => (v == null ? '' : String(v))
 const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean)
@@ -56,12 +56,12 @@ async function copyText(text) {
 }
 
 // What the AI flows get as the proposal's requirements.
-function describe(f, opts) {
+function describe(f, opts, company) {
   const label = (prop, v) => opts(prop).find((o) => o.value === v)?.label || v
   return [
     `Proposal title: ${f.name}`,
     f.solicitation_number && `Solicitation number: ${f.solicitation_number}`,
-    f.customer_organization && `Customer organization: ${f.customer_organization}`,
+    company && `Customer organization: ${company}`,
     f.contract_type && `Contract type: ${label('contract_type', f.contract_type)}`,
     f.due_date && `Due date: ${f.due_date}`,
     f.estimated_value && `Estimated value: $${f.estimated_value}`,
@@ -160,7 +160,7 @@ function FitResult({ ev, title }) {
   )
 }
 
-function ProposalForm({ row, opts, products, tab, onClose, onSaved }) {
+function ProposalForm({ row, opts, products, companies, tab, onClose, onSaved }) {
   const [f, setF] = useState(() => (row ? Object.fromEntries(Object.keys(BLANK).map((k) => [k, str(row[k])])) : { ...BLANK }))
   const [templateId, setTemplateId] = useState(() => (row?.template?.[0] ? String(row.template[0]) : ''))
   const [templateFile, setTemplateFile] = useState(null)
@@ -172,6 +172,7 @@ function ProposalForm({ row, opts, products, tab, onClose, onSaved }) {
   const [copied, setCopied] = useState('')
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }))
   const product = products.find((p) => p.id === productId)
+  const company = companies.find((c) => c.id === f.company_id)?.name || ''
 
   function pickTemplate(files) {
     const file = files[0]
@@ -207,7 +208,7 @@ function ProposalForm({ row, opts, products, tab, onClose, onSaved }) {
       setBusy('Claude is drafting the proposal…')
       const res = await callIntegration('rfp-generator', {
         proposal: {
-          title: f.name.trim(), solicitation_number: f.solicitation_number, customer_organization: f.customer_organization,
+          title: f.name.trim(), solicitation_number: f.solicitation_number, customer_organization: company,
           contract_type: opts('contract_type').find((o) => o.value === f.contract_type)?.label || f.contract_type,
           due_date: f.due_date, estimated_value: f.estimated_value
         },
@@ -236,7 +237,7 @@ function ProposalForm({ row, opts, products, tab, onClose, onSaved }) {
           id: product.id, name: product.name, category: product.category || '', description: product.description || '', specifications: product.specifications || '',
           key_features: lines(product.key_features).join('; '), compliance_standards: lines(product.compliance_standards).join('; ')
         },
-        requirements_text: describe(f, opts),
+        requirements_text: describe(f, opts, company),
         document: null
       })
       const data = res?.data as any
@@ -255,12 +256,18 @@ function ProposalForm({ row, opts, products, tab, onClose, onSaved }) {
     setError(null)
     setBusy('Saving…')
     try {
-      const props: Record<string, unknown> = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() === '' ? null : k === 'content' ? v : v.trim()]))
+      // the customer organization is the associated company, not a property
+      const { company_id: companyId, ...fields } = f
+      const props: Record<string, unknown> = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.trim() === '' ? null : k === 'content' ? v : v.trim()]))
       props.estimated_value = f.estimated_value.trim() === '' ? null : Number(f.estimated_value)
       props.fit_evaluation = fit.trim() ? fit : null
       if (templateFile) props.template = [(await uploadFile(templateFile)).id]
-      if (row) await updateRecord('proposals', row.id, props)
-      else await createRecord('proposals', props)
+      if (row) {
+        await updateRecord('proposals', row.id, props)
+        if (companyId && companyId !== str(row.company_id)) await associateRecords('proposals', row.id, 'companies', companyId)
+      } else {
+        await createRecord('proposals', props, companyId ? [{ object: 'companies', id: companyId }] : undefined)
+      }
       onSaved()
     } catch (e) {
       setError(e.message)
@@ -290,7 +297,10 @@ function ProposalForm({ row, opts, products, tab, onClose, onSaved }) {
             <Grid columns={2} gap={12}>
               <Field label="Proposal Title *" wide><TextInput value={f.name} onChange={set('name')} /></Field>
               <Field label="Solicitation #"><TextInput value={f.solicitation_number} onChange={set('solicitation_number')} /></Field>
-              <Field label="Customer Organization"><TextInput value={f.customer_organization} onChange={set('customer_organization')} /></Field>
+              <Field label="Customer Organization">
+                <Select value={f.company_id} onChange={set('company_id')} placeholder={companies.length ? 'Select a company...' : 'No companies yet'}
+                  options={companies.map((c) => ({ value: c.id, label: c.name }))} />
+              </Field>
               <Field label="Contract Type"><Select value={f.contract_type} onChange={set('contract_type')} options={opts('contract_type')} /></Field>
               <Field label="Status"><Select value={f.status} onChange={set('status')} options={opts('status')} /></Field>
               <Field label="Due Date"><TextInput type="date" value={f.due_date} onChange={set('due_date')} /></Field>
@@ -373,7 +383,7 @@ function ProposalCard({ r, onEdit }) {
         <Row style={{ justifyContent: 'space-between' }} align="flex-start" wrap={false}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{r.name}</div>
-            {r.customer_organization && <div className="small muted" style={{ overflowWrap: 'anywhere' }}>{r.customer_organization}</div>}
+            {r.company && <div className="small muted" style={{ overflowWrap: 'anywhere' }}>{r.company}</div>}
           </div>
           <Badge tone={STATUS_TONE[r.status]}>{r.status_label || 'No status'}</Badge>
         </Row>
@@ -404,13 +414,14 @@ export default function RfpGenerator() {
   const rows = useQuery('proposals')
   const options = useQuery('options')
   const products = useQuery('products')
+  const companies = useQuery('companies')
   const opts = (prop) => options.data.filter((o) => o.property === prop).map((o) => ({ value: o.api_value, label: o.label }))
   const editing = params.edit === 'new' ? 'new' : rows.data.find((r) => r.id === params.edit) || null
-  const error = rows.error || options.error || products.error
+  const error = rows.error || options.error || products.error || companies.error
   return (
     <Page title="📄 RFP / RFQ Generator" subtitle="AI-powered proposal generation from templates"
       actions={<Button variant="primary" onClick={() => setParams({ edit: 'new', tab: '' })}>+ New Proposal</Button>}>
-      {error ? <ErrorBox error={error} /> : rows.loading || options.loading || products.loading ? <Loading /> : !rows.data.length ? (
+      {error ? <ErrorBox error={error} /> : rows.loading || options.loading || products.loading || companies.loading ? <Loading /> : !rows.data.length ? (
         <Empty>No proposals yet. Start one with New Proposal.</Empty>
       ) : (
         <Grid columns={3}>
@@ -423,6 +434,7 @@ export default function RfpGenerator() {
           row={editing === 'new' ? null : editing}
           opts={opts}
           products={products.data}
+          companies={companies.data}
           tab={params.tab === 'fit' ? 'fit' : 'details'}
           onClose={() => setParams({ edit: '', tab: '' })}
           onSaved={() => { setParams({ edit: '', tab: '' }); rows.refresh() }}

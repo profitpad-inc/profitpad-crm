@@ -8,6 +8,8 @@ import '@fontsource/inter/latin-600.css';
 import * as kit from './kit';
 import { call, listen, post, report } from './bridge';
 import { hasScheme } from './external-url';
+import 'flatpickr/dist/flatpickr.min.css';
+import '../date-picker.css';
 import './frame.css';
 import { installTooltips } from '../lib/tooltips';
 import { installNoAutofill } from '../lib/no-autofill';

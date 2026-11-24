@@ -4,6 +4,7 @@ import {
 import { call, getInit, getParams, getViewport, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, ViewFile, Viewport } from './protocol';
 import { Select as Dropdown } from '../components/Select';
+import { DatePicker } from '../components/DatePicker';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
 
@@ -597,8 +598,29 @@ export function Button({ variant, small, disabled, onClick, children, type = 'bu
   return <button type={type} className={cx('v-btn', variant, small && 'small', className)} style={style} disabled={disabled} onClick={onClick}>{children}</button>;
 }
 
-// debounce (ms): onChange waits until typing stops; the box itself updates at once
-export function TextInput({ value, onChange, placeholder, type = 'text', debounce, small, style, className }: {
+// The CRM's date picker (the calendar used on record pages and everywhere else
+// in the CRM), never the browser's own: value and onChange use "YYYY-MM-DD",
+// or "YYYY-MM-DDTHH:MM" (local time) with withTime. "" is no date.
+export function DateInput({ value, onChange, withTime, small, style, className }: {
+  value: string; onChange: (v: string) => void; withTime?: boolean; small?: boolean;
+} & Styled) {
+  return (
+    <span className="v-date">
+      <DatePicker value={value ?? ''} onChange={onChange} withTime={withTime} inputClassName={cx('v-input', small && 'small', className)} inputStyle={style} />
+    </span>
+  );
+}
+
+// debounce (ms): onChange waits until typing stops; the box itself updates at once.
+// type="date" draws DateInput (the CRM's date picker).
+export function TextInput(props: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'number' | 'date' | 'search'; debounce?: number; small?: boolean;
+} & Styled) {
+  if (props.type === 'date') return <DateInput value={props.value} onChange={props.onChange} small={props.small} style={props.style} className={props.className} />;
+  return <PlainInput {...props} />;
+}
+
+function PlainInput({ value, onChange, placeholder, type = 'text', debounce, small, style, className }: {
   value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'number' | 'date' | 'search'; debounce?: number; small?: boolean;
 } & Styled) {
   const [text, setText] = useState(value);

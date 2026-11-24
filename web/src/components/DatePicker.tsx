@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import flatpickr from 'flatpickr';
 import type { Instance } from 'flatpickr/dist/types/instance';
 
@@ -16,13 +16,15 @@ import type { Instance } from 'flatpickr/dist/types/instance';
 // span and the input is made here.
 // noPastDays greys out the days before today (the user's local date), except
 // the value it opened with, so an old saved date still shows and isn't cleared.
+// inputClassName and inputStyle go on the visible box (custom views give it
+// their .v-input look and sizes).
 export function localToday(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ariaLabel, noPastDays }: {
+export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ariaLabel, noPastDays, inputClassName, inputStyle }: {
   value: string; onChange: (v: string) => void; withTime?: boolean; autoFocus?: boolean;
-  onCommit?: (value: string) => void; ariaLabel?: string; noPastDays?: boolean;
+  onCommit?: (value: string) => void; ariaLabel?: string; noPastDays?: boolean; inputClassName?: string; inputStyle?: CSSProperties;
 }) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const fp = useRef<Instance | null>(null);
@@ -43,6 +45,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
       disable: noPastDays ? [(d: Date) => { const day = localToday(d); return day < localToday() && day !== opened; }] : [],
       dateFormat: withTime ? 'Y-m-d\\TH:i' : 'Y-m-d',
       altInput: true,
+      ...(inputClassName !== undefined ? { altInputClass: inputClassName } : {}),
       altFormat: withTime ? 'Y-m-d H:i' : 'Y-m-d',
       allowInput: true,
       enableTime: withTime,
@@ -70,6 +73,19 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
       host.replaceChildren(); // so remove it (the ref may already be cleared here)
     };
   }, [withTime, noPastDays]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // class and inline styles on the visible box, kept current
+  useEffect(() => {
+    const box = fp.current?.altInput;
+    if (!box) return;
+    if (inputClassName !== undefined) box.className = inputClassName;
+    box.removeAttribute('style');
+    for (const [k, v] of Object.entries(inputStyle ?? {})) {
+      if (v == null || v === '') continue;
+      const css = k.startsWith('--') ? k : k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+      box.style.setProperty(css, typeof v === 'number' && !/^(opacity|z-index|flex|flex-grow|flex-shrink|order|font-weight|line-height)$/.test(css) ? `${v}px` : String(v));
+    }
+  });
 
   // follow value changes made outside the calendar
   useEffect(() => {

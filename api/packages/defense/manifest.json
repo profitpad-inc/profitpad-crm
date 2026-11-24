@@ -189,7 +189,6 @@
     { "object": "oem_integrations", "api_name": "contact_email", "label": "Contact email", "type": "text" },
 
     { "object": "proposals", "api_name": "solicitation_number", "label": "Solicitation number", "type": "text", "options": { "single_line": true } },
-    { "object": "proposals", "api_name": "customer_organization", "label": "Customer organization", "type": "text", "options": { "single_line": true } },
     { "object": "proposals", "api_name": "contract_type", "label": "Type", "type": "dropdown", "options": { "single_value": true, "default_value": "rfp" },
       "dropdown_options": [
         { "api_value": "rfp", "label": "RFP" }, { "api_value": "rfq", "label": "RFQ" }, { "api_value": "rfi", "label": "RFI" },

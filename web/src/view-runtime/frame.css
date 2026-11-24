@@ -15,6 +15,8 @@
   --radius-lg: 10px;
   --shadow-card: 0 1px 2px rgba(24, 32, 43, 0.06), 0 4px 12px rgba(24, 32, 43, 0.07);
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --shadow-pop: 0 6px 20px rgba(24, 32, 43, 0.12), 0 1px 3px rgba(24, 32, 43, 0.08);
+  --primary-soft: color-mix(in srgb, var(--primary) 11%, var(--page-background));
 }
 
 * { box-sizing: border-box; }
@@ -186,3 +188,8 @@ input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
 .v-file-image.loading { min-height: 48px; }
 .v-file-image.missing { display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 48px; text-align: center; }
 @media (pointer: coarse) { .v-file-drop-text { display: none; } }
+
+/* DateInput (and TextInput type="date"): the CRM's DatePicker. The wrappers
+   take no box, so the visible input sits where a plain input would and the
+   view's own rules for .v-input (width: 100% in a form field) still apply. */
+.v-date, .v-date .date-picker { display: contents; }
