@@ -393,6 +393,9 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
             case 'navigate':
               navigations.push(`${method}(${args.map((a) => JSON.stringify(a)).join(', ')})`);
               return { ok: true, value: null };
+            // nothing is copied while rendering
+            case 'copyText':
+              return { ok: true, value: { copied: false } };
             // nothing is opened: the report's navigations shows the address
             case 'openUrl': {
               const link = checkExternalUrl(args[0]);

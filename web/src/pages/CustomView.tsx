@@ -449,6 +449,12 @@ export function CustomView() {
         });
         return { opened };
       }
+      case 'copyText': {
+        if (typeof args[0] !== 'string') throw new Error('copyText takes a string');
+        if (args[0].length > 1_000_000) throw new Error('copyText takes at most 1,000,000 characters');
+        await navigator.clipboard.writeText(args[0]);
+        return { copied: true };
+      }
       case 'callIntegration':
         // not asked: an admin enabled the integration and chose who may use it
         return api('POST', `/v1/views/${str(s, 'slug')}/integrations/${str(args[0], 'integration key')}${d ? '?draft=1' : ''}`, { data: args[1] ?? null });

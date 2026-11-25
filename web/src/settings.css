@@ -273,7 +273,8 @@
 .settings .facts dd { margin: 0; min-width: 0; }
 
 /* webhooks */
-.delivery-payload { max-height: 300px; overflow: auto; white-space: pre-wrap; margin: 8px 0 0; padding: 10px; background: var(--surface); border-radius: var(--radius); font-size: 12px; }
+.delivery-payload { margin: 8px 0 0; }
+.delivery-payload > .view-code { max-height: 300px; }
 .pill-picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pill-picker .select-face { width: auto; }
 

@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Download, ExternalLink, File as FileIcon, FileArchive, FileAudio, FileCode, FileImage, FileSpreadsheet, FileText, FileVideo, Presentation, X } from 'lucide-react';
 import { fileInfo, fileLink, formatBytes, openFile, type FileInfo } from '../lib/files';
 import { Loading } from './Loading';
+import { CodeBlock } from './CodeBlock';
+import { langFor } from '../lib/code-folds';
 
 const PdfPages = lazy(() => import('./PdfPages'));
 
@@ -114,7 +116,7 @@ export function FileViewer({ fileId, onClose }: { fileId: string; onClose?: () =
             <PdfPages url={url} onError={() => setFailed('This PDF could not be shown.')} />
           </Suspense>
         )}
-        {ready && url && kind === 'text' && <TextPreview url={url} size={file.size_bytes} onError={() => setFailed('This text could not be shown.')} />}
+        {ready && url && kind === 'text' && <TextPreview url={url} name={name} size={file.size_bytes} onError={() => setFailed('This text could not be shown.')} />}
 
         {ready && kind === 'other' && (
           <div className="file-stage-tile">
@@ -153,7 +155,7 @@ export function FilePreviewModal({ fileId, onClose }: { fileId: string; onClose:
 }
 
 // Plain text: the first 64 KB (a range request), with Show all up to 1 MB.
-function TextPreview({ url, size, onError }: { url: string; size: number | null; onError: () => void }) {
+function TextPreview({ url, name, size, onError }: { url: string; name: string; size: number | null; onError: () => void }) {
   const [text, setText] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const cut = !all && size !== null && size > TEXT_PREVIEW_BYTES;
@@ -176,7 +178,7 @@ function TextPreview({ url, size, onError }: { url: string; size: number | null;
   if (text === null) return <Loading label="Loading text" />;
   return (
     <div className="file-stage-text">
-      <pre>{text}</pre>
+      <CodeBlock text={text} wrap lang={langFor(name)} />
       {cut && (
         <div className="file-stage-text-more muted small">
           Showing the first {formatBytes(TEXT_PREVIEW_BYTES)} of {formatBytes(size)}.

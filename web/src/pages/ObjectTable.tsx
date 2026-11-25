@@ -404,6 +404,11 @@ function ObjectTableFor({ object }: { object: string }) {
     const prop = schema?.properties.find((p) => p.api_name === c.property);
     if (!prop) return '';
     if (prop.api_name === 'name') return recordName(r);
+    // a leading ' keeps spreadsheets from reading "+1 437-222-0321" as a formula or number
+    if (prop.type === 'phone') {
+      const text = formatValue(prop, r.properties[prop.api_name]);
+      return text ? `'${text}` : '';
+    }
     return formatValue(prop, r.properties[prop.api_name]) || (col === 0 ? recordName(r) : '');
   }
 

@@ -497,10 +497,7 @@
 /* plain text */
 .file-stage.text { align-items: stretch; }
 .file-stage-text { display: flex; flex-direction: column; width: 100%; min-width: 0; }
-.file-stage-text pre {
-  margin: 0; padding: 14px 16px; max-height: 75vh; overflow: auto; background: var(--page-background);
-  font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;
-}
+.file-stage-text .view-code { max-height: 75vh; border-radius: 0; font-size: 12.5px; line-height: 1.55; }
 .file-stage-text-more { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--hairline); }
 /* PDF pages, drawn on canvases */
 .file-stage.pdf { align-items: stretch; }
@@ -524,10 +521,10 @@
 .file-viewer.in-modal .file-viewer-actions { align-items: center; }
 .file-preview-modal .pdf-pages { height: calc(92vh - 150px); }
 .file-preview-modal .file-stage-image img, .file-preview-modal .file-stage.video video,
-.file-preview-modal .file-stage-text pre { max-height: calc(92vh - 120px); }
+.file-preview-modal .file-stage-text .view-code { max-height: calc(92vh - 120px); }
 @media (max-width: 760px) {
   .pdf-pages { height: 65vh; padding: 10px; }
-  .file-stage-image img, .file-stage.video video, .file-stage-text pre { max-height: 65vh; }
+  .file-stage-image img, .file-stage.video video, .file-stage-text .view-code { max-height: 65vh; }
 }
 .file-preview-skeleton {
   height: 140px; border-radius: var(--radius);
@@ -775,12 +772,14 @@ button.le-tile:hover { border-color: var(--primary); }
 .template-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .template-record { min-width: 180px; max-width: 280px; }
 .template-head { flex-wrap: wrap; row-gap: 8px; }
+/* the Preview tab's row: the record to draw it for, Refresh and PDF */
+.template-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.template-toolbar + .callout, .template-toolbar ~ .error { margin-bottom: 10px; }
 @media (max-width: 767px) {
-  /* phones: the record picker takes its own row, Show and PDF sit under it */
-  .template-head > .template-record { flex: 1 1 100%; min-width: 0; max-width: none; }
+  /* phones: the record picker takes its own row, Refresh and PDF sit under it */
+  .template-toolbar > .template-record { flex: 1 1 calc(100% - 40px); min-width: 0; max-width: none; }
   .stream-panel > .card + .card { margin-top: 12px; }
 }
-iframe.template-preview { display: block; width: 100%; min-height: 400px; border: 1px solid var(--hairline); border-radius: var(--radius); background: #fff; }
 
 /* ---- comments on activities (components/Comments.tsx) ------------------------------ */
 .comments { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--hairline); }

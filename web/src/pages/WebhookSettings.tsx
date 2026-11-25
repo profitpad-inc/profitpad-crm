@@ -11,6 +11,7 @@ import {
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
 import { SaveHint } from '../components/SaveHint';
+import { CodeBlock } from '../components/CodeBlock';
 import { useDirty } from '../lib/use-dirty';
 
 // Settings → Webhooks (admins, migration 0038): endpoints that receive record
@@ -707,7 +708,7 @@ function DeliveryLog({ endpoint, endpoints }: { endpoint?: Endpoint; endpoints?:
                     </span>
                     {r.status === 'pending' && r.next_attempt_at && r.attempts > 0 && <span className="sub">Next try {when(r.next_attempt_at)}</span>}
                     {r.last_error && r.status !== 'succeeded' && <span className="sub failed">{r.last_error}</span>}
-                    {payload?.id === r.id && <pre className="delivery-payload">{payload.text}</pre>}
+                    {payload?.id === r.id && <CodeBlock text={payload.text} wrap lang="js" className="delivery-payload" />}
                   </td>
                   <td className="row-actions">
                     <span className="row-actions-inner">

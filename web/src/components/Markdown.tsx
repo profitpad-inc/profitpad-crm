@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { CodeBlock } from './CodeBlock';
+import { langFor } from '../lib/code-folds';
 
 // Renders simple Markdown as React elements (never raw HTML, so nothing in the
 // text can inject markup). Covers what people and AI agents write in the
@@ -65,11 +67,12 @@ function blocks(src: string, key = 'b', onLink?: OnLink): ReactNode[] {
     const k = `${key}${out.length}`;
     if (!row.trim()) { i++; continue; }
     if (FENCE.test(row)) {
+      const tag = row.trim().slice(3).trim().split(/\s/)[0];
       const code: string[] = [];
       i++;
       while (i < rows.length && !FENCE.test(rows[i])) code.push(rows[i++]);
       i++;
-      out.push(<pre key={k}><code>{code.join('\n')}</code></pre>);
+      out.push(<CodeBlock key={k} text={code.join('\n')} wrap={false} lang={langFor(tag)} className="md-code" />);
       continue;
     }
     const h = HEADING.exec(row);

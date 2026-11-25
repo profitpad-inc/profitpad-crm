@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileDown, RefreshCw } from 'lucide-react';
 import { API_BASE, api, type CrmRecord, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -6,12 +6,26 @@ import { Select } from './Select';
 import { confirmDialog } from './confirm';
 import { CodeTextarea } from './CodeTextarea';
 import { Loading } from './Loading';
+import { CodeBlock } from './CodeBlock';
+import { useFillColumn } from '../lib/use-fill-column';
 
-// The Template card on a document template's record page (api/src/templates.ts):
-// the draft's code and data sources, editable by admins, Publish / Default /
-// Revert, and a preview for a real record, as the customer's page and as a PDF.
+// The Template card on a document template's record page (api/src/templates.ts),
+// laid out like a landing page's: Draft / Published, then Preview (drawn for a
+// real record, as the customer's page or as a PDF), HTML and Data sources. The
+// draft's code is editable by admins; read-only code folds like VS Code.
+// Publish / Default / Revert sit in the card's head.
 // AIs usually write templates through the MCP tools; this is for looking and
 // small changes.
+
+const WRAP_KEY = 'pcrm.viewCodeWrap';
+
+function readWrap(): boolean {
+  try {
+    return localStorage.getItem(WRAP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 interface TemplateOut {
   id: string;
@@ -30,16 +44,19 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   const { toast, me } = useApp();
   const [t, setT] = useState<TemplateOut | null>(null);
   const [which, setWhich] = useState<'draft' | 'published'>('draft');
-  const [tab, setTab] = useState<'code' | 'queries'>('code');
+  const [tab, setTab] = useState<'preview' | 'code' | 'queries'>('preview');
+  const [wrap, setWrap] = useState(readWrap);
   const [source, setSource] = useState('');
   const [queries, setQueries] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [records, setRecords] = useState<{ value: string; label: string }[]>([]);
+  // null until the records to preview with have loaded
+  const [records, setRecords] = useState<{ value: string; label: string }[] | null>(null);
   const [recordId, setRecordId] = useState('');
   const [preview, setPreview] = useState<{ html: string; warnings: string[] } | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const frame = useRef<HTMLIFrameElement>(null);
+  const [nonce, setNonce] = useState(0);
 
   const load = (out: TemplateOut) => {
     setT(out);
@@ -66,8 +83,44 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
         setRecords(list);
         setRecordId((id) => id || list[0]?.value || '');
       })
-      .catch(() => undefined);
+      .catch(() => setRecords([]));
   }, [t?.object]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WRAP_KEY, wrap ? '1' : '0');
+    } catch {
+      // per-viewer convenience only
+    }
+  }, [wrap]);
+
+  // the Preview tab draws the saved draft (or the published version) for the
+  // chosen record, again after each save, publish or Refresh
+  const savedSource = t ? (which === 'draft' ? t.draft_source : t.source) : null;
+  useEffect(() => {
+    if (tab !== 'preview' || !t || records === null) return;
+    if (!savedSource) {
+      setPreview(null);
+      return;
+    }
+    let live = true;
+    setPreviewing(true);
+    setPreviewError(null);
+    api<{ html: string; warnings: string[] }>('POST', `/v1/document-templates/${record.id}/render`, { record_id: recordId || undefined, draft: which === 'draft' })
+      .then((p) => live && setPreview(p))
+      .catch((e: Error) => {
+        if (!live) return;
+        setPreviewError(e.message);
+        setPreview(null);
+      })
+      .finally(() => live && setPreviewing(false));
+    return () => {
+      live = false;
+    };
+  }, [tab, which, recordId, t, records === null, nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the preview runs down to the bottom of the record's middle column
+  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([t, error, tab, which, preview, previewError]);
 
   if (error && !t) return <div className="card"><div className="error">{error}</div></div>;
   if (!t) return <div className="card muted"><Loading /></div>;
@@ -100,22 +153,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
         return;
       }
     }
-    if (await act(() => api('PUT', `/v1/document-templates/${record.id}/draft`, { source, queries: parsed ?? {} }), 'Draft saved')) {
-      void showPreview();
-    }
-  }
-
-  async function showPreview() {
-    setPreviewing(true);
-    setError(null);
-    try {
-      setPreview(await api('POST', `/v1/document-templates/${record.id}/render`, { record_id: recordId || undefined, draft: which === 'draft' }));
-    } catch (e) {
-      setError((e as Error).message);
-      setPreview(null);
-    } finally {
-      setPreviewing(false);
-    }
+    await act(() => api('PUT', `/v1/document-templates/${record.id}/draft`, { source, queries: parsed ?? {} }), 'Draft saved');
   }
 
   async function pdf() {
@@ -131,16 +169,11 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
       window.open(url, '_blank', 'noopener');
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      setError((e as Error).message);
+      setPreviewError((e as Error).message);
     } finally {
       setPreviewing(false);
     }
   }
-
-  const fit = () => {
-    const doc = frame.current?.contentDocument;
-    if (frame.current && doc?.documentElement) frame.current.style.height = `${Math.max(400, Math.min(doc.documentElement.scrollHeight, 6000))}px`;
-  };
 
   const shownSource = which === 'draft' ? source : t.source ?? '';
   const shownQueries = which === 'draft' ? queries : t.queries ?? '';
@@ -178,42 +211,59 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
           <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
           <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!t.source}>Published</button></div>
           <span style={{ flex: 1 }} />
+          {tab !== 'preview' && readOnly && (
+            <label className="small muted code-wrap-toggle">
+              <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
+            </label>
+          )}
+          <div className={`tab${tab === 'preview' ? ' active' : ''}`}><button onClick={() => setTab('preview')}>Preview</button></div>
           <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>HTML</button></div>
           <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Data sources</button></div>
         </div>
-        {tab === 'code' ? (
-          <CodeTextarea className="template-code" value={shownSource} readOnly={readOnly}
-            placeholder={readOnly ? 'No code yet.' : 'An HTML page with Liquid tags, like {{ quote.name }}.'}
+        {tab === 'preview' ? (
+          <>
+            <div className="template-toolbar">
+              <span className="muted small">For</span>
+              <div className="template-record">
+                <Select value={recordId} onChange={setRecordId} aria-label="Record to preview" options={records?.length ? records : [{ value: '', label: 'No records yet' }]} />
+              </div>
+              <span style={{ flex: 1 }} />
+              <button className="btn small" disabled={previewing || !savedSource} onClick={() => setNonce((n) => n + 1)}><RefreshCw size={13} /> Refresh</button>
+              <button className="btn small" disabled={previewing || !savedSource} onClick={() => void pdf()}><FileDown size={13} /> PDF</button>
+            </div>
+            {which === 'draft' && dirty && <div className="callout small">This is the saved draft. Save to see your changes here.</div>}
+            {previewError && <div className="error">{previewError}</div>}
+            {preview?.warnings.length ? <div className="callout warn small">{preview.warnings.map((w) => <div key={w}>{w}</div>)}</div> : null}
+            {preview ? (
+              <div ref={bodyRef} className="landing-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
+                <iframe className="landing-preview" title="Template preview" sandbox="allow-same-origin" srcDoc={preview.html} />
+              </div>
+            ) : previewing || records === null ? (
+              <Loading className="muted" />
+            ) : !previewError && (
+              <p className="muted">{savedSource ? 'Nothing to show yet.' : which === 'draft' ? 'No code yet. Write the HTML, then save the draft to see it here.' : 'Nothing published yet.'}</p>
+            )}
+          </>
+        ) : readOnly ? (
+          (tab === 'code' ? shownSource : shownQueries)
+            ? <CodeBlock text={tab === 'code' ? shownSource : shownQueries} wrap={wrap} lang={tab === 'code' ? 'html' : 'js'} />
+            : <p className="muted">{tab === 'code' ? 'No code yet.' : 'No data sources.'}</p>
+        ) : tab === 'code' ? (
+          <CodeTextarea className="template-code" value={shownSource}
+            placeholder="An HTML page with Liquid tags, like {{ quote.name }}."
             onChange={(e) => setSource(e.target.value)} aria-label="Template code" />
         ) : (
-          <CodeTextarea className="template-code short" value={shownQueries} readOnly={readOnly}
+          <CodeTextarea className="template-code short" value={shownQueries}
             placeholder={'{"summary": {"sql": "select count(*) as lines from view_data.associations where object_type_id = \'pc_0022\' and record_id = :record_id and other_object_type_id = \'pc_0020\'"}}'}
             onChange={(e) => setQueries(e.target.value)} aria-label="Data sources" />
         )}
-        {which === 'draft' && canEdit && (
+        {tab !== 'preview' && !readOnly && (
           <div className="template-actions">
             <span style={{ flex: 1 }} />
             {dirty && <button className="btn small ghost" disabled={busy} onClick={() => load(t)}>Discard</button>}
             <button className="btn small primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? 'Saving...' : 'Save draft'}</button>
           </div>
         )}
-      </div>
-
-      <div className="card">
-        <div className="card-head template-head">
-          <h3>Preview</h3>
-          <span className="muted small">{which === 'draft' ? 'The draft' : 'The published version'}, for</span>
-          <div className="template-record">
-            <Select value={recordId} onChange={setRecordId} aria-label="Record to preview" options={records.length ? records : [{ value: '', label: 'No records yet' }]} />
-          </div>
-          <span style={{ flex: 1 }} />
-          <button className="btn small" disabled={previewing || !shownSource} onClick={() => void showPreview()}><RefreshCw size={13} /> {preview ? 'Refresh' : 'Show'}</button>
-          <button className="btn small" disabled={previewing || !shownSource} onClick={() => void pdf()}><FileDown size={13} /> PDF</button>
-        </div>
-        {preview?.warnings.length ? <div className="callout warn small">{preview.warnings.map((w) => <div key={w}>{w}</div>)}</div> : null}
-        {preview
-          ? <iframe ref={frame} className="template-preview" title="Template preview" sandbox="allow-same-origin" srcDoc={preview.html} onLoad={fit} />
-          : <p className="muted">{previewing ? 'Drawing…' : 'Show draws the template for the chosen record, as the customer sees it.'}</p>}
       </div>
     </>
   );

@@ -757,6 +757,8 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 }
 .code-block:hover .code-copy, .code-editor:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
 .code-copy:hover { color: var(--text); }
+/* a Markdown code fence (components/Markdown.tsx) */
+.md-code { margin: 0 0 10px; }
 .view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 16px) 18px minmax(0, 1fr); }
 .view-code.numbered.wrap .lc { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code-wrap-toggle { display: flex; align-items: center; gap: 8px; margin-right: 12px; align-self: center; white-space: nowrap; }
@@ -902,6 +904,7 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .address-menu .select-options button svg { margin-top: 3px; color: var(--muted-text); }
 .address-option { display: flex; flex-direction: column; min-width: 0; }
 .address-credit { padding: 4px 10px 2px; text-align: right; font-size: 11px; }
+.address-menu .select-options .address-typed { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px; }
 
 /* Show more / less (components/ShowMore.tsx): long values cut to --clamp-lines */
 .show-more { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; min-width: 0; }

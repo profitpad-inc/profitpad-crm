@@ -7,7 +7,18 @@
 // their brackets do not count, quotes end at the line end (except template
 // literals and SQL), and an unmatched closer is ignored.
 
-export type CodeLang = 'html' | 'js' | 'sql';
+// text: indentation folds only (plain text, logs, Markdown)
+export type CodeLang = 'html' | 'js' | 'sql' | 'text';
+
+// The language for a Markdown fence tag (```sql) or a file name (page.html)
+export function langFor(tagOrName: string | null | undefined): CodeLang {
+  const t = (tagOrName ?? '').trim().toLowerCase();
+  const ext = t.includes('.') ? t.slice(t.lastIndexOf('.') + 1) : t;
+  if (['html', 'htm', 'xml', 'svg', 'vue', 'xhtml'].includes(ext)) return 'html';
+  if (['sql', 'pgsql', 'postgres', 'postgresql', 'psql'].includes(ext)) return 'sql';
+  if (['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'json', 'jsonc', 'css', 'scss', 'less', 'java', 'c', 'h', 'cpp', 'cs', 'go', 'rs', 'php', 'swift', 'kt', 'dart', 'javascript', 'typescript'].includes(ext)) return 'js';
+  return 'text';
+}
 
 // line index -> last line index hidden when the line is folded
 export type Folds = Map<number, number>;
@@ -134,7 +145,7 @@ export function findFolds(text: string, lang: CodeLang): Folds {
       else if (c === '}' || c === ']') closeBracket(c);
       i++;
     }
-  } else {
+  } else if (lang !== 'text') {
     scanCode(null, lang);
   }
 

@@ -31,7 +31,9 @@ type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'cre
   // the old name of associateRecords, from a frame loaded before the rename
   | 'linkRecords'
   // choices of a dropdown that lets users add them (a library's folders): add, rename, archive (a change: asked like createRecord)
-  | 'addOption' | 'updateOption';
+  | 'addOption' | 'updateOption'
+  // the copy buttons on code (the frame has no clipboard access; never asked: it only writes the view's own text)
+  | 'copyText';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

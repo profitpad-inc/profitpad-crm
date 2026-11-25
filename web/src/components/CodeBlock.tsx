@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { findFolds, type CodeLang } from '../lib/code-folds';
+
+// How the copy buttons write to the clipboard. The view frame (sandboxed, no
+// clipboard access) swaps in its bridge call, so the CRM page copies for it.
+let copyText: (text: string) => Promise<unknown> = (text) => navigator.clipboard.writeText(text);
+export function setCopyText(fn: (text: string) => Promise<unknown>) {
+  copyText = fn;
+}
 
 // Copies text, showing a tick for a moment. Sits in the top right corner of a
 // code box (the box is position: relative).
@@ -13,7 +20,7 @@ export function CopyCodeButton({ text }: { text: string }) {
   }, [copied]);
   async function copy() {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       setCopied(true);
     } catch {
       // clipboard blocked; nothing to show
@@ -31,7 +38,7 @@ export function CopyCodeButton({ text }: { text: string }) {
 // after a folded line open it again. Unwrapped, long lines scroll sideways and
 // the numbers stay put; wrapped, a long line keeps one number. The copy
 // button always copies the whole text, folded parts included.
-export function CodeBlock({ text, wrap, lang, className }: { text: string; wrap: boolean; lang: CodeLang; className?: string }) {
+export function CodeBlock({ text, wrap, lang, className, style }: { text: string; wrap: boolean; lang: CodeLang; className?: string; style?: CSSProperties }) {
   const lines = useMemo(() => text.split('\n'), [text]);
   const folds = useMemo(() => findFolds(text, lang), [text, lang]);
   const [folded, setFolded] = useState<Set<number>>(() => new Set());
@@ -47,21 +54,23 @@ export function CodeBlock({ text, wrap, lang, className }: { text: string; wrap:
 
   const rows = [];
   for (let i = 0; i < lines.length; i++) {
-    const end = folds.get(i);
-    const isFolded = end !== undefined && folded.has(i);
+    // the click handlers need this line's index; i itself jumps past a fold below
+    const start = i;
+    const end = folds.get(start);
+    const isFolded = end !== undefined && folded.has(start);
     rows.push(
       <span key={i} className={`code-line${isFolded ? ' folded' : ''}`}>
         <span className="ln" aria-hidden>{i + 1}</span>
         <span className="fold" aria-hidden>
           {end !== undefined && (
-            <button type="button" tabIndex={-1} onClick={() => toggle(i)} title={isFolded ? 'Unfold' : 'Fold'}>
+            <button type="button" tabIndex={-1} onClick={() => toggle(start)} title={isFolded ? 'Unfold' : 'Fold'}>
               {isFolded ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             </button>
           )}
         </span>
         <span className="lc">
           {lines[i] || (isFolded ? '' : ' ')}
-          {isFolded && <button type="button" className="fold-dots" onClick={() => toggle(i)} title="Unfold">⋯</button>}
+          {isFolded && <button type="button" className="fold-dots" onClick={() => toggle(start)} title="Unfold">⋯</button>}
         </span>
       </span>,
     );
@@ -70,7 +79,7 @@ export function CodeBlock({ text, wrap, lang, className }: { text: string; wrap:
 
   return (
     <div className={`code-block${className ? ` ${className}` : ''}`}>
-      <pre className={`view-code numbered${wrap ? ' wrap' : ''}`} style={{ ['--gutter' as string]: `${String(lines.length).length}ch` }}>
+      <pre className={`view-code numbered${wrap ? ' wrap' : ''}`} style={{ ...style, ['--gutter' as string]: `${String(lines.length).length}ch` }}>
         {rows}
       </pre>
       <CopyCodeButton text={text} />

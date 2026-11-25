@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { MapPin } from 'lucide-react';
+import { MapPin, TextCursorInput } from 'lucide-react';
 import { api, type Property } from '../lib/api';
 
 // Address autocomplete (api/src/address.ts, Settings → Address autocomplete).
@@ -237,6 +237,15 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
     };
   }, [open]);
 
+  // Keep the typed text as it is: close the list, stop suggesting until the
+  // next keystroke, and commit like Enter would (inline edits save).
+  function keepTyped() {
+    setOpen(false);
+    seq.current++;
+    typed.current = false;
+    onCommit?.();
+  }
+
   async function pick(s: Suggestion) {
     picking.current = true;
     setOpen(false);
@@ -255,12 +264,21 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
     }
   }
 
+  // the list: suggestions, then the typed text (index suggestions.length)
+  const count = suggestions.length + 1;
+
   function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (open && suggestions.length) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => (a + 1) % suggestions.length); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => (a <= 0 ? suggestions.length - 1 : a - 1)); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => (a + 1) % count); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => (a <= 0 ? count - 1 : a - 1)); return; }
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setOpen(false); return; }
-      if (e.key === 'Enter' && active >= 0) { e.preventDefault(); e.stopPropagation(); void pick(suggestions[active]); return; }
+      if (e.key === 'Enter' && active >= 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (active === suggestions.length) keepTyped();
+        else void pick(suggestions[active]);
+        return;
+      }
     }
     if (e.key === 'Enter' && onCommit) onCommit();
   }
@@ -316,6 +334,21 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
                 </span>
               </button>
             ))}
+            <button
+              type="button"
+              role="option"
+              tabIndex={-1}
+              aria-selected={active === suggestions.length}
+              className={`address-typed${active === suggestions.length ? ' active' : ''}`}
+              onMouseEnter={() => setActive(suggestions.length)}
+              onClick={keepTyped}
+            >
+              <TextCursorInput size={14} aria-hidden />
+              <span className="address-option">
+                <span>Use “{value.trim()}”</span>
+                <span className="muted small">Keep what you typed</span>
+              </span>
+            </button>
           </div>
           <div className="address-credit muted small">Suggestions from Google</div>
         </div>,

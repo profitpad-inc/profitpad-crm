@@ -6,6 +6,8 @@ import type { Params, ViewFile, Viewport } from './protocol';
 import { Select as Dropdown } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
 import { Markdown as BaseMarkdown } from '../components/Markdown';
+import { CodeBlock as BaseCodeBlock, setCopyText } from '../components/CodeBlock';
+import { langFor, type CodeLang } from '../lib/code-folds';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
 
@@ -208,6 +210,17 @@ export type { ViewFile };
 // through openUrl, so the viewer confirms the site as with ExternalLink.
 export function Markdown({ text, style, className }: { text: string | null | undefined } & Styled) {
   return <div className={cx('v-md', className)} style={style}><BaseMarkdown onLink={(url) => void openUrl(url)}>{String(text ?? '')}</BaseMarkdown></div>;
+}
+
+// Code (SQL, HTML, JSON, a script) with line numbers, VS Code style folding
+// and a copy button. lang: 'html' | 'js' (also JSON, CSS) | 'sql' | 'text', or
+// a file name or extension ('page.html', 'json'); default 'text'.
+setCopyText((text) => call('copyText', [text]));
+export function CodeBlock({ code, lang, wrap = false, maxHeight, style, className }: {
+  code: string | null | undefined; lang?: CodeLang | string; wrap?: boolean; maxHeight?: number | string;
+} & Styled) {
+  const l: CodeLang = lang === 'html' || lang === 'js' || lang === 'sql' || lang === 'text' ? lang : langFor(lang);
+  return <BaseCodeBlock text={String(code ?? '')} lang={l} wrap={wrap} className={cx('v-code', className)} style={{ ...(maxHeight !== undefined ? { maxHeight } : {}), ...style }} />;
 }
 
 export interface UploadOptions {

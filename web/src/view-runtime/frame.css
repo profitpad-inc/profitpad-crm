@@ -219,3 +219,32 @@ input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
 .v-md pre { padding: 10px 12px; border-radius: var(--radius); overflow-x: auto; margin: 0 0 10px; }
 .v-md pre code { padding: 0; background: none; }
 .v-md .md-link { border: 0; padding: 0; background: none; font: inherit; color: var(--primary); text-decoration: underline; cursor: pointer; }
+
+/* code (CodeBlock in kit.tsx; the same look as the CRM's code boxes in styles.css, keep in step) */
+.view-code { margin: 0; padding: 10px 12px; max-height: 520px; overflow: auto; background: var(--surface); border-radius: var(--radius); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }
+.view-code.numbered { padding: 10px 12px 10px 0; }
+.view-code.numbered .code-line { display: grid; grid-template-columns: calc(var(--gutter) + 16px) 18px auto; }
+.view-code.numbered .ln { position: sticky; left: 0; padding: 0 4px 0 12px; text-align: right; color: var(--muted-text); background: var(--surface); user-select: none; }
+/* fold chevrons (components/CodeBlock.tsx): shown while hovering the code, always on a folded line, always on touch screens */
+.view-code.numbered .fold { position: sticky; left: calc(var(--gutter) + 16px); display: flex; align-items: center; justify-content: center; background: var(--surface); user-select: none; }
+.view-code .fold button { display: flex; padding: 0; border: 0; background: none; color: var(--muted-text); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.view-code:hover .fold button, .view-code .folded .fold button { opacity: 1; }
+.view-code .fold button:hover { color: var(--text); }
+@media (hover: none) { .view-code .fold button { opacity: 1; } }
+.view-code .fold-dots {
+  display: inline-block; margin-left: 4px; padding: 0 5px; border: 0; border-radius: 4px; font: inherit; line-height: 1.3; cursor: pointer; user-select: none;
+  color: var(--muted-text); background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.view-code .fold-dots:hover { color: var(--text); background: var(--border); }
+/* the copy button in a code box's top right corner */
+.code-block { position: relative; }
+.code-copy {
+  position: absolute; top: 6px; right: 14px; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--muted-text); cursor: pointer; opacity: .7; transition: opacity .15s;
+}
+.code-block:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+.code-copy:hover { color: var(--text); }
+.md-code { margin: 0 0 10px; }
+.view-code.numbered.wrap .code-line { grid-template-columns: calc(var(--gutter) + 16px) 18px minmax(0, 1fr); }
+.view-code.numbered.wrap .lc { white-space: pre-wrap; overflow-wrap: anywhere; }
+.v-md .md-code > .view-code { margin: 0; }
