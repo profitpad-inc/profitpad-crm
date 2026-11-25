@@ -36,6 +36,9 @@ interface Check {
   calendar: { provider: 'google' | 'microsoft'; email: string | null } | null;
   next_slots: string[];
   slot_error: string | null;
+  // the host's mailbox visitor emails go out from (null: none, or round robin)
+  email_from?: string | null;
+  round_robin?: boolean;
 }
 
 const NINE_TO_FIVE: Range[] = [['09:00', '17:00']];
@@ -306,6 +309,104 @@ function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolea
   );
 }
 
+// ---- emails to the visitor (api/src/calendar/booking-email-text.ts) --------------------
+
+interface EmailSettings { confirm: boolean; reminders: number[]; note: string }
+
+const REMINDER_CHOICES = [15, 30, 60, 120, 240, 1440, 2880, 10080];
+
+function reminderLabel(minutes: number): string {
+  if (minutes % 1440 === 0) return `${minutes / 1440} day${minutes === 1440 ? '' : 's'} before`;
+  if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? '' : 's'} before`;
+  return `${minutes} minutes before`;
+}
+
+function readEmails(raw: unknown): EmailSettings {
+  const fallback = { confirm: true, reminders: [1440], note: '' };
+  if (typeof raw !== 'string' || !raw) return fallback;
+  try {
+    const v = JSON.parse(raw) as Partial<{ confirm: boolean; reminders: number[]; note: string | null }>;
+    return {
+      confirm: v.confirm !== false,
+      reminders: Array.isArray(v.reminders) ? [...v.reminders].sort((a, b) => b - a) : fallback.reminders,
+      note: typeof v.note === 'string' ? v.note : ''
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function EmailsCard({ record, check, saving, onSave }: {
+  record: CrmRecord; check: Check | null; saving: boolean; onSave: (p: Record<string, unknown>, message: string) => Promise<boolean>;
+}) {
+  const saved = useMemo(() => readEmails(record.properties.email_settings), [record.properties.email_settings]);
+  const [v, setV] = useState(saved);
+  useEffect(() => setV(saved), [saved]);
+  const dirty = norm(v) !== norm(saved);
+  const left = REMINDER_CHOICES.filter((m) => !v.reminders.includes(m));
+  return (
+    <section className="ed-section">
+      <div className="ed-section-head">
+        <h3>Emails to the visitor</h3>
+        <p>
+          Sent from the host's own mailbox, so they come from the host's Gmail or Outlook and show in their Sent folder.
+          The calendar invite still goes out as well.
+        </p>
+      </div>
+      {check && !check.round_robin && !check.email_from && (
+        <div className="callout warn">The host has no mailbox the CRM can send from (Settings → Mailboxes), so no emails go out.</div>
+      )}
+      {check?.email_from && <p className="ed-hint">Sent from {check.email_from}.</p>}
+      {check?.round_robin && <p className="ed-hint">Round robin: each email comes from the mailbox of the person hosting that meeting.</p>}
+      <div className="ed-rows">
+        <div className="ed-row">
+          <span className="ed-row-label">Confirmation</span>
+          <div className="ed-row-control">
+            <label className="bk-switch">
+              <input type="checkbox" checked={v.confirm} disabled={saving} onChange={(e) => setV({ ...v, confirm: e.target.checked })} />
+              Confirm the booking, and tell them when they move or cancel it
+            </label>
+          </div>
+        </div>
+        <div className="ed-row">
+          <span className="ed-row-label">Reminders</span>
+          <div className="ed-row-control">
+            <div className="bk-reminders">
+              {v.reminders.map((m) => (
+                <span key={m} className="bk-reminder">
+                  {reminderLabel(m)}
+                  <button type="button" className="bk-reminder-x" aria-label={`Remove the reminder ${reminderLabel(m)}`} disabled={saving}
+                    onClick={() => setV({ ...v, reminders: v.reminders.filter((x) => x !== m) })}><Trash2 size={12} /></button>
+                </span>
+              ))}
+              {v.reminders.length === 0 && <span className="ed-hint">No reminders.</span>}
+            </div>
+            {v.reminders.length < 3 && left.length > 0 && (
+              <Select aria-label="Add a reminder" value="" disabled={saving} face={<><Plus size={12} /> Add a reminder</>}
+                options={left.map((m) => ({ value: String(m), label: reminderLabel(m) }))}
+                onChange={(x) => x && setV({ ...v, reminders: [...v.reminders, Number(x)].sort((a, b) => b - a) })} />
+            )}
+            <p className="ed-hint">Up to 3. A reminder whose time has already passed when someone books is not sent.</p>
+          </div>
+        </div>
+        <div className="ed-row">
+          <label className="ed-row-label" htmlFor="bk-email-note">Note</label>
+          <div className="ed-row-control">
+            <textarea id="bk-email-note" rows={3} maxLength={2000} value={v.note} disabled={saving}
+              placeholder="Anything they should know or bring, added to every email" onChange={(e) => setV({ ...v, note: e.target.value })} />
+          </div>
+        </div>
+      </div>
+      <div className="actions">
+        <button className="btn primary" type="button" disabled={saving || !dirty}
+          onClick={async () => { await onSave({ email_settings: JSON.stringify({ confirm: v.confirm, reminders: v.reminders, note: v.note.trim() || null }) }, 'Email settings saved'); }}>
+          Save
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
   const { toast } = useApp();
   const navigate = useNavigate();
@@ -330,6 +431,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
     barObserver.current.observe(el);
   }, []);
   const [forms, setForms] = useState<{ id: string; name: string; published: boolean }[]>([]);
+  const [rotations, setRotations] = useState<{ id: string; name: string }[]>([]);
   const [check, setCheck] = useState<Check | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -347,6 +449,12 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
         published: (Array.isArray(f.properties.status) ? f.properties.status[0] : f.properties.status) === 'published'
       }))))
       .catch((e) => setError((e as Error).message));
+  }, []);
+
+  useEffect(() => {
+    api<{ results: { id: string; name: string }[] }>('GET', '/v1/owner-rotations/options')
+      .then((r) => setRotations(r.results))
+      .catch(() => setRotations([]));
   }, []);
 
   useEffect(loadCheck, [loadCheck, record]);
@@ -477,6 +585,36 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
         <div className="ed-rows">
           {formPicker('form_before_id', 'Before picking a time')}
           {formPicker('form_after_id', 'After picking a time')}
+        </div>
+      </section>
+
+      <EmailsCard record={record} check={check} saving={saving} onSave={save} />
+
+      <section className="ed-section">
+        <div className="ed-section-head">
+          <h3>Round robin</h3>
+          <p>
+            Pick an owner rotation to share meetings between its members: visitors see the times anyone in it is free, and each booking goes to
+            the next person in the rotation who is free then, who also becomes the contact's owner. Manage rotations in{' '}
+            <Link to="/settings/owner-rotations">Settings → Owner rotations</Link>.
+          </p>
+        </div>
+        <div className="ed-rows">
+          <div className="ed-row">
+            <label className="ed-row-label" htmlFor="bk-rotation">Owner rotation</label>
+            <div className="ed-row-control">
+              <Select id="bk-rotation" value={str(record.properties.rotation_id)} disabled={saving}
+                onChange={(v) => save({ rotation_id: v || null }, v ? 'Round robin on' : 'Round robin off')}>
+                <option value="">None (the Host hosts every meeting)</option>
+                {rotations.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {str(record.properties.rotation_id) && !rotations.some((r) => r.id === str(record.properties.rotation_id)) &&
+                  <option value={str(record.properties.rotation_id)}>Rotation {str(record.properties.rotation_id)} (removed)</option>}
+              </Select>
+              {str(record.properties.rotation_id) && (
+                <div className="bk-form-links"><Link to={`/settings/owner-rotations?r=${str(record.properties.rotation_id)}`}>Open rotation</Link></div>
+              )}
+            </div>
+          </div>
         </div>
       </section>
 

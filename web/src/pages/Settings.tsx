@@ -33,11 +33,12 @@ import { OptionListSettings } from './OptionListSettings';
 import { AssociationLabelSettings } from './AssociationLabelSettings';
 import { AddressSettings } from './AddressSettings';
 import { EmailSettings } from './EmailSettings';
-import { BookOpen, History, ListChecks, Send, Tags, Video } from 'lucide-react';
+import { BookOpen, History, ListChecks, Repeat, Send, Tags, Video } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { KnowledgeSettings } from './KnowledgeSettings';
 import { MailboxSettings } from './MailboxSettings';
 import { MeetingSettings } from './MeetingSettings';
+import { OwnerRotationSettings } from './OwnerRotationSettings';
 import { NotificationEmailSettings } from './NotificationEmailSettings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
@@ -72,7 +73,8 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
   ] },
   { label: 'People and access', links: [
     { path: 'users', label: 'Users', icon: <Users size={16} />, gate: ['users', 'roles'], element: <UserSettings /> },
-    { path: 'roles', label: 'Roles', icon: <ShieldCheck size={16} />, gate: ['roles'], element: <RoleSettings /> }
+    { path: 'roles', label: 'Roles', icon: <ShieldCheck size={16} />, gate: ['roles'], element: <RoleSettings /> },
+    { path: 'owner-rotations', label: 'Owner rotations', icon: <Repeat size={16} />, gate: ['owner_rotations'], element: <OwnerRotationSettings /> }
   ] },
   { label: 'Integrations', links: [
     { path: 'embed-domains', label: 'Embed domains', icon: <Globe size={16} />, gate: ['integrations'], element: <EmbedDomains /> },

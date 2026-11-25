@@ -51,7 +51,7 @@ async function send<T>(method: string, path: string, body: unknown, retried: boo
 // ---- types ----------------------------------------------------------------
 
 // Role permissions besides object access (api/src/auth.ts ROLE_PERMISSIONS)
-export type RolePermission = 'api_keys' | 'integrations' | 'users' | 'roles' | 'import' | 'export' | 'properties' | 'security_log';
+export type RolePermission = 'api_keys' | 'integrations' | 'users' | 'roles' | 'import' | 'export' | 'properties' | 'security_log' | 'owner_rotations';
 
 // Whether the signed-in user has a role permission (Super Admins have all)
 export const can = (me: Pick<Me, 'is_admin' | 'permissions'> | null | undefined, perm: RolePermission): boolean =>

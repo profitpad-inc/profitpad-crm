@@ -2,6 +2,9 @@ import { el, publicApi, pageUrlWith, queryParamsFromLocation, PublicApiError, ty
 import { injectFormCss, renderForm } from './form-renderer';
 import { enhanceSelect } from './dropdown';
 import { visitorField } from './visitor';
+import { isGmailTypo } from '../lib/email-typo';
+
+const GUEST_EMAIL_RE = /^(?!.*\.\.)[^@\s<>(),;:"[\]\\]+@[^@\s<>(),;:"[\]\\]+\.[^@\s<>(),;:"[\]\\]+$/;
 
 // "15 min", "1 hr", "1 hr 30 min"
 function lengthLabel(minutes: number): string {
@@ -47,6 +50,10 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   let beforeValues: Record<string, unknown> | null = null;
   let afterValues: Record<string, unknown> | null = null;
   let honeypot = '';
+  // guests the visitor typed (kept while they move between steps)
+  let guestText = '';
+  let guestsOpen = false;
+  let guestError: HTMLElement | null = null;
   let chosen: string | null = null;
   // the meeting length picked (minutes); the page's default at first
   let duration = 0;
@@ -54,6 +61,8 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   // calendar: the month shown (in the visitor's zone) and its open times by day
   let month = { y: 0, m: 0 };
   let slotsByDay = new Map<string, string[]>();
+  // group pages: seats left at times someone already booked
+  let seatsLeft: Record<string, number> = {};
   let pickedDay: string | null = null;
   let loadingSlots = false;
   let slotError: string | null = null;
@@ -174,7 +183,9 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     slotsByDay = new Map();
     if (to > from) {
       try {
-        const { slots } = manageKey ? await api.manageSlots(manageKey, from, to, duration) : await api.bookingSlots(key, from, to, duration);
+        const res = manageKey ? await api.manageSlots(manageKey, from, to, duration) : await api.bookingSlots(key, from, to, duration);
+        const slots = res.slots;
+        seatsLeft = res.seats_left ?? {};
         for (const s of slots) {
           const k = dayKey(new Date(s));
           slotsByDay.set(k, [...(slotsByDay.get(k) ?? []), s]);
@@ -270,7 +281,10 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       ...parts.filter(([, list]) => list.length).map(([label, list]) => el('div', { class: 'bk-part', role: 'group', 'aria-label': label },
         el('p', { class: 'bk-part-title', 'aria-hidden': 'true' }, label),
         el('div', { class: 'bk-part-times' }, ...list.map((s) => {
-          const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)));
+          const seats = page.seats ?? 1;
+          const left = seats > 1 ? (seatsLeft[s] ?? seats) : 0;
+          const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)),
+            left ? el('span', { class: 'bk-seats' }, `${left} ${left === 1 ? 'seat' : 'seats'} left`) : null);
           b.addEventListener('click', () => pick(s));
           return b;
         })))),
@@ -339,11 +353,71 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     else showConfirm();
   }
 
+  // ---- guests: extra people on the invite (pages that allow them) -----------------------
+
+  function guestsBox(): HTMLElement | null {
+    const max = page.max_guests ?? 0;
+    if (max <= 0) return null;
+    const box = el('div', { class: 'bk-guests' });
+    guestError = el('div', { class: 'pcrm-error', role: 'alert' });
+    const draw = () => {
+      if (!guestsOpen) {
+        const add = el('button', { class: 'bk-link', type: 'button' }, '+ Add guests');
+        add.addEventListener('click', () => {
+          guestsOpen = true;
+          draw();
+          box.querySelector('textarea')?.focus();
+        });
+        box.replaceChildren(el('p', {}, add));
+        return;
+      }
+      const input = el('textarea', { id: 'bk-guest-emails', rows: '3', autocomplete: 'off', placeholder: 'name@example.com' }) as HTMLTextAreaElement;
+      input.value = guestText;
+      input.addEventListener('input', () => {
+        guestText = input.value;
+        guestError!.textContent = '';
+        input.classList.remove('pcrm-invalid');
+      });
+      // drawn like the forms' fields (outside .pcrm-form the link above would look like a button)
+      const field = el('div', { class: 'pcrm-form' }, el('div', { class: 'pcrm-field' },
+        el('label', { class: 'pcrm-label', for: 'bk-guest-emails' }, 'Guest emails'),
+        el('div', { class: 'pcrm-help' }, `They get the calendar invite too. Separate addresses with commas or new lines, up to ${max}.`),
+        input,
+        guestError));
+      if (page.theme.primary) field.style.setProperty('--pcrm-primary', page.theme.primary);
+      box.replaceChildren(field);
+    };
+    draw();
+    return box;
+  }
+
+  function showGuestError(text: string): void {
+    if (!guestError) return;
+    guestError.textContent = text;
+    guestError.parentElement?.querySelector('textarea')?.classList.add('pcrm-invalid');
+  }
+
+  // The guest addresses, checked the way the API checks them.
+  function readGuestText(): string[] {
+    const max = page.max_guests ?? 0;
+    if (max <= 0) return [];
+    const out: string[] = [];
+    for (const raw of guestText.split(/[\s,;]+/)) {
+      const email = raw.trim().toLowerCase();
+      if (!email) continue;
+      if (email.length > 254 || !GUEST_EMAIL_RE.test(email)) throw new Error(`${raw.trim()} is not a valid email address.`);
+      if (isGmailTypo(email)) throw new Error(`${raw.trim()}: did you mean @gmail.com? Please check the address.`);
+      if (!out.includes(email)) out.push(email);
+    }
+    if (out.length > max) throw new Error(`You can add up to ${max} guest${max === 1 ? '' : 's'}.`);
+    return out;
+  }
+
   // ---- step 3: form after the time, or a plain confirm ---------------------------------
 
   function showAfter(): void {
     const holder = el('div', {});
-    shell('after', chosenBox(), holder);
+    shell('after', chosenBox(), guestsBox(), holder);
     renderForm(holder, {
       apiBase: opts.apiBase,
       key,
@@ -372,7 +446,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
         button.disabled = false;
       }
     });
-    shell('after', chosenBox(), error, el('div', { class: 'pp-actions' }, button));
+    shell('after', chosenBox(), guestsBox(), error, el('div', { class: 'pp-actions' }, button));
   }
 
   // ---- booking -------------------------------------------------------------------------
@@ -380,11 +454,21 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   // Errors on the after form are thrown back to it (shown under the field);
   // others send the visitor back to the step that needs fixing.
   async function book(): Promise<void> {
+    let guests: string[];
+    try {
+      guests = readGuestText();
+    } catch (err) {
+      showGuestError((err as Error).message);
+      throw new Error('Please check the guest email addresses.');
+    }
     let res: BookingResult;
     try {
       res = await api.book(key, {
         start: chosen!,
         duration,
+        ...(guests.length ? { guests } : {}),
+        // the visitor's time zone, for the times in their emails
+        timezone: tz,
         ...(page.form_before ? { before: { values: beforeValues ?? {} } } : {}),
         ...(page.form_after ? { after: { values: afterValues ?? {} } } : {}),
         page_url: pageUrl(),
@@ -395,10 +479,15 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     } catch (err) {
       const e = err as PublicApiError;
       if (e.status === 409) {
-        notice = 'That time was just taken. Pick another.';
+        // group pages: the same email already holds a seat at this time
+        notice = e.message.startsWith('You are already booked') ? e.message : 'That time was just taken. Pick another.';
         chosen = null;
         void showPicker();
         return;
+      }
+      if (e.field === 'guests') {
+        showGuestError(e.message);
+        throw new Error('Please check the guest email addresses.');
       }
       if (e.form === 'before' && page.form_before) {
         notice = e.message;

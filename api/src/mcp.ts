@@ -43,6 +43,8 @@ import {
 } from './integrations.js';
 import { describeCreateForm, listConfig } from './native-ui.js';
 import { approvalNextStep } from './approval.js';
+import { assignRecord, loadRotation, rotationId } from './rotations/service.js';
+import { rotationOps, rotationsForPicker } from './rotations/routes.js';
 import { clientRequestIdArg, once } from './request-ids.js';
 import {
   deleteUserMenu, HOTBAR_MAX, isAdmin, listMenus, loadFormsSettings, loadTheme, saveDefaultMenu, saveEmbedDomains, saveGroupMenu, saveUserMenuAsAdmin, THEME_KEYS,
@@ -321,6 +323,138 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     await withTx({ principal: p, source: 'mcp' }, (c) => updateRecord(c, obj, p, id, properties));
     await drainCalcQueue();
     return getRecord(pool, obj, p, id);
+  }));
+
+  server.registerTool('list_owner_rotations', {
+    title: 'List owner rotations',
+    description: 'The CRM\'s owner rotations (round robins, managed in Settings > Owner rotations): id and name. Use assign_with_owner_rotation to give a record the next owner from one. With the Owner rotations permission you can also read and manage them: get_owner_rotation, create_owner_rotation, update_owner_rotation, archive_owner_rotation, add_owner_rotation_member, update_owner_rotation_member, remove_owner_rotation_member, get_owner_rotation_log, get_owner_rotation_report.',
+    annotations: { readOnlyHint: true }
+  }, async () => run(() => rotationsForPicker(pool)));
+
+  // managing rotations: the Owner rotations role permission (rotationOps checks it)
+  const rotationIdArg = z.string().describe('From list_owner_rotations');
+  server.registerTool('get_owner_rotation', {
+    title: 'Get owner rotation',
+    description: 'One owner rotation: mode (in_order, or weighted = by percentage), paused, skip_if_owned, who is next, its members (member id, user_id, name, on/off, time off, boost, share in percent) and counts. Needs the Owner rotations permission.',
+    inputSchema: z.object({ rotation_id: rotationIdArg }),
+    annotations: { readOnlyHint: true }
+  }, async ({ rotation_id }) => run(() => rotationOps.get(p, rotation_id)));
+
+  server.registerTool('create_owner_rotation', {
+    title: 'Create owner rotation',
+    description: 'Creates an owner rotation (round robin that gives new records an owner in turn). mode: in_order (default) or weighted (by percentage, set shares with update_owner_rotation). Add people with add_owner_rotation_member. Needs the Owner rotations permission; confirm with the user first.',
+    inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
+      name: z.string(),
+      mode: z.enum(['in_order', 'weighted']).optional(),
+      skip_if_owned: z.boolean().optional().describe('Leave records that already have an owner alone (default true)')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: writeChallenge
+  }, async ({ client_request_id, ...b }) => run(() => once(p, 'create_owner_rotation', client_request_id, () => rotationOps.create(p, b))));
+
+  server.registerTool('update_owner_rotation', {
+    title: 'Update owner rotation',
+    description: 'Changes an owner rotation; only what is given changes. paused with paused_until (ISO time, null = until resumed) and pause_reason. shares: every member id to a whole percent, adding up to 100 (weighted rotations). order: every member id, first to last (in_order rotations). Needs the Owner rotations permission; confirm with the user first.',
+    inputSchema: z.object({
+      rotation_id: rotationIdArg,
+      name: z.string().optional(),
+      mode: z.enum(['in_order', 'weighted']).optional(),
+      skip_if_owned: z.boolean().optional(),
+      paused: z.boolean().optional(),
+      paused_until: z.string().nullable().optional(),
+      pause_reason: z.string().nullable().optional(),
+      shares: z.record(z.string(), z.number()).optional().describe('Member id to percent'),
+      order: z.array(z.number()).optional().describe('Member ids in their new order')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: writeChallenge
+  }, async ({ rotation_id, shares, order, ...b }) => run(async () => {
+    let out = await rotationOps.update(p, rotation_id, b);
+    if (shares) out = await rotationOps.setShares(p, rotation_id, shares);
+    if (order) out = await rotationOps.setOrder(p, rotation_id, order);
+    return out;
+  }));
+
+  server.registerTool('archive_owner_rotation', {
+    title: 'Archive owner rotation',
+    description: 'Archives an owner rotation: it stops taking records, its log is kept, and booking pages using it stop taking bookings. Needs the Owner rotations permission; confirm with the user first.',
+    inputSchema: z.object({ rotation_id: rotationIdArg }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: writeChallenge
+  }, async ({ rotation_id }) => run(() => rotationOps.archive(p, rotation_id)));
+
+  server.registerTool('add_owner_rotation_member', {
+    title: 'Add person to owner rotation',
+    description: 'Adds a CRM user to an owner rotation (last in order; share 0 in a weighted rotation until shares are set). Find the user id with find_users_to_mention or search_records on users. Needs the Owner rotations permission.',
+    inputSchema: z.object({ rotation_id: rotationIdArg, user_id: z.string() }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: writeChallenge
+  }, async ({ rotation_id, user_id }) => run(() => rotationOps.addMember(p, rotation_id, user_id)));
+
+  server.registerTool('update_owner_rotation_member', {
+    title: 'Update person in owner rotation',
+    description: 'Changes one person in an owner rotation (member_id from get_owner_rotation): enabled (takes records or is skipped), time off with away_from / away_until (ISO times, null clears) and away_reason, boost_remaining (0 to 100: gets the next N records first). Needs the Owner rotations permission.',
+    inputSchema: z.object({
+      rotation_id: rotationIdArg,
+      member_id: z.string(),
+      enabled: z.boolean().optional(),
+      away_from: z.string().nullable().optional(),
+      away_until: z.string().nullable().optional(),
+      away_reason: z.string().nullable().optional(),
+      boost_remaining: z.number().optional()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    scopeChallenge: writeChallenge
+  }, async ({ rotation_id, member_id, ...b }) => run(() => rotationOps.updateMember(p, rotation_id, member_id, b)));
+
+  server.registerTool('remove_owner_rotation_member', {
+    title: 'Remove person from owner rotation',
+    description: 'Takes a person out of an owner rotation (their past records stay in the log). Needs the Owner rotations permission; confirm with the user first.',
+    inputSchema: z.object({ rotation_id: rotationIdArg, member_id: z.string() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    scopeChallenge: writeChallenge
+  }, async ({ rotation_id, member_id }) => run(() => rotationOps.removeMember(p, rotation_id, member_id)));
+
+  server.registerTool('get_owner_rotation_log', {
+    title: 'Owner rotation log',
+    description: 'Every record that reached an owner rotation, newest first: when, the record, result (assigned, kept_existing, paused, no_members, error), owner, source, who was skipped and why, and owner_changed when someone gave the record another owner afterwards. status filters (also "changed"); before (a log id) pages back. Needs the Owner rotations permission.',
+    inputSchema: z.object({
+      rotation_id: rotationIdArg,
+      status: z.enum(['assigned', 'kept_existing', 'paused', 'no_members', 'error', 'changed']).optional(),
+      user_id: z.string().optional().describe('Only records given to this user'),
+      before: z.number().optional(),
+      limit: z.number().optional().describe('1 to 200, default 50')
+    }),
+    annotations: { readOnlyHint: true }
+  }, async ({ rotation_id, status, user_id, before, limit }) => run(() => rotationOps.log(p, rotation_id, {
+    status, user: user_id, before: before === undefined ? undefined : String(before), limit: limit === undefined ? undefined : String(limit)
+  })));
+
+  server.registerTool('get_owner_rotation_report', {
+    title: 'Owner rotation report',
+    description: 'Per person over a period (default the last 30 days): records assigned, share, target share (weighted rotations), from a boost, owner changed afterwards; plus counts by result and by day. Needs the Owner rotations permission.',
+    inputSchema: z.object({ rotation_id: rotationIdArg, from: z.string().optional(), to: z.string().optional() }),
+    annotations: { readOnlyHint: true }
+  }, async ({ rotation_id, from, to }) => run(() => rotationOps.report(p, rotation_id, { from, to })));
+
+  server.registerTool('assign_with_owner_rotation', {
+    title: 'Assign owner with an owner rotation',
+    description: 'Gives a record (default a contact) the next owner from an owner rotation, the same as a new lead or record from another source: in order (next person in the list) or by percentage (a random draw by each person\'s share), depending on the rotation; it skips people who are off or on time off, honours boosts and pause, and by default leaves records that already have an owner alone (status kept_existing). Every call is logged on the rotation and, when assigned, moves the rotation on, so only call it when the user wants the record assigned.',
+    inputSchema: z.object({
+      rotation_id: z.string().describe('From list_owner_rotations'),
+      object: objectArg.optional().describe('Object api_name with an owner, default contacts'),
+      record_id: z.string()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: writeChallenge
+  }, async ({ rotation_id, object, record_id }) => run(async () => {
+    requireScope(p, 'write');
+    const id = rotationId(rotation_id);
+    await loadRotation(pool, id);
+    const out = await withTx({ principal: p, source: 'mcp' }, (c) => assignRecord(c, p, id, object ?? 'contacts', record_id, 'mcp'));
+    await drainCalcQueue();
+    return out;
   }));
 
   server.registerTool('associate_records', {

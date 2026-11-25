@@ -345,6 +345,10 @@ export async function sendStatus(p: Principal, emailId: string) {
 // ---- worker ----------------------------------------------------------------------------
 
 let wake: () => void = () => undefined;
+// sends anything due now (callers that queued scheduled sends in their own transaction)
+export function wakeMailWorker(): void {
+  wake();
+}
 
 // Every 30 seconds (and at once when an email is scheduled): sends what is
 // due, a few at a time. At start, sends left "sending" by a stopped API are

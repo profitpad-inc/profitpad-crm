@@ -94,3 +94,12 @@ test('optionChangeByEditor: editors manage choices only on user-add dropdowns, l
   assert.match(optionChangeByEditor({ ...folder, option_list: { id: '1', api_name: 'x', label: 'X' } }, ['label'])!, /option list/);
   assert.match(optionChangeByEditor({ ...folder, type: 'text' }, ['label'])!, /not a dropdown/);
 });
+
+test('owner rotations: a permission apps can be given, unlike Users', () => {
+  const app = { keyId: null, name: 'Claude', scopes: new Set(['read', 'write']), userId: '0000000001', actor: 'user:0000000001',
+    oauth: { clientId: 'c', clientName: 'Claude', grantId: 1, expiresAt: new Date() },
+    permissions: { objects: new Map(), propertyAccess: new Map(), ownScope: 'own', granted: new Set(['owner_rotations', 'users']), teamUserIds: [], sharingRules: [], knowledgeAccess: 'none' }
+  } as unknown as Principal;
+  assert.equal(hasPermission(app, 'owner_rotations'), true);
+  assert.equal(hasPermission(app, 'users'), false);
+});

@@ -21,7 +21,7 @@ export interface ObjectPermission {
 
 // What a role may do besides objects (auth.roles.permissions). Super Admins
 // can do all of it.
-export const ROLE_PERMISSIONS = ['api_keys', 'integrations', 'users', 'roles', 'import', 'export', 'properties', 'security_log'] as const;
+export const ROLE_PERMISSIONS = ['api_keys', 'integrations', 'users', 'roles', 'import', 'export', 'properties', 'security_log', 'owner_rotations'] as const;
 export type RolePermission = (typeof ROLE_PERMISSIONS)[number];
 
 // A role's sharing rule (migration 0012): records of `anchor` matching
@@ -436,7 +436,7 @@ const ONLY_FOR_ADMIN_APPS = new Set<RolePermission>(['integrations', 'properties
 
 const PERMISSION_LABELS: Record<RolePermission, string> = {
   api_keys: 'API keys', integrations: 'Integrations', users: 'Users', roles: 'Roles',
-  import: 'Import', export: 'Export', properties: 'Properties', security_log: 'Security log'
+  import: 'Import', export: 'Export', properties: 'Properties', security_log: 'Security log', owner_rotations: 'Owner rotations'
 };
 
 // Whether the caller has a role permission. Super Admins have them all.

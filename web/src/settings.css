@@ -445,3 +445,38 @@
 /* Settings → Mailboxes, poll log modal */
 .sync-log-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
 .sync-log-filters > :first-child { min-width: 240px; }
+
+/* Settings -> Owner rotations (pages/OwnerRotationSettings.tsx) */
+.rot-tabs { align-self: flex-start; margin: 4px 0; }
+.rot-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.rot-grow { flex: 1 1 220px; min-width: 0; }
+.rot-members { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.rot-members:empty { display: none; }
+.rot-member + .rot-member { border-top: 1px solid var(--hairline); }
+.rot-member-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; flex-wrap: wrap; }
+.rot-pos { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; background: var(--surface); color: var(--muted-text); }
+.rot-member-main { flex: 1 1 220px; min-width: 0; }
+.rot-member-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+.rot-member-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rot-member.muted-row .rot-member-name { color: var(--muted-text); }
+.rot-member-edit { display: flex; flex-direction: column; gap: 12px; padding: 4px 14px 14px 50px; }
+.rot-member-edit label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.rot-table { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.rot-table .grid td { vertical-align: top; }
+.rot-log td.rot-details { white-space: normal; min-width: 220px; max-width: 420px; }
+.rot-log td .muted.small { white-space: normal; }
+.rot-log .status-pill + .status-pill { margin-left: 4px; }
+.rot-totals { margin: 0 0 10px; font-size: 13px; }
+.rot-share { display: flex; align-items: center; gap: 8px; }
+.rot-share-bar { width: 120px; height: 8px; border-radius: 999px; background: var(--surface); overflow: hidden; }
+.rot-share-bar > span { display: block; height: 100%; background: var(--primary); }
+.rot-code { margin: 10px 0 6px; padding: 12px 14px; border-radius: var(--radius); background: var(--surface); font-size: 12px; overflow-x: auto; white-space: pre; }
+@media (max-width: 767px) {
+  .rot-member-edit { padding-left: 14px; }
+}
+.rot-mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.rot-warn { color: var(--danger); }
+.rot-share-input { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.rot-share-input input { width: 64px; text-align: right; }
+.rot-shares-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }

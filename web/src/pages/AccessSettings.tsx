@@ -94,7 +94,8 @@ const ROLE_PERMISSIONS: { key: RolePermission; label: string; hint: string }[] =
   { key: 'export', label: 'Export', hint: 'Export records it can read to CSV or Excel.' },
   { key: 'integrations', label: 'Integrations', hint: 'Embed domains, view integrations, webhooks, mailboxes, meetings, notification emails, payments, email, card scanner and address autocomplete.' },
   { key: 'api_keys', label: 'API keys', hint: 'Create, rotate and revoke API keys.' },
-  { key: 'security_log', label: 'Security log', hint: 'See sign-ins, key and role changes, and exports.' }
+  { key: 'security_log', label: 'Security log', hint: 'See sign-ins, key and role changes, and exports.' },
+  { key: 'owner_rotations', label: 'Owner rotations', hint: 'Create and change owner rotations (who gets new records, time off, boosts, shares, pause) and see their log and report. Connected apps such as Claude can be given this one.' }
 ];
 
 // header checkbox that ticks or clears a whole column; shows a dash when only some rows are ticked

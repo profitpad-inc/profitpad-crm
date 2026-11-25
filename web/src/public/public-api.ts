@@ -112,6 +112,10 @@ export interface PublicBookingPage {
   timezone: string;
   location_type: 'google_meet' | 'teams' | 'zoom' | 'phone' | 'in_person' | 'custom' | null;
   max_days_ahead: number;
+  // how many guests the visitor may add to the invite (0: none)
+  max_guests?: number;
+  // visitors per time (group meetings above 1)
+  seats?: number;
   form_before: Omit<PublicForm, 'theme' | 'description'> | null;
   form_after: Omit<PublicForm, 'theme' | 'description'> | null;
   theme: Record<string, string>;
@@ -176,19 +180,19 @@ export function publicApi(base: string) {
       call<{ ok: true; message: string }>('POST', `/forms/${encodeURIComponent(key)}/submissions`, body),
     booking: (key: string) => call<PublicBookingPage>('GET', `/booking/${encodeURIComponent(key)}`),
     bookingSlots: (key: string, from: Date, to: Date, duration: number) =>
-      call<{ slots: string[]; duration_minutes: number }>('GET',
+      call<{ slots: string[]; duration_minutes: number; seats_left?: Record<string, number> }>('GET',
         `/booking/${encodeURIComponent(key)}/slots?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&duration=${duration}`),
     bookingBefore: (key: string, values: Record<string, unknown>) => call<{ ok: true }>('POST', `/booking/${encodeURIComponent(key)}/before`, { values }),
     bookingPhone: (key: string, number: string) => call<PhoneResult>('POST', `/booking/${encodeURIComponent(key)}/phone`, { number }),
     book: (key: string, body: {
-      start: string; duration: number; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; visitor_id?: string; _hp: string; _elapsed: number;
+      start: string; duration: number; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; guests?: string[]; timezone?: string; page_url: string; visitor_id?: string; _hp: string; _elapsed: number;
     }) => call<BookingResult>('POST', `/booking/${encodeURIComponent(key)}/book`, body),
     // the visitor's manage link: /p/book/#manage/<key>
     manage: (mkey: string) =>
       call<{ meeting: ManagedMeeting; page: Omit<PublicBookingPage, 'theme'> & { location_details: string | null }; theme: Record<string, string> }>(
         'GET', `/booking/manage/${encodeURIComponent(mkey)}`),
     manageSlots: (mkey: string, from: Date, to: Date, duration: number) =>
-      call<{ slots: string[]; duration_minutes: number }>('GET',
+      call<{ slots: string[]; duration_minutes: number; seats_left?: Record<string, number> }>('GET',
         `/booking/manage/${encodeURIComponent(mkey)}/slots?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&duration=${duration}`),
     cancelMeeting: (mkey: string, reason: string) => call<{ status: string }>('POST', `/booking/manage/${encodeURIComponent(mkey)}/cancel`, { reason }),
     rescheduleMeeting: (mkey: string, start: string, duration: number) =>

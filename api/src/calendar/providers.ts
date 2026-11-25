@@ -91,6 +91,8 @@ export interface NewEvent {
   start: Date;
   end: Date;
   attendee: { email: string; name: string | null };
+  // extra people the visitor invited (email addresses), on the invite too
+  guests?: string[];
   location: string | null;
   // google_meet only works on Google calendars, teams only on Microsoft
   online: 'google_meet' | 'teams' | null;
@@ -276,7 +278,10 @@ export async function createEvent(conn: Connection, ev: NewEvent): Promise<{ id:
         description: ev.description,
         start: { dateTime: ev.start.toISOString() },
         end: { dateTime: ev.end.toISOString() },
-        attendees: [{ email: ev.attendee.email, ...(ev.attendee.name ? { displayName: ev.attendee.name } : {}) }],
+        attendees: [
+          { email: ev.attendee.email, ...(ev.attendee.name ? { displayName: ev.attendee.name } : {}) },
+          ...(ev.guests ?? []).map((email) => ({ email }))
+        ],
         ...(ev.location ? { location: ev.location } : {}),
         ...(meet ? { conferenceData: { createRequest: { requestId: ev.requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } } } : {})
       }
@@ -291,7 +296,10 @@ export async function createEvent(conn: Connection, ev: NewEvent): Promise<{ id:
     body: { contentType: 'text', content: ev.description },
     start: { dateTime: graphDateTime(ev.start), timeZone: 'UTC' },
     end: { dateTime: graphDateTime(ev.end), timeZone: 'UTC' },
-    attendees: [{ emailAddress: { address: ev.attendee.email, ...(ev.attendee.name ? { name: ev.attendee.name } : {}) }, type: 'required' }],
+    attendees: [
+      { emailAddress: { address: ev.attendee.email, ...(ev.attendee.name ? { name: ev.attendee.name } : {}) }, type: 'required' },
+      ...(ev.guests ?? []).map((address) => ({ emailAddress: { address }, type: 'required' }))
+    ],
     ...(ev.location ? { location: { displayName: ev.location } } : {}),
     ...(teams ? { isOnlineMeeting: true, onlineMeetingProvider: 'teamsForBusiness' } : {}),
     transactionId: ev.requestId
@@ -320,6 +328,53 @@ export async function moveEvent(conn: Connection, calendarId: string | null, eve
       end: { dateTime: graphDateTime(end), timeZone: 'UTC' }
     });
   }
+}
+
+// Group booking pages: adds people to an existing event's invite, or takes
+// them off it. Both providers take the whole attendee list, so the event is
+// read first (the caller holds the host's booking lock).
+interface GoogleAttendee { email: string; displayName?: string; responseStatus?: string; organizer?: boolean; self?: boolean }
+interface GraphAttendee { emailAddress: { address: string; name?: string }; type?: string; status?: unknown }
+
+async function editAttendees(
+  conn: Connection, calendarId: string | null, eventId: string,
+  change: (list: { email: string; name: string | null }[]) => { email: string; name: string | null }[]
+): Promise<void> {
+  if (conn.provider === 'google') {
+    const path = `/calendars/${enc(calendarId ?? 'primary')}/events/${enc(eventId)}`;
+    const ev = await call<{ attendees?: GoogleAttendee[] }>(conn, 'GET', path);
+    const old = ev.attendees ?? [];
+    const next = change(old.map((a) => ({ email: a.email.toLowerCase(), name: a.displayName ?? null })));
+    // keep each remaining attendee's own entry (response, organizer flag)
+    const byEmail = new Map(old.map((a) => [a.email.toLowerCase(), a]));
+    await call(conn, 'PATCH', `${path}?sendUpdates=all`, {
+      attendees: next.map((p) => byEmail.get(p.email) ?? { email: p.email, ...(p.name ? { displayName: p.name } : {}) })
+    });
+    return;
+  }
+  const path = `${me(conn)}/events/${enc(eventId)}`;
+  const ev = await call<{ attendees?: GraphAttendee[] }>(conn, 'GET', `${path}?$select=attendees`);
+  const old = ev.attendees ?? [];
+  const next = change(old.map((a) => ({ email: a.emailAddress.address.toLowerCase(), name: a.emailAddress.name ?? null })));
+  const byEmail = new Map(old.map((a) => [a.emailAddress.address.toLowerCase(), a]));
+  await call(conn, 'PATCH', path, {
+    attendees: next.map((p) => {
+      const was = byEmail.get(p.email);
+      return was ? { emailAddress: was.emailAddress, type: was.type ?? 'required' } : { emailAddress: { address: p.email, ...(p.name ? { name: p.name } : {}) }, type: 'required' };
+    })
+  });
+}
+
+export async function addAttendees(conn: Connection, calendarId: string | null, eventId: string, people: { email: string; name: string | null }[]): Promise<void> {
+  await editAttendees(conn, calendarId, eventId, (list) => {
+    const have = new Set(list.map((p) => p.email));
+    return [...list, ...people.map((p) => ({ email: p.email.toLowerCase(), name: p.name })).filter((p) => !have.has(p.email) && have.add(p.email))];
+  });
+}
+
+export async function removeAttendees(conn: Connection, calendarId: string | null, eventId: string, emails: string[]): Promise<void> {
+  const gone = new Set(emails.map((e) => e.toLowerCase()));
+  await editAttendees(conn, calendarId, eventId, (list) => list.filter((p) => !gone.has(p.email)));
 }
 
 // Cancels an event; the provider sends the attendee a cancellation (Graph's
