@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronUp, SlidersHorizontal } from 'lucide-react';
 import { api, API_BASE, ApiError, getSchema, type ObjectDef } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
@@ -209,6 +210,8 @@ export function CustomView() {
   const latest = useRef({ slug, params, draft, view });
   latest.current = { slug, params, draft, view };
   const menu = useAddToMenu(view?.status === 'published' ? view.slug : null);
+  // admins: the bar always shows on a draft, and on a published view only once they open it
+  const [barOpen, setBarOpen] = useState(false);
 
   useEffect(() => {
     setView(null);
@@ -638,7 +641,12 @@ export function CustomView() {
   return (
     <>
       <div className="custom-view">
-        {view?.can_edit && (
+        {view?.can_edit && !view.draft && !barOpen && (
+          <button className="custom-view-bar-show" title="Show view tools" aria-label="Show view tools" onClick={() => setBarOpen(true)}>
+            <SlidersHorizontal size={14} />
+          </button>
+        )}
+        {view?.can_edit && (view.draft || barOpen) && (
           <div className="custom-view-bar">
             <span className="muted">{view.name}</span>
             {view.draft && <span className="pill">Draft</span>}
@@ -655,16 +663,17 @@ export function CustomView() {
             {view.status === 'published' && (
               <Link to={{ pathname: '/view/', search: draft ? '' : '?draft=1', hash: location.hash }}>{draft ? 'See published' : 'See draft'}</Link>
             )}
-            {!mobile && menu && (
-              menu.inMenu
-                ? <Link to="/settings/navigation">In menu</Link>
-                : <button className="link-btn" disabled={menu.busy} onClick={menu.add}>Add to menu</button>
-            )}
+            {!mobile && menu && <Link to="/settings/navigation">{menu.inMenu ? 'In menu' : 'Add to menu'}</Link>}
             {!mobile && <Link to={`/objects/views/${view.id}`}>Code</Link>}
+            {!view.draft && (
+              <button className="link-btn custom-view-bar-hide" title="Hide view tools" aria-label="Hide view tools" onClick={() => setBarOpen(false)}>
+                <ChevronUp size={16} />
+              </button>
+            )}
           </div>
         )}
         {!slug && <div className="page"><p className="muted">No view picked. Admins can see every view under <Link to="/objects/views">Views</Link>.</p></div>}
-        {(error ?? menu?.error) && <div className="page"><div className="error">{error ?? menu?.error}</div></div>}
+        {error && <div className="page"><div className="error">{error}</div></div>}
         {slug && !error && (!view || starting) && (
           <Loading className="view-loading muted" />
         )}

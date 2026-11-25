@@ -720,9 +720,13 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 }
 
 /* ---- Custom views (pages/CustomView.tsx) ---------------------------------- */
-.custom-view { display: flex; flex-direction: column; min-height: 100%; }
+.custom-view { position: relative; display: flex; flex-direction: column; min-height: 100%; }
 .custom-view-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 20px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .custom-view-bar .spacer { flex: 1; }
+.custom-view-bar-hide { display: inline-flex; align-items: center; color: var(--muted-text); }
+/* admins, published view: the closed bar is just this button in the top right */
+.custom-view-bar-show { position: absolute; top: 8px; right: 8px; z-index: 5; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--muted-text); opacity: 0.55; cursor: pointer; }
+.custom-view-bar-show:hover, .custom-view-bar-show:focus-visible { opacity: 1; color: var(--text); }
 @media (max-width: 767px) { .custom-view-bar { padding: 8px 12px; } }
 .custom-view-bar .pill { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--primary) 10%, var(--page-background)); color: var(--primary); }
 .view-integrations { display: flex; flex-direction: column; gap: 10px; }

@@ -186,15 +186,11 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
           </button>
           <Link className="btn small" to={{ pathname: '/view/', search: '?draft=1', hash: `#${code.slug}` }}>Open draft <ExternalLink size={12} /></Link>
           {code.status === 'published' && <Link className="btn small" to={{ pathname: '/view/', hash: `#${code.slug}` }}>Open <ExternalLink size={12} /></Link>}
-          {menu && (
-            menu.inMenu
-              ? <Link className="btn small" to="/settings/navigation">In menu</Link>
-              : <button className="btn small" disabled={menu.busy || code.status !== 'published'} title={code.status === 'published' ? undefined : 'Publish the view first'} onClick={menu.add}>Add to menu</button>
-          )}
+          {menu && <Link className="btn small" to="/settings/navigation">{menu.inMenu ? 'In menu' : 'Add to menu'}</Link>}
           {code.unpublished_changes && code.draft_source && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
         </div>
       </div>
-      {(error || iconPicker.error || menu?.error) && <div className="error">{error ?? iconPicker.error ?? menu?.error}</div>}
+      {(error || iconPicker.error) && <div className="error">{error ?? iconPicker.error}</div>}
       {iconPicker.picker}
       {/* one row on wide screens; on phones the version and the part are two rows */}
       <div className="view-code-tabs">
