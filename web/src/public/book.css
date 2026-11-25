@@ -70,7 +70,6 @@ button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary);
 .bk-part-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .bk-time { font: inherit; font-weight: 600; padding: 10px 8px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
   color: var(--primary); background: var(--page-background); cursor: pointer; white-space: nowrap; transition: background-color .15s, border-color .15s, color .15s; }
-.bk-seats { display: block; font-size: 12px; font-weight: 500; opacity: 0.75; margin-top: 2px; }
 .bk-time:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
 
 .bk-tz { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted-text); }

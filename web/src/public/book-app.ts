@@ -61,8 +61,6 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   // calendar: the month shown (in the visitor's zone) and its open times by day
   let month = { y: 0, m: 0 };
   let slotsByDay = new Map<string, string[]>();
-  // group pages: seats left at times someone already booked
-  let seatsLeft: Record<string, number> = {};
   let pickedDay: string | null = null;
   let loadingSlots = false;
   let slotError: string | null = null;
@@ -183,9 +181,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     slotsByDay = new Map();
     if (to > from) {
       try {
-        const res = manageKey ? await api.manageSlots(manageKey, from, to, duration) : await api.bookingSlots(key, from, to, duration);
-        const slots = res.slots;
-        seatsLeft = res.seats_left ?? {};
+        const { slots } = manageKey ? await api.manageSlots(manageKey, from, to, duration) : await api.bookingSlots(key, from, to, duration);
         for (const s of slots) {
           const k = dayKey(new Date(s));
           slotsByDay.set(k, [...(slotsByDay.get(k) ?? []), s]);
@@ -281,10 +277,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       ...parts.filter(([, list]) => list.length).map(([label, list]) => el('div', { class: 'bk-part', role: 'group', 'aria-label': label },
         el('p', { class: 'bk-part-title', 'aria-hidden': 'true' }, label),
         el('div', { class: 'bk-part-times' }, ...list.map((s) => {
-          const seats = page.seats ?? 1;
-          const left = seats > 1 ? (seatsLeft[s] ?? seats) : 0;
-          const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)),
-            left ? el('span', { class: 'bk-seats' }, `${left} ${left === 1 ? 'seat' : 'seats'} left`) : null);
+          const b = el('button', { class: 'bk-time', type: 'button' }, clock(new Date(s)));
           b.addEventListener('click', () => pick(s));
           return b;
         })))),
@@ -479,8 +472,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     } catch (err) {
       const e = err as PublicApiError;
       if (e.status === 409) {
-        // group pages: the same email already holds a seat at this time
-        notice = e.message.startsWith('You are already booked') ? e.message : 'That time was just taken. Pick another.';
+        notice = 'That time was just taken. Pick another.';
         chosen = null;
         void showPicker();
         return;

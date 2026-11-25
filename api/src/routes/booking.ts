@@ -18,8 +18,7 @@ import { readVisitorId } from '../page-views.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, summarize, type FormDefinition } from '../forms.js';
 import { allowedOrigins, MIN_FILL_MS, rateLimit, theme } from './public.js';
 import {
-  addAttendees, busyTimes, CalendarAuthError, cancelEvent, CONNECTION_COLUMNS, createEvent, deleteEvent, moveEvent, removeAttendees,
-  type Connection, type Interval
+  busyTimes, CalendarAuthError, cancelEvent, CONNECTION_COLUMNS, createEvent, deleteEvent, moveEvent, type Connection, type Interval
 } from '../calendar/providers.js';
 import { computeSlots, isTimeZone, localDate, readAvailability, type SlotRules } from '../calendar/slots.js';
 import { createZoomMeeting, deleteZoomMeeting, loadZoom, moveZoomMeeting, zoomReady } from '../calendar/zoom.js';
@@ -86,8 +85,8 @@ interface BookingPage {
   durations: number[];
   // how many guests the visitor may add to the invite (0: none)
   maxGuests: number;
-  // visitors per time (group meetings above 1; they share one event)
-  seats: number;
+  // group meetings: people who join every meeting with the host
+  coHosts: string[];
   // round robin: the owner rotation whose members host (instead of host)
   rotationId: string | null;
   // confirmation, reminders and a note to the visitor
@@ -156,8 +155,9 @@ function pageFromRow(r: Record<string, unknown>): BookingPage {
     hostName: text(r.host_name), rules, locationType: first(r.location_type), locationDetails: text(r.location_details),
     confirmationMessage: text(r.confirmation_message), formBeforeId: text(r.form_before_id), formAfterId: text(r.form_after_id),
     durations: readDurations(r.duration_options, rules?.durationMinutes ?? num(r.duration_minutes), false),
-    maxGuests: Math.max(0, Math.min(MAX_GUESTS, Math.floor(num(r.max_guests) ?? 0))),
-    seats: Math.max(1, Math.min(1000, Math.floor(num(r.seats) ?? 1))),
+    // empty: the most (20); 0 turns guests off
+    maxGuests: Math.max(0, Math.min(MAX_GUESTS, Math.floor(num(r.max_guests) ?? MAX_GUESTS))),
+    coHosts: (Array.isArray(r.co_hosts) ? (r.co_hosts as unknown[]) : []).filter((u): u is string => typeof u === 'string' && u !== first(r.host)),
     rotationId: typeof r.rotation_id === 'string' && /^\d{1,18}$/.test(r.rotation_id) ? r.rotation_id : null,
     emails: readEmailSettings(r.email_settings)
   };
@@ -207,10 +207,14 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
       for (const m of on) if ((await hostConnections(db, m.userId)).length) withCalendar++;
       if (!withCalendar) out.push(`Nobody switched on in the owner rotation "${rot.name}" has a connected calendar (Settings → Calendars).`);
     }
-    if (page.seats > 1) out.push('Group meetings (Seats per time above 1) cannot use an owner rotation.');
   } else if (!page.host) out.push('Pick a host.');
   else if (!(await hostConnections(db, page.host)).length) out.push(`${page.hostName ?? 'The host'} has no connected calendar (Settings → Calendars).`);
   if (!page.rules) out.push('Add a meeting length, a time zone and the available hours.');
+  for (const u of page.coHosts) {
+    if ((await hostConnections(db, u)).length) continue;
+    const { rows } = await db.query('select name from crm.pc_0000 where pc_0000_id = $1', [u]);
+    out.push(`Co-host ${rows[0]?.name ?? u} has no connected calendar (Settings → Calendars).`);
+  }
   if (page.locationType === 'zoom' && !zoomReady(await loadZoom())) out.push('Zoom is not connected (Settings → Meetings).');
   if (!page.formBeforeId && !page.formAfterId) out.push('Pick a form to ask before or after the time.');
   if (page.formBeforeId && page.formBeforeId === page.formAfterId) out.push('The forms before and after the time must be different.');
@@ -281,8 +285,8 @@ onWrite('booking_pages', async (client, properties, existing) => {
 const busyCache = new Map<string, { at: number; busy: Interval[] }>();
 const BUSY_TTL = 60_000;
 
-// Busy times for the host: every active connected calendar, plus meetings in
-// the CRM they own that are still scheduled.
+// Busy times for one person: every active connected calendar, plus meetings in
+// the CRM they own or co-host that are still scheduled.
 async function hostBusy(db: Db, host: string, from: Date, to: Date, fresh: boolean): Promise<Interval[]> {
   const cacheKey = `${host}|${from.toISOString()}|${to.toISOString()}`;
   const cached = busyCache.get(cacheKey);
@@ -304,7 +308,7 @@ async function hostBusy(db: Db, host: string, from: Date, to: Date, fresh: boole
   }
   const { rows } = await db.query(
     `select started_at, coalesce(ended_at, started_at + make_interval(secs => coalesce(duration_seconds, 1800))) as ended_at
-     from crm.pc_0030 where owner @> array[$1]::text[] and status @> '{scheduled}' and record_status = 'active'
+     from crm.pc_0030 where (owner @> array[$1]::text[] or co_hosts @> array[$1]::text[]) and status @> '{scheduled}' and record_status = 'active'
        and started_at < $3 and coalesce(ended_at, started_at + interval '1 day') > $2`,
     [host, from, to]
   );
@@ -320,17 +324,13 @@ async function bookedPerDay(db: Db, page: BookingPage, from: Date, to: Date, exc
   const out = new Map<string, number>();
   if (!page.rules?.dailyLimit) return out;
   const { rows } = await db.query(
-    `select c.started_at, coalesce(c.calendar_event_id, c.pc_0030_id) as ev from crm.associations_both a join crm.pc_0030 c on c.pc_0030_id = a.other_record_id
+    `select c.started_at from crm.associations_both a join crm.pc_0030 c on c.pc_0030_id = a.other_record_id
      where a.object_type_id = 'pc_0054' and a.record_id = $1 and a.other_object_type_id = 'pc_0030'
        and c.record_status = 'active' and c.status @> '{scheduled}' and c.started_at >= $2::timestamptz - interval '1 day' and c.started_at < $3::timestamptz + interval '1 day'
        and c.pc_0030_id <> $4`,
     [page.id, from, to, excludeCall]
   );
-  // a group meeting's visitors share one event, which counts once
-  const seen = new Set<string>();
   for (const r of rows) {
-    if (seen.has(r.ev)) continue;
-    seen.add(r.ev);
     const d = localDate(page.rules.timezone, new Date(r.started_at).getTime());
     out.set(d, (out.get(d) ?? 0) + 1);
   }
@@ -364,88 +364,23 @@ function without(busy: Interval[], ex: Exclude | null): Interval[] {
   });
 }
 
+// Open times: when the host and every co-host are free (group meetings), by
+// the page's hours, buffers, notice and daily limit. Round robin pages: when
+// any rotation member (with the co-hosts) is free.
 async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh = false, exclude: Exclude | null = null): Promise<Date[]> {
-  return (await openTimes(db, page, from, to, fresh, exclude)).slots;
-}
-
-// ---- group meetings (Seats per time above 1) -----------------------------------------
-
-// One shared event of a group page and how many visitors booked into it.
-interface Group {
-  eventId: string;
-  calendarId: string | null;
-  connectionId: string | null;
-  provider: 'google' | 'microsoft' | null;
-  host: string | null;
-  meetingUrl: string | null;
-  platform: string | null;
-  zoomId: string | null;
-  start: Date;
-  end: Date;
-  count: number;
-}
-
-async function groupsOf(db: Db, page: BookingPage, from: Date, to: Date): Promise<Group[]> {
-  const { rows } = await db.query(
-    `select c.calendar_event_id as event_id, c.calendar_id, c.calendar_connection_id, c.calendar_provider, c.owner[1] as host,
-            c.meeting_url, c.meeting_platform[1] as platform, c.external_meeting_id, c.started_at, c.ended_at, count(*)::int as n
-     from crm.associations_both a join crm.pc_0030 c on c.pc_0030_id = a.other_record_id
-     where a.object_type_id = 'pc_0054' and a.record_id = $1 and a.other_object_type_id = 'pc_0030'
-       and c.record_status = 'active' and c.status @> '{scheduled}' and c.calendar_event_id is not null
-       and c.started_at >= $2 and c.started_at < $3 and c.ended_at is not null
-     group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10`,
-    [page.id, from, to]
-  );
-  return rows.map((r) => ({
-    eventId: r.event_id, calendarId: r.calendar_id, connectionId: r.calendar_connection_id, provider: r.calendar_provider, host: r.host,
-    meetingUrl: r.meeting_url, platform: r.platform, zoomId: r.platform === 'zoom' ? r.external_meeting_id : null,
-    start: new Date(r.started_at), end: new Date(r.ended_at), count: r.n
-  }));
-}
-
-// The group a visitor joins at this exact time, if it has seats left.
-async function groupAt(db: Db, page: BookingPage, start: Date, end: Date, skipEvent: string | null = null): Promise<Group | null> {
-  if (page.seats <= 1) return null;
-  const found = await groupsOf(db, page, start, new Date(start.getTime() + 1));
-  return found.find((g) => g.end.getTime() === end.getTime() && g.count < page.seats && g.eventId !== skipEvent) ?? null;
-}
-
-interface OpenTimes {
-  slots: Date[];
-  // group pages: seats left at times someone already booked (ms -> seats)
-  seatsLeft: Map<number, number>;
-}
-
-// Open times: free times on the host's calendar, and on group pages also the
-// times of shared events that still have seats (their own time counts as
-// free for them, and they do not count again toward the daily limit).
-// skipEvent: the event the visitor is moving out of (not offered).
-async function openTimes(
-  db: Db, page: BookingPage, from: Date, to: Date, fresh = false, exclude: Exclude | null = null, skipEvent: string | null = null
-): Promise<OpenTimes> {
-  const seatsLeft = new Map<number, number>();
-  if (page.rotationId && page.rules) return { slots: await rotationSlots(db, page, from, to, fresh), seatsLeft };
-  if (!page.rules || !page.host) return { slots: [], seatsLeft };
+  if (page.rotationId && page.rules) return rotationSlots(db, page, from, to, fresh);
+  if (!page.rules || !page.host) return [];
   // buffers reach outside the window
   const pad = (page.rules.bufferBeforeMinutes + page.rules.bufferAfterMinutes + page.rules.durationMinutes) * 60000;
-  const busy = without(await hostBusy(db, page.host, new Date(from.getTime() - pad), new Date(to.getTime() + pad), fresh), exclude);
-  const perDay = await bookedPerDay(db, page, from, to, exclude?.callId);
-  const now = new Date();
-  const slots = computeSlots(page.rules, busy, perDay, now, from, to);
-  if (page.seats <= 1) return { slots, seatsLeft };
-  const length = page.rules.durationMinutes * 60000;
-  for (const g of await groupsOf(db, page, from, to)) {
-    if (g.eventId === skipEvent || g.count >= page.seats || g.end.getTime() - g.start.getTime() !== length) continue;
-    const day = localDate(page.rules.timezone, g.start.getTime());
-    const days = new Map(perDay);
-    if (days.has(day)) days.set(day, Math.max(0, days.get(day)! - 1));
-    const own = without(busy, { callId: '', start: g.start, end: g.end });
-    if (!computeSlots(page.rules, own, days, now, g.start, new Date(g.start.getTime() + 1)).some((x) => x.getTime() === g.start.getTime())) continue;
-    seatsLeft.set(g.start.getTime(), page.seats - g.count);
-    if (!slots.some((x) => x.getTime() === g.start.getTime())) slots.push(g.start);
-  }
-  slots.sort((a, b) => a.getTime() - b.getTime());
-  return { slots, seatsLeft };
+  const [bFrom, bTo] = [new Date(from.getTime() - pad), new Date(to.getTime() + pad)];
+  const people = hostsOf(page);
+  const busy = (await Promise.all(people.map((u) => hostBusy(db, u, bFrom, bTo, fresh)))).flat();
+  return computeSlots(page.rules, without(busy, exclude), await bookedPerDay(db, page, from, to, exclude?.callId), new Date(), from, to);
+}
+
+// Everyone who joins a meeting on this page: the host, then the co-hosts.
+function hostsOf(page: BookingPage): string[] {
+  return [...new Set([page.host, ...page.coHosts].filter((u): u is string => Boolean(u)))];
 }
 
 // ---- round robin (an owner rotation hosts the page) -------------------------------------
@@ -516,15 +451,16 @@ async function emailVisitor(
 ): Promise<void> {
   if (!m.email || !m.host) return;
   const { rows } = await client.query(
-    `select (select name from crm.pc_0000 where pc_0000_id = $2) as host_name,
-            (select a.other_record_id from crm.associations_both a
+    `select (select a.other_record_id from crm.associations_both a
              where a.object_type_id = 'pc_0030' and a.record_id = $1 and a.other_object_type_id = 'pc_0010' limit 1) as contact_id`,
-    [m.callId, m.host]
+    [m.callId]
   );
+  const { rows: people } = await client.query('select co_hosts from crm.pc_0030 where pc_0030_id = $1', [m.callId]);
   const tz = m.timezone && isTimeZone(m.timezone) ? m.timezone : page.rules?.timezone ?? 'UTC';
   await queueBookingEmails(client, BOOKING_PRINCIPAL, { callId: m.callId, contactId: rows[0]?.contact_id ?? null, host: m.host, to: m.email }, {
     pageName: page.name ?? 'Meeting',
-    hostName: rows[0]?.host_name ?? null,
+    // group meetings: "Chris and Ann"
+    hostName: await teamName(client, [m.host, ...((people[0]?.co_hosts as string[] | null) ?? [])]),
     attendeeName: m.name,
     start: when.start,
     end: when.end,
@@ -567,16 +503,6 @@ async function saveRotationPick(
     skipped: c.pick.skipped,
     boosted: c.pick.boosted
   });
-}
-
-// The invite text of a shared event: everyone on it reads it, so no one's
-// answers or cancel link go in (those stay on each visitor's meeting).
-function groupLines(page: BookingPage, zoomUrl: string | null): string[] {
-  return [
-    `Booked through ${page.name ?? 'a booking page'}.`,
-    ...(zoomUrl ? [`Join Zoom: ${zoomUrl}`] : []),
-    ...(page.locationDetails ? ['', page.locationDetails] : [])
-  ];
 }
 
 // Makes a booking's calendar event (and Zoom meeting). If the event cannot be
@@ -626,25 +552,29 @@ async function makeEvent(
   }
 }
 
-// Other visitors still booked into the same event, and their addresses (so
-// taking one visitor off the invite never takes off someone else).
-async function sharing(db: Db, m: Meeting): Promise<{ count: number; emails: Set<string> }> {
-  if (!m.eventId) return { count: 0, emails: new Set() };
-  const { rows } = await db.query(
-    `select attendee_email, attendees from crm.pc_0030
-     where calendar_event_id = $1 and calendar_provider is not distinct from $2 and pc_0030_id <> $3
-       and status @> '{scheduled}' and record_status = 'active'`,
-    [m.eventId, m.provider, m.id]
-  );
-  const emails = new Set<string>();
-  for (const r of rows) for (const e of peopleOf(r.attendee_email, r.attendees)) emails.add(e);
-  return { count: rows.length, emails };
+// Holds every person of a booking for the rest of the transaction, in a
+// fixed order so two bookings sharing people cannot deadlock.
+async function lockPeople(client: pg.PoolClient, users: string[]): Promise<void> {
+  for (const u of [...new Set(users)].sort()) await client.query("select pg_advisory_xact_lock(hashtext('booking:' || $1))", [u]);
 }
 
-// A meeting's visitor and guests: attendees (comma separated) or the visitor alone.
-function peopleOf(email: string | null, attendees: string | null): string[] {
-  const list = (attendees ?? '').split(',').map((x) => x.trim().toLowerCase()).filter((x) => x.includes('@'));
-  return list.length ? list : email ? [email.toLowerCase()] : [];
+// The calendar addresses of the co-hosts (the invite goes there).
+async function calendarEmails(db: Db, users: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const u of users) {
+    const email = (await hostConnections(db, u))[0]?.email?.toLowerCase();
+    if (email && !out.includes(email)) out.push(email);
+  }
+  return out;
+}
+
+// "Chris", "Chris and Ann", "Chris, Ann and Bob": who the visitor meets.
+async function teamName(db: Db, users: string[]): Promise<string | null> {
+  if (!users.length) return null;
+  const { rows } = await db.query('select pc_0000_id as id, name from crm.pc_0000 where pc_0000_id = any ($1)', [users]);
+  const names = users.map((u) => rows.find((r) => r.id === u)?.name).filter((n): n is string => Boolean(n));
+  if (names.length <= 1) return names[0] ?? null;
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 // ---- manage links (cancel and reschedule) -------------------------------------------
@@ -664,6 +594,8 @@ interface Meeting {
   attendeeEmail: string | null;
   attendees: string | null;
   attendeeTimezone: string | null;
+  // group meetings: the people who join with the host
+  coHosts: string[];
   meetingUrl: string | null;
   provider: 'google' | 'microsoft' | null;
   eventId: string | null;
@@ -678,7 +610,7 @@ async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> 
   if (!MANAGE_KEY_RE.test(key)) throw notFound('meeting not found');
   const { rows } = await db.query(
     `select c.pc_0030_id as id, c.status[1] as status, c.started_at, c.ended_at, c.duration_seconds, c.owner[1] as host, c.attendee_name,
-            c.attendee_email, c.attendees, c.attendee_timezone, c.meeting_url, c.calendar_provider, c.calendar_event_id, c.calendar_id, c.calendar_connection_id,
+            c.attendee_email, c.attendees, c.attendee_timezone, c.co_hosts, c.meeting_url, c.calendar_provider, c.calendar_event_id, c.calendar_id, c.calendar_connection_id,
             case when c.meeting_platform @> '{zoom}' then c.external_meeting_id end as zoom_id,
             (select a.other_record_id from crm.associations_both a
              where a.object_type_id = 'pc_0030' and a.record_id = c.pc_0030_id and a.other_object_type_id = 'pc_0054' limit 1) as page_id
@@ -690,7 +622,7 @@ async function loadMeeting(db: Db, key: string, lock = false): Promise<Meeting> 
   const start = new Date(r.started_at);
   return {
     id: r.id, status: r.status, start, end: r.ended_at ? new Date(r.ended_at) : new Date(start.getTime() + (Number(r.duration_seconds) || 1800) * 1000),
-    host: r.host, attendeeName: r.attendee_name, attendeeEmail: r.attendee_email, attendees: r.attendees, attendeeTimezone: r.attendee_timezone, meetingUrl: r.meeting_url, provider: r.calendar_provider, eventId: r.calendar_event_id,
+    host: r.host, attendeeName: r.attendee_name, attendeeEmail: r.attendee_email, attendees: r.attendees, attendeeTimezone: r.attendee_timezone, coHosts: Array.isArray(r.co_hosts) ? r.co_hosts : [], meetingUrl: r.meeting_url, provider: r.calendar_provider, eventId: r.calendar_event_id,
     calendarId: r.calendar_id, connectionId: r.calendar_connection_id, pageId: r.page_id,
     zoomId: r.zoom_id ?? null
   };
@@ -728,10 +660,6 @@ async function requireOrigin(origin: unknown): Promise<string> {
   return origin;
 }
 
-// group pages: seats left by time, for times someone already booked
-const seatsLeftOut = (open: OpenTimes): Record<string, number> =>
-  Object.fromEntries([...open.seatsLeft].map(([ms, n]) => [new Date(ms).toISOString(), n]));
-
 // six calendar weeks plus a day either side for time zones
 const MAX_RANGE_DAYS = 45;
 
@@ -760,15 +688,14 @@ export async function bookingRoutes(app: FastifyInstance) {
     return {
       name: page.name,
       description: page.description,
-      // round robin: the host is picked when the visitor books
-      host_name: page.rotationId ? null : page.hostName,
+      // round robin: the host is picked when the visitor books; group meetings name everyone
+      host_name: page.rotationId ? null : await teamName(pool, hostsOf(page)),
       duration_minutes: page.rules!.durationMinutes,
       durations: page.durations,
       timezone: page.rules!.timezone,
       location_type: page.locationType,
       max_days_ahead: page.rules!.maxDaysAhead,
       max_guests: page.maxGuests,
-      seats: page.seats,
       form_before: shown(before),
       form_after: shown(after),
       theme: await theme()
@@ -782,9 +709,9 @@ export async function bookingRoutes(app: FastifyInstance) {
     const to = req.query.to ? new Date(req.query.to) : new Date(from.getTime() + 7 * 86400000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) throw badRequest('from and to must be ISO times, from before to');
     if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * 86400000) throw badRequest(`at most ${MAX_RANGE_DAYS} days at a time`);
-    const open = await openTimes(pool, page, from, to);
+    const slots = await openSlots(pool, page, from, to);
     reply.header('cache-control', 'no-store');
-    return { slots: open.slots.map((s) => s.toISOString()), duration_minutes: page.rules!.durationMinutes, seats_left: seatsLeftOut(open) };
+    return { slots: slots.map((s) => s.toISOString()), duration_minutes: page.rules!.durationMinutes };
   });
 
   // Checks the before form's answers so the visitor sees mistakes before
@@ -852,35 +779,25 @@ export async function bookingRoutes(app: FastifyInstance) {
     // round robin pages pick the host inside the transaction
     let host = page.host ?? '';
     let choice: RotationChoice | null = null;
-    // undone if the CRM side fails: an event made, or people added to a group's event
+    // undone if the CRM side fails
     let created: { conn: Connection; calendarId: string | null; id: string; zoomId: string | null } | null = null;
-    let joined: { conn: Connection; calendarId: string | null; id: string; emails: string[] } | null = null;
     const manageKey = randomBytes(32).toString('base64url');
 
     try {
       const result = await withTx({ actor: BOOKING_PRINCIPAL.actor, source: 'booking_page' }, async (client: pg.PoolClient) => {
         const dayStart = new Date(start.getTime() - 86400000);
         const dayEnd = new Date(start.getTime() + 86400000);
-        // one booking per host at a time, so two visitors cannot take the same time
-        // (round robin: one per rotation while the host is picked, then the host)
-        let group: Group | null = null;
+        // one booking per person at a time (the host and every co-host), so two
+        // visitors cannot take the same time (round robin: one per rotation
+        // while the host is picked, then the people)
         if (page.rotationId) {
           await client.query("select pg_advisory_xact_lock(hashtext('rotation:' || $1))", [page.rotationId]);
         } else {
-          await client.query("select pg_advisory_xact_lock(hashtext('booking:' || $1))", [host]);
-          const open = await openTimes(client, page, dayStart, dayEnd, true);
-          if (!open.slots.some((s) => s.getTime() === start.getTime())) {
+          await lockPeople(client, hostsOf(page));
+          const open = await openSlots(client, page, dayStart, dayEnd, true);
+          if (!open.some((s) => s.getTime() === start.getTime())) {
             throw new ApiError(409, 'that time was just taken, pick another', 'slot_taken');
           }
-          // group pages: a time someone already booked is joined, not booked again
-          group = open.seatsLeft.has(start.getTime()) ? await groupAt(client, page, start, end) : null;
-        }
-        if (group) {
-          const { rows: mine } = await client.query(
-            `select 1 from crm.pc_0030 where calendar_event_id = $1 and lower(attendee_email) = $2 and status @> '{scheduled}' and record_status = 'active' limit 1`,
-            [group.eventId, attendee.email]
-          );
-          if (mine.length) throw new ApiError(409, 'You are already booked at this time.', 'already_booked');
         }
 
         let contact: string | null = null;
@@ -907,10 +824,10 @@ export async function bookingRoutes(app: FastifyInstance) {
           }
           choice = await chooseRotationHost(client, page, start, contactOwner);
           host = choice.host;
-          page = { ...page, host, rotationId: null };
-          await client.query("select pg_advisory_xact_lock(hashtext('booking:' || $1))", [host]);
-          const open = await openTimes(client, page, dayStart, dayEnd, true);
-          if (!open.slots.some((s) => s.getTime() === start.getTime())) throw new ApiError(409, 'that time was just taken, pick another', 'slot_taken');
+          page = { ...page, host, rotationId: null, coHosts: page.coHosts.filter((u) => u !== host) };
+          await lockPeople(client, hostsOf(page));
+          const open = await openSlots(client, page, dayStart, dayEnd, true);
+          if (!open.some((s) => s.getTime() === start.getTime())) throw new ApiError(409, 'that time was just taken, pick another', 'slot_taken');
         }
 
         const title = `${page.name ?? 'Meeting'}: ${attendee.name ?? attendee.email}`.slice(0, 200);
@@ -926,39 +843,17 @@ export async function bookingRoutes(app: FastifyInstance) {
           ...(link ? ['', `Need to reschedule or cancel? ${link}`] : [])
         ];
 
-        let conn: Connection;
-        let ev: { eventId: string; meetingUrl: string | null; platform: string | null; zoomId: string | null };
-        let calendarId: string | null;
-        if (group) {
-          const c = await meetingConnection(client, group);
-          if (!c) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
-          conn = c;
-          calendarId = group.calendarId;
-          const people = [{ email: attendee.email!, name: attendee.name }, ...guests.map((email) => ({ email, name: null }))];
-          try {
-            await addAttendees(conn, calendarId, group.eventId, people);
-          } catch (err) {
-            req.log.warn({ err }, 'booking: could not add the visitor to the group event');
-            throw new ApiError(503, 'the meeting could not be added to the calendar, try again in a minute', 'unavailable');
-          }
-          joined = { conn, calendarId, id: group.eventId, emails: people.map((p) => p.email) };
-          ev = { eventId: group.eventId, meetingUrl: group.meetingUrl, platform: group.platform, zoomId: group.zoomId };
-        } else {
-          const c = (await hostConnections(client, host))[0];
-          if (!c) throw new ApiError(503, 'this booking page is not taking bookings right now', 'unavailable');
-          conn = c;
-          calendarId = conn.write_calendar_id;
-          // a group's event is shared: its own title and text, the same for everyone
-          const shared = page.seats > 1;
-          ev = await makeEvent(req.log, conn, page, {
-            start, end,
-            title: shared ? (page.name ?? 'Meeting').slice(0, 200) : title,
-            lines: shared ? (z) => groupLines(page, z) : lines,
-            attendee: { email: attendee.email!, name: attendee.name },
-            guests
-          });
-          created = { conn, calendarId, id: ev.eventId, zoomId: ev.zoomId };
-        }
+        const conn = (await hostConnections(client, host))[0];
+        if (!conn) throw new ApiError(503, 'this booking page is not taking bookings right now', 'unavailable');
+        const calendarId = conn.write_calendar_id;
+        // group meetings: the co-hosts are invited to the host's event
+        const coHostEmails = await calendarEmails(client, page.coHosts);
+        const ev = await makeEvent(req.log, conn, page, {
+          start, end, title, lines,
+          attendee: { email: attendee.email!, name: attendee.name },
+          guests: [...new Set([...guests, ...coHostEmails])].filter((e) => e !== attendee.email)
+        });
+        created = { conn, calendarId, id: ev.eventId, zoomId: ev.zoomId };
 
         const calls = await getObject('calls');
         const callId = await createRecord(client, calls, BOOKING_PRINCIPAL, {
@@ -971,7 +866,8 @@ export async function bookingRoutes(app: FastifyInstance) {
           owner: host,
           attendee_name: attendee.name,
           attendee_email: attendee.email,
-          ...(guests.length ? { attendees: [attendee.email!, ...guests].join(', ') } : {}),
+          ...(guests.length || coHostEmails.length ? { attendees: [attendee.email!, ...guests, ...coHostEmails].join(', ') } : {}),
+          ...(page.coHosts.length ? { co_hosts: page.coHosts } : {}),
           meeting_url: ev.meetingUrl,
           meeting_platform: ev.platform,
           external_meeting_id: ev.zoomId,
@@ -992,7 +888,7 @@ export async function bookingRoutes(app: FastifyInstance) {
           { start, end }, ev.meetingUrl, ['confirmation', 'reminder']);
         return { meetingUrl: ev.meetingUrl };
       });
-      forgetBusy(host);
+      for (const u of hostsOf(page)) forgetBusy(u);
       wakeMailWorker();
       reply.code(201);
       return {
@@ -1013,10 +909,6 @@ export async function bookingRoutes(app: FastifyInstance) {
           const z = await loadZoom();
           if (zoomReady(z)) await deleteZoomMeeting(z, made.zoomId).catch((e) => req.log.error({ err: e, zoom: made.zoomId }, 'booking: could not delete orphaned Zoom meeting'));
         }
-      }
-      const j = joined as { conn: Connection; calendarId: string | null; id: string; emails: string[] } | null;
-      if (j) {
-        await removeAttendees(j.conn, j.calendarId, j.id, j.emails).catch((e) => req.log.error({ err: e, event: j.id }, 'booking: could not take the visitor off the group event'));
       }
       throw err;
     }
@@ -1058,7 +950,6 @@ export async function bookingRoutes(app: FastifyInstance) {
         location_type: page?.locationType ?? null,
         location_details: page?.locationDetails ?? null,
         max_days_ahead: page?.rules?.maxDaysAhead ?? 60,
-        seats: page?.seats ?? 1,
         form_before: null,
         form_after: null
       },
@@ -1074,18 +965,17 @@ export async function bookingRoutes(app: FastifyInstance) {
       const m = await loadMeeting(pool, req.params.mkey);
       const found = m.pageId ? await loadPage(pool, 'id', m.pageId) : null;
       // round robin: the meeting keeps its host
-      const base = found?.rotationId ? { ...found, host: m.host, rotationId: null } : found;
+      // the meeting keeps its people: its host (round robin too) and co-hosts
+      const base = found ? { ...found, host: m.host ?? found.host, coHosts: m.coHosts, rotationId: null } : null;
       if (!base || base.status !== 'published' || !base.rules || !base.host) throw notFound('this meeting cannot be moved online');
       const page = withDuration(base, req.query.duration);
       const from = req.query.from ? new Date(req.query.from) : new Date();
       const to = req.query.to ? new Date(req.query.to) : new Date(from.getTime() + 7 * 86400000);
       if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) throw badRequest('from and to must be ISO times, from before to');
       if (to.getTime() - from.getTime() > MAX_RANGE_DAYS * 86400000) throw badRequest(`at most ${MAX_RANGE_DAYS} days at a time`);
-      // alone in its event, the meeting's own time is free; in a group it is not
-      const alone = (await sharing(pool, m)).count === 0;
-      const open = await openTimes(pool, page, from, to, false, alone ? { callId: m.id, start: m.start, end: m.end } : null, m.eventId);
+      const slots = await openSlots(pool, page, from, to, false, { callId: m.id, start: m.start, end: m.end });
       reply.header('cache-control', 'no-store');
-      return { slots: open.slots.map((x) => x.toISOString()), duration_minutes: page.rules!.durationMinutes, seats_left: seatsLeftOut(open) };
+      return { slots: slots.map((x) => x.toISOString()), duration_minutes: page.rules!.durationMinutes };
     }
   );
 
@@ -1098,14 +988,11 @@ export async function bookingRoutes(app: FastifyInstance) {
     const host = await withTx({ actor: BOOKING_PRINCIPAL.actor, source: 'booking_page' }, async (client) => {
       const m = await loadMeeting(client, req.params.mkey, true);
       assertChangeable(m);
-      // a group's event stays for the others: this visitor (and their guests) leave it
-      const others = await sharing(client, m);
       if (m.eventId) {
         const conn = await meetingConnection(client, m);
         if (!conn) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
         try {
-          if (others.count) await removeAttendees(conn, m.calendarId, m.eventId, peopleOf(m.attendeeEmail, m.attendees).filter((e) => !others.emails.has(e)));
-          else await cancelEvent(conn, m.calendarId, m.eventId, reason);
+          await cancelEvent(conn, m.calendarId, m.eventId, reason);
         } catch (err) {
           req.log.warn({ err }, 'booking: calendar event could not be cancelled');
           throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
@@ -1120,13 +1007,13 @@ export async function bookingRoutes(app: FastifyInstance) {
         await emailVisitor(client, page, { callId: m.id, host: m.host, email: m.attendeeEmail, name: m.attendeeName, timezone: m.attendeeTimezone, manageKey: null },
           { start: m.start, end: m.end }, null, ['cancelled'], reason);
       }
-      if (m.zoomId && !others.count) {
+      if (m.zoomId) {
         const z = await loadZoom();
         if (zoomReady(z)) await deleteZoomMeeting(z, m.zoomId).catch((err) => req.log.warn({ err }, 'booking: Zoom meeting could not be deleted'));
       }
-      return m.host;
+      return [m.host, ...m.coHosts];
     });
-    if (host) forgetBusy(host);
+    for (const u of host) if (u) forgetBusy(u);
     wakeMailWorker();
     return { status: 'cancelled' };
   });
@@ -1144,131 +1031,48 @@ export async function bookingRoutes(app: FastifyInstance) {
       if (!start || Number.isNaN(start.getTime())) throw badRequest('start must be an ISO time');
       const first = await loadMeeting(pool, req.params.mkey);
       const found = first.pageId ? await loadPage(pool, 'id', first.pageId) : null;
-      // round robin: the meeting keeps its host
-      const base = found?.rotationId ? { ...found, host: first.host, rotationId: null } : found;
+      // the meeting keeps its people: its host (round robin too) and co-hosts
+      const base = found ? { ...found, host: first.host ?? found.host, coHosts: first.coHosts, rotationId: null } : null;
       if (!base || base.status !== 'published' || !base.rules || !base.host) throw new ApiError(409, 'this meeting cannot be moved online', 'conflict');
       const page = withDuration(base, b.duration);
       const end = new Date(start.getTime() + page.rules!.durationMinutes * 60000);
       const result = await withTx({ actor: BOOKING_PRINCIPAL.actor, source: 'booking_page' }, async (client) => {
-        await client.query("select pg_advisory_xact_lock(hashtext('booking:' || $1))", [page.host]);
+        await lockPeople(client, hostsOf(page));
         const m = await loadMeeting(client, req.params.mkey, true);
         assertChangeable(m);
-        // group pages: alone in its event, the event moves (or the visitor joins
-        // another group); sharing it, the visitor leaves for a new or joined event
-        const others = await sharing(client, m);
-        const alone = others.count === 0;
-        const open = await openTimes(client, page, new Date(start.getTime() - 86400000), new Date(start.getTime() + 86400000), true,
-          alone ? { callId: m.id, start: m.start, end: m.end } : null, m.eventId);
-        if (!open.slots.some((x) => x.getTime() === start.getTime())) throw new ApiError(409, 'that time was just taken, pick another', 'slot_taken');
-        const target = open.seatsLeft.has(start.getTime()) ? await groupAt(client, page, start, end, m.eventId) : null;
-        const calls = await getObject('calls');
-        const times = { started_at: start.toISOString(), ended_at: end.toISOString(), duration_seconds: page.rules!.durationMinutes * 60 };
-        // the visitor hears about the new time; reminders for the old one are taken back
-        const movedEmails = async (mm: Meeting, url: string | null) => {
-          await cancelReminders(client, [mm.id]);
-          await emailVisitor(client, page, {
-            callId: mm.id, host: mm.host ?? page.host!, email: mm.attendeeEmail, name: mm.attendeeName, timezone: mm.attendeeTimezone, manageKey: req.params.mkey
-          }, { start, end }, url, ['rescheduled', 'reminder']);
-        };
-
-        if (!target && alone) {
-          if (m.eventId) {
-            const conn = await meetingConnection(client, m);
-            if (!conn) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
-            try {
-              await moveEvent(conn, m.calendarId, m.eventId, start, end);
-            } catch (err) {
-              req.log.warn({ err }, 'booking: calendar event could not be moved');
-              throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
-            }
-          }
-          if (m.zoomId) {
-            const z = await loadZoom();
-            if (zoomReady(z)) {
-              await moveZoomMeeting(z, m.zoomId, start, page.rules!.durationMinutes).catch((err) => {
-                req.log.warn({ err }, 'booking: Zoom meeting could not be moved');
-                throw new ApiError(503, 'the meeting link could not be moved, try again in a minute', 'unavailable');
-              });
-            }
-          }
-          await updateRecord(client, calls, BOOKING_PRINCIPAL, m.id, times);
-          await movedEmails(m, m.meetingUrl);
-          return { meetingUrl: m.meetingUrl };
-        }
-
-        // into another event: join a group with seats, or a new event of its own
-        const mine = peopleOf(m.attendeeEmail, m.attendees).filter((e) => !others.emails.has(e));
-        if (!mine.length) throw new ApiError(409, 'this meeting cannot be moved online', 'conflict');
-        const oldConn = m.eventId ? await meetingConnection(client, m) : null;
-        if (m.eventId && !oldConn) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
-        let conn: Connection;
-        let calendarId: string | null;
-        let ev: { eventId: string; meetingUrl: string | null; platform: string | null; zoomId: string | null };
-        let undo: () => Promise<void>;
-        if (target) {
-          const c = await meetingConnection(client, target);
-          if (!c) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
-          conn = c;
-          calendarId = target.calendarId;
-          const people = mine.map((email) => ({ email, name: email === m.attendeeEmail?.toLowerCase() ? m.attendeeName : null }));
+        const open = await openSlots(client, page, new Date(start.getTime() - 86400000), new Date(start.getTime() + 86400000), true,
+          { callId: m.id, start: m.start, end: m.end });
+        if (!open.some((x) => x.getTime() === start.getTime())) throw new ApiError(409, 'that time was just taken, pick another', 'slot_taken');
+        if (m.eventId) {
+          const conn = await meetingConnection(client, m);
+          if (!conn) throw new ApiError(503, 'the calendar could not be reached, try again later', 'unavailable');
           try {
-            await addAttendees(conn, calendarId, target.eventId, people);
+            await moveEvent(conn, m.calendarId, m.eventId, start, end);
           } catch (err) {
-            req.log.warn({ err }, 'booking: could not add the visitor to the group event');
+            req.log.warn({ err }, 'booking: calendar event could not be moved');
             throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
           }
-          ev = { eventId: target.eventId, meetingUrl: target.meetingUrl, platform: target.platform, zoomId: target.zoomId };
-          undo = () => removeAttendees(c, target.calendarId, target.eventId, mine);
-        } else {
-          const c = (await hostConnections(client, page.host!))[0];
-          if (!c) throw new ApiError(503, 'this booking page is not taking bookings right now', 'unavailable');
-          conn = c;
-          calendarId = c.write_calendar_id;
-          const [visitor, ...guests] = mine;
-          const made = await makeEvent(req.log, c, page, {
-            start, end, title: (page.name ?? 'Meeting').slice(0, 200), lines: (z) => groupLines(page, z),
-            attendee: { email: visitor, name: m.attendeeName }, guests
-          });
-          ev = made;
-          undo = async () => {
-            await deleteEvent(c, c.write_calendar_id, made.eventId);
-            if (made.zoomId) {
-              const z = await loadZoom();
-              if (zoomReady(z)) await deleteZoomMeeting(z, made.zoomId);
-            }
-          };
         }
-        // leave the old event (cancel it when no one else is in it)
-        try {
-          if (m.eventId && oldConn) {
-            if (alone) await cancelEvent(oldConn, m.calendarId, m.eventId, null);
-            else await removeAttendees(oldConn, m.calendarId, m.eventId, mine);
-          }
-        } catch (err) {
-          req.log.warn({ err }, 'booking: could not leave the old event');
-          await undo().catch((e) => req.log.error({ err: e }, 'booking: could not undo the new event'));
-          throw new ApiError(503, 'the calendar could not be reached, try again in a minute', 'unavailable');
-        }
-        if (alone && m.zoomId) {
+        if (m.zoomId) {
           const z = await loadZoom();
-          if (zoomReady(z)) await deleteZoomMeeting(z, m.zoomId).catch((err) => req.log.warn({ err }, 'booking: Zoom meeting could not be deleted'));
+          if (zoomReady(z)) {
+            await moveZoomMeeting(z, m.zoomId, start, page.rules!.durationMinutes).catch((err) => {
+              req.log.warn({ err }, 'booking: Zoom meeting could not be moved');
+              throw new ApiError(503, 'the meeting link could not be moved, try again in a minute', 'unavailable');
+            });
+          }
         }
-        await updateRecord(client, calls, BOOKING_PRINCIPAL, m.id, {
-          ...times,
-          meeting_url: ev.meetingUrl,
-          meeting_platform: ev.platform,
-          external_meeting_id: ev.zoomId,
-          calendar_provider: conn.provider,
-          calendar_event_id: ev.eventId,
-          calendar_id: calendarId,
-          calendar_connection_id: conn.id
+        await updateRecord(client, await getObject('calls'), BOOKING_PRINCIPAL, m.id, {
+          started_at: start.toISOString(), ended_at: end.toISOString(), duration_seconds: page.rules!.durationMinutes * 60
         });
-        // read only for people: the calendar sync sets it again for the new event
-        await client.query('update crm.pc_0030 set calendar_event_key = null where pc_0030_id = $1', [m.id]);
-        await movedEmails(m, ev.meetingUrl);
-        return { meetingUrl: ev.meetingUrl };
+        // the visitor hears about the new time; reminders for the old one are taken back
+        await cancelReminders(client, [m.id]);
+        await emailVisitor(client, page, {
+          callId: m.id, host: m.host ?? page.host!, email: m.attendeeEmail, name: m.attendeeName, timezone: m.attendeeTimezone, manageKey: req.params.mkey
+        }, { start, end }, m.meetingUrl, ['rescheduled', 'reminder']);
+        return { meetingUrl: m.meetingUrl };
       });
-      forgetBusy(page.host!);
+      for (const u of hostsOf(page)) forgetBusy(u);
       wakeMailWorker();
       return {
         start: start.toISOString(),

@@ -1,4 +1,4 @@
--- Owner rotations (0136), group meeting seats (0135), booking guests (0134).
+-- Owner rotations (0136), booking guests (0134), group meeting co-hosts (0138).
 -- Runs in a transaction that is rolled back.
 \set ON_ERROR_STOP 1
 begin;
@@ -68,18 +68,22 @@ begin
     raise exception 'members or log left behind';
   end if;
 
-  -- booking page properties: guests 0 to 20, seats 1 to 1000
+  -- booking page properties: guests 0 to 20; co-hosts are users (0138)
   begin
     insert into crm.pc_0054 (name, max_guests) values ('Guests', 21);
     raise exception 'max_guests over 20 was accepted';
   exception when check_violation then null;
   end;
   begin
-    insert into crm.pc_0054 (name, seats) values ('Seats', 0);
-    raise exception 'seats under 1 was accepted';
+    insert into crm.pc_0054 (name, co_hosts) values ('Group', array['not-a-user']);
+    raise exception 'a co-host that is not a user was accepted';
   exception when check_violation then null;
   end;
-  insert into crm.pc_0054 (name, max_guests, seats, rotation_id) values ('Round robin', 5, 10, '1');
+  insert into crm.pc_0054 (name, max_guests, co_hosts, rotation_id) values ('Round robin group', 5, array[v_user], '1');
+  insert into crm.pc_0030 (name, status, co_hosts) values ('Group meeting', '{scheduled}', array[v_user]);
+  if (select record_status from meta.pc_0002 where object_type_id = 'pc_0054' and api_name = 'seats') = 'active' then
+    raise exception 'Seats per time is still active';
+  end if;
 
   raise notice 'ok: owner rotation tests passed';
 end
