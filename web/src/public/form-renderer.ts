@@ -97,7 +97,10 @@ function normalize(fields: FormField[]): FormField[] {
   });
 }
 
-const INPUT_TYPE: Record<string, string> = { email: 'email', phone: 'tel', url: 'url' };
+// Email boxes are plain text with the email keyboard: browsers turn off text
+// replacement (macOS Text Replacements such as "pma" -> an address) and
+// autocorrect in type=email boxes. The address is still checked (formatProblem).
+const INPUT_TYPE: Record<string, string> = { phone: 'tel', url: 'url' };
 
 function control(f: FormField, id: string): HTMLElement {
   const common = { id, name: f.name, required: f.required, placeholder: f.placeholder };
@@ -122,6 +125,7 @@ function control(f: FormField, id: string): HTMLElement {
         ...common,
         type: INPUT_TYPE[f.format ?? ''] ?? 'text',
         autocomplete: f.format === 'email' ? 'email' : f.format === 'phone' ? 'tel' : undefined,
+        ...(f.format === 'email' ? { inputmode: 'email', autocapitalize: 'off' } : {}),
         maxlength: '500'
       });
   }
