@@ -4,6 +4,7 @@ import { EllipsisVertical, Plus, ShieldCheck, Table2, Trash2, Users, X } from 'l
 import { api, can, type RolePermission, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName } from '../lib/display';
+import { primaryValue } from '../lib/multi-values';
 import { UserAvatar } from '../components/UserAvatar';
 import { SharingRules } from '../components/SharingRules';
 import { EmptyState, SaveBar, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
@@ -140,7 +141,7 @@ function useAccessData() {
     setUsers(r.results.map((u) => ({
       id: u.id,
       name: displayName(u.properties, u.id),
-      email: (u.properties.email as string) ?? null,
+      email: primaryValue(u.properties.email),
       deactivated: ([] as unknown[]).concat(u.properties.status ?? []).includes('deactivated')
     })));
   }, []);

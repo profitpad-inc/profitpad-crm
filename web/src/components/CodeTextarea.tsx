@@ -1,10 +1,10 @@
-import { useRef, type TextareaHTMLAttributes } from 'react';
+import { useRef, type ComponentPropsWithRef } from 'react';
 import { CopyCodeButton } from './CodeBlock';
 
 // A code box you can type in, with line numbers beside it. Lines do not wrap
 // (one number per line); the numbers scroll with the text. A button in the
 // top right copies the whole text.
-export function CodeTextarea({ value, className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
+export function CodeTextarea({ value, className, ...rest }: ComponentPropsWithRef<'textarea'> & { value: string }) {
   const gutter = useRef<HTMLDivElement>(null);
   const count = value.split('\n').length;
   return (

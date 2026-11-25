@@ -85,6 +85,10 @@ export const MORE_GROUPS: { label: string; objects: string[] }[] = [
   { label: 'Data', objects: ['users', 'teams', 'files', 'views', 'document_templates', 'object_events', 'object_event_occurrences'] }
 ];
 
+// In a menu's more_hidden list, this entry turns the whole More menu off (the sidebar shows no More
+// button). The other entries are kept, so switching More back on brings back the same choices.
+export const MORE_OFF = '*';
+
 // The More menu's groups for the given objects (in that menu's order), with
 // objects outside MORE_GROUPS under "Custom objects"; empty groups are dropped.
 export function moreGroups(objects: string[]) {

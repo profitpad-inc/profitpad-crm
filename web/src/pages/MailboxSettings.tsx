@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import { History, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CopyField, EmptyState, GoogleDelegationLink, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
@@ -8,6 +8,7 @@ import { Modal } from '../components/ui';
 import { SaveHint } from '../components/SaveHint';
 import { useDirty } from '../lib/use-dirty';
 import { confirmDialog } from '../components/confirm';
+import { Loading } from '../components/Loading';
 
 // Settings → Mailboxes (admins): the organization service accounts that let
 // users send email from the CRM as themselves (api/src/mailbox/*), and the
@@ -363,6 +364,8 @@ function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; 
   const [exclude, setExclude] = useState(p.autolog_exclude.join(', '));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // the poll log modal: null closed, '' every mailbox, else one mailbox
+  const [logFor, setLogFor] = useState<string | null>(null);
   useEffect(() => setExclude(p.autolog_exclude.join(', ')), [p.autolog_exclude.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function put(body: Record<string, unknown>, done: string) {
@@ -410,13 +413,19 @@ function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; 
           <button className="btn" disabled={busy || !excludeDirty} onClick={() => put({ autolog_exclude: domainList(exclude) }, 'Saved.')}>Save</button>
         </div>
       </SettingRow>
+      {logFor !== null && <SyncLogModal provider={p.provider} mailboxes={sync.map((r) => r.mailbox)} initialMailbox={logFor} onClose={() => setLogFor(null)} />}
+      {(p.autolog_enabled || sync.length > 0) && (
+        <SettingRow label="Poll log" hint="Every check of every mailbox, kept for 30 days.">
+          <button className="btn" onClick={() => setLogFor('')}><History size={14} /> View poll log</button>
+        </SettingRow>
+      )}
       {p.autolog_enabled && (
         sync.length === 0 ? (
           <EmptyState compact title="No mailboxes read yet">Mailboxes appear here within a minute for users who sign in with an address in the domains above.</EmptyState>
         ) : (
           <div className="access-table">
             <table className="grid">
-              <thead><tr><th>Mailbox</th><th>Last checked</th><th>Logged</th><th>Status</th></tr></thead>
+              <thead><tr><th>Mailbox</th><th>Last checked</th><th>Logged</th><th>Status</th><th /></tr></thead>
               <tbody>
                 {sync.map((r) => (
                   <tr key={r.mailbox}>
@@ -425,6 +434,7 @@ function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; 
                     <td>{r.logged_count}</td>
                     <td>{r.needs_reconsent ? <StatusPill tone="failed">Needs permission</StatusPill> : r.last_error && !r.last_ok_at ? <StatusPill tone="failed">Failing</StatusPill> : r.last_ok_at ? <StatusPill tone="on">Working</StatusPill> : <StatusPill tone="pending">Starting</StatusPill>}
                       {r.last_error && <div className="sub">{r.last_error}</div>}</td>
+                    <td className="row-actions"><button className="btn ghost small" onClick={() => setLogFor(r.mailbox)} title={`Poll log for ${r.mailbox}`}><History size={14} /> Log</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -433,6 +443,105 @@ function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; 
         )
       )}
     </SettingsSection>
+  );
+}
+
+interface SyncLogEntry {
+  id: string;
+  mailbox: string;
+  user_name: string | null;
+  started_at: string;
+  finished_at: string;
+  ok: boolean;
+  needs_reconsent: boolean;
+  seen: number;
+  logged: number;
+  linked: number;
+  adopted: number;
+  skipped: number;
+  message: string | null;
+}
+
+const duration = (a: string, b: string) => {
+  const ms = Math.max(0, new Date(b).getTime() - new Date(a).getTime());
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+};
+const logTime = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+// Every check of the provider's mailboxes for automatic logging
+// (auth.mailbox_sync_log, 30 days), newest first.
+function SyncLogModal({ provider, mailboxes, initialMailbox, onClose }: { provider: Provider; mailboxes: string[]; initialMailbox: string; onClose: () => void }) {
+  const [mailbox, setMailbox] = useState(initialMailbox);
+  const [onlyErrors, setOnlyErrors] = useState(false);
+  const [entries, setEntries] = useState<SyncLogEntry[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(before: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      const q = new URLSearchParams({ limit: '50' });
+      if (mailbox) q.set('mailbox', mailbox);
+      if (onlyErrors) q.set('only_errors', 'true');
+      if (before) q.set('before', before);
+      const r = await api<{ entries: SyncLogEntry[]; has_more: boolean }>('GET', `/v1/mailboxes/settings/${provider}/sync-log?${q}`);
+      setEntries((prev) => (before && prev ? [...prev, ...r.entries] : r.entries));
+      setHasMore(r.has_more);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    setEntries(null);
+    void load(null);
+  }, [mailbox, onlyErrors]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const options = [{ value: '', label: 'All mailboxes' }, ...[...new Set([...mailboxes, ...(initialMailbox ? [initialMailbox] : [])])].sort().map((m) => ({ value: m, label: m }))];
+  return (
+    <Modal title={`Poll log, ${TAB_LABEL[provider]}`} wide onClose={onClose}>
+      <div className="sync-log-filters">
+        <Select value={mailbox} options={options} onChange={(v) => setMailbox(v)} />
+        <label><input type="checkbox" role="switch" checked={onlyErrors} onChange={(e) => setOnlyErrors(e.target.checked)} /> Only failures</label>
+        <button className="btn ghost small" disabled={busy} onClick={() => { setEntries(null); void load(null); }}>Refresh</button>
+      </div>
+      {error && <div className="error">{error}</div>}
+      {entries === null ? (
+        <Loading />
+      ) : entries.length === 0 ? (
+        <EmptyState compact title="No polls yet">{onlyErrors ? 'No failed checks in the last 30 days.' : 'Checks show up here as mailboxes are read. Entries are kept for 30 days.'}</EmptyState>
+      ) : (
+        <>
+          <div className="access-table">
+            <table className="grid">
+              <thead><tr><th>Time</th>{!mailbox && <th>Mailbox</th>}<th>Result</th><th>Found</th><th>Logged</th><th>Linked</th><th>Skipped</th><th>Took</th></tr></thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.id}>
+                    <td>{logTime(e.started_at)}</td>
+                    {!mailbox && <td><div>{e.mailbox}</div>{e.user_name && <div className="sub">{e.user_name}</div>}</td>}
+                    <td className="wrap">
+                      {e.needs_reconsent ? <StatusPill tone="failed">Needs permission</StatusPill> : e.ok ? (e.message ? <StatusPill tone="warn">Warning</StatusPill> : <StatusPill tone="on">OK</StatusPill>) : <StatusPill tone="failed">Failed</StatusPill>}
+                      {e.message && <div className="sub">{e.message}</div>}
+                    </td>
+                    <td>{e.seen}</td>
+                    <td>{e.logged}</td>
+                    <td title={e.adopted ? `${e.adopted} sent from the CRM matched` : undefined}>{e.linked + e.adopted}</td>
+                    <td>{e.skipped}</td>
+                    <td>{duration(e.started_at, e.finished_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {hasMore && <div className="load-more"><button className="btn" disabled={busy} onClick={() => load(entries[entries.length - 1].id)}>Load more</button></div>}
+        </>
+      )}
+    </Modal>
   );
 }
 

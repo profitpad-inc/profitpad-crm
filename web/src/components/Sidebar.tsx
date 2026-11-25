@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
-import { moreGroups, objectIcon } from '../lib/display';
+import { MORE_OFF, moreGroups, objectIcon } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
 import { onFrameFocus } from '../lib/frame-focus';
@@ -29,6 +29,7 @@ type Flyout = { key: string; top: number };
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
   const { me, nav, navPreview, objectByName, objects, customViews, logo, moreHidden } = useApp();
   const moreObjects = objects.map((o) => o.api_name).filter((o) => !moreHidden.includes(o));
+  const moreOff = moreHidden.includes(MORE_OFF);
   const drawer = variant === 'drawer';
   const [expandedPref, setExpanded] = useState(readExpanded);
   const expanded = drawer || expandedPref;
@@ -127,7 +128,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         )}
         <div className="sidebar-items">
           {nav.map((item, i) => renderItem(item, String(i)))}
-          <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} onMouseEnter={hoverFlyout('more')} aria-label={expanded ? undefined : 'More'} aria-expanded={moreOpen} data-flyout-toggle>
+          {!moreOff && <button className={`nav-item${moreOpen ? ' active' : ''}`} onClick={(e) => toggleFlyout('more', e.currentTarget)} onMouseEnter={hoverFlyout('more')} aria-label={expanded ? undefined : 'More'} aria-expanded={moreOpen} data-flyout-toggle>
             <Ellipsis size={20} strokeWidth={1.75} />
             {expanded && (
               <>
@@ -135,8 +136,8 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
                 {drawer && moreOpen ? <ChevronDown size={16} className="push-right" /> : <ChevronRight size={16} className="push-right" />}
               </>
             )}
-          </button>
-          {drawer && moreOpen && <InlineMore objects={moreObjects} />}
+          </button>}
+          {!moreOff && drawer && moreOpen && <InlineMore objects={moreObjects} />}
         </div>
         <div className="sidebar-bottom">
           {me.user && <MentionsButton expanded={expanded} sheet={drawer} />}
@@ -153,7 +154,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
         </div>
       </nav>
       {!drawer && flyout && (flyout.key === 'more'
-        ? <MoreMenu objects={moreObjects} anchorTop={flyout.top} onClose={closeFlyout} />
+        ? !moreOff && <MoreMenu objects={moreObjects} anchorTop={flyout.top} onClose={closeFlyout} />
         : <SectionMenu section={nav[Number(flyout.key)]} anchorTop={flyout.top} onClose={closeFlyout} />)}
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
     </>

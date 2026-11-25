@@ -26,11 +26,11 @@
 .html-editor-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
 .html-editor-pane { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .html-editor-label { font-size: 12px; font-weight: 600; color: var(--muted-text); }
-.html-editor-pane textarea { flex: 1; min-height: 360px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; }
+.html-editor-pane .code-editor { flex: 1; min-height: 360px; max-height: 60vh; }
 .html-editor-preview { flex: 1; min-height: 360px; max-height: 60vh; overflow: auto; }
 .html-editor-empty { padding: 12px; border: 1px dashed var(--border); border-radius: var(--radius); }
 @media (max-width: 760px) {
   .html-editor-panes { grid-template-columns: 1fr; }
-  .html-editor-pane textarea, .html-editor-preview { min-height: 220px; }
+  .html-editor-pane .code-editor, .html-editor-preview { min-height: 220px; }
 }
 .html-editor-tools .btn.small { display: inline-flex; align-items: center; gap: 4px; }

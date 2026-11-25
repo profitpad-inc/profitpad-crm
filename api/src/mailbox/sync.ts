@@ -667,9 +667,30 @@ export async function reconcileMailboxes(): Promise<Map<string, MailboxPlan>> {
 
 // ---- reading one mailbox --------------------------------------------------------------
 
+// Each poll goes in auth.mailbox_sync_log (Settings → Mailboxes, "Poll log"),
+// kept SYNC_LOG_DAYS days.
+export const SYNC_LOG_DAYS = 30;
+type Counts = Record<LogOutcome, number> & { seen: number };
+
+// A log row that cannot be written never fails the poll itself.
+async function writeSyncLog(s: SyncState, startedAt: Date, counts: Counts, ok: boolean, message: string | null, reconsent: boolean) {
+  await pool.query(
+    `insert into auth.mailbox_sync_log (provider, mailbox, user_id, started_at, ok, needs_reconsent, seen, logged, linked, adopted, skipped, message)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [s.provider, s.mailbox, s.user_id, startedAt, ok, reconsent, counts.seen, counts.logged, counts.linked, counts.adopted, counts.skipped, message]
+  ).catch((err) => console.error('mailbox sync log write failed', err));
+}
+
+export async function pruneSyncLog(): Promise<number> {
+  const { rowCount } = await pool.query(`delete from auth.mailbox_sync_log where started_at < now() - make_interval(days => $1)`, [SYNC_LOG_DAYS]);
+  return rowCount ?? 0;
+}
+
 export async function syncMailbox(s: SyncState, mode: AutologMode): Promise<{ logged: number; error: string | null }> {
+  const startedAt = new Date();
   const providers = await loadProviders();
   const cfg = providers.get(s.provider);
+  const counts: Counts = { seen: 0, logged: 0, linked: 0, adopted: 0, skipped: 0 };
   let logged = 0;
   try {
     if (!providerReady(cfg)) throw new MailAuthError('the provider is not set up');
@@ -682,7 +703,10 @@ export async function syncMailbox(s: SyncState, mode: AutologMode): Promise<{ lo
       exclude: cfg.autolog_exclude ?? []
     };
     const handle = async (m: MailMessage) => {
-      if ((await logMessage(ctx, m)) === 'logged') logged++;
+      counts.seen++;
+      const outcome = await logMessage(ctx, m);
+      counts[outcome]++;
+      if (outcome === 'logged') logged++;
     };
     const cursor = cfg.provider === 'google' ? await readGmail(cfg, s, handle) : await readGraph(cfg, s, handle);
     await pool.query(
@@ -701,6 +725,7 @@ export async function syncMailbox(s: SyncState, mode: AutologMode): Promise<{ lo
         (('ms_inbox_delta' in cursor && cursor.ms_inbox_delta === null) || ('ms_sent_delta' in cursor && cursor.ms_sent_delta === null)) && !!cursor.warning,
         cursor.warning ?? null, logged]
     );
+    await writeSyncLog(s, startedAt, counts, true, cursor.warning?.slice(0, 1000) ?? null, false);
     return { logged, error: null };
   } catch (err) {
     const message = ((err as Error).message || 'reading the mailbox failed').slice(0, 1000);
@@ -708,6 +733,7 @@ export async function syncMailbox(s: SyncState, mode: AutologMode): Promise<{ lo
       `update auth.mailbox_sync set last_error = $3, needs_reconsent = $4, logged_count = logged_count + $5 where provider = $1 and mailbox = $2`,
       [s.provider, s.mailbox, message, err instanceof MailReadDenied, logged]
     );
+    await writeSyncLog(s, startedAt, counts, false, message, err instanceof MailReadDenied);
     return { logged, error: message };
   }
 }
@@ -719,10 +745,16 @@ export async function syncMailbox(s: SyncState, mode: AutologMode): Promise<{ lo
 export function startMailSyncWorker(log: { error: (o: unknown, m: string) => void }) {
   let running = false;
   let stopped = false;
+  let prunedAt = 0;
   const run = async () => {
     if (running || stopped) return;
     running = true;
     try {
+      // the poll log keeps SYNC_LOG_DAYS days; trimmed once an hour
+      if (Date.now() - prunedAt > 3_600_000) {
+        prunedAt = Date.now();
+        await pruneSyncLog().catch((err) => log.error(err, 'mailbox sync log cleanup failed'));
+      }
       const plan = await reconcileMailboxes();
       if (!plan.size) return;
       for (;;) {

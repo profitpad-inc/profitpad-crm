@@ -315,11 +315,13 @@ async function validateBottom(items: unknown): Promise<NavItem[]> {
 
 export type MenuBody = { items: unknown; bottom_left?: unknown; bottom?: unknown; more_hidden?: unknown };
 
-// objects left out of the sidebar's More menu (api_names); they stay reachable everywhere else
+// objects left out of the sidebar's More menu (api_names); they stay reachable everywhere else.
+// The entry "*" turns More off altogether; the object entries are kept for when it is turned back on.
+export const MORE_OFF = '*';
 async function validateMoreHidden(list: unknown): Promise<string[]> {
-  if (!Array.isArray(list) || list.length > 500) throw badRequest('more_hidden must be an array of object api_names');
+  if (!Array.isArray(list) || list.length > 500) throw badRequest('more_hidden must be an array of object api_names (or "*" to turn More off)');
   const out = new Set<string>();
-  for (const o of list) out.add((await getObject(String(o))).api_name);
+  for (const o of list) out.add(o === MORE_OFF ? MORE_OFF : (await getObject(String(o))).api_name);
   return [...out];
 }
 

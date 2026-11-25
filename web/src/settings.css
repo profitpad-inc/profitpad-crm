@@ -173,6 +173,12 @@
 .origin-add { display: flex; gap: 8px; max-width: 560px; }
 
 /* Navigation menus */
+.nav-more-master { max-width: 920px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; }
+.nav-more-master > span { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.nav-more-groups { border: 0; margin: 0; padding: 0; min-width: 0; }
+.nav-more-groups.off { opacity: 0.5; }
+.nav-more-groups.off .nav-more-head, .nav-more-groups.off .nav-more-row { cursor: default; }
+.nav-more-groups.off .nav-more-row:hover { background: none; }
 .nav-more-groups { max-width: 920px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .nav-more-group { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px; display: flex; flex-direction: column; gap: 1px; }
 .nav-more-head, .nav-more-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius); cursor: pointer; }
@@ -434,3 +440,7 @@
 .label-settings-filter .select-face { min-width: 200px; }
 .label-pair { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .label-pair svg { color: var(--muted-text); flex: none; }
+
+/* Settings → Mailboxes, poll log modal */
+.sync-log-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.sync-log-filters > :first-child { min-width: 240px; }

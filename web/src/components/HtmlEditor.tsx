@@ -6,6 +6,7 @@ import { Menu, Modal } from './ui';
 import '../html-editor.css';
 import { Loading } from './Loading';
 import { CodeBlock } from './CodeBlock';
+import { CodeTextarea } from './CodeTextarea';
 
 // HTML values (text properties with display "html": email signatures, email
 // template bodies, form HTML): a sandboxed preview, and an editor with the
@@ -184,11 +185,11 @@ export function HtmlEditorModal({ title, value, hint, onSave, onClose }: {
       )}
       {error && <div className="error" role="alert">{error}</div>}
       <div className="html-editor-panes">
-        <label className="html-editor-pane">
+        <div className="html-editor-pane">
           <span className="html-editor-label">HTML</span>
-          <textarea ref={code} value={draft} spellCheck={false} autoFocus
+          <CodeTextarea ref={code} value={draft} autoFocus aria-label="HTML"
             onChange={(e) => { setDraft(e.target.value); remember(); }} onSelect={remember} onKeyUp={remember} onClick={remember} />
-        </label>
+        </div>
         <div className="html-editor-pane">
           <span className="html-editor-label">Preview</span>
           <div className="html-editor-preview">

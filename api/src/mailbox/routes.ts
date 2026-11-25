@@ -12,7 +12,7 @@ import {
   forgetProvider, GOOGLE_READ_SCOPES, GOOGLE_SCOPES, listAliases, loadProviders, MAIL_PROVIDERS, MICROSOFT_PERMISSIONS,
   MICROSOFT_READ_PERMISSIONS, parseGoogleKey, providerFor, providerReady, type MailProvider, type ProviderRow
 } from './providers.js';
-import { effectiveMode, fetchLoggedAttachments, loggedSource } from './sync.js';
+import { SYNC_LOG_DAYS, effectiveMode, fetchLoggedAttachments, loggedSource } from './sync.js';
 import { listSenders } from './senders.js';
 import { cancelSend, cleanAddresses, createSend, retrySend, sendStatus, type SendInput } from './send.js';
 import { cleanEmailHtml } from './html.js';
@@ -353,6 +353,33 @@ export async function mailboxRoutes(app: FastifyInstance) {
       await logEvent(req, 'mailbox.autolog_changed', { target: { type: 'mail_provider', id: prov }, details: changed });
     }
     return settingsOut();
+  });
+
+  // The poll log for one provider (auth.mailbox_sync_log, 30 days), newest
+  // first. mailbox narrows it to one mailbox, only_errors to failed polls,
+  // before (a log id) pages back, limit is 1 to 200 (default 50).
+  app.get<{ Params: { provider: string }; Querystring: { mailbox?: string; only_errors?: string; before?: string; limit?: string } }>('/v1/mailboxes/settings/:provider/sync-log', async (req) => {
+    requireAdmin(req.principal!);
+    const prov = provider(req.params.provider);
+    const q = req.query ?? {};
+    const mailbox = q.mailbox ? String(q.mailbox).trim().toLowerCase() : null;
+    if (mailbox && mailbox.length > 254) throw badRequest('mailbox is too long', { property: 'mailbox' });
+    const before = q.before ? String(q.before) : null;
+    if (before && !/^\d{1,18}$/.test(before)) throw badRequest('before must be a log id', { property: 'before' });
+    const limit = q.limit ? Number(q.limit) : 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw badRequest('limit is 1 to 200', { property: 'limit' });
+    const onlyErrors = q.only_errors === 'true' || q.only_errors === '1';
+    const { rows } = await pool.query(
+      `select l.id::text as id, l.mailbox, l.user_id, trim(concat_ws(' ', u.first_name, u.last_name)) as user_name,
+         l.started_at, l.finished_at, l.ok, l.needs_reconsent, l.seen, l.logged, l.linked, l.adopted, l.skipped, l.message
+       from auth.mailbox_sync_log l left join crm.pc_0000 u on u.pc_0000_id = l.user_id
+       where l.provider = $1 and ($2::text is null or l.mailbox = $2) and ($3::bigint is null or l.id < $3)
+         and (not $4 or not l.ok)
+       order by l.id desc limit $5`,
+      [prov, mailbox, before, onlyErrors, limit + 1]
+    );
+    const more = rows.length > limit;
+    return { entries: more ? rows.slice(0, limit) : rows, has_more: more, retention_days: SYNC_LOG_DAYS };
   });
 
   app.post<{ Body: { provider?: unknown; address?: unknown; display_name?: unknown; user_ids?: unknown } }>('/v1/mailboxes/shared', async (req, reply) => {

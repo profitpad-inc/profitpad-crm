@@ -767,8 +767,10 @@ button.le-tile:hover { border-color: var(--primary); }
 }
 
 /* document template card (components/DocumentTemplateEditor.tsx) */
-.code-editor.template-code textarea { min-height: 420px; }
-.code-editor.template-code.short textarea { min-height: 200px; }
+/* the code box fills the column (useFillColumn sizes .landing-body) */
+.landing-body > .code-editor { height: 100%; }
+.landing-body > .code-editor textarea { resize: none; }
+.template-edit { align-self: center; margin-right: 8px; }
 .template-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .template-record { min-width: 180px; max-width: 280px; }
 .template-head { flex-wrap: wrap; row-gap: 8px; }

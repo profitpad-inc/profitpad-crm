@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileDown, RefreshCw } from 'lucide-react';
+import { FileDown, Pencil, RefreshCw } from 'lucide-react';
 import { API_BASE, api, type CrmRecord, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Select } from './Select';
@@ -11,8 +11,10 @@ import { useFillColumn } from '../lib/use-fill-column';
 
 // The Template card on a document template's record page (api/src/templates.ts),
 // laid out like a landing page's: Draft / Published, then Preview (drawn for a
-// real record, as the customer's page or as a PDF), HTML and Data sources. The
-// draft's code is editable by admins; read-only code folds like VS Code.
+// real record, as the customer's page or as a PDF), HTML and Data sources. Code
+// shows read-only first (line numbers, VS Code style folding, copy), running to
+// the bottom of the record's column; admins press Edit on the draft to type in
+// it, and saving returns to the read-only view.
 // Publish / Default / Revert sit in the card's head.
 // AIs usually write templates through the MCP tools; this is for looking and
 // small changes.
@@ -46,6 +48,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   const [which, setWhich] = useState<'draft' | 'published'>('draft');
   const [tab, setTab] = useState<'preview' | 'code' | 'queries'>('preview');
   const [wrap, setWrap] = useState(readWrap);
+  const [editing, setEditing] = useState(false);
   const [source, setSource] = useState('');
   const [queries, setQueries] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +123,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   }, [tab, which, recordId, t, records === null, nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // the preview runs down to the bottom of the record's middle column
-  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([t, error, tab, which, preview, previewError]);
+  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([t, error, tab, which, preview, previewError, editing, source !== (t?.draft_source ?? '') || queries !== (t?.draft_queries ?? '')]);
 
   if (error && !t) return <div className="card"><div className="error">{error}</div></div>;
   if (!t) return <div className="card muted"><Loading /></div>;
@@ -153,7 +156,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
         return;
       }
     }
-    await act(() => api('PUT', `/v1/document-templates/${record.id}/draft`, { source, queries: parsed ?? {} }), 'Draft saved');
+    if (await act(() => api('PUT', `/v1/document-templates/${record.id}/draft`, { source, queries: parsed ?? {} }), 'Draft saved')) setEditing(false);
   }
 
   async function pdf() {
@@ -178,6 +181,8 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   const shownSource = which === 'draft' ? source : t.source ?? '';
   const shownQueries = which === 'draft' ? queries : t.queries ?? '';
   const readOnly = which === 'published' || !canEdit;
+  // typing in the draft: Edit was pressed, or there are unsaved changes
+  const typing = !readOnly && (editing || dirty);
 
   return (
     <>
@@ -211,10 +216,13 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
           <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
           <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!t.source}>Published</button></div>
           <span style={{ flex: 1 }} />
-          {tab !== 'preview' && readOnly && (
+          {tab !== 'preview' && !typing && (
             <label className="small muted code-wrap-toggle">
               <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
             </label>
+          )}
+          {tab !== 'preview' && !readOnly && !typing && (
+            <button className="btn small template-edit" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
           )}
           <div className={`tab${tab === 'preview' ? ' active' : ''}`}><button onClick={() => setTab('preview')}>Preview</button></div>
           <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>HTML</button></div>
@@ -244,25 +252,36 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
               <p className="muted">{savedSource ? 'Nothing to show yet.' : which === 'draft' ? 'No code yet. Write the HTML, then save the draft to see it here.' : 'Nothing published yet.'}</p>
             )}
           </>
-        ) : readOnly ? (
-          (tab === 'code' ? shownSource : shownQueries)
-            ? <CodeBlock text={tab === 'code' ? shownSource : shownQueries} wrap={wrap} lang={tab === 'code' ? 'html' : 'js'} />
-            : <p className="muted">{tab === 'code' ? 'No code yet.' : 'No data sources.'}</p>
-        ) : tab === 'code' ? (
-          <CodeTextarea className="template-code" value={shownSource}
-            placeholder="An HTML page with Liquid tags, like {{ quote.name }}."
-            onChange={(e) => setSource(e.target.value)} aria-label="Template code" />
+        ) : !typing ? (
+          (tab === 'code' ? shownSource : shownQueries) ? (
+            <div ref={bodyRef} className="landing-body code-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
+              <CodeBlock text={tab === 'code' ? shownSource : shownQueries} wrap={wrap} lang={tab === 'code' ? 'html' : 'js'} />
+            </div>
+          ) : (
+            <p className="muted">{tab === 'code' ? 'No code yet.' : 'No data sources.'}{!readOnly && ' Press Edit to write it.'}</p>
+          )
         ) : (
-          <CodeTextarea className="template-code short" value={shownQueries}
-            placeholder={'{"summary": {"sql": "select count(*) as lines from view_data.associations where object_type_id = \'pc_0022\' and record_id = :record_id and other_object_type_id = \'pc_0020\'"}}'}
-            onChange={(e) => setQueries(e.target.value)} aria-label="Data sources" />
-        )}
-        {tab !== 'preview' && !readOnly && (
-          <div className="template-actions">
-            <span style={{ flex: 1 }} />
-            {dirty && <button className="btn small ghost" disabled={busy} onClick={() => load(t)}>Discard</button>}
-            <button className="btn small primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? 'Saving...' : 'Save draft'}</button>
-          </div>
+          <>
+            <div ref={bodyRef} className="landing-body code-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
+              {tab === 'code' ? (
+                <CodeTextarea value={shownSource} autoFocus
+                  placeholder="An HTML page with Liquid tags, like {{ quote.name }}."
+                  onChange={(e) => setSource(e.target.value)} aria-label="Template code" />
+              ) : (
+                <CodeTextarea value={shownQueries} autoFocus
+                  placeholder={'{"summary": {"sql": "select count(*) as lines from view_data.associations where object_type_id = \'pc_0022\' and record_id = :record_id and other_object_type_id = \'pc_0020\'"}}'}
+                  onChange={(e) => setQueries(e.target.value)} aria-label="Data sources" />
+              )}
+            </div>
+            <div className="template-actions">
+              <span className="muted small">Folding comes back after you save.</span>
+              <span style={{ flex: 1 }} />
+              {dirty
+                ? <button className="btn small ghost" disabled={busy} onClick={() => { load(t); setEditing(false); }}>Discard</button>
+                : <button className="btn small ghost" onClick={() => setEditing(false)}>Done</button>}
+              <button className="btn small primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? 'Saving...' : 'Save draft'}</button>
+            </div>
+          </>
         )}
       </div>
     </>

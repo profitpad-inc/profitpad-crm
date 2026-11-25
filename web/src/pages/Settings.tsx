@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Menu as MenuIcon, Search, Copy, ArrowDown, ArrowUp, Boxes, Cable, CalendarDays, Coins, CreditCard, Globe, GripVertical, IdCard, KeyRound, Palette, PanelLeft, Plug, Plus, ScrollText,
   BellRing, Folder, Hash, Mail, MapPin, ShieldCheck, SlidersHorizontal, Trash2, Upload, User, Users, Webhook
@@ -12,7 +12,7 @@ import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusP
 import { SaveHint } from '../components/SaveHint';
 import { useDirty } from '../lib/use-dirty';
 import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type ColorMode, type Mode, type Theme, type ThemeKey } from '../lib/theme';
-import { displayName, moreGroups, objectIcon } from '../lib/display';
+import { MORE_OFF, displayName, moreGroups, objectIcon } from '../lib/display';
 import { UserAvatar, refreshUserPhotos } from '../components/UserAvatar';
 import { navLink } from '../lib/nav';
 import { ViewIcon } from '../lib/lucide-icons';
@@ -864,6 +864,14 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
   divider: 'Divider', section: 'Section', home: 'Home', menu: 'Menu (opens the full menu)'
 };
 
+type NavTab = 'sidebar' | 'hotbar' | 'more' | 'groups';
+const NAV_TABS: { key: NavTab; label: string }[] = [
+  { key: 'sidebar', label: 'Sidebar' },
+  { key: 'hotbar', label: 'Mobile hotbar' },
+  { key: 'more', label: 'More menu' },
+  { key: 'groups', label: 'Menu groups' }
+];
+
 // Targets: 'me' (the signed-in user's own menu, where the editor opens), 'default' (everyone not in a
 // group), 'group:<id>' and 'user:<id>'. Users who are not admins only get 'me'.
 function NavSettings() {
@@ -901,6 +909,12 @@ function NavSettings() {
   const [iconFor, setIconFor] = useState<{ root: 'top' | 'bottom'; index: number } | null>(null);
   // with unsaved changes: the page or menu the admin asked to go to, held until they discard or keep editing
   const [leaving, setLeaving] = useState<{ to: string } | { target: string } | null>(null);
+  // which part of the menu is shown: Sidebar, Mobile hotbar, More menu or (admins) Menu groups; kept in ?tab=
+  const [params, setParams] = useSearchParams();
+  const tabs = NAV_TABS.filter((t) => t.key !== 'groups' || isAdmin);
+  const tab = tabs.find((t) => t.key === params.get('tab'))?.key ?? 'sidebar';
+  const setTab = (key: NavTab) => setParams((p) => { const n = new URLSearchParams(p); if (key === 'sidebar') n.delete('tab'); else n.set('tab', key); return n; }, { replace: true });
+  const moreOff = moreHidden.includes(MORE_OFF);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -1426,6 +1440,15 @@ function NavSettings() {
         </>
       )}
     >
+      <div className="tabs" role="tablist" aria-label="Part of the menu">
+        {tabs.map((t) => (
+          <div key={t.key} className={`tab${tab === t.key ? ' active' : ''}`}>
+            <button role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}>{t.label}</button>
+          </div>
+        ))}
+      </div>
+
+      {tab === 'sidebar' && (
       <SettingsSection title="Sidebar" description={sidebarDescription()}>
         {!loaded ? <TableSkeleton rows={5} /> : items.length === 0
           ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections with + Add.</EmptyState>
@@ -1433,7 +1456,9 @@ function NavSettings() {
         {loaded && addButton('sidebar')}
         {addPicker('sidebar')}
       </SettingsSection>
+      )}
 
+      {tab === 'hotbar' && (
       <SettingsSection title="Mobile hotbar" description={`Shown along the bottom of the screen on mobile: Menu or Home first, so Settings and Mentions stay reachable (Home turns into Menu on the home page), then up to ${BOTTOM_MAX - 1} items in any order, then Search, which is always last. A section opens a list of its links.`}>
         <BottomBarPreview items={bottom} />
         {loaded && bottom.length === 0
@@ -1442,10 +1467,26 @@ function NavSettings() {
         {loaded && addButton('bottom')}
         {addPicker('bottom')}
       </SettingsSection>
+      )}
 
-      <SettingsSection title="More menu" description="Every object you can open is listed under More in the sidebar. Switch one off to leave it out of More. It still opens from search, links and any sidebar item above.">
+      {tab === 'more' && (
+      <SettingsSection title="More menu" description="Every object you can open is listed under More in the sidebar. Switch one off to leave it out of More, or turn More off for this menu altogether. Objects still open from search, links and any sidebar item.">
         {!loaded ? <TableSkeleton rows={4} /> : (
-          <div className="nav-more-groups">
+          <>
+          <label className="nav-more-master">
+            <span>
+              <strong>Show More in the sidebar</strong>
+              <span className="muted small">{moreOff ? 'Off: this menu has no More button.' : 'On: the sidebar ends with a More button listing the objects switched on below.'}</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={!moreOff}
+              onChange={(e) => setMoreHidden((h) => (e.target.checked ? h.filter((o) => o !== MORE_OFF) : [...h, MORE_OFF]))}
+              aria-label="Show More in the sidebar"
+            />
+          </label>
+          <fieldset className={`nav-more-groups${moreOff ? ' off' : ''}`} disabled={moreOff}>
             {moreGroups(objects.map((o) => o.api_name)).map((g) => {
               const shownCount = g.objects.filter((o) => !moreHidden.includes(o)).length;
               return (
@@ -1482,11 +1523,13 @@ function NavSettings() {
                 </div>
               );
             })}
-          </div>
+          </fieldset>
+          </>
         )}
       </SettingsSection>
+      )}
 
-      {isAdmin && loaded && (
+      {tab === 'groups' && isAdmin && loaded && (
         <NavGroups
           groups={groups}
           users={users}
@@ -1494,14 +1537,14 @@ function NavSettings() {
           everyoneCan={everyoneCan}
           menuSources={menuSources}
           onChanged={async () => { await loadMenus(); await reloadNav(); }}
-          onEditMenu={(t) => { pickTarget(t); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          onEditMenu={(t) => { pickTarget(t); setTab('sidebar'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         />
       )}
 
-      <SaveBar dirty={dirty} message={message} error={error}>
+      {(tab !== 'groups' || dirty) && <SaveBar dirty={dirty} message={message} error={error}>
         {hasOwn && <button className="btn" onClick={resetUser}>Reset to {fallbackName} menu</button>}
         <button className="btn primary" onClick={save} disabled={!dirty}>Save menu</button>
-      </SaveBar>
+      </SaveBar>}
 
       {copyOpen && (
         <CopyMenuModal

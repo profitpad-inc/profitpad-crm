@@ -1619,7 +1619,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('get_nav_menus', {
     title: 'Get sidebar menus',
-    description: 'Every sidebar menu (Settings, Navigation): the default menu everyone gets, each menu group\'s menu (with its members\' user ids), and the menus users made for themselves (scope user). Each has items (the sidebar), bottom (the phone hotbar) and more_hidden (objects left out of the More list). Also whether everyone may change their own menu. Call it before update_nav_menu and change only what was asked.',
+    description: 'Every sidebar menu (Settings, Navigation): the default menu everyone gets, each menu group\'s menu (with its members\' user ids), and the menus users made for themselves (scope user). Each has items (the sidebar), bottom (the phone hotbar) and more_hidden (objects left out of the More list; "*" in it means the More menu is off). Also whether everyone may change their own menu. Call it before update_nav_menu and change only what was asked.',
     annotations: { readOnlyHint: true }
   }, async () => run(async () => {
     requireScope(p, 'schema');
@@ -1629,14 +1629,14 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
   const navItemArg = z.record(z.string(), z.unknown());
   server.registerTool('update_nav_menu', {
     title: 'Update a sidebar menu',
-    description: `Replaces a sidebar menu: the default menu (scope default), a menu group's (scope group, group_id) or one user's own menu (scope user, user_id; it is made if they have none). items is the whole sidebar, in order, so start from get_nav_menus and send it back with your change. Item shapes: {"type":"home"}, {"type":"divider"}, {"type":"object","object":"<api_name>","label"?}, {"type":"view","object":"<api_name>","view_id":<saved table view id>,"label"?}, {"type":"custom_view","slug":"<custom view slug>","label"?}, {"type":"card_scanner","label"?}, {"type":"section","label":"...","icon"?:"<Lucide name, see find_icons>","items":[...]} (sections hold the other types, not sections). Labels are 1 to 63 characters. bottom (optional, left out keeps it) is the whole phone hotbar: at most ${HOTBAR_MAX} items before Search, the first {"type":"menu"} or {"type":"home"}, then links or sections, no dividers. more_hidden (optional) replaces the objects left out of the More list. A custom view link shows only to people who can open the view, and an unpublished one to admins only. Takes effect at once: confirm the change with the admin first. Returns the saved menu.`,
+    description: `Replaces a sidebar menu: the default menu (scope default), a menu group's (scope group, group_id) or one user's own menu (scope user, user_id; it is made if they have none). items is the whole sidebar, in order, so start from get_nav_menus and send it back with your change. Item shapes: {"type":"home"}, {"type":"divider"}, {"type":"object","object":"<api_name>","label"?}, {"type":"view","object":"<api_name>","view_id":<saved table view id>,"label"?}, {"type":"custom_view","slug":"<custom view slug>","label"?}, {"type":"card_scanner","label"?}, {"type":"section","label":"...","icon"?:"<Lucide name, see find_icons>","items":[...]} (sections hold the other types, not sections). Labels are 1 to 63 characters. bottom (optional, left out keeps it) is the whole phone hotbar: at most ${HOTBAR_MAX} items before Search, the first {"type":"menu"} or {"type":"home"}, then links or sections, no dividers. more_hidden (optional) replaces the objects left out of the More list; add "*" to it to turn the More menu off altogether (keep the other entries so turning it back on restores them). A custom view link shows only to people who can open the view, and an unpublished one to admins only. Takes effect at once: confirm the change with the admin first. Returns the saved menu.`,
     inputSchema: z.object({
       scope: z.enum(['default', 'group', 'user']),
       group_id: z.string().optional().describe('For scope group: the group id from get_nav_menus'),
       user_id: z.string().optional().describe('For scope user: the user id from get_nav_menus or find_users_to_mention'),
       items: z.array(navItemArg).describe('The whole sidebar, in order'),
       bottom: z.array(navItemArg).optional().describe('The whole phone hotbar; left out, it stays as it is'),
-      more_hidden: z.array(z.string()).optional().describe('Object api_names left out of the More list; left out, it stays as it is')
+      more_hidden: z.array(z.string()).optional().describe('Object api_names left out of the More list, plus "*" to turn More off; left out, it stays as it is')
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     scopeChallenge: schemaChallenge
