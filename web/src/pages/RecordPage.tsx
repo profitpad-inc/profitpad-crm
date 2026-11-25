@@ -1099,6 +1099,13 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     );
   };
 
+  const editActions = (p: Property) => (
+    <div className="prop-edit-actions">
+      {hasCancel(p) && <button className="btn small ghost" onClick={() => cancel(p)}>Cancel</button>}
+      <button className="btn small" onClick={() => commit(p)} disabled={JSON.stringify(fromInput(p, draft)) === startValue.current}>Save</button>
+    </div>
+  );
+
   // showLock: mark properties nobody can edit here (calculations, read-only),
   // in the main section only; System is all set by the CRM
   const row = (p: Property, showLock: boolean) => (
@@ -1122,6 +1129,9 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
             })()}
           </span>
         )}
+        {/* on a phone Cancel and Save sit on the title line, above the box, so
+            its dropdown list or address suggestions never cover them */}
+        {isMobile && editing === p.api_name && editActions(p)}
         {showLock && !editable(p) && p.type !== 'file' && (
           locked(p)
             ? <span className="prop-lock" title={lock!.reason}><Lock size={12} aria-label={lock!.reason} /></span>
@@ -1131,12 +1141,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
           <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={onInputCommit(p)} onFill={(values) => fill(p, values)} />
-          {savesWithButton(p) && (
-            <div className="prop-edit-actions">
-              {hasCancel(p) && <button className="btn small ghost" onClick={() => cancel(p)}>Cancel</button>}
-              <button className="btn small" onClick={() => commit(p)} disabled={JSON.stringify(fromInput(p, draft)) === startValue.current}>Save</button>
-            </div>
-          )}
+          {!isMobile && savesWithButton(p) && editActions(p)}
         </div>
       ) : p.type === 'file' ? (
         <div className="prop-value">

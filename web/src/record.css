@@ -95,6 +95,7 @@
    buttons pinned to the right of it */
 .record-page .prop-row.editing .prop-edit:has(> .mv-editor) { position: relative; }
 .record-page .prop-row.editing .mv-add { height: 28px; padding-block: 0; margin-top: 6px; }
+.record-page .prop-label > .prop-edit-actions { flex: none; margin: -4px 0 -4px auto; }
 .record-page .prop-row.editing .mv-editor + .prop-edit-actions { position: absolute; right: 0; bottom: 0; height: 28px; margin: 0; align-items: center; }
 /* live updates (lib/live.ts): a property someone else just changed fades from
    a light tint of the brand colour; a value changed while it is being edited
