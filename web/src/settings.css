@@ -175,6 +175,7 @@
 /* Navigation menus */
 .nav-more-master { max-width: 920px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; }
 .nav-more-master > span { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.nav-landing { max-width: 420px; }
 .nav-more-groups { border: 0; margin: 0; padding: 0; min-width: 0; }
 .nav-more-groups.off { opacity: 0.5; }
 .nav-more-groups.off .nav-more-head, .nav-more-groups.off .nav-more-row { cursor: default; }

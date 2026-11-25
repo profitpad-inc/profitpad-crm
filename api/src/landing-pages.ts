@@ -573,6 +573,12 @@ export function pageCsp(sameOrigin: boolean, draft: boolean): string {
 // - links open in the whole window (not inside the frame) unless they point
 //   inside the page or name their own target; /p/... links go to the CRM's
 //   public pages, wherever the HTML is served from
+// - links carry the visitor's address params on (?utm_source=..., gclid,
+//   anything else; the shell passes them to the frame), set when clicked so
+//   links added later count too. A param the link already has keeps its own
+//   value; #anchors, mailto: and the like are left alone, as are links with
+//   data-pcrm-keep-href. Replaces the "passing URL parameters around the
+//   site" snippet pages used to need.
 // - <div data-pcrm-form="key"> and <div data-pcrm-booking="key"> are drawn
 //   in the page by the CRM's embed.js (a plain script loads fine in the
 //   sandbox). The page has no origin of its own, so the form's API calls
@@ -589,9 +595,25 @@ function sendTitle(){post({pcrmPage:'title',title:document.title})}
 var queued=false;
 function later(){if(queued)return;queued=true;setTimeout(function(){queued=false;sendTitle();mount()},100)}
 document.addEventListener('DOMContentLoaded',function(){sendTitle();mount();try{new MutationObserver(later).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}});
+var CARRY=[];
+try{new URLSearchParams(location.search).forEach(function(v,k){if(k!=='draft'&&k!=='preview'&&k!=='token')CARRY.push([k,v])})}catch(e){}
+function carry(a){
+  if(!CARRY.length||a.hasAttribute('data-pcrm-keep-href'))return;
+  var raw=a.getAttribute('href')||'';
+  if(!raw||raw.charAt(0)==='#'||(/^[a-z][a-z0-9+.-]*:/i.test(raw)&&!/^https?:/i.test(raw)))return;
+  var h=raw.indexOf('#'),hash=h<0?'':raw.slice(h),rest=h<0?raw:raw.slice(0,h);
+  var q=rest.indexOf('?'),path=q<0?rest:rest.slice(0,q);
+  var params=new URLSearchParams(q<0?'':rest.slice(q+1)),added=false;
+  CARRY.forEach(function(p){if(!params.has(p[0])){params.append(p[0],p[1]);added=true}});
+  if(added){var s=params.toString();a.setAttribute('href',path+(s?'?'+s:'')+hash)}
+}
+function linkOf(e){var t=e.target;return t&&t.closest?t.closest('a[href]'):null}
+document.addEventListener('auxclick',function(e){var a=linkOf(e);if(a)carry(a)},true);
+document.addEventListener('contextmenu',function(e){var a=linkOf(e);if(a)carry(a)},true);
 document.addEventListener('click',function(e){
-  var t=e.target,a=t&&t.closest?t.closest('a[href]'):null;
+  var a=linkOf(e);
   if(!a||e.defaultPrevented||a.hasAttribute('download'))return;
+  carry(a);
   var raw=a.getAttribute('href')||'';
   if(raw.charAt(0)==='#'||/^(javascript|mailto|tel|sms):/i.test(raw))return;
   if(UI&&raw.charAt(0)==='/'&&raw.charAt(1)!=='/'&&/^\\/p\\//.test(raw))a.setAttribute('href',UI+raw);

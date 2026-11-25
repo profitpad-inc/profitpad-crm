@@ -1010,3 +1010,16 @@ a.comment-author:hover { color: var(--primary); }
   .merge-props-head { flex-wrap: wrap; gap: 6px 12px; }
   .merge-modal .modal-foot { flex-wrap: wrap; }
 }
+
+/* Page views card on contacts (components/PageViewsCard.tsx): long addresses stay on one line */
+.page-views-card .page-view-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.page-views-card .card-row-main { min-width: 0; }
+
+/* A visit on the contact timeline (VisitItem in components/PageViewsCard.tsx) */
+.record-page .visit-item.open { cursor: default; }
+.visit-pages { list-style: none; margin: 8px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.visit-pages li { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.visit-pages time { flex: 0 0 auto; min-width: 64px; }
+.visit-page { display: flex; flex-direction: column; min-width: 0; }
+.visit-page .page-view-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-view-campaign { overflow-wrap: anywhere; }

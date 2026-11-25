@@ -14,6 +14,7 @@ import { PaymentConfirmCard } from '../components/PaymentConfirmCard';
 import { FormBuilder } from '../components/FormBuilder';
 import { BookingPageEditor } from '../components/BookingPageEditor';
 import { FileCard } from '../components/FileCard';
+import { PageViewsCard, VisitItem, groupVisits, type PageViews, type Visit } from '../components/PageViewsCard';
 import { FilePreviewModal, FileViewer } from '../components/FileViewer';
 import { ViewCode } from '../components/ViewCode';
 import { LandingPageCard } from '../components/LandingPageCard';
@@ -576,6 +577,7 @@ export function RecordPage() {
       {object === 'quotes' && <QuoteTemplateCard quoteId={record.id} canEdit={schema.permissions.edit && record.can_edit !== false} />}
       {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
       {object === 'files' && <FileCard record={record} />}
+      {object === 'contacts' && <PageViewsCard contactId={record.id} />}
     </>
   );
   const linkCards = (
@@ -1273,11 +1275,31 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
     return typeof at === 'string' ? [{ object: 'quotes', record: q, at, quoteResponse: true }] : [];
   });
 
+  // a contact's website visits (page views grouped by session), Activity tab only
+  const [visits, setVisits] = useState<Visit[]>([]);
+  useEffect(() => {
+    setVisits([]);
+    if (object !== 'contacts') return;
+    let live = true;
+    api<PageViews>('GET', `/v1/objects/contacts/${encodeURIComponent(id)}/page-views?limit=200`)
+      .then((r) => { if (live) setVisits(groupVisits(r.results)); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [object, id, liveStamp]);
+  const visitById = new Map(visits.map((v) => [v.id, v]));
+  const visitEvents = tab !== 'activity' ? [] : visits.map((v) => ({
+    object: 'page_views',
+    record: { id: v.id, object_type_id: '', record_status: 'active', properties: { name: v.text } } as CrmRecord,
+    at: v.at,
+    quoteResponse: false
+  }));
+
   const allItems = [
     ...associated
       .filter((a) => (ACTIVITY_OBJECTS as readonly string[]).includes(a.object) && (tab === 'activity' || tab === a.object))
       .flatMap((a) => a.records.map((r) => ({ object: a.object, record: r.record, at: activityTime(a.object, r.record), quoteResponse: false }))),
-    ...quoteEvents
+    ...quoteEvents,
+    ...visitEvents
   ].sort((x, y) => y.at.localeCompare(x.at));
 
   // the type filter is for the Activity tab; the other tabs are one type already
@@ -1442,6 +1464,8 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
 
   type StreamItem = (typeof allItems)[number];
   const renderItem = ({ object: o, record: r, at, quoteResponse }: StreamItem) => {
+    const visit = o === 'page_views' ? visitById.get(r.id) : undefined;
+    if (visit) return <VisitItem key={visit.id} visit={visit} />;
     const Icon = objectIcon(o);
     const p = r.properties;
     if (quoteResponse) {
@@ -1571,7 +1595,7 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
               {tab === 'activity' && kinds.length > 1 && (
                 <Select value={kind} onChange={(v) => setKind(v)} aria-label="Type">
                   <option value="">Every type</option>
-                  {kinds.map((k) => <option key={k} value={k}>{k === 'quotes' ? 'Quote responses' : objectByName.get(k)?.label_plural ?? k}</option>)}
+                  {kinds.map((k) => <option key={k} value={k}>{k === 'quotes' ? 'Quote responses' : k === 'page_views' ? 'Page views' : objectByName.get(k)?.label_plural ?? k}</option>)}
                 </Select>
               )}
               <Select value={days} onChange={(v) => setDays(v)} aria-label="Time">

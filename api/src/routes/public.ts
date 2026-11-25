@@ -10,6 +10,7 @@ import { applySubmission, cleanAnswers, publicDefinition, readDefinition, type F
 import { renderPdf, renderTemplate, templateFor, type TemplateRow } from '../templates.js';
 import { invoicePayable, publicPayment, quotePayable, type PublicPayment } from '../payments/state.js';
 import { GMAIL_TYPO_MESSAGE, isGmailTypo } from '../email-typo.js';
+import { readVisitorId } from '../page-views.js';
 
 // Public pages: customers open quotes (/p/quote/#key) and fill in forms
 // (/p/form/#key, or the embed snippet on an allowed website) without signing
@@ -546,7 +547,7 @@ export async function publicRoutes(app: FastifyInstance) {
     return { name: form.name, description: form.description, html: form.html || null, definition: publicDefinition(form.definition), theme: await theme() };
   });
 
-  app.post<{ Params: { key: string }; Body: { values?: unknown; page_url?: unknown; _hp?: unknown; _elapsed?: unknown } }>(
+  app.post<{ Params: { key: string }; Body: { values?: unknown; page_url?: unknown; visitor_id?: unknown; _hp?: unknown; _elapsed?: unknown } }>(
     '/v1/public/forms/:key/submissions',
     { bodyLimit: 32 * 1024 },
     async (req, reply) => {
@@ -575,7 +576,8 @@ export async function publicRoutes(app: FastifyInstance) {
           pageUrl,
           origin,
           ip: req.ip,
-          userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null
+          userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null,
+          visitorId: readVisitorId(b.visitor_id)
         })
       );
       reply.code(201);

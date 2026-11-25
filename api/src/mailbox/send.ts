@@ -11,6 +11,7 @@ import { buildMime } from './mime.js';
 import { domainOf, loadProviders, MailAuthError, MailSendError, sendMessage, type MailProvider, type OutgoingMessage } from './providers.js';
 import { resolveSender, userName } from './senders.js';
 import { isGmailTypo } from '../email-typo.js';
+import { newTrackToken, trackedHtml, trackingAvailable } from './tracking.js';
 
 // Writing and sending an email from a record page (POST /v1/mailboxes/send).
 // The email becomes an emails record (pc_0031) linked to the page's record,
@@ -60,6 +61,7 @@ export interface SendInput {
   file_ids?: unknown;
   add_signature?: unknown;
   scheduled_at?: unknown;
+  track?: unknown;
 }
 
 export interface SendResult {
@@ -145,6 +147,9 @@ export async function createSend(p: Principal, b: SendInput): Promise<SendResult
     scheduledAt = d;
   }
 
+  // open and click tracking: on unless turned off, and only when the API has a public address
+  const track = b.track !== false && trackingAvailable();
+
   const contacts = await matchingContacts(pool, p, [...to, ...cc, ...bcc]);
   const emails = await getObject('emails');
   const emailId = await withTx({ principal: p, source: SOURCE }, async (client) => {
@@ -168,9 +173,9 @@ export async function createSend(p: Principal, b: SendInput): Promise<SendResult
       owner: p.userId
     }, links);
     await client.query(
-      `insert into auth.mailbox_sends (email_id, user_id, provider, mailbox, from_address, from_name, file_ids, scheduled_at, status)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [id, p.userId, sender.cfg.provider, sender.mailbox, sender.from, sender.fromName, ids, scheduledAt, scheduledAt ? 'scheduled' : 'sending']
+      `insert into auth.mailbox_sends (email_id, user_id, provider, mailbox, from_address, from_name, file_ids, scheduled_at, status, track, track_token)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, p.userId, sender.cfg.provider, sender.mailbox, sender.from, sender.fromName, ids, scheduledAt, scheduledAt ? 'scheduled' : 'sending', track, track ? newTrackToken() : null]
     );
     return id;
   });
@@ -196,6 +201,8 @@ interface SendRow {
   file_ids: string[];
   attempts: number;
   status: string;
+  track: boolean;
+  track_token: string | null;
 }
 
 const split = (s: unknown) => (typeof s === 'string' ? s.split(',').map((x) => x.trim()).filter(Boolean) : []);
@@ -231,7 +238,7 @@ async function setOutcome(row: SendRow, emails: ObjectDef, outcome: { status: 's
 // (send now, where the user is waiting).
 export async function deliver(emailId: string, opts: { retry: boolean }): Promise<{ ok: boolean; error: string | null }> {
   const { rows } = await pool.query<SendRow>(
-    `select id::text as id, email_id, user_id, provider, mailbox, from_address, from_name, file_ids, attempts, status
+    `select id::text as id, email_id, user_id, provider, mailbox, from_address, from_name, file_ids, attempts, status, track, track_token
      from auth.mailbox_sends where email_id = $1`,
     [emailId]
   );
@@ -257,7 +264,14 @@ export async function deliver(emailId: string, opts: { retry: boolean }): Promis
       const f = await readFileBytes(pool, SYSTEM, id, MAX_ATTACHMENT_BYTES);
       attachments.push({ filename: f.name ?? 'attachment', contentType: f.mime_type ?? 'application/octet-stream', content: f.bytes });
     }
-    const html = String(rec.body ?? '');
+    // the record keeps the body as written; the sent copy carries the tracking
+    const written = String(rec.body ?? '');
+    let html = written;
+    if (row.track && row.track_token && trackingAvailable()) {
+      const t = trackedHtml(written, row.track_token);
+      html = t.html;
+      await pool.query(`update auth.mailbox_sends set track_links = $2 where id = $1`, [row.id, t.links]);
+    }
     const msg: OutgoingMessage = {
       mailbox: row.mailbox,
       from: { address: row.from_address, name: row.from_name },
@@ -267,7 +281,7 @@ export async function deliver(emailId: string, opts: { retry: boolean }): Promis
       replyTo: rec.reply_to || null,
       subject: String(rec.subject ?? ''),
       html,
-      text: htmlToText(html),
+      text: htmlToText(written),
       attachments,
       ...(cfg.provider === 'google' ? { messageId: newMessageId(emailId, row.from_address) } : {})
     };
@@ -320,7 +334,7 @@ export async function sendStatus(p: Principal, emailId: string) {
   if (!/^[0-9a-f]{10}$/.test(emailId)) throw notFound('email not found');
   await assertAccessible(pool, await getObject('emails'), p, [emailId]);
   const { rows } = await pool.query(
-    `select status, provider, mailbox, from_address, scheduled_at, next_attempt_at, attempts, last_error, sent_at, user_id
+    `select status, provider, mailbox, from_address, scheduled_at, next_attempt_at, attempts, last_error, sent_at, user_id, track
      from auth.mailbox_sends where email_id = $1`,
     [emailId]
   );

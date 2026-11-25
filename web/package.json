@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run build:frame && vite",
-    "build": "tsc --noEmit && npm run build:frame && vite build && vite build -c vite.embed.config.ts && cp dist/index.html dist/404.html",
+    "build": "tsc --noEmit && npm run build:frame && vite build && vite build -c vite.embed.config.ts && vite build -c vite.track.config.ts && cp dist/index.html dist/404.html",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "build:frame": "vite build -c vite.frame.config.ts --logLevel warn"

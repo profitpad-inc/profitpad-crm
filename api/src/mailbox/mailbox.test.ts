@@ -226,3 +226,33 @@ test('Microsoft: big attachment goes draft, upload session in pieces, then send'
     await fake.close();
   }
 });
+
+test('tracking: web links go through the API, others stay, the image is added', async () => {
+  const { trackedHtml, isTrackingPixel, newTrackToken } = await import('./tracking.js');
+  const token = newTrackToken();
+  assert.match(token, /^[A-Za-z0-9_-]{22}$/);
+  const { html, links } = trackedHtml(
+    '<p>See <a href="https://example.com/a?x=1&amp;y=2">this</a>, <a href="mailto:a@b.com">mail</a> and <a href="http://example.com/b" target="_blank">that</a></p>',
+    token
+  );
+  assert.deepEqual(links, ['https://example.com/a?x=1&y=2', 'http://example.com/b']);
+  assert.ok(html.includes(`/v1/public/m/c/${token}/0"`));
+  assert.ok(html.includes(`/v1/public/m/c/${token}/1" target="_blank"`));
+  assert.ok(html.includes('href="mailto:a@b.com"'));
+  assert.ok(html.includes(`/v1/public/m/o/${token}.gif"`));
+  assert.ok(!html.includes('example.com/a'));
+  assert.ok(isTrackingPixel(`https://api.crm.example.com/v1/public/m/o/${token}.gif`));
+  assert.ok(isTrackingPixel(`https://ci3.googleusercontent.com/meips/abc#https://api.crm.example.com/v1/public/m/o/${token}.gif`));
+  assert.ok(!isTrackingPixel('https://example.com/logo.gif'));
+});
+
+test('tracking: a logged reply loses the quoted tracking image', async () => {
+  const { emailBody } = await import('./sync.js');
+  const body = emailBody({
+    html: '<p>Thanks!</p><blockquote><p>Hi</p><img src="https://api.x.com/v1/public/m/o/AAAAAAAAAAAAAAAAAAAAAA.gif" width="1" height="1"><img src="https://x.com/logo.png"></blockquote>',
+    text: null,
+    attachments: []
+  } as never);
+  assert.ok(!body.includes('/v1/public/m/o/'));
+  assert.ok(body.includes('logo.png'));
+});

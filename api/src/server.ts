@@ -27,6 +27,7 @@ import { BRAND_PATHS, brandRoutes } from './brand.js';
 import { fileRoutes, startFileSweeper } from './files.js';
 import { viewRoutes } from './routes/views.js';
 import { landingPageRoutes, landingPageShellRoutes } from './routes/landing-pages.js';
+import { pageViewRoutes } from './routes/page-views.js';
 import { packageRoutes } from './routes/packages.js';
 import { optionListRoutes } from './routes/option-lists.js';
 import { templateRoutes } from './routes/templates.js';
@@ -239,6 +240,7 @@ export async function buildApp() {
   await app.register(fileRoutes);
   await app.register(viewRoutes);
   await app.register(landingPageRoutes);
+  await app.register(pageViewRoutes);
   await app.register(landingPageShellRoutes);
   await app.register(packageRoutes);
   await app.register(optionListRoutes);

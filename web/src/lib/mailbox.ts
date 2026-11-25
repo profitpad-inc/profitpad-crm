@@ -47,4 +47,6 @@ export function loadCanSend(): Promise<boolean> {
   return canSend;
 }
 
-export const loadSenders = () => api<{ results: Sender[] }>('GET', '/v1/mailboxes/senders').then((r) => r.results);
+// tracking: whether the API can track opens and clicks (it has a public address)
+export const loadSenders = () => api<{ results: Sender[]; tracking_available?: boolean }>('GET', '/v1/mailboxes/senders')
+  .then((r) => ({ senders: r.results, tracking: !!r.tracking_available }));

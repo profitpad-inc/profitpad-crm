@@ -149,6 +149,11 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
   const [files, setFiles] = useState<Attached[]>([]);
   const [uploading, setUploading] = useState<string | null>(null);
   const [signature, setSignature] = useState(!!me.user?.email_signature);
+  // open and click tracking: on by default, the last choice is remembered
+  const [canTrack, setCanTrack] = useState(false);
+  const [track, setTrack] = useState(() => {
+    try { return localStorage.getItem('pc-email-track') !== '0'; } catch { return true; }
+  });
   const [sigTip, setSigTip] = useState(false);
   // the signature's popup closes on a click anywhere else or Escape
   useEffect(() => {
@@ -170,9 +175,10 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
   useEffect(() => {
     let cancelled = false;
     loadSenders()
-      .then((list) => {
+      .then(({ senders: list, tracking }) => {
         if (cancelled) return;
         setSenders(list);
+        setCanTrack(tracking);
         const first = list[0];
         if (first) {
           setSenderKey(first.key);
@@ -254,6 +260,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
         body_html: body.html,
         file_ids: files.map((f) => f.id),
         add_signature: signature,
+        track: canTrack && track,
         scheduled_at: laterDate ? laterDate.toISOString() : null
       });
       // a failed email is saved on the record with its own Send again, so the
@@ -367,6 +374,14 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
           )}
           {me.user?.email_signature && (
             <label className="ec-switch small"><input type="checkbox" role="switch" checked={signature} onChange={(e) => setSignature(e.target.checked)} /> Signature</label>
+          )}
+          {canTrack && (
+            <label className="ec-switch small" title="Count when the email is opened and its links are clicked (shown on the email in the CRM)">
+              <input type="checkbox" role="switch" checked={track} onChange={(e) => {
+                setTrack(e.target.checked);
+                try { localStorage.setItem('pc-email-track', e.target.checked ? '1' : '0'); } catch { /* not kept */ }
+              }} /> Track opens and clicks
+            </label>
           )}
         </span>
         <span className="composer-buttons">

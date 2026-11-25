@@ -10,6 +10,7 @@ import { useApp, type Themes } from '../lib/app-context';
 import { ColorInput } from '../components/ColorPicker';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton, useReview } from '../components/settings';
 import { SaveHint } from '../components/SaveHint';
+import { CodeBlock } from '../components/CodeBlock';
 import { useDirty } from '../lib/use-dirty';
 import { DEFAULT_DARK_THEME, DEFAULT_THEME, THEME_FIELDS, defaultDropdownColors, dropdownColorName, type ColorMode, type Mode, type Theme, type ThemeKey } from '../lib/theme';
 import { MORE_OFF, displayName, moreGroups, objectIcon } from '../lib/display';
@@ -657,8 +658,9 @@ function EmbedDomains() {
     <SettingsPage
       title="Embed domains"
       description={<>
-        Websites allowed to embed forms and booking pages with the snippet from their record page. Enter each address
-        separately: <code>https://example.com</code> and <code>https://www.example.com</code> are different websites.
+        Websites allowed to embed forms and booking pages with the snippet from their record page, and to send page
+        views with the tracking code. Enter each address separately: <code>https://example.com</code> and{' '}
+        <code>https://www.example.com</code> are different websites.
       </>}
     >
       {origins && pending.length > 0 && (
@@ -717,6 +719,20 @@ function EmbedDomains() {
         {error && <div className="error">{error}</div>}
         {saved && <div className="muted small" role="status">{saved}</div>}
       </SettingsSection>
+      <SettingsSection
+        title="Tracking code"
+        description={<>
+          Put this on every page of an allowed website, before <code>&lt;/body&gt;</code>, to record page views. Views of
+          a visitor the CRM does not know yet are kept with their browser; once that browser sends a form, they show on
+          the contact&apos;s Page views card. The CRM&apos;s own landing pages are tracked without it.
+        </>}
+      >
+        <CodeBlock text={`<script src="${window.location.origin}/p/track.js" async></script>`} wrap lang="html" />
+        <p className="muted small">
+          It sets a first-party cookie named <code>pcrm_vid</code>. If your website asks visitors for consent, load the
+          script only after they agree.
+        </p>
+      </SettingsSection>
     </SettingsPage>
   );
 }
@@ -728,6 +744,7 @@ interface Menu {
   items: NavItem[];
   bottom: NavItem[];
   more_hidden?: string[];
+  landing?: NavItem;
 }
 
 // items in the mobile hotbar before Search, which is always last; the first is always Menu or Home
@@ -747,7 +764,27 @@ export interface NavGroup {
   members: string[];
 }
 
-interface MenuSnapshot { items: NavItem[]; bottom: NavItem[]; more_hidden?: string[] }
+interface MenuSnapshot { items: NavItem[]; bottom: NavItem[]; more_hidden?: string[]; landing?: NavItem }
+
+const HOME_ITEM: NavItem = { type: 'home' };
+// a start page link without its menu label, as a stable key (also the picker's option value)
+function landingKey(it: NavItem): string {
+  switch (it.type) {
+    case 'object': return `object:${it.object}`;
+    case 'view': return `view:${it.object}:${it.view_id}`;
+    case 'custom_view': return `custom_view:${it.slug}`;
+    case 'card_scanner': return 'card_scanner';
+    default: return 'home';
+  }
+}
+function landingFromKey(key: string): NavItem {
+  const [type, a, b] = key.split(':');
+  if (type === 'object') return { type: 'object', object: a };
+  if (type === 'view') return { type: 'view', object: a, view_id: Number(b) };
+  if (type === 'custom_view') return { type: 'custom_view', slug: key.slice('custom_view:'.length) };
+  if (type === 'card_scanner') return { type: 'card_scanner' };
+  return HOME_ITEM;
+}
 
 function itemLabel(item: NavItem, objectLabel: (o: string) => string, viewName: (o: string, id: number) => string, customViewName: (slug: string) => string): string {
   switch (item.type) {
@@ -866,10 +903,10 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
 
 type NavTab = 'sidebar' | 'hotbar' | 'more' | 'groups';
 const NAV_TABS: { key: NavTab; label: string }[] = [
-  { key: 'sidebar', label: 'Sidebar' },
+  { key: 'groups', label: 'Menu groups' },
+  { key: 'sidebar', label: 'Desktop sidebar' },
   { key: 'hotbar', label: 'Mobile hotbar' },
-  { key: 'more', label: 'More menu' },
-  { key: 'groups', label: 'Menu groups' }
+  { key: 'more', label: 'More menu' }
 ];
 
 // Targets: 'me' (the signed-in user's own menu, where the editor opens), 'default' (everyone not in a
@@ -892,6 +929,8 @@ function NavSettings() {
   const [bottom, setBottom] = useState<NavItem[]>([]);
   // objects left out of the sidebar's More menu
   const [moreHidden, setMoreHidden] = useState<string[]>([]);
+  // the start page: where the bare CRM address sends people who see this menu
+  const [landing, setLanding] = useState<NavItem>(HOME_ITEM);
   // the menu as last loaded or saved, to tell whether there are unsaved changes
   const [savedJson, setSavedJson] = useState('');
   const [views, setViews] = useState<Record<string, View[]>>({});
@@ -909,7 +948,7 @@ function NavSettings() {
   const [iconFor, setIconFor] = useState<{ root: 'top' | 'bottom'; index: number } | null>(null);
   // with unsaved changes: the page or menu the admin asked to go to, held until they discard or keep editing
   const [leaving, setLeaving] = useState<{ to: string } | { target: string } | null>(null);
-  // which part of the menu is shown: Sidebar, Mobile hotbar, More menu or (admins) Menu groups; kept in ?tab=
+  // which part of the menu is shown: (admins) Menu groups, Desktop sidebar, Mobile hotbar or More menu; kept in ?tab=
   const [params, setParams] = useSearchParams();
   const tabs = NAV_TABS.filter((t) => t.key !== 'groups' || isAdmin);
   const tab = tabs.find((t) => t.key === params.get('tab'))?.key ?? 'sidebar';
@@ -958,14 +997,15 @@ function NavSettings() {
   }, []);
 
   function showMenu(m: MenuSnapshot | undefined) {
-    const next = { items: m?.items ?? [], bottom: withLead(m?.bottom ?? []), moreHidden: m?.more_hidden ?? [] };
+    const next = { items: m?.items ?? [], bottom: withLead(m?.bottom ?? []), moreHidden: m?.more_hidden ?? [], landing: m?.landing ?? HOME_ITEM };
     setItems(next.items);
     setBottom(next.bottom);
     setMoreHidden(next.moreHidden);
+    setLanding(next.landing);
     setSavedJson(JSON.stringify(next));
   }
 
-  const dirty = loaded && JSON.stringify({ items, bottom, moreHidden }) !== savedJson;
+  const dirty = loaded && JSON.stringify({ items, bottom, moreHidden, landing }) !== savedJson;
 
   // While another menu (Default, a group or a user) is open here, the sidebar and mobile bar show it,
   // unsaved changes included, so the admin sees what those people will see. Leaving the page puts theirs back.
@@ -1003,7 +1043,7 @@ function NavSettings() {
     setLeaving(null);
     if (!l) return;
     if ('to' in l) {
-      setSavedJson(JSON.stringify({ items, bottom, moreHidden }));
+      setSavedJson(JSON.stringify({ items, bottom, moreHidden, landing }));
       navigate(l.to);
     } else showTarget(l.target);
   }
@@ -1027,6 +1067,7 @@ function NavSettings() {
     setItems(m.items);
     setBottom(withLead(m.bottom));
     setMoreHidden(m.more_hidden ?? []);
+    setLanding(m.landing ?? HOME_ITEM);
     setCopyOpen(false);
     setError(null);
     setMessage(null);
@@ -1151,7 +1192,7 @@ function NavSettings() {
 
   async function save() {
     setError(null);
-    const body = { items, bottom, more_hidden: moreHidden };
+    const body = { items, bottom, more_hidden: moreHidden, landing };
     try {
       if (target === 'me') await api('PUT', '/v1/ui/nav/me', body);
       else if (target === 'default') await api('PUT', '/v1/ui/nav/default', body);
@@ -1160,7 +1201,7 @@ function NavSettings() {
       if (isAdmin) await loadMenus();
       else setMySource('user');
       await reloadNav();
-      setSavedJson(JSON.stringify({ items, bottom, moreHidden }));
+      setSavedJson(JSON.stringify({ items, bottom, moreHidden, landing }));
       setMessage('Menu saved.');
     } catch (err) {
       setError((err as Error).message);
@@ -1206,6 +1247,25 @@ function NavSettings() {
     ...groups.map((g) => ({ value: `group:${g.id}`, label: `Group: ${g.name}` })),
     ...users.filter((u) => u.id !== myId).map((u) => ({ value: `user:${u.id}`, label: u.name }))
   ];
+
+  // start page choices: Home, then every link in this sidebar (sections included), then custom views not in it,
+  // and the saved choice even when it has left the menu since
+  function landingOptions(): { value: string; label: string }[] {
+    const out = new Map<string, string>([['home', 'Home']]);
+    const links = items.flatMap((it): { c: NavItem; in: string | null }[] => (it.type === 'section' ? it.items.map((c) => ({ c, in: it.label })) : [{ c: it, in: null }]));
+    for (const { c, in: section } of links) {
+      if (c.type !== 'object' && c.type !== 'view' && c.type !== 'custom_view' && c.type !== 'card_scanner') continue;
+      const key = landingKey(c);
+      if (!out.has(key)) out.set(key, `${itemLabel(c, objectLabel, viewName, customViewName)}${section ? ` (in ${section})` : ''}`);
+    }
+    for (const v of customViews) {
+      const key = `custom_view:${v.slug}`;
+      if (!out.has(key)) out.set(key, `${v.name ?? v.slug} (custom view${v.status === 'published' ? '' : ', draft'})`);
+    }
+    const current = landingKey(landing);
+    if (!out.has(current)) out.set(current, itemLabel({ ...landing, label: undefined } as NavItem, objectLabel, viewName, customViewName));
+    return [...out].map(([value, label]) => ({ value, label }));
+  }
 
   function sidebarDescription(): string {
     if (target === 'me') {
@@ -1449,7 +1509,20 @@ function NavSettings() {
       </div>
 
       {tab === 'sidebar' && (
-      <SettingsSection title="Sidebar" description={sidebarDescription()}>
+      <SettingsSection title="Start page" description="Where the CRM's plain address takes people who see this menu when they open it. The logo and Home links still open the home page. Anyone who cannot open the page picked here lands on Home.">
+        {!loaded ? <TableSkeleton rows={1} /> : (
+          <label className="field nav-landing">
+            <span>Open on</span>
+            <Select value={landingKey(landing)} onChange={(v) => setLanding(landingFromKey(v))} aria-label="Start page">
+              {landingOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </label>
+        )}
+      </SettingsSection>
+      )}
+
+      {tab === 'sidebar' && (
+      <SettingsSection title="Desktop sidebar" description={sidebarDescription()}>
         {!loaded ? <TableSkeleton rows={5} /> : items.length === 0
           ? <EmptyState icon={<PanelLeft size={18} />} title="This menu is empty">Add objects, views and sections with + Add.</EmptyState>
           : <div className="nav-tree">{renderList(items, 'top')}</div>}

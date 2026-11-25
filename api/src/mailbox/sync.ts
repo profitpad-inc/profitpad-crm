@@ -10,6 +10,7 @@ import { contactIdsByEmail } from '../contact-emails.js';
 import { saveFileBytes } from '../files.js';
 import { SIGNATURE_OPTIONS } from '../signature.js';
 import { MAX_BODY } from './html.js';
+import { isTrackingPixel } from './tracking.js';
 import {
   domainOf, gmailBase, graphBase, loadProviders, MailAuthError, MailReadDenied, providerFor, providerReady, readCall,
   type MailProvider, type ProviderRow
@@ -325,7 +326,11 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;',
 const textToHtml = (s: string) => `<p>${escapeHtml(s).replace(/\r?\n/g, '<br>')}</p>`;
 
 export function emailBody(d: MessageDetail): string {
-  let body = d.html ? sanitizeHtml(d.html, SIGNATURE_OPTIONS).trim() : textToHtml(d.text ?? '');
+  // a reply quoting an email sent with tracking keeps its 1x1 image; drop it,
+  // or opening the reply in the CRM would count as the recipient opening it
+  let body = d.html
+    ? sanitizeHtml(d.html, { ...SIGNATURE_OPTIONS, exclusiveFilter: (f) => f.tag === 'img' && isTrackingPixel(f.attribs.src) }).trim()
+    : textToHtml(d.text ?? '');
   if (body.length > MAX_BODY) body = textToHtml((d.text ?? sanitizeHtml(body, { allowedTags: [], allowedAttributes: {} })).slice(0, MAX_BODY / 2));
   if (d.attachments.length) {
     body += `<p class="pc-email-attachments"><em>Attachments in the original email: ${d.attachments.map(escapeHtml).join(', ')}</em></p>`;

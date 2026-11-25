@@ -7,6 +7,7 @@ import { browserOrigins, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
 import { assertAccessible, createRecord, onWrite, updateRecord } from '../records.js';
 import { checkPhone } from '../phone.js';
+import { readVisitorId } from '../page-views.js';
 import { applySubmission, cleanAnswers, publicDefinition, readDefinition, summarize, type FormDefinition } from '../forms.js';
 import { allowedOrigins, MIN_FILL_MS, rateLimit, theme } from './public.js';
 import {
@@ -475,7 +476,7 @@ export async function bookingRoutes(app: FastifyInstance) {
   app.post<{
     Params: { key: string };
     Body: {
-      start?: unknown; duration?: unknown; before?: { values?: unknown }; after?: { values?: unknown }; page_url?: unknown; _hp?: unknown; _elapsed?: unknown;
+      start?: unknown; duration?: unknown; before?: { values?: unknown }; after?: { values?: unknown }; page_url?: unknown; visitor_id?: unknown; _hp?: unknown; _elapsed?: unknown;
     };
   }>('/v1/public/booking/:key/book', { bodyLimit: 64 * 1024 }, async (req, reply) => {
     const origin = await requireOrigin(req.headers.origin);
@@ -534,7 +535,8 @@ export async function bookingRoutes(app: FastifyInstance) {
             origin,
             ip: req.ip,
             userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null,
-            links: [{ object: 'booking_pages', id: page.id }]
+            links: [{ object: 'booking_pages', id: page.id }],
+            visitorId: readVisitorId(b.visitor_id)
           });
           contact ??= r.contact;
           submissions.push(r.submission);

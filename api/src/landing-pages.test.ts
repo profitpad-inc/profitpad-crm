@@ -123,3 +123,22 @@ test('renderRequestAllowed: https on named public hosts only', () => {
   assert.equal(lp.renderRequestAllowed('https://db.internal/'), false);
   assert.equal(lp.renderRequestAllowed('https://user:pw@example.com/'), false);
 });
+
+test('links carry the visitor address params on, not the CRM own ones', () => {
+  const html = lp.preparePageHtml('<html><head></head></html>');
+  const js = html.match(/<script data-pcrm-page>([\s\S]*?)<\/script>/)![1];
+  const body = js.slice(js.indexOf('var CARRY=[];'), js.indexOf('function linkOf'));
+  const carry = new Function('location', 'URLSearchParams', `${body}; return carry;`)(
+    { search: '?utm_source=google&gclid=abc&draft=123.sig&x=1' }, URLSearchParams
+  ) as (a: unknown) => void;
+  const run = (href: string, keep = false) => {
+    let h = href;
+    carry({ getAttribute: () => h, setAttribute: (_: string, v: string) => { h = v; }, hasAttribute: () => keep });
+    return h;
+  };
+  assert.equal(run('/p/page/pricing'), '/p/page/pricing?utm_source=google&gclid=abc&x=1');
+  assert.equal(run('https://example.com/a?utm_source=mine#top'), 'https://example.com/a?utm_source=mine&gclid=abc&x=1#top');
+  assert.equal(run('pricing.html'), 'pricing.html?utm_source=google&gclid=abc&x=1');
+  for (const same of ['#section', 'mailto:a@b.com', 'tel:123', '']) assert.equal(run(same), same);
+  assert.equal(run('/p/page/pricing', true), '/p/page/pricing');
+});

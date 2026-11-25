@@ -11,7 +11,8 @@ import './date-picker.css';
 import './kit.css';
 import { api, type Me } from './lib/api';
 import { finishReauth, onReauthChange, reauthPending } from './lib/reauth';
-import { AppProvider } from './lib/app-context';
+import { AppProvider, useApp } from './lib/app-context';
+import { navLink } from './lib/nav';
 import { installTooltips } from './lib/tooltips';
 import { installNoAutofill } from './lib/no-autofill';
 import { Sidebar } from './components/Sidebar';
@@ -48,6 +49,21 @@ function Layout() {
   );
 }
 
+// The address the tab was opened at. Only a visit that opens the bare address (/) goes to the menu's start
+// page; Home links, the logo and Back inside the app still show the home page.
+const OPENED_AT = window.location.pathname + window.location.search + window.location.hash;
+let startPageUsed = false;
+
+// / : the home page, or on opening the CRM at its bare address, the menu's start page when there is one
+// this user can open (else Home)
+function StartPage() {
+  const { landing, objectByName, customViews } = useApp();
+  const target = !startPageUsed && OPENED_AT === '/' && landing.type !== 'home' ? navLink(landing, objectByName, customViews)?.to : undefined;
+  // flipped after render (not during it), so StrictMode's second render still redirects
+  useEffect(() => { startPageUsed = true; }, []);
+  return target ? <Navigate to={target} replace /> : <Home />;
+}
+
 function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
@@ -77,7 +93,7 @@ function App() {
       {reauth && <Login reauth onSignedIn={() => finishReauth(true)} onCancel={() => finishReauth(false)} />}
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Home />} />
+          <Route index element={<StartPage />} />
           <Route path="objects/:object" element={<ObjectTable />} />
           <Route path="objects/:object/:id" element={<RecordPage />} />
           <Route path="view" element={<CustomView />} />

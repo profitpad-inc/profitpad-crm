@@ -16,6 +16,7 @@ import { SYNC_LOG_DAYS, effectiveMode, fetchLoggedAttachments, loggedSource } fr
 import { listSenders } from './senders.js';
 import { cancelSend, cleanAddresses, createSend, retrySend, sendStatus, type SendInput } from './send.js';
 import { cleanEmailHtml } from './html.js';
+import { trackingAvailable, trackingRoutes } from './tracking.js';
 
 // Settings → Mailboxes (admins) and sending from record pages (everyone
 // signed in). See send.ts and providers.ts.
@@ -172,6 +173,7 @@ async function setMailboxUsers(mailboxId: string, userIds: string[]) {
 }
 
 export async function mailboxRoutes(app: FastifyInstance) {
+  trackingRoutes(app);
   // ---- admin: Settings → Mailboxes ----
 
   app.get('/v1/mailboxes/settings', async (req) => {
@@ -528,7 +530,7 @@ export async function mailboxRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'read');
     if (!p.userId || p.keyId !== null) return { results: [] };
-    return { results: await listSenders(p.userId, req.query.aliases !== '0') };
+    return { results: await listSenders(p.userId, req.query.aliases !== '0'), tracking_available: trackingAvailable() };
   });
 
   app.post<{ Body: SendInput }>('/v1/mailboxes/send', { bodyLimit: 2 * 1024 * 1024 }, async (req, reply) => {

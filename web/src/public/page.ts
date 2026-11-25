@@ -1,4 +1,5 @@
-import { keyFromHash } from './public-api';
+import { keyFromHash, queryParamsFromLocation } from './public-api';
+import { visitorId } from './visitor';
 
 // Landing page shell: /p/page/#<slug> (admins: /p/page/?draft=1#<slug> for the
 // draft). Landing pages are plain HTML written through the API or MCP and do
@@ -104,6 +105,7 @@ async function load(): Promise<void> {
     parts.push(badge);
   }
   root.replaceChildren(...parts);
+  if (!draft && !previewToken) trackView(page.slug);
 
   window.addEventListener('message', (e) => {
     if (e.source !== frame.contentWindow) return;
@@ -114,14 +116,47 @@ async function load(): Promise<void> {
   });
 }
 
-// The visitor's address params (?utm_source=..., form prefills) go to the
-// page too, so scripts and the CRM's forms in it can read them.
+// The visitor's address params (?utm_source=..., form prefills), from before
+// the # and after it (/p/page/#slug?utm_source=x), without the CRM's own
+// draft and preview params.
+function visitorParams(): URLSearchParams {
+  const params = queryParamsFromLocation();
+  params.delete('draft');
+  params.delete('preview');
+  return params;
+}
+function visitorQuery(): string {
+  const q = visitorParams().toString();
+  return q ? `?${q}` : '';
+}
+
+// They go to the page too, so scripts and the CRM's forms in it can read them,
+// and its links carry them on (api/src/landing-pages.ts, helperScript).
 function withVisitorParams(htmlUrl: string): string {
   const url = new URL(htmlUrl, window.location.href);
-  new URLSearchParams(window.location.search).forEach((value, key) => {
-    if (key !== 'draft' && key !== 'preview') url.searchParams.append(key, value);
-  });
+  visitorParams().forEach((value, key) => url.searchParams.append(key, value));
   return url.href;
+}
+
+// ---- page views ---------------------------------------------------------------
+
+// The published page counts as a view of this visitor (api/src/page-views.ts).
+// The id lives on the CRM's own address, like the hosted form page's, so a
+// form sent here or on /p/form/ ties these views to the contact. The address
+// is stored in its path form (/p/page/<slug>?utm_...), since the #slug form
+// would lose the page once the API drops the #part.
+function trackView(pageSlug: string): void {
+  const id = visitorId();
+  if (!id) return;
+  try {
+    void fetch(`${API_BASE}/v1/public/track`, {
+      method: 'POST', keepalive: true, credentials: 'omit',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ visitor_id: id, url: `${window.location.origin}/p/page/${pageSlug}${visitorQuery()}`, title: document.title, referrer: document.referrer, landing_page: pageSlug })
+    }).catch(() => undefined);
+  } catch {
+    // nothing to do
+  }
 }
 
 // ---- the bridge -------------------------------------------------------------
@@ -162,6 +197,10 @@ async function answer(d: BridgeRequest, target: Window): Promise<void> {
         here.searchParams.delete('draft');
         here.searchParams.delete('preview');
         json.page_url = here.href;
+        // the frame has no storage of its own: this page's visitor id
+        const id = visitorId();
+        if (id) json.visitor_id = id;
+        else delete json.visitor_id;
         body = JSON.stringify(json);
       }
     } catch {

@@ -1,6 +1,7 @@
 import { el, publicApi, pageUrlWith, queryParamsFromLocation, PublicApiError, type BookingResult, type ManagedMeeting, type PublicBookingPage } from './public-api';
 import { injectFormCss, renderForm } from './form-renderer';
 import { enhanceSelect } from './dropdown';
+import { visitorField } from './visitor';
 
 // "15 min", "1 hr", "1 hr 30 min"
 function lengthLabel(minutes: number): string {
@@ -387,6 +388,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
         ...(page.form_before ? { before: { values: beforeValues ?? {} } } : {}),
         ...(page.form_after ? { after: { values: afterValues ?? {} } } : {}),
         page_url: pageUrl(),
+        ...visitorField(),
         _hp: honeypot,
         _elapsed: Date.now() - loadedAt
       });

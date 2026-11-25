@@ -5,7 +5,7 @@ import { Parser } from 'htmlparser2';
 // what mail clients draw (text, lists, tables, images, links, inline styles)
 // and lose scripts, frames, forms and event handlers. Same rules as email
 // signatures (signature.ts); images must be web addresses.
-const EMAIL_OPTIONS: sanitizeHtml.IOptions = {
+export const EMAIL_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
     'div', 'span', 'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code',
     'ul', 'ol', 'li', 'strong', 'b', 'em', 'i', 'u', 's', 'small', 'sub', 'sup', 'font', 'center',

@@ -3,6 +3,7 @@ import { visibleFields } from './conditions';
 import { CARET, composePhone, loadPhoneRegions, regionForNumber, regionLabel, regionShort, type PhoneRegion } from './phone-regions';
 import { DROPDOWN_CSS, enhanceSelect, type Dropdown } from './dropdown';
 import { isGmailTypo } from '../lib/email-typo';
+import { visitorField } from './visitor';
 
 // Renders a published form into a container and submits it. Shared by the
 // hosted page (/p/form/), embed.js and the builder's preview, so it uses plain
@@ -474,6 +475,8 @@ export function renderForm(container: HTMLElement, opts: {
       const res = await api.submit(opts.key, {
         values,
         page_url: pageUrl,
+        // ties this browser's page views to the contact (visitor.ts)
+        ...visitorField(),
         _hp: hp.value,
         _elapsed: Date.now() - shownAt
       });

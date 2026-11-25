@@ -6,6 +6,7 @@ import { cleanSlug, createRecord, findIdByUnique, onWrite, updateRecord, upsertP
 import sanitizeHtml from 'sanitize-html';
 import { checkPhone } from './phone.js';
 import { trackingFromUrl } from './form-tracking.js';
+import { identifyVisitor } from './page-views.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
 import { isGmailTypo } from './email-typo.js';
 
@@ -447,6 +448,8 @@ export interface SubmissionMeta {
   userAgent: string | null;
   // more records the submission is linked to (a booking's booking page)
   links?: { object: string; id: string }[];
+  // the browser's page view visitor id (src/page-views.ts): ties its views to the contact
+  visitorId?: string | null;
 }
 
 // Stores a submission and applies it: upserts the contact (by email), creates
@@ -500,6 +503,7 @@ export async function applySubmission(
     ...(ticket ? [{ object: 'tickets', id: ticket }] : []),
     ...(meta.links ?? [])
   ]);
+  if (contact && meta.visitorId) await identifyVisitor(client, meta.visitorId, contact);
   return { submission, contact, ticket };
 }
 

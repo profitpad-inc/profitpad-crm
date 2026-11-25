@@ -3,14 +3,22 @@ import '../email.css';
 
 // What happened to an email Postmark sent, on the timeline: delivered, opened,
 // clicked, replied, bounced (from Postmark's webhooks, api/src/email/events.ts).
+// An email sent from a mailbox through the composer shows its opens and clicks
+// (api/src/mailbox/tracking.ts); its sending state is shown elsewhere.
 
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined;
 
 export function EmailTracking({ p }: { p: Record<string, unknown> }) {
-  // only email Postmark sent (it has a stream); mailbox sends show their own state
-  if (first(p.direction) !== 'outbound' || !first(p.stream)) return null;
-  const status = first(p.status);
+  if (first(p.direction) !== 'outbound') return null;
   const pills: [Tone, string][] = [];
+  // sent from a mailbox through the composer: only opens and clicks here
+  if (!first(p.stream)) {
+    if (first(p.logged_via) !== 'composer') return null;
+    if (p.first_opened_at) pills.push(['info', Number(p.open_count) > 1 ? `Opened ${Number(p.open_count)}×` : 'Opened']);
+    if (p.first_clicked_at) pills.push(['info', Number(p.click_count) > 1 ? `Clicked ${Number(p.click_count)}×` : 'Clicked']);
+    return pills.length ? <div className="email-track">{pills.map(([tone, label]) => <StatusPill key={label} tone={tone}>{label}</StatusPill>)}</div> : null;
+  }
+  const status = first(p.status);
   if (status === 'queued') pills.push(['pending', 'Sending']);
   if (status === 'failed') pills.push(['failed', 'Not sent']);
   if (status === 'bounced') pills.push(['failed', 'Bounced']);

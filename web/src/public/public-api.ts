@@ -172,7 +172,7 @@ export function publicApi(base: string) {
     // phone answers are checked by the API (Google's libphonenumber)
     phone: (key: string, number: string) =>
       call<PhoneResult>('POST', `/forms/${encodeURIComponent(key)}/phone`, { number }),
-    submit: (key: string, body: { values: Record<string, unknown>; page_url: string; _hp: string; _elapsed: number }) =>
+    submit: (key: string, body: { values: Record<string, unknown>; page_url: string; visitor_id?: string; _hp: string; _elapsed: number }) =>
       call<{ ok: true; message: string }>('POST', `/forms/${encodeURIComponent(key)}/submissions`, body),
     booking: (key: string) => call<PublicBookingPage>('GET', `/booking/${encodeURIComponent(key)}`),
     bookingSlots: (key: string, from: Date, to: Date, duration: number) =>
@@ -181,7 +181,7 @@ export function publicApi(base: string) {
     bookingBefore: (key: string, values: Record<string, unknown>) => call<{ ok: true }>('POST', `/booking/${encodeURIComponent(key)}/before`, { values }),
     bookingPhone: (key: string, number: string) => call<PhoneResult>('POST', `/booking/${encodeURIComponent(key)}/phone`, { number }),
     book: (key: string, body: {
-      start: string; duration: number; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; _hp: string; _elapsed: number;
+      start: string; duration: number; before?: { values: Record<string, unknown> }; after?: { values: Record<string, unknown> }; page_url: string; visitor_id?: string; _hp: string; _elapsed: number;
     }) => call<BookingResult>('POST', `/booking/${encodeURIComponent(key)}/book`, body),
     // the visitor's manage link: /p/book/#manage/<key>
     manage: (mkey: string) =>
