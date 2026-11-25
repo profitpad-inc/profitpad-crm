@@ -141,8 +141,8 @@ const CSS = `
 .rfp-field .v-input { width: 100%; box-sizing: border-box; }
 .rfp-label { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
 .rfp-desk { background: var(--surface); padding: 16px 18px 28px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.rfp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; max-width: 820px; width: 100%; margin: 0 auto; }
-.rfp-sheet { background: var(--page-background); max-width: 820px; width: 100%; margin: 0 auto; border-radius: 3px; box-shadow: 0 1px 2px rgba(24, 32, 43, 0.08), 0 8px 28px rgba(24, 32, 43, 0.10); padding: 44px 56px 56px; font-family: Charter, 'Bitstream Charter', 'Iowan Old Style', 'Sitka Text', Cambria, Georgia, serif; }
+.rfp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; max-width: 1000px; width: 100%; margin: 0 auto; }
+.rfp-sheet { background: var(--page-background); max-width: 1000px; width: 100%; margin: 0 auto; border-radius: 3px; box-shadow: 0 1px 2px rgba(24, 32, 43, 0.08), 0 8px 28px rgba(24, 32, 43, 0.10); padding: 44px 56px 56px; font-family: Charter, 'Bitstream Charter', 'Iowan Old Style', 'Sitka Text', Cambria, Georgia, serif; }
 .rfp-sheet .v-md { font-family: inherit; font-size: 15px; line-height: 1.68; }
 .rfp-sheet .v-md h1, .rfp-sheet .v-md h2, .rfp-sheet .v-md h3 { font-family: inherit; letter-spacing: -0.01em; }
 .rfp-sheet .v-md h1, .rfp-sheet .v-md h3:first-child { font-size: 24px; margin-bottom: 14px; }

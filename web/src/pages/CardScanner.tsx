@@ -505,7 +505,7 @@ export function CardScanner() {
                   <label key={key} className={`field${wide ? ' wide' : ''}`}>
                     <span>{label}</span>
                     {key === 'phone' && prop
-                      ? <MultiValueEditor key={`${key}-${step.fileId}`} type="phone" value={value} onChange={onChange} phoneSource={APP_PHONE} />
+                      ? <div className="scan-phone"><MultiValueEditor key={`${key}-${step.fileId}`} type="phone" value={value} onChange={onChange} phoneSource={APP_PHONE} /></div>
                       : key === 'email'
                         // one address: it is matched to existing contacts as it is typed
                         ? <input type="email" value={value} onChange={(e) => onChange(e.target.value)} />

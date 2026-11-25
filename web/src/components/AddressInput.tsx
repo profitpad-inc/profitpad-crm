@@ -194,6 +194,8 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
   const [active, setActive] = useState(-1);
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [viewBottom, setViewBottom] = useState(0);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useRef(newSession());
@@ -225,15 +227,31 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
     return () => window.clearTimeout(t);
   }, [value, part]);
 
+  // Follow the box as the page scrolls, and keep the list above the phone's
+  // keyboard: iOS keeps the layout viewport full height with the keyboard
+  // up, so the room below the box is measured from the visual viewport. The
+  // list's own scrolling is ignored (it doesn't move the box).
   useLayoutEffect(() => {
     if (!open) return;
-    const place = () => inputRef.current && setRect(inputRef.current.getBoundingClientRect());
+    const place = (e?: Event) => {
+      if (e?.target instanceof Node && menuRef.current?.contains(e.target)) return;
+      const input = inputRef.current;
+      if (!input) return;
+      const vv = window.visualViewport;
+      setRect(input.getBoundingClientRect());
+      setViewBottom(vv ? vv.offsetTop + vv.height : window.innerHeight);
+    };
     place();
+    const vv = window.visualViewport;
     window.addEventListener('scroll', place, true);
     window.addEventListener('resize', place);
+    vv?.addEventListener('resize', place);
+    vv?.addEventListener('scroll', place);
     return () => {
       window.removeEventListener('scroll', place, true);
       window.removeEventListener('resize', place);
+      vv?.removeEventListener('resize', place);
+      vv?.removeEventListener('scroll', place);
     };
   }, [open]);
 
@@ -284,7 +302,12 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
   }
 
   const style: CSSProperties | undefined = rect
-    ? { top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 280) }
+    ? {
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.min(Math.max(rect.width, 280), window.innerWidth - rect.left - 8),
+      maxHeight: Math.max(140, Math.min(360, viewBottom - rect.bottom - 12))
+    }
     : undefined;
 
   return (
@@ -309,6 +332,7 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
       {error && <div className="error-text small">{error}</div>}
       {open && rect && createPortal(
         <div
+          ref={menuRef}
           className="menu select-menu address-menu"
           style={style}
           // keep focus in the box so leaving it does not save half an address

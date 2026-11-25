@@ -9,6 +9,7 @@ import { useViewIconPicker } from './IconPicker';
 import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
 import { CodeBlock } from './CodeBlock';
+import { useFillColumn } from '../lib/use-fill-column';
 
 interface ViewCodeOut {
   id: string;
@@ -129,6 +130,8 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   const iconPicker = useViewIconPicker(record, onChanged);
   const icon = iconPicker.icon;
   const menu = useAddToMenu(code?.slug);
+  // the React code runs down to the bottom of the record's middle column, like a landing page's HTML
+  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([code, error, tab, which]);
 
   useEffect(() => {
     let live = true;
@@ -213,7 +216,11 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
       {tab === 'integrations' ? (
         <ViewIntegrations source={source} />
       ) : tab === 'code' ? (
-        source ? <CodeBlock text={source} wrap={wrap} lang="js" /> : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
+        source ? (
+          <div ref={bodyRef} className="landing-body code-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
+            <CodeBlock text={source} wrap={wrap} lang="js" />
+          </div>
+        ) : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
       ) : Object.keys(queries ?? {}).length === 0 ? (
         <p className="muted">No queries.</p>
       ) : (

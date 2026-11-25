@@ -110,3 +110,9 @@
   .scan-actions.sticky { position: sticky; bottom: 0; background: var(--page-background); padding: 10px 0; border-top: 1px solid var(--border); margin: 0 -16px; padding-inline: 16px; }
   .scan-actions .btn { flex: 1; justify-content: center; }
 }
+
+/* the Phone list on the review form: one box like the other fields, with the
+   pieces inside drawn without boxes of their own (as on the record page), so
+   the number gets the room the flag and label boxes took */
+.scan-phone { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 10px 4px; background: var(--page-background); min-width: 0; }
+.scan-phone:focus-within { border-color: var(--primary); outline: 2px solid color-mix(in srgb, var(--primary) 30%, transparent); }
