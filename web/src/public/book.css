@@ -83,6 +83,20 @@ button.bk-step-pill:hover { border-color: var(--primary); color: var(--primary);
 /* guests the visitor adds to the invite, under the picked time */
 .bk-guests { margin-bottom: 20px; }
 .bk-guests p { margin: 0; }
+/* the guest box: address chips and a borderless input, outlined as one field (comma or Enter makes a chip) */
+.bk-page .bk-emails { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 42px; padding: 5px 8px; cursor: text;
+  background: var(--pcrm-field); border: 1px solid var(--pcrm-border); border-radius: 8px; transition: border-color .15s, box-shadow .15s; }
+.bk-page .bk-emails:hover { border-color: color-mix(in srgb, var(--pcrm-text) 30%, var(--pcrm-border)); }
+.bk-page .bk-emails:focus-within { border-color: var(--pcrm-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pcrm-primary) 22%, transparent); }
+.bk-page .bk-emails.pcrm-invalid { border-color: #b42318; }
+.bk-page .pcrm-form .bk-emails input[type=text] { flex: 1 1 180px; min-width: 120px; min-height: 0; padding: 4px; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; }
+.bk-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 3px 2px 10px; font-size: 14px; line-height: 1.4; border-radius: 999px;
+  background: color-mix(in srgb, var(--pcrm-primary) 9%, var(--pcrm-field)); border: 1px solid color-mix(in srgb, var(--pcrm-primary) 30%, var(--pcrm-border)); }
+.bk-page .pcrm-form .bk-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; margin: 0; font-size: 16px; line-height: 1;
+  color: var(--pcrm-muted); background: none; border: 0; border-radius: 50%; }
+.bk-page .pcrm-form .bk-chip-x:hover { color: #b42318; background: rgb(180 35 24 / .1); border: 0; }
+/* the booking forms run the full width of the card, not the 560px a standalone form keeps */
+.bk-page .pcrm-form { max-width: none; }
 .bk-link { font: inherit; font-weight: 600; background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; border-radius: 4px; }
 .bk-done { display: flex; flex-direction: column; gap: 12px; }
 .bk-done h2 { font-size: 20px; margin: 0; }

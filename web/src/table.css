@@ -135,6 +135,10 @@
 .data-grid th:hover .dg-resize::after { background: var(--border); }
 .data-grid th .dg-resize:hover::after, body.dg-resizing .dg-resize:hover::after { background: var(--primary); }
 body.dg-resizing, body.dg-resizing * { cursor: col-resize !important; user-select: none; }
+/* moving a column: grabbing cursor everywhere, the moving header tinted */
+body.dg-moving, body.dg-moving * { cursor: grabbing !important; user-select: none; }
+body.dg-moving .dg-grip { visibility: hidden; }
+.data-grid th.dg-moving-col { background: var(--primary-soft); }
 .data-grid th.drop-before { box-shadow: inset 2px 0 0 var(--primary); }
 .data-grid th.drop-after { box-shadow: inset -2px 0 0 var(--primary); }
 .data-grid th.lead-col.drop-before { box-shadow: inset 2px 0 0 var(--primary), inset -1px 0 0 var(--hairline); }

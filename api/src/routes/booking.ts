@@ -87,6 +87,8 @@ interface BookingPage {
   maxGuests: number;
   // group meetings: people who join every meeting with the host
   coHosts: string[];
+  // co-hosts whose calendar is not checked: invited, but times ignore when they are busy
+  coHostsUnchecked: string[];
   // round robin: the owner rotation whose members host (instead of host)
   rotationId: string | null;
   // confirmation, reminders and a note to the visitor
@@ -158,6 +160,7 @@ function pageFromRow(r: Record<string, unknown>): BookingPage {
     // empty: the most (20); 0 turns guests off
     maxGuests: Math.max(0, Math.min(MAX_GUESTS, Math.floor(num(r.max_guests) ?? MAX_GUESTS))),
     coHosts: (Array.isArray(r.co_hosts) ? (r.co_hosts as unknown[]) : []).filter((u): u is string => typeof u === 'string' && u !== first(r.host)),
+    coHostsUnchecked: (Array.isArray(r.co_hosts_unchecked) ? (r.co_hosts_unchecked as unknown[]) : []).filter((u): u is string => typeof u === 'string'),
     rotationId: typeof r.rotation_id === 'string' && /^\d{1,18}$/.test(r.rotation_id) ? r.rotation_id : null,
     emails: readEmailSettings(r.email_settings)
   };
@@ -210,7 +213,8 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
   } else if (!page.host) out.push('Pick a host.');
   else if (!(await hostConnections(db, page.host)).length) out.push(`${page.hostName ?? 'The host'} has no connected calendar (Settings → Calendars).`);
   if (!page.rules) out.push('Add a meeting length, a time zone and the available hours.');
-  for (const u of page.coHosts) {
+  // a co-host whose calendar is not checked is invited at their CRM address when they have no calendar
+  for (const u of page.coHosts.filter((x) => !page.coHostsUnchecked.includes(x))) {
     if ((await hostConnections(db, u)).length) continue;
     const { rows } = await db.query('select name from crm.pc_0000 where pc_0000_id = $1', [u]);
     out.push(`Co-host ${rows[0]?.name ?? u} has no connected calendar (Settings → Calendars).`);
@@ -372,7 +376,7 @@ function without(busy: Interval[], ex: Exclude | null): Interval[] {
   });
 }
 
-// Open times: when the host and every co-host are free (group meetings), by
+// Open times: when the host and every checked co-host are free (group meetings), by
 // the page's hours, buffers, notice and daily limit. Round robin pages: when
 // any rotation member (with the co-hosts) is free.
 async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh = false, exclude: Exclude | null = null): Promise<Date[]> {
@@ -381,7 +385,7 @@ async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh 
   // buffers reach outside the window
   const pad = (page.rules.bufferBeforeMinutes + page.rules.bufferAfterMinutes + page.rules.durationMinutes) * 60000;
   const [bFrom, bTo] = [new Date(from.getTime() - pad), new Date(to.getTime() + pad)];
-  const people = hostsOf(page);
+  const people = checkedOf(page);
   const busy = (await Promise.all(people.map((u) => hostBusy(db, u, bFrom, bTo, fresh)))).flat();
   return computeSlots(page.rules, without(busy, exclude), await bookedPerDay(db, page, from, to, exclude?.callId), new Date(), from, to);
 }
@@ -389,6 +393,11 @@ async function openSlots(db: Db, page: BookingPage, from: Date, to: Date, fresh 
 // Everyone who joins a meeting on this page: the host, then the co-hosts.
 function hostsOf(page: BookingPage): string[] {
   return [...new Set([page.host, ...page.coHosts].filter((u): u is string => Boolean(u)))];
+}
+
+// Whose calendars decide the open times: the host and the co-hosts not switched off for it.
+function checkedOf(page: BookingPage): string[] {
+  return hostsOf(page).filter((u) => u === page.host || !page.coHostsUnchecked.includes(u));
 }
 
 // ---- round robin (an owner rotation hosts the page) -------------------------------------
@@ -566,11 +575,16 @@ async function lockPeople(client: pg.PoolClient, users: string[]): Promise<void>
   for (const u of [...new Set(users)].sort()) await client.query("select pg_advisory_xact_lock(hashtext('booking:' || $1))", [u]);
 }
 
-// The calendar addresses of the co-hosts (the invite goes there).
+// The calendar addresses of the co-hosts (the invite goes there); their CRM
+// address when they have no calendar connected (co-hosts not checked).
 async function calendarEmails(db: Db, users: string[]): Promise<string[]> {
   const out: string[] = [];
   for (const u of users) {
-    const email = (await hostConnections(db, u))[0]?.email?.toLowerCase();
+    let email = (await hostConnections(db, u))[0]?.email?.toLowerCase();
+    if (!email) {
+      const { rows } = await db.query('select email from crm.pc_0000 where pc_0000_id = $1', [u]);
+      email = typeof rows[0]?.email === 'string' && rows[0].email ? rows[0].email.toLowerCase() : undefined;
+    }
     if (email && !out.includes(email)) out.push(email);
   }
   return out;

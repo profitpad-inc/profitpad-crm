@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CalendarCheck, Check, CircleAlert, Clock, Plus, Trash2, X } from 'lucide-react';
-import { api, type CrmRecord } from '../lib/api';
+import { api, getSchema, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
 import { DatePicker } from './DatePicker';
@@ -431,6 +431,60 @@ function EmailsCard({ v, setV, check, saving }: { v: EmailSettings; setV: (v: Em
   );
 }
 
+// ---- co-hosts: people who join every meeting, each with their calendar checked or not ----------------
+
+type CoHost = { id: string; checked: boolean };
+const first = (v: unknown): string => (Array.isArray(v) ? str(v[0]) : str(v));
+const ids = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : typeof v === 'string' && v ? [v] : []);
+
+function readCoHosts(record: CrmRecord): CoHost[] {
+  const unchecked = ids(record.properties.co_hosts_unchecked);
+  return ids(record.properties.co_hosts).map((id) => ({ id, checked: !unchecked.includes(id) }));
+}
+
+function CoHostsCard({ value, onChange, users, host, saving }: {
+  value: CoHost[]; onChange: (v: CoHost[]) => void; users: { id: string; name: string }[]; host: string; saving: boolean;
+}) {
+  // the host is not a co-host; someone picked who is no longer a user still shows, to be switched off
+  const people = [...users.filter((u) => u.id !== host), ...value.filter((c) => !users.some((u) => u.id === c.id)).map((c) => ({ id: c.id, name: `User ${c.id}` }))];
+  const set = (id: string, next: CoHost | null) => {
+    const rest = value.filter((c) => c.id !== id);
+    onChange(next ? people.map((p) => (p.id === id ? next : rest.find((c) => c.id === p.id))).filter((c): c is CoHost => Boolean(c)) : rest);
+  };
+  return (
+    <section className="ed-section">
+      <div className="ed-section-head">
+        <h3>Co-hosts</h3>
+        <p>
+          Co-hosts join every meeting with the Host and are invited to the calendar event. With <strong>Check calendar</strong> on, times are
+          offered only when they are free too; with it off, they are invited whether or not they are busy.
+        </p>
+      </div>
+      {people.length === 0 ? <p className="ed-hint">No other users to add.</p> : (
+        <div className="bk-cohosts">
+          {people.map((p) => {
+            const on = value.find((c) => c.id === p.id);
+            return (
+              <div key={p.id} className="bk-cohost">
+                <label className="bk-switch">
+                  <input type="checkbox" checked={Boolean(on)} disabled={saving} onChange={(e) => set(p.id, e.target.checked ? { id: p.id, checked: true } : null)} />
+                  {p.name}
+                </label>
+                {on && (
+                  <label className="bk-switch bk-cohost-check">
+                    <input type="checkbox" checked={on.checked} disabled={saving} onChange={(e) => set(p.id, { id: p.id, checked: e.target.checked })} />
+                    Check calendar
+                  </label>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // A draft of one part of the page: follows the saved value (a live update, a
 // save) until it is edited, then keeps the edit until it is saved or changed
 // back. dirty: differs from the saved value.
@@ -466,7 +520,8 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   ));
   const [emails, setEmails, emailsDirty] = useDraft(useMemo(() => readEmails(record.properties.email_settings), [record.properties.email_settings]));
   const [rotationId, setRotationId, rotationDirty] = useDraft(str(record.properties.rotation_id));
-  const dirty = hoursDirty || lengthsDirty || formsDirty || emailsDirty || rotationDirty;
+  const [coHosts, setCoHosts, coHostsDirty] = useDraft(useMemo(() => readCoHosts(record), [record.properties.co_hosts, record.properties.co_hosts_unchecked])); // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = hoursDirty || lengthsDirty || formsDirty || emailsDirty || rotationDirty || coHostsDirty;
   // the save bar shows a shadow only while it is pinned over the editor; the marker just after it is on screen when
   // the bar sits at the end of the editor
   const [barPinned, setBarPinned] = useState(false);
@@ -480,6 +535,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   }, []);
   const [forms, setForms] = useState<{ id: string; name: string; published: boolean }[]>([]);
   const [rotations, setRotations] = useState<{ id: string; name: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [check, setCheck] = useState<Check | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -503,6 +559,15 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
     api<{ results: { id: string; name: string }[] }>('GET', '/v1/owner-rotations/options')
       .then((r) => setRotations(r.results))
       .catch(() => setRotations([]));
+  }, []);
+
+  // the people who can co-host: the Co-hosts property's choices (every active user)
+  useEffect(() => {
+    getSchema('booking_pages')
+      .then((s) => setUsers((s.properties.find((p) => p.api_name === 'co_hosts')?.dropdown_options ?? [])
+        .filter((o) => o.record_status === 'active')
+        .map((o) => ({ id: o.api_value, name: o.label }))))
+      .catch(() => setUsers([]));
   }, []);
 
   useEffect(loadCheck, [loadCheck, record]);
@@ -543,6 +608,12 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
     if (formsDirty) Object.assign(out, { form_before_id: formIds.before || null, form_after_id: formIds.after || null });
     if (emailsDirty) out.email_settings = JSON.stringify({ confirm: emails.confirm, reminders: emails.reminders, note: emails.note.trim() || null });
     if (rotationDirty) out.rotation_id = rotationId || null;
+    if (coHostsDirty) {
+      const picked = coHosts.map((c) => c.id);
+      out.co_hosts = picked.length ? picked : null;
+      const unchecked = coHosts.filter((c) => !c.checked).map((c) => c.id);
+      out.co_hosts_unchecked = unchecked.length ? unchecked : null;
+    }
     return out;
   }
 
@@ -660,6 +731,8 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
       </section>
 
       <EmailsCard v={emails} setV={setEmails} check={check} saving={saving} />
+
+      <CoHostsCard value={coHosts} onChange={setCoHosts} users={users} host={first(record.properties.host)} saving={saving} />
 
       <section className="ed-section">
         <div className="ed-section-head">

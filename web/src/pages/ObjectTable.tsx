@@ -362,45 +362,60 @@ function ObjectTableFor({ object }: { object: string }) {
     document.body.classList.add('dg-resizing');
   }
 
-  function dropColumn() {
-    const from = dragFrom.current;
-    if (from !== null && dropAt !== null && dropAt !== from && dropAt !== from + 1) changeView({ columns: moveTo(columns, from, dropAt) });
-    dragFrom.current = null;
-    setDropAt(null);
+  // Drag a header's grip to move the column (mouse events, like resizing: HTML5
+  // drag and drop did not drop reliably). The line shows where it lands; none
+  // shows while it would stay where it is.
+  function startMove(e: React.MouseEvent, i: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const row = (e.currentTarget as HTMLElement).closest('tr')!;
+    const startX = e.clientX;
+    let moving = false;
+    let at: number | null = null;
+    const onMove = (ev: MouseEvent) => {
+      if (!moving && Math.abs(ev.clientX - startX) < 4) return;
+      if (!moving) {
+        moving = true;
+        dragFrom.current = i;
+        document.body.classList.add('dg-moving');
+      }
+      // the first header whose middle is right of the pointer; past them all, the end
+      let next = columns.length;
+      for (const th of row.querySelectorAll<HTMLElement>('th[data-col]')) {
+        const r = th.getBoundingClientRect();
+        if (ev.clientX < r.left + r.width / 2) {
+          next = Number(th.dataset.col);
+          break;
+        }
+      }
+      at = next === i || next === i + 1 ? null : next;
+      setDropAt(at);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('dg-moving');
+      dragFrom.current = null;
+      setDropAt(null);
+      if (moving && at !== null) changeView({ columns: moveTo(columns, i, at) });
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }
 
   // drag handle, drop target and resize handle shared by every header cell
   function headerProps(i: number) {
     return {
-      className: `${i === 0 ? 'lead-col' : ''}${dropAt === i ? ' drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}`,
+      className: `${i === 0 ? 'lead-col' : ''}${dropAt === i ? ' drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}${dropAt !== null && dragFrom.current === i ? ' dg-moving-col' : ''}`,
       'data-col': i,
-      style: widthStyle(columns[i]),
-      onDragOver: (e: React.DragEvent<HTMLElement>) => {
-        if (dragFrom.current === null) return;
-        e.preventDefault();
-        const r = e.currentTarget.getBoundingClientRect();
-        setDropAt(e.clientX < r.left + r.width / 2 ? i : i + 1);
-      },
-      onDrop: (e: React.DragEvent) => {
-        e.preventDefault();
-        dropColumn();
-      }
+      style: widthStyle(columns[i])
     };
   }
   function headerHandles(i: number) {
     return (
       <>
-        <span
-          className="dg-grip"
-          draggable
-          title="Drag to move column"
-          onDragStart={(e) => {
-            dragFrom.current = i;
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setDragImage(e.currentTarget.closest('th')!, 16, 16);
-          }}
-          onDragEnd={() => { dragFrom.current = null; setDropAt(null); }}
-        >
+        <span className="dg-grip" title="Drag to move column" onMouseDown={(e) => startMove(e, i)} onClick={(e) => e.stopPropagation()}>
           <GripVertical size={12} />
         </span>
         <span className="dg-resize" onMouseDown={(e) => startResize(e, i)} onClick={(e) => e.stopPropagation()} title="Drag to resize" />
@@ -882,19 +897,7 @@ function ObjectTableFor({ object }: { object: string }) {
                     </th>
                   );
                 })}
-                <th
-                  className="dg-fill"
-                  aria-hidden="true"
-                  onDragOver={(e) => {
-                    if (dragFrom.current === null) return;
-                    e.preventDefault();
-                    setDropAt(columns.length);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    dropColumn();
-                  }}
-                />
+                <th className="dg-fill" aria-hidden="true" />
               </tr>
             </thead>
             <tbody>

@@ -50,7 +50,8 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   let beforeValues: Record<string, unknown> | null = null;
   let afterValues: Record<string, unknown> | null = null;
   let honeypot = '';
-  // guests the visitor typed (kept while they move between steps)
+  // guests the visitor added (chips) and the address still being typed, kept while they move between steps
+  let guests: string[] = [];
   let guestText = '';
   let guestsOpen = false;
   let guestError: HTMLElement | null = null;
@@ -355,27 +356,84 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     guestError = el('div', { class: 'pcrm-error', role: 'alert' });
     const draw = () => {
       if (!guestsOpen) {
-        const add = el('button', { class: 'bk-link', type: 'button' }, '+ Add guests');
+        const add = el('button', { class: 'pp-btn', type: 'button' }, '+ Add guests');
         add.addEventListener('click', () => {
           guestsOpen = true;
           draw();
-          box.querySelector('textarea')?.focus();
+          box.querySelector('input')?.focus();
         });
         box.replaceChildren(el('p', {}, add));
         return;
       }
-      const input = el('textarea', { id: 'bk-guest-emails', rows: '3', autocomplete: 'off', placeholder: 'name@example.com' }) as HTMLTextAreaElement;
-      input.value = guestText;
-      input.addEventListener('input', () => {
-        guestText = input.value;
-        guestError!.textContent = '';
-        input.classList.remove('pcrm-invalid');
+      // the address chips and a borderless input, outlined together as one box
+      const input = el('input', { id: 'bk-guest-emails', type: 'text', inputmode: 'email', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' }) as HTMLInputElement;
+      const chips = el('div', { class: 'bk-emails' });
+      const setError = (text: string) => {
+        guestError!.textContent = text;
+        chips.classList.toggle('pcrm-invalid', !!text);
+      };
+      const drawChips = () => {
+        input.value = guestText;
+        input.placeholder = guests.length ? '' : 'jane@example.com, john@example.com';
+        chips.replaceChildren(...guests.map((email, i) => {
+          const x = el('button', { class: 'bk-chip-x', type: 'button', 'aria-label': `Remove ${email}` }, '×');
+          x.addEventListener('click', (e) => {
+            e.stopPropagation();
+            guests.splice(i, 1);
+            setError('');
+            drawChips();
+            input.focus();
+          });
+          return el('span', { class: 'bk-chip' }, email, x);
+        }), input);
+      };
+      // Each finished address becomes a chip; one that fails stays in the box to be fixed.
+      const commit = (parts: string[], rest: string) => {
+        let bad: string | null = null;
+        for (const part of parts) {
+          if (bad) { bad += `, ${part}`; continue; }
+          try {
+            addGuest(part);
+          } catch (err) {
+            setError((err as Error).message);
+            bad = part;
+          }
+        }
+        if (!bad) setError('');
+        guestText = bad ? (rest ? `${bad}, ${rest}` : bad) : rest;
+        drawChips();
+      };
+      input.addEventListener('input', (e) => {
+        // a typed space is left alone (macOS text replacement fires on it); the next key ends the address
+        if ((e as InputEvent).inputType === 'insertText' && /^\s+$/.test((e as InputEvent).data || '')) return;
+        const parts = input.value.split(/[\s,;]+/);
+        const rest = parts.pop() ?? '';
+        if (parts.some(Boolean)) commit(parts.filter(Boolean), rest);
+        else {
+          guestText = input.value;
+          if (guestError!.textContent) setError('');
+        }
       });
-      // drawn like the forms' fields (outside .pcrm-form the link above would look like a button)
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (input.value.trim()) commit([input.value.trim()], '');
+        } else if (e.key === 'Backspace' && !input.value && guests.length) {
+          guests.pop();
+          setError('');
+          drawChips();
+        }
+      });
+      input.addEventListener('blur', () => {
+        if (input.value.trim()) commit([input.value.trim()], '');
+      });
+      chips.addEventListener('click', () => input.focus());
+      drawChips();
+      // drawn like the forms' fields
       const field = el('div', { class: 'pcrm-form' }, el('div', { class: 'pcrm-field' },
         el('label', { class: 'pcrm-label', for: 'bk-guest-emails' }, 'Guest emails'),
-        el('div', { class: 'pcrm-help' }, `They get the calendar invite too. Separate addresses with commas or new lines, up to ${max}.`),
-        input,
+        el('div', { class: 'pcrm-help' }, `They get the calendar invite too. Press comma or Enter after each address, up to ${max}.`),
+        chips,
         guestError));
       if (page.theme.primary) field.style.setProperty('--pcrm-primary', page.theme.primary);
       box.replaceChildren(field);
@@ -384,26 +442,38 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
     return box;
   }
 
+  // Checks one address the way the API does and adds it (a repeat is ignored).
+  function addGuest(raw: string): void {
+    const max = page.max_guests ?? 0;
+    const email = raw.trim().toLowerCase();
+    if (!email) return;
+    if (email.length > 254 || !GUEST_EMAIL_RE.test(email)) throw new Error(`${raw.trim()} is not a valid email address.`);
+    if (isGmailTypo(email)) throw new Error(`${raw.trim()}: did you mean @gmail.com? Please check the address.`);
+    if (guests.includes(email)) return;
+    if (guests.length >= max) throw new Error(`You can add up to ${max} guest${max === 1 ? '' : 's'}.`);
+    guests.push(email);
+  }
+
   function showGuestError(text: string): void {
     if (!guestError) return;
     guestError.textContent = text;
-    guestError.parentElement?.querySelector('textarea')?.classList.add('pcrm-invalid');
+    guestError.parentElement?.querySelector('.bk-emails')?.classList.add('pcrm-invalid');
   }
 
-  // The guest addresses, checked the way the API checks them.
-  function readGuestText(): string[] {
-    const max = page.max_guests ?? 0;
-    if (max <= 0) return [];
-    const out: string[] = [];
-    for (const raw of guestText.split(/[\s,;]+/)) {
-      const email = raw.trim().toLowerCase();
-      if (!email) continue;
-      if (email.length > 254 || !GUEST_EMAIL_RE.test(email)) throw new Error(`${raw.trim()} is not a valid email address.`);
-      if (isGmailTypo(email)) throw new Error(`${raw.trim()}: did you mean @gmail.com? Please check the address.`);
-      if (!out.includes(email)) out.push(email);
+  // The guest addresses, with anything still typed in the box added first.
+  function readGuests(): string[] {
+    if ((page.max_guests ?? 0) <= 0) return [];
+    const parts = guestText.split(/[\s,;]+/).filter(Boolean);
+    for (let i = 0; i < parts.length; i++) {
+      try {
+        addGuest(parts[i]);
+      } catch (err) {
+        guestText = parts.slice(i).join(', ');
+        throw err;
+      }
     }
-    if (out.length > max) throw new Error(`You can add up to ${max} guest${max === 1 ? '' : 's'}.`);
-    return out;
+    guestText = '';
+    return [...guests];
   }
 
   // ---- step 3: form after the time, or a plain confirm ---------------------------------
@@ -447,9 +517,9 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
   // Errors on the after form are thrown back to it (shown under the field);
   // others send the visitor back to the step that needs fixing.
   async function book(): Promise<void> {
-    let guests: string[];
+    let guestList: string[];
     try {
-      guests = readGuestText();
+      guestList = readGuests();
     } catch (err) {
       showGuestError((err as Error).message);
       throw new Error('Please check the guest email addresses.');
@@ -459,7 +529,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       res = await api.book(key, {
         start: chosen!,
         duration,
-        ...(guests.length ? { guests } : {}),
+        ...(guestList.length ? { guests: guestList } : {}),
         // the visitor's time zone, for the times in their emails
         timezone: tz,
         ...(page.form_before ? { before: { values: beforeValues ?? {} } } : {}),

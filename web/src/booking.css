@@ -93,6 +93,11 @@
 
 /* Emails to the visitor card (BookingPageEditor.tsx) */
 .bk-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+/* co-hosts: one row per user, "Check calendar" at the right of the ones switched on */
+.bk-cohosts { display: flex; flex-direction: column; }
+.bk-cohost { display: flex; align-items: center; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; min-height: 40px; padding: 6px 0; border-top: 1px solid var(--hairline); }
+.bk-cohost:first-child { border-top: 0; }
+.bk-cohost-check { color: var(--muted-text); font-size: 13px; }
 .bk-reminders { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .bk-reminder { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; }
 .bk-reminder-x { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: 50%; background: none; color: var(--muted-text); cursor: pointer; }

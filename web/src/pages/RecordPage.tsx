@@ -134,7 +134,7 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   quotes: ['public_key', 'slug', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
   invoices: ['public_key', 'slug'],
   form_submissions: ['summary', 'submission_values'],
-  booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options'],
+  booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options', 'co_hosts', 'co_hosts_unchecked'],
   files: ['public_token', 'storage_key'],
   views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries'],
   email_campaigns: ['audience'],
@@ -143,7 +143,7 @@ const HIDDEN_PROPS: Record<string, string[]> = {
 // "About this ..." order: these first, in this order, then the rest as before
 const ABOUT_ORDER: Record<string, string[]> = {
   booking_pages: [
-    'name', 'public_name', 'description', 'status', 'host', 'co_hosts', 'rotation_id', 'max_guests', 'location_type', 'location_details',
+    'name', 'public_name', 'description', 'status', 'host', 'rotation_id', 'max_guests', 'location_type', 'location_details',
     'min_notice_minutes', 'slot_step_minutes', 'buffer_before_minutes', 'buffer_after_minutes', 'max_days_ahead', 'daily_limit', 'email_settings'
   ]
 };
