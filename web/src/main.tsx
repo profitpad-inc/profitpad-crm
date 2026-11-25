@@ -50,7 +50,7 @@ function Layout() {
 }
 
 // The address the tab was opened at. Only a visit that opens the bare address (/) goes to the menu's start
-// page; Home links, the logo and Back inside the app still show the home page.
+// page; Home links and Back inside the app still show the home page (the logo links to the start page itself).
 const OPENED_AT = window.location.pathname + window.location.search + window.location.hash;
 let startPageUsed = false;
 

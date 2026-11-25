@@ -27,7 +27,9 @@ function readExpanded(): boolean {
 // On the rail, More and each section open a flyout beside the sidebar, one at a time.
 type Flyout = { key: string; top: number };
 export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
-  const { me, nav, navPreview, objectByName, objects, customViews, logo, moreHidden } = useApp();
+  const { me, nav, navPreview, objectByName, objects, customViews, logo, moreHidden, landing } = useApp();
+  // the logo opens the menu's start page (Home when there is none this user can open)
+  const startTo = navLink(landing, objectByName, customViews)?.to ?? '/';
   const moreObjects = objects.map((o) => o.api_name).filter((o) => !moreHidden.includes(o));
   const moreOff = moreHidden.includes(MORE_OFF);
   const drawer = variant === 'drawer';
@@ -114,7 +116,7 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
     <>
       <nav className={`sidebar${expanded ? ' expanded' : ''}${drawer ? ' drawer-menu' : ''}`}>
         <div className="sidebar-top">
-          <Link to="/" className="logo" title="ProfitPad CRM" aria-label="ProfitPad CRM"><BrandMark src={logo} size={28} /></Link>
+          <Link to={startTo} className="logo" title="ProfitPad CRM" aria-label="ProfitPad CRM"><BrandMark src={logo} size={28} /></Link>
           <button className="nav-item" onClick={() => setSearchOpen(true)} title={expanded ? undefined : 'Search (⌘K)'}>
             <Search size={20} strokeWidth={1.75} />
             {expanded && <span>Search</span>}
