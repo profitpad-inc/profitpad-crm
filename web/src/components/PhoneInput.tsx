@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { displayPhone } from '../lib/phone-display';
 import { composePhone, regionForNumber, regionLabel, regionShort, type PhoneRegions } from '../public/phone-regions';
 import { Select } from './Select';
 
@@ -36,10 +37,11 @@ export function PhoneInput({ value, onChange, autoFocus, onCommit, source, check
 }) {
   const [regions, setRegions] = useState<PhoneRegions | null>(null);
   const [region, setRegion] = useState<string>('');
-  const [text, setText] = useState(value);
+  // a stored number (+18882345678ext9) starts formatted (+1 888-234-5678 ext9)
+  const [text, setText] = useState(() => (value ? displayPhone(value) : value));
   const [error, setError] = useState<string | null>(null);
   // the latest text, for check answers that come back after more typing
-  const textRef = useRef(value);
+  const textRef = useRef(text);
   textRef.current = text;
 
   useEffect(() => {

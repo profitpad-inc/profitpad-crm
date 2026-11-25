@@ -1,5 +1,5 @@
 import {
-  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type ReactNode
+  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type MouseEvent as ReactMouseEvent, type ReactNode
 } from 'react';
 import { call, getInit, getParams, getViewport, post, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, ViewFile, Viewport } from './protocol';
@@ -142,6 +142,12 @@ export const linkRecords = associateRecords;
 // the view, for a record with line items (deals, quotes, invoices, ...).
 // Resolves when the viewer closes it: saved says whether lines were saved.
 export const editLineItems = (object: string, id: string) => call<{ saved: boolean }>('editLineItems', [object, id]);
+
+// The CRM's own Edit all (set one property on every record) and Delete all
+// (archive, to the recycle bin) dialogs, over the ids a view picked. Resolve
+// with how many records changed: 0 when the viewer cancelled.
+export const bulkEdit = (object: string, ids: string[]) => call<{ updated: number }>('bulkEdit', [object, ids]);
+export const bulkDelete = (object: string, ids: string[]) => call<{ deleted: number }>('bulkDelete', [object, ids]);
 // Choices of a dropdown that lets users add them (allow_user_add, like a
 // library's Folder): anyone who may edit the object's records may add, rename
 // and archive them; other dropdowns need an admin. addOption makes the
@@ -693,11 +699,16 @@ export interface Column<Row> {
   // percent (0.25 is 25%). email and phone add a muted "+2" when
   // row[key + '__all'] (the property's whole list) has more entries.
   format?: ColumnFormat;
+  // cells stay on one line (cut with ... past 320px), like the CRM's tables;
+  // true lets this column's text wrap (notes, descriptions)
+  wrap?: boolean;
+  // false leaves the column out of the cards a Table becomes on phones
+  card?: boolean;
 }
 
 export type ColumnFormat = 'date' | 'datetime' | 'phone' | 'email' | 'number' | 'money' | 'percent';
 
-function formatCell(row: Record<string, any>, key: string, format: ColumnFormat | undefined): ReactNode {
+function formatCell(row: Record<string, any>, key: string, format: ColumnFormat | undefined, full = false): ReactNode {
   const v = row[key];
   if (v === null || v === undefined || v === '') return <span className="muted">--</span>;
   if (format === 'phone' || format === 'email') {
@@ -705,6 +716,8 @@ function formatCell(row: Record<string, any>, key: string, format: ColumnFormat 
     const all = row[key + '__all'];
     const more = Array.isArray(all) ? all.length - 1 : 0;
     if (more <= 0) return first;
+    // cards on phones list every entry, as the CRM's own cards do
+    if (full) return all.map((e: any) => (format === 'phone' ? formatPhone(e?.value ?? e) : String(e?.value ?? e))).join(', ');
     const title = all.map((e: any) => (format === 'phone' ? formatPhone(e?.value ?? e) : String(e?.value ?? e))).join(', ');
     return <span>{first} <span className="muted" title={title}>+{more}</span></span>;
   }
@@ -714,6 +727,47 @@ function formatCell(row: Record<string, any>, key: string, format: ColumnFormat 
   if (format === 'money') return formatMoney(v, row[key + '_currency'] || 'USD');
   if (format === 'percent') return formatPercent(v);
   return String(v);
+}
+
+// A cell as text for copying, like the CRM's table: formatted, every email or
+// phone in the list, phones with a leading ' so spreadsheets keep them as text.
+function cellCopyText(row: Record<string, any>, key: string, format: ColumnFormat | undefined): string {
+  const v = row[key];
+  if (v === null || v === undefined || v === '') return '';
+  if (format === 'phone' || format === 'email') {
+    const all = row[key + '__all'];
+    const list = Array.isArray(all) && all.length ? all.map((e: any) => String(e?.value ?? e)) : [String(v)];
+    const text = list.map((x) => (format === 'phone' ? formatPhone(x) : x)).join(', ');
+    return format === 'phone' ? `'${text}` : text;
+  }
+  if (format === 'date') return formatDate(v);
+  if (format === 'datetime') return formatDateTime(v);
+  if (format === 'number') return formatNumber(v);
+  if (format === 'money') return formatMoney(v, row[key + '_currency'] || 'USD');
+  if (format === 'percent') return formatPercent(v);
+  return String(v);
+}
+const tsvField = (t: string) => (/[\t\n\r"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
+
+interface CellPos { row: number; col: number }
+
+// a render that gives nothing shows "--", like an empty value
+const orDash = (n: ReactNode) => (n === null || n === undefined || n === false || n === '' ? <span className="muted">--</span> : n);
+
+// first and last name repeat the title on a card, so cards leave them out (as the CRM's do)
+const CARD_NAME_PARTS = new Set(['first_name', 'last_name']);
+
+const NARROW = '(max-width: 719px)';
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia(NARROW).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW);
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
 }
 
 export interface TableSort {
@@ -741,7 +795,7 @@ function compareValues(a: unknown, b: unknown): number {
 // sort controlled, to keep it in address params.
 export function Table<Row extends Record<string, any>>({
   columns, rows, loading, error, onRowClick, selected, empty = 'Nothing to show', maxHeight, sortable = true, sort, defaultSort, onSortChange,
-  stickyHeader = true, picked, onPickedChange, freezeFirst = true, style, className
+  stickyHeader = true, picked, onPickedChange, freezeFirst = true, cards = true, cardFields = 5, style, className
 }: Styled & {
   columns: Column<Row>[];
   rows: Row[];
@@ -761,8 +815,19 @@ export function Table<Row extends Record<string, any>>({
   onPickedChange?: (ids: string[]) => void;
   // the first column (after the checkboxes) stays put when the table scrolls sideways
   freezeFirst?: boolean;
+  // below 720px wide the rows become cards (the first column as the title, the
+  // next cardFields columns that have a value as label and value lines), like
+  // the CRM's tables on a phone; false keeps the table
+  cards?: boolean;
+  cardFields?: number;
 }) {
   const [ownSort, setOwnSort] = useState<TableSort | null>(defaultSort ?? null);
+  const narrow = useNarrow();
+  // drag over cells to select them, then copy (Cmd/Ctrl+C) as tab-separated
+  // text, like the CRM's table; a plain click still clicks the row
+  const [cellSel, setCellSel] = useState<{ anchor: CellPos; focus: CellPos } | null>(null);
+  const dragging = useRef(false);
+  const dragged = useRef(false);
   const current = sort !== undefined ? sort : ownSort;
   function sortBy(c: Column<Row>) {
     const next: TableSort | null = current?.key !== c.key ? { key: c.key, direction: 'asc' } : current.direction === 'asc' ? { key: c.key, direction: 'desc' } : null;
@@ -781,6 +846,72 @@ export function Table<Row extends Record<string, any>>({
       })
       .map((x) => x.r)
     : rows;
+
+  const selBox = cellSel && {
+    r0: Math.min(cellSel.anchor.row, cellSel.focus.row), r1: Math.max(cellSel.anchor.row, cellSel.focus.row),
+    c0: Math.min(cellSel.anchor.col, cellSel.focus.col), c1: Math.max(cellSel.anchor.col, cellSel.focus.col)
+  };
+  // positions change when the rows, their order or the columns change
+  useEffect(() => setCellSel(null), [rows, current?.key, current?.direction, columns.length]);
+  useEffect(() => {
+    if (!cellSel) return;
+    const onUp = () => { dragging.current = false; };
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest?.('.v-table tbody td.v-cell')) setCellSel(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCellSel(null); };
+    const onCopy = (e: ClipboardEvent) => {
+      if (!selBox) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      if (window.getSelection()?.isCollapsed === false) return;
+      const body = tableRef.current?.tBodies[0];
+      const offset = onPickedChange ? 1 : 0;
+      const lines = shown.slice(selBox.r0, selBox.r1 + 1).map((r, i) => columns.slice(selBox.c0, selBox.c1 + 1).map((c, k) => {
+        if (!c.render) return cellCopyText(r, c.key, c.format);
+        const td = body?.rows[selBox.r0 + i]?.cells[selBox.c0 + k + offset];
+        const t = (td?.innerText ?? '').trim();
+        return t === '--' ? '' : t;
+      }).map(tsvField).join('\t'));
+      const text = lines.join('\n');
+      e.preventDefault();
+      e.clipboardData?.setData('text/plain', text);
+      // the frame's own clipboard may be blocked; the CRM page writes it too
+      copyText(text).catch(() => undefined);
+    };
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('copy', onCopy);
+    return () => {
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('copy', onCopy);
+    };
+  });
+  function cellMouse(row: number, col: number) {
+    return {
+      onMouseDown: (e: ReactMouseEvent) => {
+        if (e.button !== 0) return;
+        const t = e.target as HTMLElement;
+        if (t.closest('a, button, input, textarea, select, label')) return;
+        e.preventDefault(); // no text selection
+        (document.activeElement as HTMLElement | null)?.blur();
+        window.focus(); // so Cmd/Ctrl+C reaches this frame
+        dragging.current = true;
+        dragged.current = false;
+        const here = { row, col };
+        setCellSel((cur) => (e.shiftKey && cur ? { anchor: cur.anchor, focus: here } : { anchor: here, focus: here }));
+      },
+      onMouseEnter: () => {
+        if (!dragging.current) return;
+        dragged.current = true;
+        setCellSel((cur) => cur && { ...cur, focus: { row, col } });
+      }
+    };
+  }
+  const inSel = (row: number, col: number) => !!selBox && row >= selBox.r0 && row <= selBox.r1 && col >= selBox.c0 && col <= selBox.c1;
 
   // the header row follows the page's scroll (as Sticky does); with maxHeight
   // the table scrolls itself and CSS sticky does it
@@ -823,6 +954,49 @@ export function Table<Row extends Record<string, any>>({
   const lift = follow && shift ? { transform: `translateY(${shift}px)` } : {};
   const colSpan = columns.length + (picking ? 1 : 0);
   const frozen = (i: number) => freezeFirst && i === 0 && columns.length > 1;
+  if (cards && narrow) {
+    const [lead, ...rest] = columns;
+    const fields = rest.filter((c) => c.card !== false && !CARD_NAME_PARTS.has(c.key));
+    const blank = (n: ReactNode) => n === null || n === undefined || n === false || n === '';
+    return (
+      <div className={cx('v-table-wrap', 'v-cards-wrap', className)} style={style}>
+        {loading ? <div className="v-cards-note"><Loading /></div>
+          : shown.length === 0 ? <div className="v-cards-note muted">{empty}</div> : (
+            <ul className="v-cards">
+              {shown.map((r, i) => {
+                const id = String(r.id);
+                const isPicked = picking && pickedSet.has(id);
+                const title = lead ? (lead.render ? lead.render(r) : formatCell(r, lead.key, lead.format)) : null;
+                const lines = fields
+                  .filter((c) => (c.render ? true : !(r[c.key] === null || r[c.key] === undefined || r[c.key] === '')))
+                  .map((c) => ({ c, node: c.render ? c.render(r) : formatCell(r, c.key, c.format, true) }))
+                  .filter((l) => !blank(l.node))
+                  .slice(0, cardFields);
+                return (
+                  <li key={r.id ?? i} className={cx('v-card-row', onRowClick && 'clickable', (selected?.(r) || isPicked) && 'selected') || undefined}
+                    onClick={onRowClick ? () => onRowClick(r) : undefined}>
+                    {picking && (
+                      <span className="v-card-pick" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" aria-label="Select row" checked={isPicked} onChange={() => togglePick(id)} />
+                      </span>
+                    )}
+                    <span className="v-card-body">
+                      <span className="v-card-title">{title}</span>
+                      {lines.map(({ c, node }) => (
+                        <span key={c.key} className="v-card-field">
+                          <span className="v-card-label">{c.label}</span>
+                          <span className="v-card-value">{node}</span>
+                        </span>
+                      ))}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+      </div>
+    );
+  }
   return (
     <div className={cx('v-table-wrap', className)} style={{ ...(maxHeight ? { maxHeight } : {}), ...style }}>
       <table ref={tableRef} className={cx('v-table', follow && 'v-follow-head', !stickyHeader && 'v-no-sticky', picking && 'v-picking')}>
@@ -867,7 +1041,12 @@ export function Table<Row extends Record<string, any>>({
               const id = String(r.id);
               const isPicked = picking && pickedSet.has(id);
               return (
-                <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
+                <tr key={r.id ?? i}
+                  onClick={onRowClick ? (e) => {
+                    // a drag over cells, or a shift-click that extends the selection, is not a row click
+                    if (dragged.current || e.shiftKey) { dragged.current = false; return; }
+                    onRowClick(r);
+                  } : undefined}
                   className={cx(onRowClick && 'clickable', (selected?.(r) || isPicked) && 'selected') || undefined}>
                   {picking && (
                     <td className="v-pick-cell" onClick={(e) => { e.stopPropagation(); togglePick(id); }}>
@@ -875,9 +1054,9 @@ export function Table<Row extends Record<string, any>>({
                     </td>
                   )}
                   {columns.map((c, ci) => (
-                    <td key={c.key} style={{ textAlign: c.align ?? 'left' }}
-                      className={cx((c.align === 'right' || c.format === 'number' || c.format === 'money' || c.format === 'percent') && 'figures', c.hideOnMobile && 'v-hide-mobile', frozen(ci) && 'v-lead') || undefined}>
-                      {c.render ? c.render(r) : formatCell(r, c.key, c.format)}
+                    <td key={c.key} style={{ textAlign: c.align ?? 'left' }} {...cellMouse(i, ci)}
+                      className={cx('v-cell', inSel(i, ci) && 'v-cell-sel', cellSel && cellSel.anchor.row === i && cellSel.anchor.col === ci && 'v-cell-anchor', (c.align === 'right' || c.format === 'number' || c.format === 'money' || c.format === 'percent') && 'figures', c.hideOnMobile && 'v-hide-mobile', frozen(ci) && 'v-lead', c.wrap && 'v-wrap') || undefined}>
+                      {c.render ? orDash(c.render(r)) : formatCell(r, c.key, c.format)}
                     </td>
                   ))}
                 </tr>

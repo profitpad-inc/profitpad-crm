@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { api, API_BASE, ApiError } from '../lib/api';
+import { api, API_BASE, ApiError, getSchema, type ObjectDef } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { useIsMobile } from '../lib/use-mobile';
 import { Modal } from '../components/ui';
@@ -13,6 +13,7 @@ import { checkExternalUrl } from '../view-runtime/external-url';
 import { confirmDialog } from '../components/confirm';
 import { loadSnippets, renderSnippet } from '../lib/snippets';
 import { LineItemsEditor } from '../components/LineItemsEditor';
+import { BulkDeleteModal, BulkEditModal } from './ObjectTable';
 
 // A custom view (/view/#<slug>?param=value). The view's code runs in a
 // sandboxed iframe (public/view-frame, opaque origin, no network); this page
@@ -190,6 +191,10 @@ export function CustomView() {
   const [lineEditor, setLineEditor] = useState<{ object: string; id: string; resolve: (v: { saved: boolean }) => void } | null>(null);
   const lineEditorRef = useRef(lineEditor);
   lineEditorRef.current = lineEditor;
+  // Edit all / Delete all a view opened (bulkEdit, bulkDelete); resolve gets how many changed
+  const [bulk, setBulk] = useState<{ kind: 'edit' | 'delete'; object: string; schema: ObjectDef; ids: string[]; resolve: (n: number) => void } | null>(null);
+  const bulkRef = useRef(bulk);
+  bulkRef.current = bulk;
   const [leaving, setLeaving] = useState<LinkAsk | null>(null);
   const [dontAskAgain, setDontAskAgain] = useState(false);
   const leavingRef = useRef<LinkAsk | null>(null);
@@ -234,6 +239,8 @@ export function CustomView() {
     setLeaving(null);
     lineEditorRef.current?.resolve({ saved: false });
     setLineEditor(null);
+    bulkRef.current?.resolve(0);
+    setBulk(null);
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
@@ -459,6 +466,20 @@ export function CustomView() {
         if (!(await confirmWrite(describeChange((o) => objectByName.get(o)?.label_plural ?? o, method, args)))) throw new Error('The viewer did not allow this change');
         return new Promise<{ saved: boolean }>((resolve) => setLineEditor({ object, id, resolve }));
       }
+      case 'bulkEdit':
+      case 'bulkDelete': {
+        const object = String(args[0] ?? '');
+        if (!objectByName.get(object)) throw new Error(`no object called ${object}`);
+        const ids = args[1];
+        if (!Array.isArray(ids) || ids.length === 0) throw new Error(`${method} takes a list of record ids`);
+        if (ids.length > 10000) throw new Error(`${method} takes at most 10,000 records at once`);
+        if (!ids.every((x) => typeof x === 'string' && /^[0-9a-f]{10}$/.test(x))) throw new Error(`${method} takes record ids (10 characters, 0-9 and a-f)`);
+        if (bulkRef.current) throw new Error('An Edit all or Delete all dialog is already open');
+        const schema = await getSchema(object);
+        const kind = method === 'bulkEdit' ? 'edit' : 'delete';
+        const n = await new Promise<number>((resolve) => setBulk({ kind, object, schema, ids: [...new Set(ids as string[])], resolve }));
+        return kind === 'edit' ? { updated: n } : { deleted: n };
+      }
       // an upload is a change like the others (it creates a file record)
       case 'uploadFile':
       case 'createRecord':
@@ -682,6 +703,16 @@ export function CustomView() {
             e?.resolve({ saved: false });
           }}
         />
+      )}
+      {bulk?.kind === 'edit' && (
+        <BulkEditModal object={bulk.object} schema={bulk.schema} ids={bulk.ids}
+          onClose={() => { bulkRef.current?.resolve(0); setBulk(null); }}
+          onDone={(n) => { bulkRef.current?.resolve(n); setBulk(null); toast(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`); }} />
+      )}
+      {bulk?.kind === 'delete' && (
+        <BulkDeleteModal object={bulk.object} schema={bulk.schema} ids={bulk.ids}
+          onClose={() => { bulkRef.current?.resolve(0); setBulk(null); }}
+          onDone={(n) => { bulkRef.current?.resolve(n); setBulk(null); toast(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`); }} />
       )}
       {blockedOpen && (
         <Modal

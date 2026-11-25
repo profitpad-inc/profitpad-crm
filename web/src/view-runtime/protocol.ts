@@ -45,6 +45,8 @@ type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'cre
   | 'getSettings' | 'setSetting'
   // the CRM's own line items editor over a deal, quote, invoice, ... (a change: asked like createRecord)
   | 'editLineItems'
+  // the CRM's own Edit all and Delete all dialogs over records a view picked (the dialog is the question)
+  | 'bulkEdit' | 'bulkDelete'
   // the old name of associateRecords, from a frame loaded before the rename
   | 'linkRecords'
   // choices of a dropdown that lets users add them (a library's folders): add, rename, archive (a change: asked like createRecord)

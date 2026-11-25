@@ -472,7 +472,7 @@ function ObjectTableFor({ object }: { object: string }) {
   // row and column positions change on reload, sort, search and column edits
   useEffect(() => setSel(null), [data?.results.length, sorts, debounced, columns]);
 
-  function cellText(r: CrmRecord, c: Column, col: number): string {
+  function cellText(r: CrmRecord, c: Column, col: number, forCopy = true): string {
     if (c.type === 'association') return associatedItems(r, c).map((a) => displayName(a.properties, a.id)).join(', ');
     const prop = schema?.properties.find((p) => p.api_name === c.property);
     if (!prop) return '';
@@ -480,7 +480,7 @@ function ObjectTableFor({ object }: { object: string }) {
     // a leading ' keeps spreadsheets from reading "+1 437-222-0321" as a formula or number
     if (prop.type === 'phone') {
       const text = formatValue(prop, r.properties[prop.api_name]);
-      return text ? `'${text}` : '';
+      return text && forCopy ? `'${text}` : text;
     }
     return formatValue(prop, r.properties[prop.api_name]) || (col === 0 ? recordName(r) : '');
   }
@@ -823,7 +823,7 @@ function ObjectTableFor({ object }: { object: string }) {
               const title = recordName(r);
               const on = picked.has(r.id);
               const fields = cardColumns
-                .map((f) => ({ label: f.label, text: cellText(r, f.column, f.index) }))
+                .map((f) => ({ label: f.label, text: cellText(r, f.column, f.index, false) }))
                 .filter((f) => f.text && f.text !== title);
               const body = (
                 <>
@@ -1326,7 +1326,7 @@ async function inChunks(ids: string[], send: (chunk: string[]) => Promise<unknow
 // Sets one property on every ticked record. Unique properties are left out
 // (one value can't be on two records), as are ones nobody can edit.
 // Multi-choice dropdowns can add choices, take them away or replace them.
-function BulkEditModal({ object, schema, ids, onClose, onDone }: {
+export function BulkEditModal({ object, schema, ids, onClose, onDone }: {
   object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number, property: string) => void;
 }) {
   const properties = useMemo(
@@ -1413,7 +1413,7 @@ function BulkEditModal({ object, schema, ids, onClose, onDone }: {
 
 // Deleting from the table archives, like the record page: the records go to
 // the recycle bin rather than being removed for good.
-function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
+export function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
   object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
 }) {
   const [error, setError] = useState<string | null>(null);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Row, Badge, Button, Table, Select, TextInput, PhoneInput, Loading, ErrorBox, SplitView, SidePanel, FieldGrid, Field,
-  useQuery, useParams, setParams, useDirty, useDebounced, createRecord, updateRecord, openRecord, formatPhone, type Column
+  useQuery, useParams, setParams, useDirty, useDebounced, createRecord, updateRecord, openRecord, bulkEdit, bulkDelete, formatPhone, type Column
 } from '@pcrm/view'
 
 // Object table (template): the CRM's own list page (/objects/<object>) rebuilt
@@ -17,12 +17,14 @@ import {
 //   "rows", "total" and "record" queries (table, id column, searched columns).
 //   get_object_list_config gives the native table's columns, labels and widths;
 //   get_object_create_form gives the native Create form's fields.
-// - Add a column: add it to "rows" and to COLUMNS. format shows dates, phones,
+// - Add a column: add it to "rows" and to COLUMNS (in order of importance: on
+//   phones the table becomes cards showing the first five with a value). format shows dates, phones,
 //   emails, money and numbers the CRM's way; render draws anything else (badges, links).
 //   For email and phone columns also select <name>__all so the cell shows "+2" for more.
 // - Add a filter: a param in "rows" and "total" (and :p is null or ... in the where),
 //   a Select or TextInput in the toolbar that calls setParams.
-// - Bulk actions: picked holds the selected ids; add buttons beside "n selected".
+// - Bulk actions: picked holds the selected ids; Edit all and Delete all open the
+//   CRM's own dialogs (bulkEdit, bulkDelete). Add more buttons beside them.
 export const frame = 'fill'
 
 const OBJECT = 'contacts'
@@ -33,11 +35,11 @@ const PAGE = 100
 const COLUMNS: Column<any>[] = [
   { key: 'name', label: 'Name', width: 200, render: (r) => <b>{r.name || '--'}</b> },
   { key: 'email', label: 'Email', width: 240, format: 'email' },
-  { key: 'phone', label: 'Phone', width: 170, format: 'phone', hideOnMobile: true },
-  { key: 'job_title', label: 'Job title', width: 180, hideOnMobile: true },
-  { key: 'lifecycle_stage_label', label: 'Lifecycle stage', width: 150, hideOnMobile: true, render: (r) => r.lifecycle_stage_label ? <Badge>{r.lifecycle_stage_label}</Badge> : <span className="muted">--</span> },
-  { key: 'owner_name', label: 'Owner', width: 160, hideOnMobile: true },
-  { key: 'created_at', label: 'Created at', width: 190, format: 'datetime', hideOnMobile: true }
+  { key: 'phone', label: 'Phone', width: 170, format: 'phone' },
+  { key: 'job_title', label: 'Job title', width: 180 },
+  { key: 'lifecycle_stage_label', label: 'Lifecycle stage', width: 150, render: (r) => r.lifecycle_stage_label ? <Badge>{r.lifecycle_stage_label}</Badge> : null },
+  { key: 'owner_name', label: 'Owner', width: 160 },
+  { key: 'created_at', label: 'Created at', width: 190, format: 'datetime' }
 ]
 
 // The side panel's fields, for creating and editing.
@@ -157,6 +159,15 @@ export default function ObjectTable() {
   const count = total.data[0]?.n
   const close = () => setParams({ edit: '' })
 
+  async function editAll() {
+    const { updated } = await bulkEdit(OBJECT, picked)
+    if (updated) rows.refresh()
+  }
+  async function deleteAll() {
+    const { deleted } = await bulkDelete(OBJECT, picked)
+    if (deleted) { setPicked([]); rows.refresh(); total.refresh() }
+  }
+
   return (
     <div className="ot-root">
       <style>{CSS}</style>
@@ -173,6 +184,8 @@ export default function ObjectTable() {
         {picked.length > 0 && (
           <Row gap={8}>
             <span className="small">{picked.length} selected</span>
+            <Button small onClick={editAll}>Edit all</Button>
+            <Button small variant="danger" onClick={deleteAll}>Delete all</Button>
             <Button small onClick={() => setPicked([])}>Clear</Button>
           </Row>
         )}
