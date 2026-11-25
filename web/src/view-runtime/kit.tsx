@@ -1,5 +1,5 @@
 import {
-  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type MouseEvent as ReactMouseEvent, type ReactNode
+  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent, type ReactNode
 } from 'react';
 import { call, getInit, getParams, getViewport, post, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, ViewFile, Viewport } from './protocol';
@@ -12,7 +12,7 @@ import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
 import { dateTimeFmt, friendlyDate } from '../lib/date-format';
 import { displayPhone } from '../lib/phone-display';
-import { ArrowDown, ArrowUp, ArrowUpDown, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Search, X } from 'lucide-react';
 
 // What views import from '@pcrm/view': data hooks, actions, layout and UI
 // pieces styled like the CRM, and formatters. Documented for the AI in
@@ -751,6 +751,53 @@ const tsvField = (t: string) => (/[\t\n\r"]/.test(t) ? `"${t.replace(/"/g, '""')
 
 interface CellPos { row: number; col: number }
 
+function directionWords(c: Column<any>, dir: 'asc' | 'desc'): string {
+  if (c.format === 'number' || c.format === 'money' || c.format === 'percent') return dir === 'asc' ? 'Low to high' : 'High to low';
+  if (c.format === 'date' || c.format === 'datetime') return dir === 'asc' ? 'Oldest first' : 'Newest first';
+  return dir === 'asc' ? 'A to Z' : 'Z to A';
+}
+
+// The sort button above a Table's cards on phones (the CRM list's Sort menu):
+// picking a column sorts by it, picking it again flips it, then clears it.
+function SortMenu<Row>({ columns, current, onPick }: { columns: Column<Row>[]; current: TableSort | null; onPick: (c: Column<Row>) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent | TouchEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div className="v-sort-menu-anchor" ref={ref}>
+      <button type="button" className="v-btn small v-icon-btn" aria-label="Sort" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <ArrowUpDown size={16} />
+      </button>
+      {open && (
+        <div className="v-sort-menu" role="menu">
+          <div className="v-sort-menu-label">Sort by</div>
+          {columns.map((c) => {
+            const dir = current?.key === c.key ? current.direction : null;
+            return (
+              <button key={c.key} type="button" role="menuitem" className={dir ? 'current' : undefined} onClick={() => { setOpen(false); onPick(c); }}>
+                <span className="v-sort-menu-name">{c.label}</span>
+                {dir && <span className="v-sort-menu-dir">{dir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />} {directionWords(c, dir)}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // a render that gives nothing shows "--", like an empty value
 const orDash = (n: ReactNode) => (n === null || n === undefined || n === false || n === '' ? <span className="muted">--</span> : n);
 
@@ -828,6 +875,16 @@ export function Table<Row extends Record<string, any>>({
   const [cellSel, setCellSel] = useState<{ anchor: CellPos; focus: CellPos } | null>(null);
   const dragging = useRef(false);
   const dragged = useRef(false);
+  // phones: checkboxes show only after Select (or a long press), as in the CRM's list
+  const [selectMode, setSelectMode] = useState(false);
+  const press = useRef<{ timer?: ReturnType<typeof setTimeout>; fired: boolean; x: number; y: number }>({ fired: false, x: 0, y: 0 });
+  const pickedCount = picked?.length ?? 0;
+  const hadPicks = useRef(pickedCount > 0);
+  // the view emptied the selection (Clear, after Delete all): leave select mode
+  useEffect(() => {
+    if (hadPicks.current && pickedCount === 0 && !press.current.fired) setSelectMode(false);
+    hadPicks.current = pickedCount > 0;
+  }, [pickedCount]);
   const current = sort !== undefined ? sort : ownSort;
   function sortBy(c: Column<Row>) {
     const next: TableSort | null = current?.key !== c.key ? { key: c.key, direction: 'asc' } : current.direction === 'asc' ? { key: c.key, direction: 'desc' } : null;
@@ -958,42 +1015,86 @@ export function Table<Row extends Record<string, any>>({
     const [lead, ...rest] = columns;
     const fields = rest.filter((c) => c.card !== false && !CARD_NAME_PARTS.has(c.key));
     const blank = (n: ReactNode) => n === null || n === undefined || n === false || n === '';
+    const selecting = picking && (selectMode || pickedCount > 0);
+    const sortableCols = sortable ? columns.filter((c) => c.sortable !== false) : [];
+    const done = () => { setSelectMode(false); onPickedChange?.([]); };
+    const touch = (id: string) => (picking ? {
+      onTouchStart: (e: ReactTouchEvent) => {
+        const t = e.touches[0];
+        clearTimeout(press.current.timer);
+        press.current = {
+          fired: false, x: t.clientX, y: t.clientY,
+          timer: setTimeout(() => {
+            press.current.fired = true;
+            navigator.vibrate?.(10);
+            setSelectMode(true);
+            if (!pickedSet.has(id)) togglePick(id);
+          }, 450)
+        };
+      },
+      onTouchMove: (e: ReactTouchEvent) => {
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - press.current.x) > 10 || Math.abs(t.clientY - press.current.y) > 10) clearTimeout(press.current.timer);
+      },
+      onTouchEnd: () => clearTimeout(press.current.timer),
+      onTouchCancel: () => clearTimeout(press.current.timer),
+      onContextMenu: (e: ReactMouseEvent) => e.preventDefault()
+    } : {});
     return (
-      <div className={cx('v-table-wrap', 'v-cards-wrap', className)} style={style}>
-        {loading ? <div className="v-cards-note"><Loading /></div>
-          : shown.length === 0 ? <div className="v-cards-note muted">{empty}</div> : (
-            <ul className="v-cards">
-              {shown.map((r, i) => {
-                const id = String(r.id);
-                const isPicked = picking && pickedSet.has(id);
-                const title = lead ? (lead.render ? lead.render(r) : formatCell(r, lead.key, lead.format)) : null;
-                const lines = fields
-                  .filter((c) => (c.render ? true : !(r[c.key] === null || r[c.key] === undefined || r[c.key] === '')))
-                  .map((c) => ({ c, node: c.render ? c.render(r) : formatCell(r, c.key, c.format, true) }))
-                  .filter((l) => !blank(l.node))
-                  .slice(0, cardFields);
-                return (
-                  <li key={r.id ?? i} className={cx('v-card-row', onRowClick && 'clickable', (selected?.(r) || isPicked) && 'selected') || undefined}
-                    onClick={onRowClick ? () => onRowClick(r) : undefined}>
-                    {picking && (
-                      <span className="v-card-pick" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" aria-label="Select row" checked={isPicked} onChange={() => togglePick(id)} />
+      <div className={cx('v-cards-outer', className)} style={style}>
+        {(picking || sortableCols.length > 0) && shown.length > 0 && (
+          <div className="v-cards-bar">
+            {!picking ? null : selecting ? (
+              <>
+                <Button small onClick={() => onPickedChange?.(allPicked ? (picked ?? []).filter((x) => !ids.includes(String(x))) : [...new Set([...(picked ?? []).map(String), ...ids])])}>
+                  {allPicked ? 'Unselect all' : 'Select all'}
+                </Button>
+                <Button small onClick={done}>Done</Button>
+              </>
+            ) : <Button small onClick={() => setSelectMode(true)}>Select</Button>}
+            {sortableCols.length > 0 && <SortMenu columns={sortableCols} current={current} onPick={sortBy} />}
+          </div>
+        )}
+        <div className="v-table-wrap v-cards-wrap">
+          {loading ? <div className="v-cards-note"><Loading /></div>
+            : shown.length === 0 ? <div className="v-cards-note muted">{empty}</div> : (
+              <ul className="v-cards">
+                {shown.map((r, i) => {
+                  const id = String(r.id);
+                  const isPicked = selecting && pickedSet.has(id);
+                  const title = lead ? (lead.render ? lead.render(r) : formatCell(r, lead.key, lead.format)) : null;
+                  const lines = fields
+                    .filter((c) => (c.render ? true : !(r[c.key] === null || r[c.key] === undefined || r[c.key] === '')))
+                    .map((c) => ({ c, node: c.render ? c.render(r) : formatCell(r, c.key, c.format, true) }))
+                    .filter((l) => !blank(l.node))
+                    .slice(0, cardFields);
+                  const tap = () => {
+                    // the long press already picked it
+                    if (press.current.fired) { press.current.fired = false; return; }
+                    if (selecting) togglePick(id);
+                    else onRowClick?.(r);
+                  };
+                  return (
+                    <li key={r.id ?? i} {...touch(id)}
+                      className={cx('v-card-row', (onRowClick || selecting) && 'clickable', (selected?.(r) || isPicked) && 'selected', isPicked && 'picked') || undefined}
+                      onClick={onRowClick || selecting ? tap : undefined}
+                      role={selecting ? 'checkbox' : undefined} aria-checked={selecting ? isPicked : undefined}>
+                      {selecting && <span className="v-card-check" aria-hidden="true">{isPicked && <Check size={14} strokeWidth={3} />}</span>}
+                      <span className="v-card-body">
+                        <span className="v-card-title">{title}</span>
+                        {lines.map(({ c, node }) => (
+                          <span key={c.key} className="v-card-field">
+                            <span className="v-card-label">{c.label}</span>
+                            <span className="v-card-value">{node}</span>
+                          </span>
+                        ))}
                       </span>
-                    )}
-                    <span className="v-card-body">
-                      <span className="v-card-title">{title}</span>
-                      {lines.map(({ c, node }) => (
-                        <span key={c.key} className="v-card-field">
-                          <span className="v-card-label">{c.label}</span>
-                          <span className="v-card-value">{node}</span>
-                        </span>
-                      ))}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+        </div>
       </div>
     );
   }
