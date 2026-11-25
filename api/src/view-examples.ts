@@ -36,8 +36,8 @@ export const VIEW_EXAMPLES: ViewExample[] = [
   },
   {
     key: 'object_table', name: 'Object table (contacts list)', dir: 'templates', file: 'object-table',
-    shows: 'The CRM\'s own list page as a view: title with record count, search kept in the address, sortable table with frozen header, row checkboxes, Load more, and a Create side panel built from the kit (SplitView, SidePanel, FieldGrid, Field).',
-    adapt: 'Built for contacts. COLUMNS and CREATE_FIELDS at the top, plus the rows and total queries. get_object_list_config and get_object_create_form give the native columns and create form for any object.'
+    shows: 'The CRM\'s own list page as a view: title with record count, the CRM search box kept in the address, sortable table in a bordered frame with frozen header and first column, row checkboxes, dates, phones and emails formatted, Load more, and one side panel (SplitView, SidePanel, FieldGrid, Field) that creates a record or, on a row click, edits it.',
+    adapt: 'Built for contacts. COLUMNS and FIELDS at the top, plus the rows, total and record queries. get_object_list_config and get_object_create_form give the native columns and create form for any object.'
   },
   {
     key: 'landing_page', name: 'Landing page workspace', dir: 'templates', file: 'landing-page',

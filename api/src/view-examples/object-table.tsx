@@ -1,23 +1,25 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Row, Badge, Button, Table, Select, TextInput, PhoneInput, Loading, ErrorBox, SplitView, SidePanel, FieldGrid, Field,
-  useQuery, useParams, setParams, useDirty, useDebounced, createRecord, openRecord, navigate,
-  formatDateTime, type Column
+  useQuery, useParams, setParams, useDirty, useDebounced, createRecord, updateRecord, openRecord, formatPhone, type Column
 } from '@pcrm/view'
 
 // Object table (template): the CRM's own list page (/objects/<object>) rebuilt
-// as a view, for contacts. A title with the record count, a search box kept in
-// the address (?s=), a sortable table with a frozen header and row picking,
-// "Load more", and a Create panel beside the table (the kit's SplitView and
-// SidePanel: the house-style side panel, full screen on phones, Escape closes).
-// Clicking a row opens the record.
+// as a view, for contacts. A title with the record count, the CRM's search box
+// kept in the address (?s=), a sortable table in a bordered frame with a frozen
+// header and first column, row checkboxes, "Load more", and one side panel
+// beside the table (the kit's SplitView and SidePanel: full screen on phones,
+// Escape closes) that creates a record (?edit=new) or, when a row is clicked,
+// shows and edits that record (?edit=<id>), with a button to the full record page.
 //
 // To adapt it:
-// - Another object: change OBJECT, LABEL, LABEL_PLURAL, COLUMNS, CREATE_FIELDS,
-//   and the "rows" and "total" queries (table, id column, searched columns).
+// - Another object: change OBJECT, LABEL, LABEL_PLURAL, COLUMNS, FIELDS, and the
+//   "rows", "total" and "record" queries (table, id column, searched columns).
 //   get_object_list_config gives the native table's columns, labels and widths;
 //   get_object_create_form gives the native Create form's fields.
-// - Add a column: add it to "rows" and to COLUMNS (render for badges, links, money).
+// - Add a column: add it to "rows" and to COLUMNS. format shows dates, phones,
+//   emails, money and numbers the CRM's way; render draws anything else (badges, links).
+//   For email and phone columns also select <name>__all so the cell shows "+2" for more.
 // - Add a filter: a param in "rows" and "total" (and :p is null or ... in the where),
 //   a Select or TextInput in the toolbar that calls setParams.
 // - Bulk actions: picked holds the selected ids; add buttons beside "n selected".
@@ -28,24 +30,26 @@ const LABEL = 'contact'
 const LABEL_PLURAL = 'Contacts'
 const PAGE = 100
 
-const COLUMNS = [
+const COLUMNS: Column<any>[] = [
   { key: 'name', label: 'Name', width: 200, render: (r) => <b>{r.name || '--'}</b> },
-  { key: 'email', label: 'Email', width: 240 },
-  { key: 'phone', label: 'Phone', width: 160, hideOnMobile: true },
+  { key: 'email', label: 'Email', width: 240, format: 'email' },
+  { key: 'phone', label: 'Phone', width: 170, format: 'phone', hideOnMobile: true },
   { key: 'job_title', label: 'Job title', width: 180, hideOnMobile: true },
-  { key: 'lifecycle_stage_label', label: 'Lifecycle stage', width: 150, hideOnMobile: true, render: (r) => r.lifecycle_stage_label ? <Badge>{r.lifecycle_stage_label}</Badge> : null },
+  { key: 'lifecycle_stage_label', label: 'Lifecycle stage', width: 150, hideOnMobile: true, render: (r) => r.lifecycle_stage_label ? <Badge>{r.lifecycle_stage_label}</Badge> : <span className="muted">--</span> },
   { key: 'owner_name', label: 'Owner', width: 160, hideOnMobile: true },
-  { key: 'created_at', label: 'Created at', width: 170, hideOnMobile: true, render: (r) => formatDateTime(r.created_at), sortValue: (r) => r.created_at }
+  { key: 'created_at', label: 'Created at', width: 190, format: 'datetime', hideOnMobile: true }
 ]
 
-// The Create panel. type: text | email | phone | dropdown (choices from "options", property = key).
-const CREATE_FIELDS = [
+// The side panel's fields, for creating and editing.
+// type: text | email | phone | dropdown (choices from "options", property = key) | owner (users).
+const FIELDS = [
   { key: 'first_name', label: 'First name', type: 'text' },
   { key: 'last_name', label: 'Last name', type: 'text' },
   { key: 'email', label: 'Email', type: 'email', wide: true },
   { key: 'phone', label: 'Phone', type: 'phone' },
   { key: 'job_title', label: 'Job title', type: 'text' },
-  { key: 'lifecycle_stage', label: 'Lifecycle stage', type: 'dropdown' }
+  { key: 'lifecycle_stage', label: 'Lifecycle stage', type: 'dropdown' },
+  { key: 'owner', label: 'Owner', type: 'owner' }
 ]
 const isReady = (f) => !!(f.first_name?.trim() || f.last_name?.trim() || f.email?.trim())
 
@@ -55,14 +59,31 @@ const CSS = `
 .ot-title h1 { margin: 0; font-size: 24px; font-weight: 700; }
 .ot-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ot-split { padding-bottom: 20px; }
-.ot-check { width: 16px; height: 16px; margin: 0; cursor: pointer; }
 @media (max-width: 720px) { .ot-root { padding: 16px 16px 0; } }
 `
 
-function CreatePanel({ options, onClose, onCreated }) {
-  const blank = Object.fromEntries(CREATE_FIELDS.map((f) => [f.key, '']))
-  const [form, setForm] = useState(blank)
-  const { dirty } = useDirty(form, 'new')
+// Email and phone properties hold a list (row.<name>__all); the box edits the
+// first entry, the primary, and keeps the others.
+function withPrimary(all, value) {
+  const list = Array.isArray(all) ? all : []
+  if (!value) return list.slice(1)
+  return [{ ...(list[0] || {}), value }, ...list.slice(1)]
+}
+
+// Loads the record (?edit=<id>), then shows the form; ?edit=new starts empty.
+function RecordPanel({ id, options, owners, onClose, onSaved }) {
+  const isNew = id === 'new'
+  const record = useQuery('record', { id }, { enabled: !isNew })
+  const r = record.data[0]
+  if (!isNew && record.loading && !r) return <SidePanel title={LABEL_PLURAL} onClose={onClose}><Loading /></SidePanel>
+  if (!isNew && !r) return <SidePanel title={LABEL_PLURAL} onClose={onClose} error={record.error || `This ${LABEL} was not found.`} />
+  return <RecordForm id={id} r={isNew ? null : r} options={options} owners={owners} onClose={onClose} onSaved={onSaved} />
+}
+
+function RecordForm({ id, r, options, owners, onClose, onSaved }) {
+  const isNew = !r
+  const [form, setForm] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.key, r?.[f.key] ?? ''])))
+  const { dirty } = useDirty(form, id)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }))
@@ -71,9 +92,15 @@ function CreatePanel({ options, onClose, onCreated }) {
     setBusy(true)
     setError(null)
     try {
-      const props = Object.fromEntries(Object.entries(form).filter(([, v]) => String(v).trim() !== '').map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
-      const created = await createRecord(OBJECT, props)
-      onCreated(created)
+      const props = {}
+      for (const f of FIELDS) {
+        const v = typeof form[f.key] === 'string' ? form[f.key].trim() : form[f.key]
+        if (isNew) { if (v !== '') props[f.key] = v; continue }
+        if (v === (r[f.key] ?? '')) continue
+        props[f.key] = f.type === 'email' || f.type === 'phone' ? withPrimary(r[f.key + '__all'], v) : v === '' ? null : v
+      }
+      await (isNew ? createRecord(OBJECT, props) : updateRecord(OBJECT, id, props))
+      onSaved()
     } catch (e) {
       setError(e.message || String(e))
     } finally {
@@ -83,21 +110,24 @@ function CreatePanel({ options, onClose, onCreated }) {
 
   return (
     <SidePanel
-      title={`Create ${LABEL}`}
-      subtitle={isReady(form) ? null : 'Give a name or an email.'}
+      title={isNew ? `Create ${LABEL}` : r.name || `Unnamed ${LABEL}`}
+      subtitle={isNew ? (isReady(form) ? null : 'Give a name or an email.') : [r.job_title, formatPhone(r.phone)].filter(Boolean).join(' · ') || null}
       onClose={onClose}
+      onOpenRecord={isNew ? undefined : () => openRecord(OBJECT, id)}
       error={error}
       footer={<>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={busy || !dirty || !isReady(form)} onClick={save}>{busy ? 'Creating…' : 'Create'}</Button>
+        <Button variant="primary" disabled={busy || !dirty || !isReady(form)} onClick={save}>{busy ? 'Saving…' : isNew ? 'Create' : 'Save'}</Button>
       </>}
     >
       <FieldGrid>
-        {CREATE_FIELDS.map((f) => (
+        {FIELDS.map((f) => (
           <Field key={f.key} label={f.label} wide={f.wide}>
             {f.type === 'dropdown' ? (
               <Select value={form[f.key]} onChange={set(f.key)} placeholder="--"
                 options={options.filter((o) => o.property === f.key).map((o) => ({ value: o.value, label: o.label }))} />
+            ) : f.type === 'owner' ? (
+              <Select value={form[f.key]} onChange={set(f.key)} placeholder="No owner" options={owners.map((u) => ({ value: u.id, label: u.name }))} />
             ) : f.type === 'phone' ? (
               <PhoneInput value={form[f.key]} onChange={set(f.key)} />
             ) : (
@@ -116,28 +146,16 @@ export default function ObjectTable() {
   const s = useDebounced(search.trim(), 300)
   const [limit, setLimit] = useState(PAGE)
   const [picked, setPicked] = useState([])
-  const creating = params.edit === 'new'
+  const editing = params.edit || null
 
   useEffect(() => { setParams({ s: s || undefined }); setLimit(PAGE) }, [s])
 
   const rows = useQuery('rows', { s: s || null, limit })
   const total = useQuery('total', { s: s || null })
   const options = useQuery('options')
+  const owners = useQuery('owners')
   const count = total.data[0]?.n
-
-  const allPicked = rows.data.length > 0 && rows.data.every((r) => picked.includes(r.id))
-  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
-
-  const columns = useMemo(() => [
-    {
-      key: '_pick', label: <input type="checkbox" className="ot-check" aria-label="Select all" checked={allPicked}
-        onChange={() => setPicked(allPicked ? [] : rows.data.map((r) => r.id))} />,
-      width: 44, sortable: false,
-      render: (r) => <input type="checkbox" className="ot-check" aria-label="Select row" checked={picked.includes(r.id)}
-        onClick={(e) => e.stopPropagation()} onChange={() => toggle(r.id)} />
-    },
-    ...COLUMNS
-  ] as Column<any>[], [rows.data, picked, allPicked])
+  const close = () => setParams({ edit: '' })
 
   return (
     <div className="ot-root">
@@ -147,14 +165,11 @@ export default function ObjectTable() {
           <h1>{LABEL_PLURAL}</h1>
           <span className="muted">{count == null ? '' : `${count} record${count === 1 ? '' : 's'}`}</span>
         </div>
-        <Row gap={8}>
-          <Button onClick={() => navigate(`/objects/${OBJECT}`)}>Import or export</Button>
-          <Button variant="primary" onClick={() => setParams({ edit: 'new' })}>+ Create {LABEL}</Button>
-        </Row>
+        <Button variant="primary" onClick={() => setParams({ edit: 'new' })}>+ Create {LABEL}</Button>
       </Row>
 
       <div className="ot-toolbar">
-        <TextInput type="search" value={search} onChange={setSearch} placeholder={`Search ${LABEL_PLURAL.toLowerCase()}`} style={{ width: 320, maxWidth: '100%' }} />
+        <TextInput type="search" value={search} onChange={setSearch} placeholder={`Search ${LABEL_PLURAL.toLowerCase()}`} />
         {picked.length > 0 && (
           <Row gap={8}>
             <span className="small">{picked.length} selected</span>
@@ -163,20 +178,22 @@ export default function ObjectTable() {
         )}
       </div>
 
-      <SplitView className="ot-split" panel={creating ? (
-        <CreatePanel key="new" options={options.data} onClose={() => setParams({ edit: '' })}
-          onCreated={() => { setParams({ edit: '' }); rows.refresh(); total.refresh() }} />
+      <SplitView className="ot-split" panel={editing ? (
+        <RecordPanel key={editing} id={editing} options={options.data} owners={owners.data} onClose={close}
+          onSaved={() => { close(); rows.refresh(); total.refresh() }} />
       ) : null}>
-          {rows.error ? <ErrorBox error={rows.error} /> : (
-            <Table columns={columns} rows={rows.data} loading={rows.loading && !rows.data.length}
-              onRowClick={(r) => openRecord(OBJECT, r.id)} defaultSort={{ key: 'created_at', direction: 'desc' }}
-              empty={s ? `No ${LABEL_PLURAL.toLowerCase()} match "${s}".` : `No ${LABEL_PLURAL.toLowerCase()} yet.`} />
-          )}
-          {rows.truncated || (count != null && rows.data.length < count && rows.data.length >= limit) ? (
-            <Row style={{ justifyContent: 'center', padding: 12 }}>
-              <Button small disabled={rows.loading} onClick={() => setLimit((l) => l + PAGE)}>{rows.loading ? <Loading label="Loading" /> : 'Load more'}</Button>
-            </Row>
-          ) : null}
+        {rows.error ? <ErrorBox error={rows.error} /> : (
+          <Table columns={COLUMNS} rows={rows.data} loading={rows.loading && !rows.data.length}
+            picked={picked} onPickedChange={setPicked}
+            onRowClick={(r) => setParams({ edit: r.id })} selected={(r) => r.id === editing}
+            defaultSort={{ key: 'created_at', direction: 'desc' }}
+            empty={s ? `No ${LABEL_PLURAL.toLowerCase()} match "${s}".` : `No ${LABEL_PLURAL.toLowerCase()} yet.`} />
+        )}
+        {rows.truncated || (count != null && rows.data.length < count && rows.data.length >= limit) ? (
+          <Row style={{ justifyContent: 'center', padding: 12 }}>
+            <Button small disabled={rows.loading} onClick={() => setLimit((l) => l + PAGE)}>{rows.loading ? <Loading label="Loading" /> : 'Load more'}</Button>
+          </Row>
+        ) : null}
       </SplitView>
     </div>
   )

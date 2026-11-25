@@ -65,12 +65,16 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .tone-danger { color: var(--danger); }
 .tone-muted { color: var(--muted-text); }
 
-.v-table-wrap { overflow: auto; margin: 0 -14px -12px; }
+/* a table on its own sits in a bordered frame with rounded corners (the CRM's
+   table-frame); inside a Card it runs edge to edge and the card is the frame */
+.v-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--page-background); }
+.v-card .v-table-wrap { margin: 0 -14px -12px; border: 0; border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px); }
 /* a table that opens a card with no title starts at the card's top edge, not below its padding */
-.v-card > .v-table-wrap:first-child { margin-top: -12px; border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0; }
-.v-table { width: 100%; border-collapse: collapse; }
-.v-table th { position: sticky; top: 0; background: var(--surface); color: var(--muted-text); font-size: 12px; font-weight: 600; padding: 7px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.v-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.v-card > .v-table-wrap:first-child { margin-top: -12px; border-radius: calc(var(--radius-lg) - 1px); }
+/* separate borders so the frozen header and first column keep their lines */
+.v-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.v-table th { position: sticky; top: 0; z-index: 2; background: var(--surface); color: var(--muted-text); font-size: 12px; font-weight: 600; padding: 8px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.v-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; background: var(--page-background); }
 .v-table tbody tr:last-child td { border-bottom: 0; }
 .v-table tr.clickable { cursor: pointer; }
 .v-table.v-follow-head th { position: relative; z-index: 4; }
@@ -78,9 +82,19 @@ a:hover, .v-link:hover { text-decoration: underline; }
 .v-table th.stuck { box-shadow: 0 1px 0 var(--border), 0 4px 8px -6px rgba(24, 32, 43, 0.25); }
 .v-table th.v-sortable { cursor: pointer; user-select: none; }
 .v-table th.v-sortable:hover, .v-table th.v-sorted { color: var(--text); }
-.v-sort-mark { display: inline-block; width: 1em; margin-left: 4px; font-size: 9px; vertical-align: 1px; }
+.v-th { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.v-sort-mark { flex: none; }
+.v-table th.v-sorted .v-sort-mark { color: var(--primary); }
+.v-sort-idle { visibility: hidden; opacity: 0.7; }
+.v-table th.v-sortable:hover .v-sort-idle { visibility: visible; }
 .v-table tr.clickable:hover td { background: var(--surface); }
-.v-table tr.selected td { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.v-table tr.selected td { background: color-mix(in srgb, var(--primary) 8%, var(--page-background)); }
+/* the checkbox column and the first column stay put when the table scrolls sideways */
+.v-table .v-pick-cell { position: sticky; left: 0; z-index: 1; width: 40px; min-width: 40px; max-width: 40px; box-sizing: border-box; padding: 0 0 0 14px; vertical-align: middle; cursor: pointer; }
+.v-table .v-lead { position: sticky; left: 0; z-index: 1; box-shadow: inset -1px 0 0 var(--border); }
+.v-table.v-picking .v-lead { left: 40px; }
+.v-table th.v-pick-cell, .v-table th.v-lead { z-index: 3; }
+.v-table.v-follow-head th.v-pick-cell, .v-table.v-follow-head th.v-lead { position: sticky; z-index: 5; }
 .v-empty-cell { text-align: center; padding: 18px 14px; }
 
 .v-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
@@ -274,5 +288,16 @@ input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
 @media (max-width: 520px) { .v-fields { grid-template-columns: minmax(0, 1fr); } }
 
 /* row picking in a Table keeps real checkboxes (every other checkbox is a switch), as in the CRM's own tables (table.css) */
-.v-table input[type='checkbox'] { appearance: auto; -webkit-appearance: checkbox; display: block; width: 15px; min-width: 15px; height: 15px; margin: 0; border-radius: 0; background: none; cursor: pointer; }
+.v-table input[type='checkbox'] { appearance: auto; -webkit-appearance: checkbox; display: block; width: 15px; min-width: 15px; height: 15px; margin: 0; border-radius: 0; background: none; cursor: pointer; accent-color: var(--primary); }
 .v-table input[type='checkbox']::before { content: none; }
+
+/* TextInput type="search": the CRM's table search box (table.css .table-search) */
+.v-search { display: flex; align-items: center; gap: 8px; width: 300px; max-width: 100%; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px; border: 1px solid transparent; border-radius: var(--radius); background: var(--surface); color: var(--muted-text); }
+.v-search.small { height: 28px; font-size: 12px; }
+.v-search:hover { border-color: var(--border); }
+.v-search:focus-within { background: var(--page-background); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.v-search svg { flex: none; }
+.v-search input { flex: 1; min-width: 0; height: 100%; border: 0; padding: 0; background: none; font: inherit; color: var(--text); }
+.v-search input:focus { outline: none; }
+.v-search-clear { display: grid; place-items: center; padding: 3px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted-text); cursor: pointer; }
+.v-search-clear:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }

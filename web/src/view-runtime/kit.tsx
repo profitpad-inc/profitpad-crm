@@ -10,6 +10,9 @@ import { CodeBlock as BaseCodeBlock, setCopyText } from '../components/CodeBlock
 import { langFor, type CodeLang } from '../lib/code-folds';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
+import { dateTimeFmt, friendlyDate } from '../lib/date-format';
+import { displayPhone } from '../lib/phone-display';
+import { ArrowDown, ArrowUp, ArrowUpDown, Search, X } from 'lucide-react';
 
 // What views import from '@pcrm/view': data hooks, actions, layout and UI
 // pieces styled like the CRM, and formatters. Documented for the AI in
@@ -329,21 +332,27 @@ export function formatPercent(v: unknown, decimals = 0): string {
   return (n * 100).toFixed(decimals) + '%';
 }
 
-// dates as YYYY-MM-DD and datetimes as YYYY-MM-DD HH:MM (local), like the CRM
+// Dates and datetimes as the CRM shows them: "Nov 24, 2026" and "Nov 24, 2026,
+// 7:20 PM" in the viewer's locale and time zone. A plain date ("2026-11-24")
+// never shifts a day; a datetime gives its local date.
+const localDateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 export function formatDate(v: unknown): string {
   if (!v) return '';
   const s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return friendlyDate(s);
   const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return Number.isNaN(d.getTime()) ? s : localDateFmt.format(d);
 }
 
 export function formatDateTime(v: unknown): string {
   if (!v) return '';
   const d = new Date(String(v));
-  if (Number.isNaN(d.getTime())) return String(v);
-  return `${formatDate(d.toISOString())} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return Number.isNaN(d.getTime()) ? String(v) : dateTimeFmt.format(d);
+}
+
+// A stored phone number (+18882345678ext9) as the CRM shows it: +1 888-234-5678 ext9.
+export function formatPhone(v: unknown): string {
+  return v === null || v === undefined || v === '' ? '' : displayPhone(String(v));
 }
 
 // Series colors that read on white, in order; the first follows the theme.
@@ -678,6 +687,33 @@ export interface Column<Row> {
   sortable?: boolean;
   // what to sort by when it is not row[key] (a column drawn with render)
   sortValue?: (row: Row) => unknown;
+  // how to show row[key] when there is no render: date and datetime as the
+  // CRM shows them (Nov 24, 2026, 7:20 PM), phone formatted (+1 888-234-5678),
+  // number, money (format money in USD, or row[key + '_currency']) and
+  // percent (0.25 is 25%). email and phone add a muted "+2" when
+  // row[key + '__all'] (the property's whole list) has more entries.
+  format?: ColumnFormat;
+}
+
+export type ColumnFormat = 'date' | 'datetime' | 'phone' | 'email' | 'number' | 'money' | 'percent';
+
+function formatCell(row: Record<string, any>, key: string, format: ColumnFormat | undefined): ReactNode {
+  const v = row[key];
+  if (v === null || v === undefined || v === '') return <span className="muted">--</span>;
+  if (format === 'phone' || format === 'email') {
+    const first = format === 'phone' ? formatPhone(v) : String(v);
+    const all = row[key + '__all'];
+    const more = Array.isArray(all) ? all.length - 1 : 0;
+    if (more <= 0) return first;
+    const title = all.map((e: any) => (format === 'phone' ? formatPhone(e?.value ?? e) : String(e?.value ?? e))).join(', ');
+    return <span>{first} <span className="muted" title={title}>+{more}</span></span>;
+  }
+  if (format === 'date') return formatDate(v);
+  if (format === 'datetime') return formatDateTime(v);
+  if (format === 'number') return formatNumber(v);
+  if (format === 'money') return formatMoney(v, row[key + '_currency'] || 'USD');
+  if (format === 'percent') return formatPercent(v);
+  return String(v);
 }
 
 export interface TableSort {
@@ -705,7 +741,7 @@ function compareValues(a: unknown, b: unknown): number {
 // sort controlled, to keep it in address params.
 export function Table<Row extends Record<string, any>>({
   columns, rows, loading, error, onRowClick, selected, empty = 'Nothing to show', maxHeight, sortable = true, sort, defaultSort, onSortChange,
-  stickyHeader = true, style, className
+  stickyHeader = true, picked, onPickedChange, freezeFirst = true, style, className
 }: Styled & {
   columns: Column<Row>[];
   rows: Row[];
@@ -720,6 +756,11 @@ export function Table<Row extends Record<string, any>>({
   defaultSort?: TableSort | null;
   onSortChange?: (sort: TableSort | null) => void;
   stickyHeader?: boolean;
+  // row picking: a checkbox column first, ids from row.id
+  picked?: string[];
+  onPickedChange?: (ids: string[]) => void;
+  // the first column (after the checkboxes) stays put when the table scrolls sideways
+  freezeFirst?: boolean;
 }) {
   const [ownSort, setOwnSort] = useState<TableSort | null>(defaultSort ?? null);
   const current = sort !== undefined ? sort : ownSort;
@@ -771,24 +812,46 @@ export function Table<Row extends Record<string, any>>({
   }, [follow]);
 
   if (error) return <ErrorBox error={error} />;
+  const picking = !!onPickedChange;
+  const pickedSet = new Set((picked ?? []).map(String));
+  const ids = shown.map((r) => String(r.id));
+  const allPicked = ids.length > 0 && ids.every((id) => pickedSet.has(id));
+  const somePicked = !allPicked && ids.some((id) => pickedSet.has(id));
+  function togglePick(id: string) {
+    onPickedChange?.(pickedSet.has(id) ? (picked ?? []).filter((x) => String(x) !== id) : [...(picked ?? []), id]);
+  }
+  const lift = follow && shift ? { transform: `translateY(${shift}px)` } : {};
+  const colSpan = columns.length + (picking ? 1 : 0);
+  const frozen = (i: number) => freezeFirst && i === 0 && columns.length > 1;
   return (
     <div className={cx('v-table-wrap', className)} style={{ ...(maxHeight ? { maxHeight } : {}), ...style }}>
-      <table ref={tableRef} className={cx('v-table', follow && 'v-follow-head', !stickyHeader && 'v-no-sticky')}>
+      <table ref={tableRef} className={cx('v-table', follow && 'v-follow-head', !stickyHeader && 'v-no-sticky', picking && 'v-picking')}>
         <thead ref={headRef}>
           <tr>
-            {columns.map((c) => {
+            {picking && (
+              <th className={cx('v-pick-cell', follow && shift > 0 && 'stuck')} style={lift}>
+                <input type="checkbox" aria-label="Select all" checked={allPicked}
+                  ref={(el) => { if (el) el.indeterminate = somePicked; }}
+                  onChange={() => onPickedChange?.(allPicked ? (picked ?? []).filter((x) => !ids.includes(String(x))) : [...new Set([...(picked ?? []).map(String), ...ids])])} />
+              </th>
+            )}
+            {columns.map((c, i) => {
               const canSort = sortable && c.sortable !== false;
               const dir = current?.key === c.key ? current.direction : null;
               return (
                 <th
                   key={c.key}
-                  style={{ textAlign: c.align ?? 'left', width: c.width, ...(follow && shift ? { transform: `translateY(${shift}px)` } : {}) }}
-                  className={cx(c.hideOnMobile && 'v-hide-mobile', canSort && 'v-sortable', dir && 'v-sorted', follow && shift > 0 && 'stuck') || undefined}
+                  style={{ textAlign: c.align ?? 'left', width: c.width, ...lift }}
+                  className={cx(c.hideOnMobile && 'v-hide-mobile', canSort && 'v-sortable', dir && 'v-sorted', frozen(i) && 'v-lead', follow && shift > 0 && 'stuck') || undefined}
                   aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}
                   onClick={canSort ? () => sortBy(c) : undefined}
                 >
-                  {c.label}
-                  {canSort && <span className="v-sort-mark" aria-hidden="true">{dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : ''}</span>}
+                  <span className="v-th">
+                    {c.label}
+                    {canSort && (dir === 'asc' ? <ArrowUp size={13} className="v-sort-mark" aria-hidden />
+                      : dir === 'desc' ? <ArrowDown size={13} className="v-sort-mark" aria-hidden />
+                        : <ArrowUpDown size={13} className="v-sort-mark v-sort-idle" aria-hidden />)}
+                  </span>
                 </th>
               );
             })}
@@ -796,19 +859,30 @@ export function Table<Row extends Record<string, any>>({
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan={columns.length}><Loading /></td></tr>
+            <tr><td colSpan={colSpan}><Loading /></td></tr>
           ) : shown.length === 0 ? (
-            <tr><td colSpan={columns.length} className="muted v-empty-cell">{empty}</td></tr>
+            <tr><td colSpan={colSpan} className="muted v-empty-cell">{empty}</td></tr>
           ) : (
-            shown.map((r, i) => (
-              <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined} className={`${onRowClick ? 'clickable' : ''}${selected?.(r) ? ' selected' : ''}`}>
-                {columns.map((c) => (
-                  <td key={c.key} style={{ textAlign: c.align ?? 'left' }} className={cx(c.align === 'right' && 'figures', c.hideOnMobile && 'v-hide-mobile') || undefined}>
-                    {c.render ? c.render(r) : r[c.key] == null || r[c.key] === '' ? <span className="muted">--</span> : String(r[c.key])}
-                  </td>
-                ))}
-              </tr>
-            ))
+            shown.map((r, i) => {
+              const id = String(r.id);
+              const isPicked = picking && pickedSet.has(id);
+              return (
+                <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined}
+                  className={cx(onRowClick && 'clickable', (selected?.(r) || isPicked) && 'selected') || undefined}>
+                  {picking && (
+                    <td className="v-pick-cell" onClick={(e) => { e.stopPropagation(); togglePick(id); }}>
+                      <input type="checkbox" aria-label="Select row" checked={isPicked} onClick={(e) => e.stopPropagation()} onChange={() => togglePick(id)} />
+                    </td>
+                  )}
+                  {columns.map((c, ci) => (
+                    <td key={c.key} style={{ textAlign: c.align ?? 'left' }}
+                      className={cx((c.align === 'right' || c.format === 'number' || c.format === 'money' || c.format === 'percent') && 'figures', c.hideOnMobile && 'v-hide-mobile', frozen(ci) && 'v-lead') || undefined}>
+                      {c.render ? c.render(r) : formatCell(r, c.key, c.format)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
@@ -884,7 +958,18 @@ function PlainInput({ value, onChange, placeholder, type = 'text', debounce, sma
     if (debounce && debounce > 0) timer.current = setTimeout(emit, debounce);
     else emit();
   }
-  return <input className={cx('v-input', small && 'small', className)} style={style} type={type} value={debounce ? text : value} placeholder={placeholder} onChange={(e) => change(e.target.value)} />;
+  const shownText = debounce ? text : value;
+  // type="search": the CRM's table search box (magnifier, grey until focused, x to clear)
+  if (type === 'search') {
+    return (
+      <div className={cx('v-search', small && 'small', className)} style={style}>
+        <Search size={15} aria-hidden />
+        <input type="text" value={shownText} placeholder={placeholder} aria-label={placeholder || 'Search'} onChange={(e) => change(e.target.value)} />
+        {shownText ? <button type="button" className="v-search-clear" aria-label="Clear search" onClick={() => change('')}><X size={14} /></button> : null}
+      </div>
+    );
+  }
+  return <input className={cx('v-input', small && 'small', className)} style={style} type={type} value={shownText} placeholder={placeholder} onChange={(e) => change(e.target.value)} />;
 }
 
 // Several lines of text. When the view allows snippets (its "Allow snippets"

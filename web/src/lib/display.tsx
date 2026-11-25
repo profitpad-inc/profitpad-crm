@@ -11,6 +11,7 @@ import type { CrmRecord, Property } from './api';
 import { ColorPill } from '../components/ColorPicker';
 import { dateFmt, dateTimeFmt } from './date-format';
 import { entriesOf, primaryValue } from './multi-values';
+import { displayPhone } from './phone-display';
 
 const OBJECT_ICONS: Record<string, LucideIcon> = {
   users: User,
@@ -152,18 +153,7 @@ export function actorLabel(p: Property, value: string): string {
   return value;
 }
 
-// Phone properties store +18882345678ext9 (the API checks them with Google's
-// libphonenumber). Shown as +1 888-234-5678 ext9; other countries keep the
-// stored digits, since grouping them needs the library's metadata.
-export function displayPhone(v: string): string {
-  const m = /^\+(\d+?)(?:ext(\d+))?$/.exec(v);
-  if (!m) return v;
-  const [, digits, ext] = m;
-  const main = digits.length === 11 && digits.startsWith('1')
-    ? `+1 ${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`
-    : `+${digits}`;
-  return ext ? `${main} ext${ext}` : main;
-}
+export { displayPhone };
 
 export function formatValue(p: Property, value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
