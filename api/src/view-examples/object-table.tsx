@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  Row, Badge, Button, Table, Select, TextInput, PhoneInput, Loading, ErrorBox, SplitView, SidePanel, FieldGrid, Field,
+  Row, Badge, Button, Table, Select, TextInput, MultiValueInput, PropertyList, PropertyField, Loading, ErrorBox, SplitView, SidePanel, FieldGrid, Field,
   useQuery, useParams, setParams, useDirty, useDebounced, createRecord, updateRecord, openRecord, bulkEdit, bulkDelete, formatPhone, type Column
 } from '@pcrm/view'
 
@@ -10,7 +10,8 @@ import {
 // header and first column, row checkboxes, "Load more", and one side panel
 // beside the table (the kit's SplitView and SidePanel: full screen on phones,
 // Escape closes) that creates a record (?edit=new) or, when a row is clicked,
-// shows and edits that record (?edit=<id>), with a button to the full record page.
+// shows that record's fields like its record page's About card, each edited in
+// place (PropertyList, PropertyField; ?edit=<id>), with a button to the full record page.
 //
 // To adapt it:
 // - Another object: change OBJECT, LABEL, LABEL_PLURAL, COLUMNS, FIELDS, and the
@@ -43,17 +44,19 @@ const COLUMNS: Column<any>[] = [
 ]
 
 // The side panel's fields, for creating and editing.
-// type: text | email | phone | dropdown (choices from "options", property = key) | owner (users).
+// type: text | email | phone (the whole list, with labels and a primary: MultiValueInput,
+// reading <key>__all) | dropdown (choices from "options", property = key) | owner (users).
 const FIELDS = [
   { key: 'first_name', label: 'First name', type: 'text' },
   { key: 'last_name', label: 'Last name', type: 'text' },
   { key: 'email', label: 'Email', type: 'email', wide: true },
-  { key: 'phone', label: 'Phone', type: 'phone' },
+  { key: 'phone', label: 'Phone', type: 'phone', wide: true },
   { key: 'job_title', label: 'Job title', type: 'text' },
   { key: 'lifecycle_stage', label: 'Lifecycle stage', type: 'dropdown' },
   { key: 'owner', label: 'Owner', type: 'owner' }
 ]
-const isReady = (f) => !!(f.first_name?.trim() || f.last_name?.trim() || f.email?.trim())
+const isList = (f) => f.type === 'email' || f.type === 'phone'
+const isReady = (f) => !!(f.first_name?.trim() || f.last_name?.trim() || f.email?.length)
 
 const CSS = `
 .ot-root { height: 100vh; display: flex; flex-direction: column; padding: 20px 24px 0; box-sizing: border-box; gap: 14px; }
@@ -64,27 +67,47 @@ const CSS = `
 @media (max-width: 720px) { .ot-root { padding: 16px 16px 0; } }
 `
 
-// Email and phone properties hold a list (row.<name>__all); the box edits the
-// first entry, the primary, and keeps the others.
-function withPrimary(all, value) {
-  const list = Array.isArray(all) ? all : []
-  if (!value) return list.slice(1)
-  return [{ ...(list[0] || {}), value }, ...list.slice(1)]
-}
-
-// Loads the record (?edit=<id>), then shows the form; ?edit=new starts empty.
-function RecordPanel({ id, options, owners, onClose, onSaved }) {
+// ?edit=new: the Create form. ?edit=<id>: the record's fields as on its record
+// page's About card, each one edited in place and saved on its own.
+function RecordPanel({ id, options, owners, onClose, onSaved, onChanged }) {
   const isNew = id === 'new'
   const record = useQuery('record', { id }, { enabled: !isNew })
   const r = record.data[0]
-  if (!isNew && record.loading && !r) return <SidePanel title={LABEL_PLURAL} onClose={onClose}><Loading /></SidePanel>
-  if (!isNew && !r) return <SidePanel title={LABEL_PLURAL} onClose={onClose} error={record.error || `This ${LABEL} was not found.`} />
-  return <RecordForm id={id} r={isNew ? null : r} options={options} owners={owners} onClose={onClose} onSaved={onSaved} />
+  if (isNew) return <RecordForm id={id} r={null} options={options} owners={owners} onClose={onClose} onSaved={onSaved} />
+  if (record.loading && !r) return <SidePanel title={LABEL_PLURAL} onClose={onClose}><Loading /></SidePanel>
+  if (!r) return <SidePanel title={LABEL_PLURAL} onClose={onClose} error={record.error || `This ${LABEL} was not found.`} />
+
+  const choices = (f) => f.type === 'owner' ? owners.map((u) => ({ value: u.id, label: u.name }))
+    : options.filter((o) => o.property === f.key).map((o) => ({ value: o.value, label: o.label }))
+  async function saveField(key, value) {
+    await updateRecord(OBJECT, id, { [key]: value })
+    record.refresh()
+    onChanged()
+  }
+  return (
+    <SidePanel
+      title={r.name || `Unnamed ${LABEL}`}
+      subtitle={[r.job_title, formatPhone(r.phone)].filter(Boolean).join(' · ') || null}
+      onClose={onClose}
+      onOpenRecord={() => openRecord(OBJECT, id)}
+    >
+      <PropertyList>
+        {FIELDS.map((f) => (
+          <PropertyField key={f.key} label={f.label}
+            type={f.type === 'owner' ? 'dropdown' : f.type}
+            value={isList(f) ? r[f.key + '__all'] : r[f.key]}
+            options={f.type === 'dropdown' || f.type === 'owner' ? choices(f) : undefined}
+            onSave={(v) => saveField(f.key, v)} />
+        ))}
+      </PropertyList>
+    </SidePanel>
+  )
 }
 
 function RecordForm({ id, r, options, owners, onClose, onSaved }) {
   const isNew = !r
-  const [form, setForm] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.key, r?.[f.key] ?? ''])))
+  // email and phone hold their whole list (<key>__all), the rest one value
+  const [form, setForm] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.key, isList(f) ? r?.[f.key + '__all'] ?? [] : r?.[f.key] ?? ''])))
   const { dirty } = useDirty(form, id)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -97,9 +120,13 @@ function RecordForm({ id, r, options, owners, onClose, onSaved }) {
       const props = {}
       for (const f of FIELDS) {
         const v = typeof form[f.key] === 'string' ? form[f.key].trim() : form[f.key]
+        if (isList(f)) {
+          if (isNew ? v.length : JSON.stringify(v) !== JSON.stringify(r[f.key + '__all'] ?? [])) props[f.key] = v.length ? v : null
+          continue
+        }
         if (isNew) { if (v !== '') props[f.key] = v; continue }
         if (v === (r[f.key] ?? '')) continue
-        props[f.key] = f.type === 'email' || f.type === 'phone' ? withPrimary(r[f.key + '__all'], v) : v === '' ? null : v
+        props[f.key] = v === '' ? null : v
       }
       await (isNew ? createRecord(OBJECT, props) : updateRecord(OBJECT, id, props))
       onSaved()
@@ -130,8 +157,8 @@ function RecordForm({ id, r, options, owners, onClose, onSaved }) {
                 options={options.filter((o) => o.property === f.key).map((o) => ({ value: o.value, label: o.label }))} />
             ) : f.type === 'owner' ? (
               <Select value={form[f.key]} onChange={set(f.key)} placeholder="No owner" options={owners.map((u) => ({ value: u.id, label: u.name }))} />
-            ) : f.type === 'phone' ? (
-              <PhoneInput value={form[f.key]} onChange={set(f.key)} />
+            ) : isList(f) ? (
+              <MultiValueInput type={f.type} value={form[f.key]} onChange={set(f.key)} />
             ) : (
               <TextInput value={form[f.key]} onChange={set(f.key)} />
             )}
@@ -193,7 +220,8 @@ export default function ObjectTable() {
 
       <SplitView className="ot-split" panel={editing ? (
         <RecordPanel key={editing} id={editing} options={options.data} owners={owners.data} onClose={close}
-          onSaved={() => { close(); rows.refresh(); total.refresh() }} />
+          onSaved={() => { close(); rows.refresh(); total.refresh() }}
+          onChanged={() => rows.refresh()} />
       ) : null}>
         {rows.error ? <ErrorBox error={rows.error} /> : (
           <Table columns={COLUMNS} rows={rows.data} loading={rows.loading && !rows.data.length}

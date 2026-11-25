@@ -1,6 +1,6 @@
 {
   "record": {
-    "sql": "select ct.pc_0010_id as id, ct.name, ct.first_name, ct.last_name, ct.email, ct.phone, ct.job_title, ct.lifecycle_stage, ct.lifecycle_stage__label, ct.owner, ct.owner__label, ct.address_city, ct.created_at from contacts ct where ct.pc_0010_id = :id",
+    "sql": "select ct.pc_0010_id as id, ct.name, ct.first_name, ct.last_name, ct.email, ct.email__all, ct.phone, ct.phone__all, ct.job_title, ct.lifecycle_stage, ct.lifecycle_stage__label, ct.owner, ct.owner__label, ct.address_city, ct.created_at from contacts ct where ct.pc_0010_id = :id",
     "params": { "id": "text" }
   },
   "options": "select property, api_value as value, label from property_options where object_type_id = 'pc_0010' and property in ('lifecycle_stage') and record_status = 'active' order by property, display_order",

@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Star, Trash2 } from 'lucide-react';
 import { Select } from './Select';
-import { confirmDialog } from './confirm';
 import { PhoneInput, type PhoneSource } from './PhoneInput';
-import { displayPhone } from '../lib/display';
+import { displayPhone } from '../lib/phone-display';
 import { MAX_LABEL, MULTI_LABELS, decodeEntries, encodeEntries, entriesOf, labelText, type MultiEntry, type MultiType } from '../lib/multi-values';
 
 // Email and phone properties: a small table of addresses or numbers, each
@@ -13,22 +12,6 @@ import { MAX_LABEL, MULTI_LABELS, decodeEntries, encodeEntries, entriesOf, label
 // +1 613-222-0321 ext9 and +16132220321ext9 are the same number
 const phoneKey = (v: string) => v.toLowerCase().replace(/ext|x/, 'x').replace(/[^0-9x+]/g, '');
 const shownValue =(type: MultiType, value: string) => (type === 'phone' ? displayPhone(value) : value);
-
-// Before saving an email or phone list: when the primary (first entry)
-// becomes a different value, asks first, since the CRM sends to the primary.
-// true when there is nothing to ask or the user agreed.
-export async function confirmPrimaryChange(type: MultiType, before: unknown, after: unknown): Promise<boolean> {
-  const was = entriesOf(before)[0]?.value;
-  const next = entriesOf(after)[0]?.value;
-  if (!was || !next || was === next) return true;
-  const noun = type === 'email' ? 'email' : 'phone number';
-  return confirmDialog(
-    type === 'email'
-      ? `${next} will become the primary email instead of ${was}. Emails and campaigns from the CRM go to the primary address.`
-      : `${displayPhone(next)} will become the primary phone number instead of ${displayPhone(was)}.`,
-    { title: `Change the primary ${noun}?`, confirmLabel: 'Make primary' }
-  );
-}
 
 // Read-only: one row per entry: the value, then its label.
 export function MultiValueTable({ type, value }: { type: MultiType; value: unknown }) {
@@ -74,7 +57,7 @@ const valueInputs = (el: HTMLElement | null) => (el ? [...el.querySelectorAll<HT
 // Editing: rows of value, label, make primary and remove, then "+ Add".
 // value and onChange carry the list as JSON (encodeEntries), like every
 // property editor's one string; the caller saves it.
-export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource, onSave, onCancel }: {
+export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource, onSave, onCancel, classes }: {
   type: MultiType;
   value: string;
   onChange: (v: string) => void;
@@ -83,6 +66,8 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
   // Enter in a box (the record page saves; the create form has no onSave)
   onSave?: () => void;
   onCancel?: () => void;
+  // extra classes for the boxes (the custom view kit draws them as its own inputs)
+  classes?: { input?: string; select?: string; error?: string };
 }) {
   const nextId = useRef(0);
   const presets = MULTI_LABELS[type];
@@ -167,10 +152,11 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
                     autoFocus={focusId === r.id}
                     source={phoneSource}
                     check
+                    classes={classes}
                   />
                 ) : (
                   <input
-                    type="text" inputMode="email" autoCapitalize="none" value={r.value} placeholder="name@example.com" autoFocus={focusId === r.id}
+                    type="text" inputMode="email" autoCapitalize="none" value={r.value} placeholder="name@example.com" autoFocus={focusId === r.id} className={classes?.input}
                     onChange={(e) => set(r.id, { value: e.target.value })}
                     aria-label={`Email ${i + 1}`}
                   />
@@ -179,7 +165,7 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
               <td className="mv-label">
                 {r.custom ? (
                   <input
-                    value={r.label ?? ''} maxLength={MAX_LABEL} placeholder="Label" autoFocus={r.custom && !r.label}
+                    value={r.label ?? ''} maxLength={MAX_LABEL} placeholder="Label" autoFocus={r.custom && !r.label} className={classes?.input}
                     onChange={(e) => set(r.id, { label: e.target.value })}
                     onBlur={() => {
                       const preset = presetFor(r.label);
@@ -191,6 +177,7 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
                 ) : (
                   <Select
                     value={r.label ?? ''}
+                    className={classes?.select}
                     aria-label={`Label for ${noun} ${i + 1}`}
                     onChange={(v) => (v === CUSTOM ? set(r.id, { custom: true, label: '' }) : set(r.id, { label: v || undefined }))}
                     options={[{ value: '', label: 'No label' }, ...presets.map((p) => ({ value: p.key, label: p.label })), { value: CUSTOM, label: 'Custom…' }]}

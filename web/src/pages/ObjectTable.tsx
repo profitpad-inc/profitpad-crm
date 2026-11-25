@@ -26,7 +26,7 @@ import { confirmDialog } from '../components/confirm';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Loading } from '../components/Loading';
 import { useIsMobile } from '../lib/use-mobile';
-import { confirmPrimaryChange } from '../components/MultiValueField';
+import { confirmPrimaryChange } from '../components/confirm-primary';
 
 const PAGE = 50;
 const BULK_CHUNK = 500; // the API's limit per bulk call

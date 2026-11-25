@@ -1,5 +1,5 @@
 import {
-  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent, type ReactNode
+  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent, type ReactNode
 } from 'react';
 import { call, getInit, getParams, getViewport, post, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, ViewFile, Viewport } from './protocol';
@@ -8,11 +8,13 @@ import { DatePicker } from '../components/DatePicker';
 import { Markdown as BaseMarkdown } from '../components/Markdown';
 import { CodeBlock as BaseCodeBlock, setCopyText } from '../components/CodeBlock';
 import { langFor, type CodeLang } from '../lib/code-folds';
+import { MultiValueEditor } from '../components/MultiValueField';
+import { decodeEntries, encodeEntries, entriesOf, labelText } from '../lib/multi-values';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
 import { dateTimeFmt, friendlyDate } from '../lib/date-format';
 import { displayPhone } from '../lib/phone-display';
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, Lock, Pencil, Search, X } from 'lucide-react';
 
 // What views import from '@pcrm/view': data hooks, actions, layout and UI
 // pieces styled like the CRM, and formatters. Documented for the AI in
@@ -1275,6 +1277,148 @@ export function Select({ value, onChange, options, placeholder, small, style, cl
       options={placeholder !== undefined && !options.some((o) => o.value === '') ? [{ value: '', label: placeholder }, ...options] : options}
     />
   );
+}
+
+// An email or phone property's whole list, as on the CRM's record page: one
+// row per address or number with its label (Work, Personal, Cell, ... or
+// custom), a star to make one the primary (the first, which the CRM sends to),
+// remove, and "+ Add". value is the property's list as the query gives it
+// (<name>__all: [{ value, label }]); onChange gets the new list to save as
+// the property (updateRecord(object, id, { email: list })), [] when empty.
+export function MultiValueInput({ type, value, onChange, style, className }: {
+  type: 'email' | 'phone'; value: unknown; onChange: (list: { value: string; label?: string }[]) => void;
+} & Styled) {
+  // the editor keeps its own rows; it starts from the first value it gets
+  const [start] = useState(() => encodeEntries(decodeEntries(typeof value === 'string' ? value : JSON.stringify(Array.isArray(value) ? value : []))));
+  return (
+    <div className={cx('v-multi', className)} style={style}>
+      <MultiValueEditor
+        type={type}
+        value={start}
+        onChange={(text) => onChange(decodeEntries(text))}
+        phoneSource={VIEW_PHONE}
+        classes={{ input: 'v-input', select: 'v-input v-select', error: 'v-field-error' }}
+      />
+    </div>
+  );
+}
+
+// ---- record fields ------------------------------------------------------------------
+
+export type PropertyFieldType = 'text' | 'longtext' | 'number' | 'email' | 'phone' | 'dropdown' | 'date' | 'datetime';
+
+// "2026-11-24T19:20:00Z" as the DateInput's local "2026-11-24T14:20"
+function localDateTime(v: unknown): string {
+  if (!v) return '';
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// One property shown and edited as on a CRM record page's About card: the
+// label, the value under it, Edit and Copy on hover (a lock when readOnly),
+// and a click that opens the editor in place with Cancel and Save (a dropdown
+// saves on pick). Enter saves, Escape cancels. email and phone take the whole
+// list (<name>__all) and edit it with MultiValueInput. onSave gets the value
+// to store (null for empty) and should save it (updateRecord) and refresh;
+// if it throws, the error shows under the box and the editor stays open.
+export function PropertyField({ label, type = 'text', value, options = [], readOnly, onSave, style, className }: {
+  label: ReactNode; type?: PropertyFieldType; value: unknown; options?: { value: string; label: string }[]; readOnly?: boolean;
+  onSave?: (value: unknown) => Promise<unknown> | unknown;
+} & Styled) {
+  const multi = type === 'email' || type === 'phone';
+  const list = multi ? entriesOf(Array.isArray(value) ? value : value ? [{ value: String(value) }] : []) : [];
+  const start = multi ? list : type === 'datetime' ? localDateTime(value) : type === 'date' ? String(value ?? '').slice(0, 10) : value === null || value === undefined ? '' : String(value);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<unknown>(start);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canEdit = !readOnly && !!onSave;
+  const changed = JSON.stringify(draft) !== JSON.stringify(start);
+
+  const text = multi ? list.map((e) => (type === 'phone' ? formatPhone(e.value) : e.value)).join(', ')
+    : type === 'dropdown' ? options.find((o) => o.value === String(value ?? ''))?.label ?? (value ? String(value) : '')
+      : type === 'date' ? formatDate(value) : type === 'datetime' ? formatDateTime(value)
+        : type === 'number' ? formatNumber(value) : value === null || value === undefined ? '' : String(value);
+
+  function open() {
+    if (!canEdit || editing) return;
+    setDraft(start);
+    setError(null);
+    setEditing(true);
+  }
+  async function save(next: unknown = draft) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let out: unknown = next;
+      if (multi) out = (next as unknown[]).length ? next : null;
+      else if (typeof next === 'string') out = next.trim() === '' ? null : type === 'number' ? Number(next) : type === 'datetime' ? new Date(next).toISOString() : next.trim();
+      await onSave?.(out);
+      setEditing(false);
+    } catch (e) {
+      setError((e as Error).message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const keys = (e: ReactKeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+    if (e.key === 'Enter' && type !== 'longtext' && !multi && changed) { e.preventDefault(); void save(); }
+  };
+
+  return (
+    <div className={cx('v-prop', canEdit && 'editable', editing && 'editing', className)} style={style}
+      onClick={editing ? undefined : (e) => { if (!(e.target as HTMLElement).closest('button, a')) open(); }}>
+      <div className="v-prop-label">
+        <span>{label}</span>
+        {!editing && (
+          <span className="v-prop-tools">
+            {canEdit && <button type="button" className="v-prop-tool" title="Edit" aria-label="Edit" onClick={open}><Pencil size={13} /></button>}
+            {text !== '' && <button type="button" className="v-prop-tool" title="Copy" aria-label="Copy" onClick={() => void copyText(text)}><Copy size={13} /></button>}
+          </span>
+        )}
+        {!canEdit && <Lock className="v-prop-lock" size={12} aria-label="Read only" />}
+      </div>
+      {editing ? (
+        <div className="v-prop-edit" onKeyDown={keys}>
+          {multi ? <MultiValueInput type={type as 'email' | 'phone'} value={draft} onChange={setDraft} />
+            : type === 'dropdown' ? <Select value={String(draft ?? '')} onChange={(v) => { setDraft(v); void save(v); }} options={options} placeholder="--" />
+              : type === 'date' || type === 'datetime' ? <DateInput value={String(draft ?? '')} onChange={setDraft} withTime={type === 'datetime'} />
+                : type === 'longtext' ? <TextArea value={String(draft ?? '')} onChange={setDraft} rows={4} />
+                  : <TextInput value={String(draft ?? '')} onChange={setDraft} type={type === 'number' ? 'number' : 'text'} />}
+          {error && <div className="v-field-error">{error}</div>}
+          {type !== 'dropdown' && (
+            <div className="v-prop-actions">
+              <Button small onClick={() => setEditing(false)}>Cancel</Button>
+              <Button small variant="primary" disabled={busy || !changed} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="v-prop-value">
+          {multi && list.length ? (
+            <table className="v-prop-list"><tbody>
+              {list.map((e, i) => (
+                <tr key={i}>
+                  <td>{type === 'phone' ? formatPhone(e.value) : e.value}</td>
+                  <td className="v-prop-list-label">{labelText(e.label)}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          ) : text === '' ? <span className="muted">--</span>
+            : type === 'longtext' ? <Markdown text={text} /> : text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A column of PropertyFields, as on a record page's About card.
+export function PropertyList({ children, style, className }: { children?: ReactNode } & Styled) {
+  return <div className={cx('v-props', className)} style={style}>{children}</div>;
 }
 
 // The frame has no network: the page reads the country list and checks

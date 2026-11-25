@@ -90,13 +90,17 @@ function sameKeys(o: Options): string {
 
 export function PropertySettings() {
   const { me, objects, toast } = useApp();
-  // ?object=<api_name> opens on that object (the Objects page links here)
-  const [params] = useSearchParams();
+  // the object lives in the URL (?object=<api_name>), so a refresh, a copied
+  // link or the Objects page's links open on it; switching replaces it there
+  const [params, setParams] = useSearchParams();
   const asked = params.get('object');
-  const [object, setObject] = useState(
-    (asked && objects.some((o) => o.api_name === asked) ? asked : null)
-      ?? objects.find((o) => o.api_name === 'contacts')?.api_name ?? objects[0]?.api_name ?? ''
-  );
+  const object = (asked && objects.some((o) => o.api_name === asked) ? asked : null)
+    ?? objects.find((o) => o.api_name === 'contacts')?.api_name ?? objects[0]?.api_name ?? '';
+  const setObject = (v: string) => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    next.set('object', v);
+    return next;
+  }, { replace: true });
   const [props, setProps] = useState<Property[] | null>(null);
   const [query, setQuery] = useUrlSearch();
   const [status, setStatus] = useState<'active' | 'archived'>('active');

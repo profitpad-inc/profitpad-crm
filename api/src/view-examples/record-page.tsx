@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react'
 import {
-  Row, Badge, Button, Tabs, Select, TextInput, TextArea, DateInput, PhoneInput, Markdown, Loading, ErrorBox, Empty, RecordLink,
+  Row, Badge, Button, Tabs, Select, TextInput, TextArea, DateInput, MultiValueInput, Markdown, Loading, ErrorBox, Empty, RecordLink,
   useQuery, useParams, setParams, useDirty, updateRecord, createRecord, openRecord, navigate,
-  formatDateTime, formatDate
+  formatDateTime, formatDate, formatPhone
 } from '@pcrm/view'
 
 // Record page (template): the CRM's own record page rebuilt as a view, for a
@@ -132,6 +132,9 @@ function Field({ field, record, options, owners, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const raw = record[field.key]
+  // email and phone: the whole list (<key>__all), primary first
+  const multi = field.type === 'email' || field.type === 'phone'
+  const list = multi ? record[`${field.key}__all`] ?? [] : null
   const shown = field.type === 'dropdown' || field.type === 'owner' ? record[`${field.key}__label`]
     : field.type === 'datetime' ? (raw ? formatDateTime(raw) : '')
     : field.type === 'date' ? (raw ? formatDate(raw) : '')
@@ -141,7 +144,7 @@ function Field({ field, record, options, owners, onSaved }) {
 
   function start() {
     if (field.readOnly) return
-    setValue(field.type === 'datetime' && raw ? String(raw).slice(0, 16) : str(raw))
+    setValue(multi ? list : field.type === 'datetime' && raw ? String(raw).slice(0, 16) : str(raw))
     setError(null)
     setEditing(true)
   }
@@ -149,7 +152,7 @@ function Field({ field, record, options, owners, onSaved }) {
     setBusy(true)
     setError(null)
     try {
-      await updateRecord(OBJECT, record.id, { [field.key]: next === '' ? null : next })
+      await updateRecord(OBJECT, record.id, { [field.key]: next === '' || (Array.isArray(next) && !next.length) ? null : next })
       setEditing(false)
       onSaved()
     } catch (e) {
@@ -170,15 +173,18 @@ function Field({ field, record, options, owners, onSaved }) {
         <div className={field.readOnly ? 'rp-field-value' : 'rp-field-value edit'} onClick={start}
           role={field.readOnly ? undefined : 'button'} tabIndex={field.readOnly ? undefined : 0}
           onKeyDown={(e) => { if (e.key === 'Enter') start() }}>
-          {shown === null || shown === undefined || shown === '' ? <span className="muted">--</span>
+          {multi ? (list.length ? list.map((e, i) => (
+            <div key={i}>{field.type === 'phone' ? formatPhone(e.value) : e.value}{e.label ? <span className="muted small"> · {e.label.charAt(0).toUpperCase() + e.label.slice(1)}</span> : null}</div>
+          )) : <span className="muted">--</span>)
+            : shown === null || shown === undefined || shown === '' ? <span className="muted">--</span>
             : field.type === 'longtext' ? <Markdown text={String(shown)} /> : String(shown)}
         </div>
       ) : (
         <div onKeyDown={keys}>
           {field.type === 'dropdown' || field.type === 'owner' ? (
             <Select value={value} options={[{ value: '', label: '--' }, ...choices]} onChange={(v) => save(v)} small />
-          ) : field.type === 'phone' ? (
-            <PhoneInput value={value} onChange={setValue} small />
+          ) : multi ? (
+            <MultiValueInput type={field.type} value={value} onChange={setValue} />
           ) : field.type === 'date' || field.type === 'datetime' ? (
             <DateInput value={value} onChange={setValue} withTime={field.type === 'datetime'} small />
           ) : field.type === 'longtext' ? (
@@ -188,7 +194,7 @@ function Field({ field, record, options, owners, onSaved }) {
           )}
           {field.type !== 'dropdown' && field.type !== 'owner' && (
             <Row gap={6} style={{ marginTop: 6 }}>
-              <Button small variant="primary" disabled={busy || value === str(raw)} onClick={() => save()}>Save</Button>
+              <Button small variant="primary" disabled={busy || (multi ? JSON.stringify(value) === JSON.stringify(list) : value === str(raw))} onClick={() => save()}>Save</Button>
               <Button small onClick={() => setEditing(false)}>Cancel</Button>
             </Row>
           )}

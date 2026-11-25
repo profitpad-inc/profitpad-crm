@@ -24,7 +24,8 @@ import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
 import { EmailTracking } from '../components/EmailTracking';
 import { ViewIconAvatar } from '../components/IconPicker';
 import { FileField } from '../components/FileField';
-import { MultiValueTable, confirmPrimaryChange } from '../components/MultiValueField';
+import { MultiValueTable } from '../components/MultiValueField';
+import { confirmPrimaryChange } from '../components/confirm-primary';
 import { entriesOf, isMultiType, primaryValue } from '../lib/multi-values';
 import { HtmlEditorModal, HtmlValue } from '../components/HtmlEditor';
 import { AMOUNT_PARENTS, DISCOUNT_PARENTS, money, offerAmountUpdates, parentTotals, parentsOfLines, setParentAmount, type ParentTotals } from '../lib/lines';
@@ -2532,7 +2533,7 @@ function ChangeHistory({ object, id, schema, fixedProperty }: { object: string; 
   const [changedBy, setChangedBy] = useState('');
   const [via, setVia] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const { objects } = useApp();
+  const { me, objects } = useApp();
   const byCode = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o])), [objects]);
   // linked records' names (code:id) and association label names, filled in after the history loads
   const [names, setNames] = useState<Map<string, string>>(new Map());
@@ -2617,6 +2618,16 @@ function ChangeHistory({ object, id, schema, fixedProperty }: { object: string; 
             <option value="">Any way</option>
             {facets.via.map((v) => <option key={v} value={v}>{VIA_LABELS[v]}</option>)}
           </Select>
+          {fixedProperty && can(me, 'properties') && (
+            <a
+              className="history-settings-link push-right"
+              href={`/settings/properties?object=${encodeURIComponent(object)}&s=${encodeURIComponent(fixedProperty)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open in settings <ExternalLink size={13} />
+            </a>
+          )}
         </div>
       )}
       {error && <div className="error">{error}</div>}
