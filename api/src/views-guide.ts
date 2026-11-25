@@ -1,7 +1,7 @@
-import { pool } from './db.js';
 import { getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
 import { propertyAccess, type Principal } from './auth.js';
-import { MAX_QUERIES, MAX_SOURCE, PARAM_TYPES, ROW_CAP, VIEW_MODULES, parseQueries } from './views.js';
+import { MAX_QUERIES, MAX_SOURCE, PARAM_TYPES, ROW_CAP, VIEW_MODULES } from './views.js';
+import { exampleText, examplesCatalog } from './view-examples.js';
 
 // The guide the MCP server's view_guide tool returns (mcp.ts): everything an
 // AI needs to build a custom view. The runtime it describes is
@@ -85,7 +85,7 @@ const OVERVIEW = `# Custom views
 A custom view is a page in the CRM built from React (TSX) plus named, read-only SQL queries. It lives in the database (object "views"), so creating or changing one needs no deploy. People open it at /view/#<slug>; admins see every view and its code under /objects/views.
 
 ## How to build one
-1. Read the other topics you need: runtime, ui_kit, styling, design (how to lay out a good view, and the review before handing it over), sql (always), schema (the data), examples (finished views to copy from).
+1. Read the other topics you need: runtime, ui_kit, styling, design (how to lay out a good view, and the review before handing it over), sql (always), schema (the data), examples (a short list of finished views: record page, object table, landing page workspace, kanban board, markdown generator, scored form, dashboard; copy the closest one rather than starting from nothing).
 2. Look at existing views with list_views and get_view; match their structure and look.
 3. Learn the data: view_guide topic "schema" (optionally for one object), or describe_object.
 4. Write and test each query with try_view_query until it returns what you expect.
@@ -132,12 +132,14 @@ Anything else fails to save.
 - useViewport() returns { scrollTop, viewportHeight }: how many pixels of the view are scrolled out of sight above, and how tall the visible area is. Visible part of the view: scrollTop to scrollTop + viewportHeight. Use it for infinite scroll (load more when scrollTop + viewportHeight nears the bottom) or anything that depends on what is on screen.
 - useDebounced(value, ms = 300) returns value once it has stopped changing for ms (search boxes).
 - useDirty(value, resetKey?) returns { dirty, markSaved } for a form's Save button: dirty is true while value (the form's fields, as an object) differs from what it was when the form opened; strings are trimmed, null, undefined and "" count as empty, lists and objects compare by contents. A new resetKey (say the open record's id) makes the current values the new start; markSaved(saved?) does the same after a save that keeps the form open. Use it for every Save (topic design, Forms and saving).
-- useView() returns { id, name, slug, draft }.
+- useView() returns { id, name, slug, draft, crm_url } (crm_url: the CRM's address, https://..., no trailing slash).
 
 ## Actions (from @pcrm/view, all return promises)
 - openRecord(object, id): opens a record page in the CRM, e.g. openRecord('deals', row.id).
 - navigate(path): goes to a CRM path, e.g. '/objects/contacts' or '/view/#other-view'.
-- openUrl(url): opens a web page outside the CRM in a new tab, e.g. openUrl('https://sam.gov/opp/' + row.notice_id + '/view'). Only full http:// and https:// addresses; anything else (javascript:, data:, mailto:, relative paths, addresses with a user name or password) rejects with an Error. The CRM shows "You're leaving the CRM for <domain>" with the full address, unless the viewer ticked "Don't ask again" for that domain before. Resolves with { opened: true } or { opened: false } (the viewer cancelled). Call it only from a click or tap, never on load or after an await: browsers, phones above all, open tabs only straight from the viewer's tap, so a call without one always shows the confirmation. Prefer <ExternalLink> for links. For CRM pages use navigate or openRecord instead.
+- openUrl(url): opens a web page outside the CRM in a new tab, e.g. openUrl('https://sam.gov/opp/' + row.notice_id + '/view'). Only full http:// and https:// addresses; anything else (javascript:, data:, mailto:, relative paths, addresses with a user name or password) rejects with an Error. The CRM shows "You're leaving the CRM for <domain>" with the full address, unless the viewer ticked "Don't ask again" for that domain before. Resolves with { opened: true } or { opened: false } (the viewer cancelled). Call it only from a click or tap, never on load or after an await: browsers, phones above all, open tabs only straight from the viewer's tap, so a call without one always shows the confirmation. Prefer <ExternalLink> for links. For CRM pages use navigate or openRecord instead; to open one in a new tab (a landing page, a public form) use openUrl(crmUrl('/p/page/' + slug)), which does not ask about leaving the CRM.
+- crmUrl(path): the full address of a CRM page, crmUrl('/p/page/launch') is https://<the CRM>/p/page/launch. Views have no address of their own, so build every link to the CRM's pages with it (to show, open or copy).
+- copyText(text): puts text on the viewer's clipboard (a link, a generated document); the frame cannot reach the clipboard itself.
 - setParams({ key: value }): merges into the address params (undefined or '' removes one). Use it for filters, tabs and the selected item (a picked row, an open detail panel: setParams({ page: row.id })) rather than React state, so links, refreshes and the back button keep them, and render_view can draw that state with params.
 - createRecord(object, properties, associations?), updateRecord(object, id, properties), associateRecords(object, id, toObject, toId): change data with the viewer's permissions. The first time a view changes data, the CRM asks the viewer to allow it; one yes allows that view's changes for everyone from then on (anyone's "Don't allow" refuses only that change). Still call these only from something the viewer clicked, never on load. Property values follow the CRM API (dropdowns take api_values). They reject with an Error whose message explains why (including "The viewer did not allow this change"); show it. Call refresh() on the affected queries afterwards.
 - editLineItems(object, id): opens the CRM's own line items editor (the record page's Line items +: product search, custom lines, quantities, prices, the record's amount) over the view, for a record with line items (deals, quotes, invoices, carts, orders). Resolves with { saved: true } when the viewer saved lines, { saved: false } when they closed it. It is a change like createRecord (asked the same way); call it from a click, e.g. right after createRecord('quotes', ...) in a "New quote" form, then refresh() the queries that show the record's lines or amount. render_view refuses it.
@@ -182,6 +184,15 @@ Types you can import for your own maps and props (types are stripped, not checke
 - <ScrollX header={<HeaderRow />} top={0}>body</ScrollX>: a wide area (kanban board, wide table) that scrolls sideways under a header that stays at the top while the page scrolls down and moves sideways with the body. Give the header's columns and the body's columns the same fixed widths (e.g. each column width: 280, flex: none) so they line up. Best in a fill view.
 - <Sticky top={0}>children</Sticky>: stays in view at the top while its parent element scrolls past, then leaves with the parent (column headers of a long board; Table freezes its own header). Give it a background so content passes under it, e.g. style={{ background: 'var(--page-background)' }}. Works whether or not the view is a fill view.
 
+## Side panels
+- <SplitView panel={node or null} panelWidth?>list</SplitView>: the list with the open record's panel beside it (min(520px, 46%) by default); the list scrolls by itself, so give SplitView a height (in a fill view, inside <Page style={{ height: '100vh' }}>). Below 900px the panel covers the screen.
+- <SidePanel title badge subtitle onClose onOpenRecord actions footer error>body</SidePanel>: header, a body that scrolls, a footer (error left, footer buttons right). Escape calls onClose. key={id} per record.
+- <FieldGrid><Field label hint? wide? required?>input</Field></FieldGrid>: form fields two to a row, one below 520px; inputs fill their field.
+Topic design, "Side panels for adding and editing", says when and how.
+
+## Previews
+- <HtmlPreview html={text} height={560} /> or <HtmlPreview landingPage={slug} draft />: views cannot show other pages, so the CRM draws the preview over the box this keeps. html is drawn as it is without running scripts (an email body, a document, generated HTML; outside images load, web fonts may not). landingPage draws that landing page through its own page, scripts and all, as visitors see it (draft: the draft, which only admins can open). It is clipped to what is on screen and hidden while something of the view (a menu, a dialog, a side panel on a phone) covers it. render_view draws html previews and shows landing pages as a labelled box (check those with render_landing_page).
+
 ## Data display
 - <Stat label value hint tone="money"|"danger"|"muted" />: a KPI tile (a card of its own). tone colors the value: money is green (#1e7a4c), danger red (#b42318), muted grey; no tone is the normal text color. Use tone="money" for money amounts.
 - <Table columns rows loading error onRowClick selected empty maxHeight sortable sort defaultSort onSortChange stickyHeader />
@@ -191,6 +202,7 @@ Types you can import for your own maps and props (types are stripped, not checke
   - Empty values show "--". Right-aligned columns use tabular figures.
   - onRowClick makes rows clickable; selected(row) highlights one. Rows are keyed by row.id when present, so select an id column.
   - When it sits directly in a Card, the table runs to the card's edges.
+  - For picking rows, a column whose render draws <input type="checkbox"> (and one in its label to pick all) shows real checkboxes, as the CRM's own tables do; checkboxes anywhere else are drawn as on/off switches.
 - <Badge tone="primary"|"money"|"danger"|"warning"|"muted">text</Badge>: a pill tinted with that color (warning is orange, #b54708).
 - <Tabs tabs={[{ key, label }]} value onChange />
 - <Loading label? />, <Empty>text</Empty>, <ErrorBox error={errOrString} />
@@ -300,10 +312,9 @@ A view should look like part of the CRM and answer one job quickly. These rules 
 When a view lists records as cards, a board or a list and people add or edit them there, open the record in a side panel beside the list, not in a modal and not by leaving for the record page. This is the house style (the defense package's OEM Integrations, Partnerships, Operations and RFP Generator views all work this way; get_view on one of them is a full example).
 - The whole card (or board card, or list row) opens the panel, not only an Edit button. Clicks on the card's own buttons and links keep their job: in the card's onClick, skip when (e.target as HTMLElement).closest('button, a, input, textarea, select, label') matches. Keep an Edit button as the keyboard route, or give a plain div card role="button", tabIndex={0} and Enter/Space handling. Board cards stay draggable; a drag does not fire a click.
 - The open record lives in an address param (setParams({ edit: row.id }), or edit: 'new' for the New button in Page actions), so links, refreshes and render_view params keep it. Mark the open card (an outline in var(--primary)).
-- export const frame = 'fill'. Page gets height: 100vh; below the page head, a grid with the list in one column (min-height: 0; overflow-y: auto, so the list scrolls by itself) and, while a record is open, the panel in a second column of min(520px, 46%).
-- The panel: a header (the record's name as typed, its status Badge, a muted line of context, then small "Open record" (openRecord) and close buttons), a body that scrolls by itself with the fields two to a row (long text and the name full width; one column below 520px), and a footer with any error or hint on the left and Cancel plus the primary Save on the right. Save follows the rules above (useDirty; disabled until changed and until required fields are filled).
-- Escape closes the panel (a window keydown listener, ignored while a date picker is open: document.querySelector('.flatpickr-calendar.open')). Saving closes it (setParams({ edit: '' })) and refreshes the list query. Give the panel key={id or 'new'} so opening another record starts a fresh form.
-- Below 900px the panel covers the screen (position: fixed; inset: 0; z-index above the page), with the close button in reach at the top.
+- Build it from the kit (topic ui_kit, Side panels): export const frame = 'fill', <Page style={{ height: '100vh' }}>, then <SplitView panel={open ? <SidePanel .../> : null}> around the list. SplitView keeps the list scrolling by itself beside the panel and makes the panel cover the screen below 900px; SidePanel draws the header (the record's name as typed, its status Badge as badge, a muted line of context as subtitle, Open record and Close), the body that scrolls and the footer, and closes on Escape. Put the fields in <FieldGrid> as <Field label wide?> (two to a row, one below 520px; long text and the name wide).
+- The footer holds Cancel plus the primary Save (footer), any error on the left (error). Save follows the rules above (useDirty; disabled until changed and until required fields are filled). Saving closes it (setParams({ edit: '' })) and refreshes the list query. Give the panel key={id or 'new'} so opening another record starts a fresh form.
+- The object_table example (view_guide topic examples) is a short, complete one.
 - Fields the panel does not cover (owner, associations, files) stay on the record page, reached with "Open record".
 - Check it with render_view: click a card (click with a selector inside the card, or params edit=<id>), at every CHECK SIZE, plus New with params edit=new.
 
@@ -562,18 +573,7 @@ async function schemaTopic(p: Principal, object?: string): Promise<string> {
   return `# The data (view_data)\n\nEvery object below is a view in view_data with these columns (plus name, created_at, updated_at). Call view_guide with topic "schema" and an object for dropdown values and descriptions. Also: currencies and currency_rates (exchange rates; convert money with convert_currency, topic sql), users, associations, objects, properties, property_options.\n\n${readable.map((o) => describeObject(o, p, false)).join('\n\n')}`;
 }
 
-async function examplesTopic(): Promise<string> {
-  const { rows } = await pool.query(
-    `select name, slug, description, coalesce(source, draft_source) as source, coalesce(queries, draft_queries) as queries
-     from crm.pc_0055 where record_status = 'active' and slug in ('reporting', 'contacts-companies') order by slug desc`
-  );
-  if (!rows.length) return '# Examples\n\nThe example views were removed. Use list_views and get_view to read other views.';
-  return `# Examples\n\nFinished views to copy from. list_views and get_view show the others.\n\n${rows.map((r) =>
-    `## ${r.name} (/view/#${r.slug})\n${r.description ?? ''}\n\nqueries:\n\`\`\`json\n${JSON.stringify(parseQueries(r.queries), null, 2)}\n\`\`\`\n\ncode:\n\`\`\`tsx\n${r.source}\n\`\`\``
-  ).join('\n\n')}`;
-}
-
-export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', object?: string): Promise<string> {
+export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', object?: string, example?: string): Promise<string> {
   switch (topic) {
     case 'overview': return `${OVERVIEW}\n\nTopics: ${GUIDE_TOPICS.join(', ')}.`;
     case 'runtime': return RUNTIME;
@@ -584,7 +584,7 @@ export async function viewGuide(p: Principal, topic: GuideTopic = 'overview', ob
     case 'schema': return schemaTopic(p, object);
     case 'properties': return PROPERTIES;
     case 'integrations': return INTEGRATIONS;
-    case 'examples': return examplesTopic();
+    case 'examples': return example ? exampleText(example) : examplesCatalog();
     case 'document_templates': return DOCUMENT_TEMPLATES;
     case 'landing_pages': return LANDING_PAGES;
   }

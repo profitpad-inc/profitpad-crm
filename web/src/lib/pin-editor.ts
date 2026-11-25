@@ -62,3 +62,51 @@ export function usePinWhileEditing(active: boolean, key: string | null, containe
     };
   }, [active, key, container, selector]);
 }
+
+// On a phone, while an editor is open (key set), taps outside it do nothing:
+// they neither close it, save it, open another one nor follow a link. keep:
+// what still takes taps (the editor itself and lists or dialogs it opens on
+// <body>). The editor closes only with its own Save or Cancel.
+export function useHoldTapsOutside(active: boolean, key: string | null, keep: string): void {
+  useEffect(() => {
+    if (!active || !key) return;
+    const block = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest(keep)) return;
+      if (e.cancelable) e.preventDefault(); // no focus change, no click
+      e.stopPropagation();
+    };
+    const types = ['touchend', 'mousedown', 'mouseup', 'click'] as const;
+    for (const t of types) window.addEventListener(t, block, { capture: true, passive: false });
+    return () => {
+      for (const t of types) window.removeEventListener(t, block, { capture: true });
+    };
+  }, [active, key, keep]);
+}
+
+// On a phone, while a dialog is open the page behind it holds still; the
+// dialog's own lists still scroll. Dialogs can stack (a confirm over a
+// modal), so the page unlocks when the last one closes.
+let locks = 0;
+const onLockedTouch = (e: TouchEvent) => {
+  const page = lockedPage();
+  if (!innerScroll(e.target, page)) e.preventDefault();
+};
+function lockedPage(): HTMLElement {
+  return document.querySelector<HTMLElement>('.main-col > .main')
+    ?? (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+}
+export function useLockPageScroll(active: boolean): void {
+  useEffect(() => {
+    if (!active) return;
+    if (locks++ === 0) {
+      lockedPage().classList.add('scroll-locked');
+      document.addEventListener('touchmove', onLockedTouch, { passive: false });
+    }
+    return () => {
+      if (--locks === 0) {
+        document.querySelectorAll('.scroll-locked').forEach((el) => el.classList.remove('scroll-locked'));
+        document.removeEventListener('touchmove', onLockedTouch);
+      }
+    };
+  }, [active]);
+}

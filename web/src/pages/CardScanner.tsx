@@ -5,6 +5,7 @@ import { api, ApiError, getSchema, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { uploadFile } from '../lib/files';
 import { useIsMobile } from '../lib/use-mobile';
+import { useLockPageScroll } from '../lib/pin-editor';
 import { forOcr, insetQuad, loadPhoto, straighten, toBase64, toBlob, type Point, type Quad } from '../lib/card-image';
 import { APP_PHONE, PropertyInput } from '../components/ui';
 import { MultiValueEditor } from '../components/MultiValueField';
@@ -771,6 +772,8 @@ function CornerEditor({ url, width, height, quad, onChange }: { url: string; wid
 
 // Desktop camera: a live view and a button to take the picture.
 function Webcam({ onClose, onPhoto }: { onClose: () => void; onPhoto: (b: Blob) => void }) {
+  // on a phone the page behind holds still
+  useLockPageScroll(useIsMobile());
   const video = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {

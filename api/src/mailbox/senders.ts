@@ -2,9 +2,10 @@ import { pool, quoteIdent, type Db } from '../db.js';
 import { forbidden } from '../errors.js';
 import { getObject } from '../registry.js';
 import { listAliases, loadProviders, providerFor, type Alias, type MailProvider, type ProviderRow } from './providers.js';
+import { USER_MAILBOXES_SQL } from './addresses.js';
 
 // The mailboxes a user may send from: the address they sign in with (Google
-// or Microsoft sign-in, never the editable user property), when its domain is
+// or Microsoft sign-in, or one a Super Admin linked; never the editable user property), when its domain is
 // one an enabled provider sends for, and the shared mailboxes an admin gave
 // them. Each comes with the addresses it can send as (aliases).
 
@@ -44,8 +45,7 @@ async function candidates(userId: string): Promise<Candidate[]> {
   const out: Candidate[] = [];
   const { name } = await userName(pool, userId);
   const own = await pool.query<{ email: string }>(
-    `select distinct lower(email) as email from auth.identities
-     where user_id = $1 and provider in ('google', 'microsoft') and email is not null order by 1`,
+    `select distinct email from ${USER_MAILBOXES_SQL} m where user_id = $1 order by 1`,
     [userId]
   );
   for (const r of own.rows) {

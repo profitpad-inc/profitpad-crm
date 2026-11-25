@@ -7,6 +7,7 @@ import {
   type CalendarEvent, type Connection, type MeetingPlatform
 } from './providers.js';
 import { processDueMedia } from './media.js';
+import { USER_MAILBOXES_SQL } from '../mailbox/addresses.js';
 
 // Calendars connected through the service account, and meetings with
 // contacts marked from every connected calendar (migration 0108, Settings →
@@ -53,17 +54,16 @@ export async function loadMeetingSettings(): Promise<MeetingSettings> {
 
 export const serviceSubject = (mailbox: string) => `service:${mailbox}`;
 
-// The service calendars to have now: each active user's sign-in addresses on a
+// The service calendars to have now: each active user's own addresses (sign-in or linked) on a
 // ready provider with calendar_enabled.
 export async function plannedServiceCalendars(db: pg.Pool | pg.PoolClient = pool): Promise<{ provider: MailProvider; mailbox: string; user_id: string }[]> {
   const providers = await loadProviders(db);
   if (![...providers.values()].some((p) => providerReady(p) && p.calendar_enabled)) return [];
   const { rows } = await db.query<{ mailbox: string; user_id: string }>(
-    `select distinct on (lower(i.email)) lower(i.email) as mailbox, i.user_id
-     from auth.identities i join crm.pc_0000 u on u.pc_0000_id = i.user_id
-     where i.provider in ('google', 'microsoft') and i.email is not null
-       and u.record_status = 'active' and not coalesce(u.status, '{}') @> '{deactivated}'
-     order by lower(i.email), i.user_id`
+    `select distinct on (i.email) i.email as mailbox, i.user_id
+     from ${USER_MAILBOXES_SQL} i join crm.pc_0000 u on u.pc_0000_id = i.user_id
+     where u.record_status = 'active' and not coalesce(u.status, '{}') @> '{deactivated}'
+     order by i.email, i.user_id`
   );
   const out: { provider: MailProvider; mailbox: string; user_id: string }[] = [];
   for (const r of rows) {

@@ -217,7 +217,7 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
   for (const u of page.coHosts.filter((x) => !page.coHostsUnchecked.includes(x))) {
     if ((await hostConnections(db, u)).length) continue;
     const { rows } = await db.query('select name from crm.pc_0000 where pc_0000_id = $1', [u]);
-    out.push(`Co-host ${rows[0]?.name ?? u} has no connected calendar (Settings → Calendars).`);
+    out.push(`Co-host ${rows[0]?.name ?? u} has no connected calendar (Settings → Users), or turn Check calendar off for them.`);
   }
   if (page.locationType === 'zoom' && !zoomReady(await loadZoom())) out.push('Zoom is not connected (Settings → Meetings).');
   if (!page.formBeforeId && !page.formAfterId) out.push('Pick a form to ask before or after the time.');

@@ -75,6 +75,9 @@ export interface FormField {
   // never shown: the value comes from the page URL's query parameter of the same key
   from_url?: boolean;
   conditions?: Condition[];
+  // an email or phone property: the visitor may label it (work, cell, their
+  // own words), sent as the answer "<name>__label"
+  can_label?: boolean;
 }
 
 export interface PublicForm {

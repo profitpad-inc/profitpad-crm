@@ -230,6 +230,7 @@
 
 /* Users and roles */
 .settings .role-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.settings .connection-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .settings .role-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 3px 1px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-weight: 500; }
 .settings .role-chip.admin { background: var(--primary-soft); border-color: var(--primary-line); color: var(--primary); }
 .settings .role-chip .icon-btn { padding: 2px; }

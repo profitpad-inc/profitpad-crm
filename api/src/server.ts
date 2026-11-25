@@ -14,6 +14,7 @@ import { schemaRoutes } from './routes/schema.js';
 import { adminRoutes } from './routes/admin.js';
 import { uiRoutes } from './routes/ui.js';
 import { userRoutes } from './routes/users.js';
+import { userConnectionRoutes } from './routes/user-connections.js';
 import { allowedOrigins, publicRoutes } from './routes/public.js';
 import { phoneRoutes } from './routes/phone.js';
 import { bookingRoutes } from './routes/booking.js';
@@ -229,6 +230,7 @@ export async function buildApp() {
   await app.register(uiRoutes);
   await app.register(ssoRoutes);
   await app.register(userRoutes);
+  await app.register(userConnectionRoutes);
   await app.register(userPhotoRoutes);
   await app.register(publicRoutes);
   await app.register(phoneRoutes);

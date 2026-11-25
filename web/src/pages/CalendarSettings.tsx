@@ -48,7 +48,7 @@ interface Config {
 
 const PROVIDER = { google: 'Google Calendar', microsoft: 'Microsoft Outlook' };
 
-const ERRORS: Record<string, string> = {
+export const CALENDAR_ERRORS: Record<string, string> = {
   cancelled: 'Connecting was cancelled.',
   domain_not_allowed: 'That account cannot be connected.',
   missing_permission: 'Calendar access was not allowed on the consent screen. Try again and allow it.',
@@ -80,7 +80,7 @@ export function CalendarSettings() {
   useEffect(() => {
     const failed = params.get('calendar_error');
     if (params.get('calendar') === 'connected') toast('Calendar connected');
-    else if (failed) setNotice([ERRORS[failed] ?? ERRORS.failed, params.get('calendar_detail')].filter(Boolean).join(' '));
+    else if (failed) setNotice([CALENDAR_ERRORS[failed] ?? CALENDAR_ERRORS.failed, params.get('calendar_detail')].filter(Boolean).join(' '));
     if (params.has('calendar') || failed) navigate('/settings/calendars', { replace: true });
   }, [params, navigate, toast]);
 

@@ -1,0 +1,20 @@
+{
+  "record": {
+    "sql": "select ct.pc_0010_id as id, ct.name, ct.first_name, ct.last_name, ct.email, ct.phone, ct.job_title, ct.lifecycle_stage, ct.lifecycle_stage__label, ct.owner, ct.owner__label, ct.address_city, ct.created_at from contacts ct where ct.pc_0010_id = :id",
+    "params": { "id": "text" }
+  },
+  "options": "select property, api_value as value, label from property_options where object_type_id = 'pc_0010' and property in ('lifecycle_stage') and record_status = 'active' order by property, display_order",
+  "owners": "select pc_0000_id as id, name from users where status = 'active' order by name",
+  "activity": {
+    "sql": "with rel as (select a.other_object as kind, a.other_record_id as rid from associations a where a.object = 'contacts' and a.record_id = :id and a.other_object in ('calls', 'emails', 'notes', 'tasks') group by 1, 2) select 'calls' as kind, c.pc_0030_id as id, coalesce(c.name, c.call_type__label) as title, c.body, c.status__label as status, coalesce(c.started_at, c.created_at) as at, c.owner__label as who from rel join calls c on rel.kind = 'calls' and c.pc_0030_id = rel.rid union all select 'emails', e.pc_0031_id, coalesce(e.subject, e.name), left(e.body, 600), e.direction__label, coalesce(e.sent_at, e.created_at), e.from_address from rel join emails e on rel.kind = 'emails' and e.pc_0031_id = rel.rid union all select 'notes', n.pc_0032_id, n.name, n.body, null, n.created_at, n.owner__label from rel join notes n on rel.kind = 'notes' and n.pc_0032_id = rel.rid union all select 'tasks', t.pc_0033_id, t.name, t.body, t.status__label, coalesce(t.due_at, t.created_at), t.owner__label from rel join tasks t on rel.kind = 'tasks' and t.pc_0033_id = rel.rid order by at desc limit 300",
+    "params": { "id": "text" }
+  },
+  "changes": {
+    "sql": "select h.history_id, coalesce(p.label, h.property) as property, coalesce(h.old_value -> 0 ->> 'value', h.old_text) as old_text, coalesce(h.new_value -> 0 ->> 'value', h.new_text) as new_text, h.changed_at from property_history h left join properties p on p.object_type_id = h.object_type_id and p.api_name = h.property where h.object = 'contacts' and h.record_id = :id order by h.changed_at desc, h.history_id desc limit 300",
+    "params": { "id": "text" }
+  },
+  "related": {
+    "sql": "select 'companies' as kind, c.pc_0011_id as id, c.name, c.domain as detail from associations a join companies c on c.pc_0011_id = a.other_record_id where a.object = 'contacts' and a.other_object = 'companies' and a.record_id = :id union select 'deals', d.pc_0012_id, d.name, d.stage__label from associations a join deals d on d.pc_0012_id = a.other_record_id where a.object = 'contacts' and a.other_object = 'deals' and a.record_id = :id union select 'tickets', t.pc_0013_id, t.name, null from associations a join tickets t on t.pc_0013_id = a.other_record_id where a.object = 'contacts' and a.other_object = 'tickets' and a.record_id = :id order by 1, 3",
+    "params": { "id": "text" }
+  }
+}

@@ -8,7 +8,7 @@ import { Loading } from '../components/Loading';
 import { useAddToMenu } from '../lib/use-add-to-menu';
 import type { RecordBack } from './RecordPage';
 import { fileInfo, fileLink, formatBytes, openFile, uploadFile } from '../lib/files';
-import type { BridgeMethod, FromFrame, Params, RuntimeError, ToFrame, ViewFile, ViewInit } from '../view-runtime/protocol';
+import type { BridgeMethod, FromFrame, Params, PreviewBox, PreviewContent, RuntimeError, ToFrame, ViewFile, ViewInit } from '../view-runtime/protocol';
 import { checkExternalUrl } from '../view-runtime/external-url';
 import { confirmDialog } from '../components/confirm';
 import { loadSnippets, renderSnippet } from '../lib/snippets';
@@ -38,6 +38,46 @@ interface ViewPayload {
 }
 
 const FRAME_URL = `${import.meta.env.BASE_URL}view-frame/index.html`;
+// the CRM's address for links views build (crmUrl in the kit)
+const CRM_URL = `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/$/, '');
+
+// <HtmlPreview> in a view: the frame keeps a box and reports where it is; this
+// page draws a sandboxed iframe over it, clipped to the part the view shows.
+// html is drawn without scripts (srcdoc inherits this page's CSP too); a
+// landing page is framed through its own shell, as on its record page.
+const MAX_PREVIEWS = 10;
+const MAX_PREVIEW_HTML = 2_000_000;
+const PREVIEW_SLUG = /^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$/;
+type Preview = { content: PreviewContent; box: PreviewBox | null };
+
+function previewContent(c: unknown): PreviewContent | null {
+  if (!c || typeof c !== 'object') return null;
+  const o = c as { html?: unknown; page?: { slug?: unknown; draft?: unknown } };
+  if (typeof o.html === 'string') return o.html.length <= MAX_PREVIEW_HTML ? { html: o.html } : null;
+  if (o.page && typeof o.page.slug === 'string' && PREVIEW_SLUG.test(o.page.slug)) return { page: { slug: o.page.slug, draft: o.page.draft === true } };
+  return null;
+}
+
+function PreviewLayer({ previews }: { previews: Record<string, Preview> }) {
+  return (
+    <>
+      {Object.entries(previews).map(([id, p]) => {
+        const b = p.box;
+        if (!b) return null;
+        const { rect: r, clip: c } = b;
+        const style = {
+          left: r.x, top: r.y, width: r.w, height: r.h,
+          visibility: c ? 'visible' as const : 'hidden' as const,
+          clipPath: c ? `inset(${c.y - r.y}px ${r.x + r.w - (c.x + c.w)}px ${r.y + r.h - (c.y + c.h)}px ${c.x - r.x}px)` : undefined
+        };
+        return 'html' in p.content
+          ? <iframe key={id} className="custom-view-preview" style={style} title="Preview" sandbox="" srcDoc={p.content.html} />
+          : <iframe key={id} className="custom-view-preview" style={style} title="Page preview"
+              src={`${import.meta.env.BASE_URL}p/page/${p.content.page.draft ? '?draft=1' : ''}#${p.content.page.slug}`} />;
+      })}
+    </>
+  );
+}
 const THEME_VARS = ['--primary', '--page-background', '--surface', '--text', '--muted-text', '--border', '--money', '--danger'];
 
 function parseHash(hash: string): { slug: string; params: Params } {
@@ -159,6 +199,7 @@ export function CustomView() {
   // the frame loads once; a second load means the view navigated it away
   const frameLoads = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [previews, setPreviews] = useState<Record<string, Preview>>({});
   // the latest values for the message handler, which is set up once per frame
   const latest = useRef({ slug, params, draft, view });
   latest.current = { slug, params, draft, view };
@@ -196,6 +237,7 @@ export function CustomView() {
   }, [slug]);
   useEffect(() => {
     frameLoads.current = 0;
+    setPreviews({});
     setFill(false);
     setStarting(true);
     // the new frame reports its own height; do not keep the last view's
@@ -436,7 +478,9 @@ export function CustomView() {
       case 'openUrl': {
         const link = checkExternalUrl(args[0]);
         if (!link.ok) throw new Error(link.error);
-        if (hasUserGesture() && trustedDomains(me.user?.id).includes(link.host)) {
+        // the CRM's own pages (crmUrl in the kit) are not leaving the CRM
+        const own = new URL(link.url).origin === window.location.origin;
+        if (hasUserGesture() && (own || trustedDomains(me.user?.id).includes(link.host))) {
           openTab(link.url);
           return { opened: true };
         }
@@ -525,13 +569,30 @@ export function CustomView() {
           me: { id: me.user?.id ?? null, name: me.user?.name ?? null, is_admin: me.is_admin },
           params: latest.current.params,
           view: { id: v.id, name: v.name, slug: v.slug, draft: v.draft },
-          snippets: v.allow_snippets !== false
+          snippets: v.allow_snippets !== false,
+          crm_url: CRM_URL
         });
       } else if (msg.type === 'pcrm:mode') {
         setFill(msg.fill === true);
         setStarting(false);
       } else if (msg.type === 'pcrm:report') {
         if (Array.isArray(msg.errors)) reportErrors(msg.errors);
+      } else if (msg.type === 'pcrm:preview') {
+        const id = String(msg.id ?? '').slice(0, 40);
+        const content = previewContent(msg.content);
+        setPreviews((cur) => {
+          const next = { ...cur };
+          if (!content) delete next[id];
+          else if (next[id] || Object.keys(next).length < MAX_PREVIEWS) next[id] = { content, box: next[id]?.box ?? null };
+          return next;
+        });
+      } else if (msg.type === 'pcrm:preview-boxes') {
+        const boxes = Array.isArray(msg.boxes) ? msg.boxes : [];
+        setPreviews((cur) => {
+          const next: Record<string, Preview> = {};
+          for (const [id, p] of Object.entries(cur)) next[id] = { ...p, box: boxes.find((b) => b && b.id === id) ?? null };
+          return next;
+        });
       } else if (msg.type === 'pcrm:height') {
         setHeight(Math.max(200, Math.min(Number(msg.height) || 0, 100_000)));
       } else if (msg.type === 'pcrm:error') {
@@ -587,6 +648,7 @@ export function CustomView() {
           <Loading className="view-loading muted" />
         )}
         {view && !error && (
+          <div className="custom-view-stage">
           <iframe
             key={frameKey}
             ref={frameRef}
@@ -601,6 +663,8 @@ export function CustomView() {
               if (frameLoads.current > 1) setError('This view tried to open another page, so it was stopped.');
             }}
           />
+          {!starting && <PreviewLayer previews={previews} />}
+          </div>
         )}
       </div>
       {lineEditor && (
@@ -644,7 +708,7 @@ export function CustomView() {
       )}
       {leaving && (
         <Modal
-          title="You're leaving the CRM"
+          title={leaving.host === window.location.host ? 'Open in a new tab?' : "You're leaving the CRM"}
           onClose={() => finishLink(false)}
           footer={
             <>
@@ -656,12 +720,12 @@ export function CustomView() {
             </>
           }
         >
-          <p style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to open a page on <strong>{leaving.host}</strong> in a new tab.</p>
+          <p style={{ marginTop: 0 }}>The view "{view?.name ?? slug}" wants to open {leaving.host === window.location.host ? 'a page of this CRM' : <>a page on <strong>{leaving.host}</strong></>} in a new tab.</p>
           <p className="muted small" style={{ wordBreak: 'break-all' }}>{leaving.url.length > 300 ? leaving.url.slice(0, 299) + '…' : leaving.url}</p>
-          <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0 }}>
+          {leaving.host !== window.location.host && <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0 }}>
             <input type="checkbox" checked={dontAskAgain} onChange={(e) => setDontAskAgain(e.target.checked)} />
             Don't ask again for {leaving.host}
-          </label>
+          </label>}
         </Modal>
       )}
       {asking && (

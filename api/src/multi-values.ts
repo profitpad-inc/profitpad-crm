@@ -71,7 +71,7 @@ export function normalizeMultiValue(type: 'email' | 'phone', value: string, regi
   return phone.value!;
 }
 
-function normalizeLabel(label: unknown): string | undefined {
+export function normalizeLabel(label: unknown): string | undefined {
   if (label === null || label === undefined) return undefined;
   if (typeof label !== 'string') throw new MultiValueError('a label must be text');
   const l = label.trim().replace(/\s+/g, ' ');
@@ -87,6 +87,9 @@ function normalizeLabel(label: unknown): string | undefined {
 //   values the record already has are left where they are. So forms,
 //   imports, integrations and views that write a plain string never drop
 //   the record's other entries.
+// - one entry ({value, label?}, not in a list) is added like a string, and
+//   when the record already has the value, its label is set (forms, where the
+//   visitor may label their own address or number)
 // - null, '' or [] clears it (handled by the caller)
 export function toMulti(type: 'email' | 'phone', input: unknown, existing?: unknown): MultiEntry[] | null {
   let entries: MultiEntry[];
@@ -95,6 +98,16 @@ export function toMulti(type: 'email' | 'phone', input: unknown, existing?: unkn
     const given = splitMultiText(type, input).map((v) => normalizeMultiValue(type, v));
     const added = [...new Set(given)].filter((v) => !had.some((e) => e.value === v)).map((value) => ({ value }));
     entries = [...added, ...had];
+  } else if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const { value, label, ...rest } = input as Record<string, unknown>;
+    if (Object.keys(rest).length > 0) throw new MultiValueError(`unknown entry field "${Object.keys(rest)[0]}" (entries have value and label)`);
+    if (typeof value !== 'string') throw new MultiValueError('each entry needs a value');
+    const v = normalizeMultiValue(type, value);
+    const l = normalizeLabel(label);
+    const had = entriesOf(existing);
+    entries = had.some((e) => e.value === v)
+      ? had.map((e) => (e.value === v && l ? { value: v, label: l } : e))
+      : [l ? { value: v, label: l } : { value: v }, ...had];
   } else if (Array.isArray(input)) {
     entries = input.map((e) => {
       if (typeof e === 'string') return { value: normalizeMultiValue(type, e) };

@@ -4,6 +4,7 @@ import { CalendarCheck, Check, CircleAlert, Clock, Plus, Trash2, X } from 'lucid
 import { api, getSchema, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
+import { usePendingEdits } from '../lib/pending-edits';
 import { DatePicker } from './DatePicker';
 import { Select } from './Select';
 import '../editors.css';
@@ -442,8 +443,10 @@ function readCoHosts(record: CrmRecord): CoHost[] {
   return ids(record.properties.co_hosts).map((id) => ({ id, checked: !unchecked.includes(id) }));
 }
 
-function CoHostsCard({ value, onChange, users, host, saving }: {
+function CoHostsCard({ value, onChange, users, host, saving, noCalendar }: {
   value: CoHost[]; onChange: (v: CoHost[]) => void; users: { id: string; name: string }[]; host: string; saving: boolean;
+  // users with no connected calendar: switched on with Check calendar off, which they cannot turn on until they connect one
+  noCalendar: Set<string> | null;
 }) {
   // the host is not a co-host; someone picked who is no longer a user still shows, to be switched off
   const people = [...users.filter((u) => u.id !== host), ...value.filter((c) => !users.some((u) => u.id === c.id)).map((c) => ({ id: c.id, name: `User ${c.id}` }))];
@@ -457,22 +460,25 @@ function CoHostsCard({ value, onChange, users, host, saving }: {
         <h3>Co-hosts</h3>
         <p>
           Co-hosts join every meeting with the Host and are invited to the calendar event. With <strong>Check calendar</strong> on, times are
-          offered only when they are free too; with it off, they are invited whether or not they are busy.
+          offered only when they are free too; with it off, they are invited whether or not they are busy, and do not need a
+          connected calendar.
         </p>
       </div>
       {people.length === 0 ? <p className="ed-hint">No other users to add.</p> : (
         <div className="bk-cohosts">
           {people.map((p) => {
             const on = value.find((c) => c.id === p.id);
+            const calendarless = Boolean(noCalendar?.has(p.id));
             return (
               <div key={p.id} className="bk-cohost">
                 <label className="bk-switch">
-                  <input type="checkbox" checked={Boolean(on)} disabled={saving} onChange={(e) => set(p.id, e.target.checked ? { id: p.id, checked: true } : null)} />
+                  <input type="checkbox" checked={Boolean(on)} disabled={saving} onChange={(e) => set(p.id, e.target.checked ? { id: p.id, checked: !calendarless } : null)} />
                   {p.name}
                 </label>
+                {on && calendarless && <span className="bk-cohost-note small muted">No calendar connected</span>}
                 {on && (
-                  <label className="bk-switch bk-cohost-check">
-                    <input type="checkbox" checked={on.checked} disabled={saving} onChange={(e) => set(p.id, { id: p.id, checked: e.target.checked })} />
+                  <label className="bk-switch bk-cohost-check" title={calendarless && !on.checked ? 'Connect a calendar for them first (Settings → Users)' : undefined}>
+                    <input type="checkbox" checked={on.checked} disabled={saving || (calendarless && !on.checked)} onChange={(e) => set(p.id, { id: p.id, checked: e.target.checked })} />
                     Check calendar
                   </label>
                 )}
@@ -536,6 +542,8 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   const [forms, setForms] = useState<{ id: string; name: string; published: boolean }[]>([]);
   const [rotations, setRotations] = useState<{ id: string; name: string }[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  // users with no connected calendar (null: not loaded yet)
+  const [noCalendar, setNoCalendar] = useState<Set<string> | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -570,6 +578,12 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
       .catch(() => setUsers([]));
   }, []);
 
+  useEffect(() => {
+    api<{ results: { user_id: string; calendar: boolean }[] }>('GET', '/v1/users/connections')
+      .then((r) => setNoCalendar(new Set(r.results.filter((u) => !u.calendar).map((u) => u.user_id))))
+      .catch(() => setNoCalendar(null));
+  }, []);
+
   useEffect(loadCheck, [loadCheck, record]);
 
   useEffect(() => {
@@ -598,6 +612,8 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   }
 
   // everything changed in the middle column, in one write
+  // (also sent by the sidebar's Publish, so a page is checked as it will be saved)
+  usePendingEdits('booking_pages', record.id, () => (dirty && lengths.lengths.length > 0 ? changes() : null));
   function changes(): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     if (hoursDirty) Object.assign(out, { timezone: zone, availability: JSON.stringify({ ...hours, rows }) });
@@ -732,7 +748,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
 
       <EmailsCard v={emails} setV={setEmails} check={check} saving={saving} />
 
-      <CoHostsCard value={coHosts} onChange={setCoHosts} users={users} host={first(record.properties.host)} saving={saving} />
+      <CoHostsCard value={coHosts} onChange={setCoHosts} users={users} host={first(record.properties.host)} saving={saving} noCalendar={noCalendar} />
 
       <section className="ed-section">
         <div className="ed-section-head">

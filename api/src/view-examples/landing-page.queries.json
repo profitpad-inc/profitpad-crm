@@ -1,0 +1,7 @@
+{
+  "pages": "select lp.pc_0059_id as id, lp.name, lp.slug, lp.status, lp.status__label as status_label, lp.status = 'published' and coalesce(lp.draft_html, '') <> coalesce(lp.html, '') as changed, lp.updated_at from landing_pages lp order by lp.updated_at desc",
+  "page": {
+    "sql": "select lp.pc_0059_id as id, lp.name, lp.slug, lp.description, lp.status, lp.status__label as status_label, lp.draft_html, lp.html, lp.published_at, lp.meta_title, lp.meta_description, lp.og_image from landing_pages lp where lp.pc_0059_id = :id",
+    "params": { "id": "text" }
+  }
+}

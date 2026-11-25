@@ -375,7 +375,10 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
       const drawChips = () => {
         input.value = guestText;
         input.placeholder = guests.length ? '' : 'jane@example.com, john@example.com';
-        chips.replaceChildren(...guests.map((email, i) => {
+        // only the chips are redrawn: moving the input would take the focus out of it
+        chips.querySelectorAll('.bk-chip').forEach((c) => c.remove());
+        if (input.parentElement !== chips) chips.append(input);
+        input.before(...guests.map((email, i) => {
           const x = el('button', { class: 'bk-chip-x', type: 'button', 'aria-label': `Remove ${email}` }, '×');
           x.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -385,7 +388,7 @@ export function mountBooking(root: HTMLElement, opts: BookingMountOptions): void
             input.focus();
           });
           return el('span', { class: 'bk-chip' }, email, x);
-        }), input);
+        }));
       };
       // Each finished address becomes a chip; one that fails stays in the box to be fixed.
       const commit = (parts: string[], rest: string) => {

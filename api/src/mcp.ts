@@ -24,6 +24,7 @@ import {
   viewSummary, publishState, sourceExcerpt, type ViewRow
 } from './views.js';
 import { CHECK_SIZES_TEXT, FEATURE_LINKS, GUIDE_TOPICS, viewGuide } from './views-guide.js';
+import { EXAMPLE_KEYS, loadExample } from './view-examples.js';
 import { renderView } from './render.js';
 import {
   createPage, createPreviewLink, duplicatePage, getVersionHtml, htmlExcerpt, listAssets, listPages, listPreviewLinks, listVersions, loadPage, pageOut,
@@ -689,12 +690,16 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('view_guide', {
     title: 'Custom view guide',
-    description: `How to build custom views (workflow, React runtime, UI kit, styling, SQL rules, the data, property rules and full examples), document templates and landing pages. Read "overview" first for views, "document_templates" for templates and "landing_pages" for landing pages. Topics: ${GUIDE_TOPICS.join(', ')}. For "schema", object narrows it to one object with dropdown values.`,
-    inputSchema: z.object({ topic: z.enum(GUIDE_TOPICS).optional(), object: z.string().optional() }),
+    description: `How to build custom views (workflow, React runtime, UI kit, styling, SQL rules, the data, property rules and full examples), document templates and landing pages. Read "overview" first for views, "document_templates" for templates and "landing_pages" for landing pages. Topics: ${GUIDE_TOPICS.join(', ')}. For "schema", object narrows it to one object with dropdown values. "examples" lists finished views to copy (record page, object table, landing page workspace, kanban board, markdown generator, scored form, dashboard); with example, it returns that one's code and queries.`,
+    inputSchema: z.object({
+      topic: z.enum(GUIDE_TOPICS).optional(),
+      object: z.string().optional(),
+      example: z.enum(EXAMPLE_KEYS).optional().describe('With topic "examples": one example\'s code and queries')
+    }),
     annotations: { readOnlyHint: true }
-  }, async ({ topic, object }) => {
+  }, async ({ topic, object, example }) => {
     try {
-      return { content: [{ type: 'text', text: await viewGuide(p, topic ?? 'overview', object) }] };
+      return { content: [{ type: 'text', text: await viewGuide(p, topic ?? (example ? 'examples' : 'overview'), object, example) }] };
     } catch (err) {
       return run(() => Promise.reject(err));
     }
@@ -745,7 +750,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('create_view', {
     title: 'Create custom view',
-    description: 'Creates a custom view as a draft (nobody but admins sees it until published). The code and queries are checked first; errors come back to fix. slug defaults from the name.',
+    description: 'Creates a custom view as a draft (nobody but admins sees it until published). The code and queries are checked first; errors come back to fix. slug defaults from the name. from_example copies one of the view_guide examples as the starting point, without sending its code.',
     inputSchema: z.object({
       client_request_id: clientRequestIdArg,
       name: z.string(),
@@ -754,11 +759,46 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
       description: z.string().optional(),
       audience: z.enum(['admins', 'everyone']).optional().describe('Default admins'),
       source: z.string().optional().describe('React (TSX) module with a default export; see view_guide'),
-      queries: queriesArg.optional()
+      queries: queriesArg.optional(),
+      from_example: z.enum(EXAMPLE_KEYS).optional().describe('Start from this example\'s code and queries (view_guide topic examples), copied on the server; source and queries, if given, replace the example\'s')
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     scopeChallenge: schemaChallenge
-  }, async ({ client_request_id, ...args }) => run(() => once(p, 'create_view', client_request_id, async () => draftSaved(await createView(p, args)))));
+  }, async ({ client_request_id, from_example, ...args }) => run(() => once(p, 'create_view', client_request_id, async () => {
+    if (from_example) {
+      const ex = await loadExample(from_example);
+      if (ex.missing_objects.length && !args.queries) {
+        throw badRequest(`example ${from_example} reads ${ex.missing_objects.join(', ')}, which this CRM does not have: read it with view_guide topic examples and example "${from_example}", point its queries at this CRM's objects, and send them as queries`);
+      }
+      args = { ...args, source: args.source ?? ex.source, queries: args.queries ?? (ex.queries as typeof args.queries) };
+    }
+    return draftSaved(await createView(p, args));
+  })));
+
+  server.registerTool('duplicate_view', {
+    title: 'Duplicate custom view',
+    description: 'Copies a view\'s code and queries into a new view, as a draft for admins only, copied on the server (nothing is sent back but a summary). Use it to start a variant of an existing view (another team\'s version, an experiment) without changing the original; then read and change the copy with get_view search or lines and save_view_draft edits. version picks what to copy: draft (default) or published.',
+    inputSchema: z.object({
+      client_request_id: clientRequestIdArg,
+      view: viewArg.describe('The view to copy: its slug or id'),
+      name: z.string().describe('Name of the new view'),
+      slug: z.string().optional().describe('Page address of the new view; defaults from the name'),
+      version: z.enum(['draft', 'published']).optional(),
+      description: z.string().optional().describe('Defaults to the original\'s description')
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    scopeChallenge: schemaChallenge
+  }, async ({ client_request_id, view, name, slug, version, description }) => run(() => once(p, 'duplicate_view', client_request_id, async () => {
+    const v = await loadView(pool, view);
+    const published = version === 'published';
+    const source = published ? v.source : v.draft_source;
+    const queries = published ? v.queries : v.draft_queries;
+    if (published && v.status !== 'published') throw badRequest(`view ${v.slug} has never been published: copy its draft`);
+    return draftSaved(await createView(p, {
+      name, slug, icon: v.icon ?? undefined, description: description ?? v.description ?? undefined,
+      source: source ?? undefined, queries: queries ? JSON.parse(queries) : undefined
+    }));
+  })));
 
 
   server.registerTool('save_view_draft', {

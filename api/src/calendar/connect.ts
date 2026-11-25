@@ -4,6 +4,7 @@ import { pool } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { authenticate, readCookie, requireScope, setCookie, type Principal } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { connectTarget } from '../routes/user-connections.js';
 import { secretBoxReady, seal } from '../secret-box.js';
 import {
   CalendarAuthError, CalendarPermissionError, CONNECTION_COLUMNS, forgetAccessToken, listCalendars, PROVIDERS, providerConfigured, REQUIRED_SCOPES, revoke,
@@ -30,13 +31,17 @@ const msDomains = domains(process.env.MICROSOFT_ALLOWED_DOMAINS);
 
 const FLOW_COOKIE = 'pcrm_cal';
 const SETTINGS_PATH = '/settings/calendars';
+const USERS_PATH = '/settings/users';
 const callbackPath = (p: CalendarProvider) => `/v1/calendar/${p}/callback`;
 
 interface Flow {
   state: string;
   verifier: string;
   nonce: string;
+  // who the calendar is for
   userId: string;
+  // a Super Admin connecting it for someone else (Settings → Users), else absent
+  by?: string;
 }
 
 const origin = (req: FastifyRequest) => `${req.protocol}://${req.headers.host}`;
@@ -48,8 +53,8 @@ function provider(value: string): CalendarProvider {
   return value;
 }
 
-function toSettings(req: FastifyRequest, reply: FastifyReply, error?: string, detail?: string) {
-  const url = new URL((uiUrl || origin(req)) + SETTINGS_PATH);
+function toSettings(req: FastifyRequest, reply: FastifyReply, error?: string, detail?: string, path = SETTINGS_PATH) {
+  const url = new URL((uiUrl || origin(req)) + path);
   if (error) url.searchParams.set('calendar_error', error);
   else url.searchParams.set('calendar', 'connected');
   if (detail) url.searchParams.set('calendar_detail', detail.slice(0, 300));
@@ -91,12 +96,16 @@ export async function calendarRoutes(app: FastifyInstance) {
     google_domains: googleDomains
   }));
 
-  app.get<{ Params: { provider: string } }>('/v1/calendar/:provider/connect', async (req, reply) => {
+  // ?for=<user id>: a Super Admin connecting a calendar for someone else, who
+  // signs in on the provider's page with that person's account; back to Settings → Users
+  app.get<{ Params: { provider: string }; Querystring: { for?: string } }>('/v1/calendar/:provider/connect', async (req, reply) => {
     const p = provider(req.params.provider);
-    const userId = signedInUser(req.principal);
-    if (!providerConfigured(p) || !secretBoxReady()) return toSettings(req, reply, 'not_configured');
+    const self = signedInUser(req.principal);
+    const target = await connectTarget(req.principal!, req.query.for);
+    const back = target ? USERS_PATH : SETTINGS_PATH;
+    if (!providerConfigured(p) || !secretBoxReady()) return toSettings(req, reply, 'not_configured', undefined, back);
     const cfg = PROVIDERS[p];
-    const flow: Flow = { state: random(), verifier: random(), nonce: random(), userId };
+    const flow: Flow = { state: random(), verifier: random(), nonce: random(), userId: target ?? self, ...(target ? { by: self } : {}) };
     const url = new URL(cfg.authUrl);
     url.search = new URLSearchParams({
       client_id: cfg.clientId,
@@ -129,18 +138,27 @@ export async function calendarRoutes(app: FastifyInstance) {
       } catch {
         flow = null;
       }
-      if (req.query.error) return toSettings(req, reply, req.query.error === 'access_denied' ? 'cancelled' : 'failed', req.query.error_description ?? req.query.error);
-      if (!flow || !req.query.code || req.query.state !== flow.state) return toSettings(req, reply, 'failed', 'The sign-in took too long or was started in another browser. Try again.');
+      const back = flow?.by ? USERS_PATH : SETTINGS_PATH;
+      if (req.query.error) return toSettings(req, reply, req.query.error === 'access_denied' ? 'cancelled' : 'failed', req.query.error_description ?? req.query.error, back);
+      if (!flow || !req.query.code || req.query.state !== flow.state) return toSettings(req, reply, 'failed', 'The sign-in took too long or was started in another browser. Try again.', back);
 
       let principal: Principal;
       try {
         principal = await authenticate(req);
       } catch {
-        return toSettings(req, reply, 'signed_out');
+        return toSettings(req, reply, 'signed_out', undefined, back);
       }
-      if (principal.userId !== flow.userId) return toSettings(req, reply, 'failed', 'Signed in as a different user than the one who started connecting.');
+      if (principal.userId !== (flow.by ?? flow.userId)) return toSettings(req, reply, 'failed', 'Signed in as a different user than the one who started connecting.', back);
       req.principal = principal;
       const userId = flow.userId;
+      // still a Super Admin, and the person is still an active user
+      if (flow.by) {
+        try {
+          await connectTarget(principal, flow.userId);
+        } catch (err) {
+          return toSettings(req, reply, 'failed', (err as Error).message, back);
+        }
+      }
 
       let body: { id_token?: string; refresh_token?: string; scope?: string; error?: string; error_description?: string };
       try {
@@ -160,7 +178,7 @@ export async function calendarRoutes(app: FastifyInstance) {
         if (!res.ok || !body.id_token) throw new Error(body.error_description || body.error || `HTTP ${res.status}`);
       } catch (err) {
         req.log.warn({ err }, `${p} calendar token exchange failed`);
-        return toSettings(req, reply, 'failed', (err as Error).message);
+        return toSettings(req, reply, 'failed', (err as Error).message, back);
       }
 
       const claims = idTokenClaims(body.id_token);
@@ -174,8 +192,8 @@ export async function calendarRoutes(app: FastifyInstance) {
       const valid = issOk && claims.aud === cfg.clientId && typeof claims.exp === 'number' && claims.exp * 1000 > Date.now()
         && claims.nonce === flow.nonce && Boolean(sub);
       const refuse = async (reason: string, detail?: string) => {
-        await logEvent(req, 'calendar.connect_failed', { userId, details: { provider: p, reason, ...(email ? { email } : {}) } });
-        return toSettings(req, reply, reason, detail);
+        await logEvent(req, 'calendar.connect_failed', { userId, details: { provider: p, reason, ...(email ? { email } : {}), ...(flow.by ? { by: flow.by } : {}) } });
+        return toSettings(req, reply, reason, detail, back);
       };
       if (!valid || !sub) return refuse('failed', 'The provider sent an ID token that did not check out.');
 
@@ -201,8 +219,8 @@ export async function calendarRoutes(app: FastifyInstance) {
       );
       forgetAccessToken(rows[0].id);
       await ensureWriter(userId);
-      await logEvent(req, 'calendar.connected', { userId, target: { type: 'calendar_connection', id: rows[0].id }, details: { provider: p, email } });
-      return toSettings(req, reply);
+      await logEvent(req, 'calendar.connected', { userId, target: { type: 'calendar_connection', id: rows[0].id }, details: { provider: p, email, ...(flow.by ? { by: flow.by } : {}) } });
+      return toSettings(req, reply, undefined, undefined, back);
     }
   );
 

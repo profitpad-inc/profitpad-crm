@@ -48,7 +48,7 @@ import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
 import { useIsMobile, useMediaQuery } from '../lib/use-mobile';
-import { usePinWhileEditing } from '../lib/pin-editor';
+import { useHoldTapsOutside, usePinWhileEditing } from '../lib/pin-editor';
 import { Loading, Spinner } from '../components/Loading';
 
 // a contact's additional emails, as stored ("a@x.com; b@y.com")
@@ -878,7 +878,10 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   const [historyOf, setHistoryOf] = useState<Property | null>(null);
   // on a phone the row being edited sits at the top and the page holds still
   const listRef = useRef<HTMLDivElement>(null);
-  usePinWhileEditing(useIsMobile(), editing, listRef, '.prop-row.editing');
+  const isMobile = useIsMobile();
+  usePinWhileEditing(isMobile, editing, listRef, '.prop-row.editing');
+  // and taps outside the open editor do nothing: it closes with Save or Cancel
+  useHoldTapsOutside(isMobile, editing, HOLD_KEEP);
   async function copyValue(p: Property) {
     const value = record.properties[p.api_name];
     // HTML and code copy as written; everything else as it reads on the page
@@ -1008,8 +1011,21 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     }
   }
 
-  // email and phone lists and multi-choice dropdowns are saved with a button
-  const savesWithButton = (p: Property) => isMultiType(p) || (p.type === 'dropdown' && p.options.single_value !== true);
+  // email and phone lists and multi-choice dropdowns are saved with a button;
+  // on a phone every property is (leaving the box or closing a list does not
+  // save, and the editor has Cancel too)
+  const savesWithButton = (p: Property) => isMobile || isMultiType(p) || (p.type === 'dropdown' && p.options.single_value !== true);
+  const hasCancel = (p: Property) => isMobile || isMultiType(p);
+  // on a phone a box's own commit (blur, a closing calendar or list) only
+  // keeps the value; email and phone lists already save only from their button
+  // or Enter, so they keep that
+  const onInputCommit = (p: Property) => (v?: string) => {
+    if (isMobile && !isMultiType(p)) {
+      if (v !== undefined) setDraft(v);
+      return;
+    }
+    void commit(p, v);
+  };
   const cancel = (p: Property) => {
     if (editing !== p.api_name) return;
     setEditing(null);
@@ -1026,7 +1042,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     if (!editingProp || !unchanged) return;
     const close = () => cancel(editingProp);
     const onDown = (e: MouseEvent) => {
-      if (!isMultiType(editingProp)) return;
+      if (isMobile || !isMultiType(editingProp)) return;
       const t = e.target as HTMLElement;
       // dropdown lists and dialogs are rendered on <body>
       if (t.closest?.('.prop-row.editing, .select-menu, .modal, [role="dialog"]')) return;
@@ -1114,10 +1130,10 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
       </div>
       {editing === p.api_name ? (
         <div className="prop-edit" onClick={(e) => e.stopPropagation()}>
-          <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={(v) => commit(p, v)} onFill={(values) => fill(p, values)} />
+          <PropertyInput property={p} object={schema.api_name} value={draft} onChange={setDraft} autoFocus={focusEditor} onCommit={onInputCommit(p)} onFill={(values) => fill(p, values)} />
           {savesWithButton(p) && (
             <div className="prop-edit-actions">
-              {isMultiType(p) && <button className="btn small ghost" onClick={() => cancel(p)}>Cancel</button>}
+              {hasCancel(p) && <button className="btn small ghost" onClick={() => cancel(p)}>Cancel</button>}
               <button className="btn small" onClick={() => commit(p)} disabled={JSON.stringify(fromInput(p, draft)) === startValue.current}>Save</button>
             </div>
           )}
@@ -1172,6 +1188,10 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     </div>
   );
 }
+
+// what still takes taps while a property is edited on a phone: the editor and
+// the lists, calendars and dialogs it opens on <body>
+const HOLD_KEEP = '.prop-row.editing, .menu, .select-menu, .modal, [role="dialog"], .flatpickr-calendar';
 
 type Tab = 'preview' | PanelTab | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
 // On phones the properties and the right column are tabs of the stream (RecordPage passes them in)

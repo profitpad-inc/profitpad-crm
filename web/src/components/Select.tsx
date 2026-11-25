@@ -74,6 +74,9 @@ export function Select({ value: raw, onChange, options, children, id, className,
   const exact = q ? all.filter((o) => o.value.toLowerCase() === q) : [];
   const shown = loading ? [] : q ? [...exact, ...all.filter((o) => !exact.includes(o) && o.label.toLowerCase().includes(q))] : all;
 
+  // when the list last opened by itself (openOnMount), to tell the tap that
+  // started the edit from a tap meant for the button
+  const openedAt = useRef(0);
   const close = () => setRect(null);
   const openList = () => {
     if (disabled || !faceRef.current) return;
@@ -97,6 +100,7 @@ export function Select({ value: raw, onChange, options, children, id, className,
   useEffect(() => {
     if (!openOnMount) return;
     openList();
+    openedAt.current = performance.now();
     // the frame around it may still be sliding in (panel-in): place the list
     // again under the button once it settles
     const face = faceRef.current;
@@ -134,9 +138,20 @@ export function Select({ value: raw, onChange, options, children, id, className,
       close();
       if (wasInList) onBlurRef.current?.();
     };
-    const onScroll = (e: Event) => {
-      if (!popRef.current?.contains(e.target as Node)) dismiss();
+    // On a touch screen the page moves under an open list by itself: the
+    // property being edited is scrolled to the top (lib/pin-editor.ts) and the
+    // keyboard for the search box resizes the window. The list follows the
+    // button there instead of closing; with a mouse, scrolling closes it.
+    const touch = window.matchMedia('(pointer: coarse)').matches;
+    const follow = () => {
+      if (faceRef.current) setRect(faceRef.current.getBoundingClientRect());
     };
+    const onScroll = (e: Event) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (touch) follow();
+      else dismiss();
+    };
+    const onResize = () => (touch ? follow() : dismiss());
     // a click inside an iframe never reaches mousedown above; the window
     // loses focus to the frame instead (same as lib/frame-focus.ts)
     const onWindowBlur = () => setTimeout(() => {
@@ -144,12 +159,14 @@ export function Select({ value: raw, onChange, options, children, id, className,
     });
     document.addEventListener('mousedown', onDown);
     window.addEventListener('blur', onWindowBlur);
-    window.addEventListener('resize', dismiss);
+    window.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
     window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
       window.removeEventListener('blur', onWindowBlur);
-      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
       window.removeEventListener('scroll', onScroll, true);
     };
   }, [open, searchable]);
@@ -229,7 +246,13 @@ export function Select({ value: raw, onChange, options, children, id, className,
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => (open ? close() : openList())}
+        onClick={() => {
+          // a phone sends the tap that opened the editor on to the button
+          // that appears under the finger; it must not close the list again
+          if (open && performance.now() - openedAt.current < 600) return;
+          if (open) close();
+          else openList();
+        }}
         onKeyDown={onKey}
         onBlur={leave}
       >

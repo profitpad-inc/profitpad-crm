@@ -42,6 +42,10 @@ export const FORM_CSS = `
 .pcrm-form .pcrm-phone { display: flex; gap: 6px; }
 .pcrm-form .pcrm-phone input { flex: 1; min-width: 0; }
 .pcrm-form .pcrm-phone .pcrm-dd { flex: none; }
+.pcrm-form .pcrm-entry { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pcrm-form .pcrm-entry-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pcrm-form .pcrm-entry-row > input, .pcrm-form .pcrm-entry-row > .pcrm-phone { flex: 1 1 220px; min-width: 0; }
+.pcrm-form .pcrm-entry-row > .pcrm-dd { flex: 0 0 140px; }
 .pcrm-form input:focus, .pcrm-form select:focus, .pcrm-form .pcrm-dd-face:focus, .pcrm-form textarea:focus { outline: 2px solid transparent; outline-offset: 0; border-color: var(--pcrm-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pcrm-primary) 22%, transparent); }
 .pcrm-form .pcrm-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; font-size: 15px; line-height: 1.45; margin: 0; cursor: pointer; }
@@ -147,6 +151,14 @@ export function formHtml(def: PublicForm['definition']): string {
   box.append(form);
   return box.innerHTML.replace(/></g, '>\n<');
 }
+
+// The answer key that carries a labelable field's label (api/src/forms.ts).
+const labelKey = (name: string) => `${name}__label`;
+const OTHER_LABEL = '__other';
+const LABEL_PRESETS: Record<'email' | 'phone', { value: string; label: string }[]> = {
+  email: [{ value: 'work', label: 'Work' }, { value: 'personal', label: 'Personal' }],
+  phone: [{ value: 'cell', label: 'Cell' }, { value: 'landline', label: 'Landline' }, { value: 'work', label: 'Work' }]
+};
 
 const controlsNamed = (form: HTMLFormElement, name: string) =>
   [...form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')].filter((c) => c.name === name);
@@ -264,13 +276,54 @@ export function renderForm(container: HTMLElement, opts: {
   // every single-choice select opens the CRM's dropdown list
   const dropdowns: Dropdown[] = [...form.querySelectorAll('select')].filter((s) => !s.multiple).map((s) => enhanceSelect(s));
 
+  // Email and phone properties: the visitor may label the address or number.
+  // Custom HTML may have its own "<name>__label" control; otherwise a label
+  // menu goes beside the box, and "Other" opens a box for their own words.
+  const labelOf = new Map<string, () => string>();
+  for (const f of asked) {
+    if (!f.can_label || (f.format !== 'email' && f.format !== 'phone')) continue;
+    const own = controlsNamed(form, labelKey(f.name));
+    if (own.length) {
+      labelOf.set(f.name, () => {
+        const radios = own.filter((c) => c instanceof HTMLInputElement && c.type === 'radio') as HTMLInputElement[];
+        return (radios.length ? (radios.find((r) => r.checked)?.value ?? '') : own[0].value).trim();
+      });
+      continue;
+    }
+    const input = controlsNamed(form, f.name).find((c): c is HTMLInputElement => c instanceof HTMLInputElement);
+    if (!input) continue;
+    const select = el('select', { class: 'pcrm-entry-label', 'aria-label': `${f.label} label` },
+      el('option', { value: '' }, 'No label'),
+      ...LABEL_PRESETS[f.format].map((o) => el('option', { value: o.value }, o.label)),
+      el('option', { value: OTHER_LABEL }, 'Other'));
+    const custom = el('input', { type: 'text', class: 'pcrm-entry-custom', maxlength: '40', placeholder: 'Label, e.g. Assistant', 'aria-label': `${f.label} label`, hidden: true });
+    const row = el('div', { class: 'pcrm-entry-row' });
+    const box = el('div', { class: 'pcrm-entry' }, row, custom);
+    input.before(box);
+    row.append(input, select);
+    const face = enhanceSelect(select, { face: (s) => (s.value ? s.selectedOptions[0]?.textContent ?? '' : 'Label') });
+    dropdowns.push(face);
+    select.addEventListener('change', () => {
+      custom.hidden = select.value !== OTHER_LABEL;
+      if (!custom.hidden) custom.focus();
+    });
+    const start = opts.initialValues?.[labelKey(f.name)];
+    if (typeof start === 'string' && start) {
+      const preset = LABEL_PRESETS[f.format].some((o) => o.value === start);
+      select.value = preset ? start : OTHER_LABEL;
+      if (!preset) custom.value = start;
+      custom.hidden = preset;
+    }
+    labelOf.set(f.name, () => (select.value === OTHER_LABEL ? custom.value.trim().replace(/\s+/g, ' ') : select.value));
+  }
+
   // where each field shows, hides and reports errors
   const wrappers = new Map<string, HTMLElement[]>();
   const errors = new Map<string, HTMLElement>();
   for (const f of asked) {
     const controls = controlsNamed(form, f.name);
     const wrapper = form.querySelector<HTMLElement>(`[data-field="${f.name}"]`) ?? controls[0]?.closest<HTMLElement>('.pcrm-field');
-    const parts = wrapper ? [wrapper] : [...controls.map((c) => c.closest<HTMLElement>('.pcrm-dd') ?? c), ...controls.flatMap((c) => (c.id ? [...form.querySelectorAll<HTMLElement>(`label[for="${c.id}"]`)] : []))];
+    const parts = wrapper ? [wrapper] : [...controls.map((c) => c.closest<HTMLElement>('.pcrm-entry') ?? c.closest<HTMLElement>('.pcrm-dd') ?? c), ...controls.flatMap((c) => (c.id ? [...form.querySelectorAll<HTMLElement>(`label[for="${c.id}"]`)] : []))];
     wrappers.set(f.name, parts);
     let error = form.querySelector<HTMLElement>(`[data-error="${f.name}"]`);
     if (!error) {
@@ -453,7 +506,11 @@ export function renderForm(container: HTMLElement, opts: {
       const known = f.format === 'phone' ? phones.get(f.name) : undefined;
       const problem = known && known.input === v && !known.result.valid ? phoneError(f, known.result) : formatProblem(f, v);
       if (problem) bad(f, problem);
-      else values[f.name] = v;
+      else {
+        values[f.name] = v;
+        const label = labelOf.get(f.name)?.();
+        if (label) values[labelKey(f.name)] = label;
+      }
     }
     if (firstBad) {
       controlsNamed(form, firstBad)[0]?.focus();

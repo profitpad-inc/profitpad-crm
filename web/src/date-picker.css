@@ -52,3 +52,9 @@ span.flatpickr-weekday { font-size: 12px; font-weight: 500; }
 .flatpickr-day.selected, .flatpickr-day.selected:hover, .flatpickr-day.selected:focus,
 .flatpickr-day.today.selected { background: var(--primary); border-color: var(--primary); color: #fff; }
 .flatpickr-day:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* on a phone the box is read-only, so the calendar empties it (DatePicker.tsx) */
+.date-picker-clear {
+  display: block; margin: 8px 12px 0 auto; padding: 6px 12px; border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--primary); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.date-picker-clear:hover { background: var(--surface); }

@@ -14,5 +14,7 @@
     // check (TypeScript 7 defaults rootDir to this folder)
     "rootDir": ".."
   },
-  "include": ["src"]
+  "include": ["src"],
+  // example custom views (TSX for the view runtime, not API code; view-examples.ts serves them)
+  "exclude": ["src/view-examples"]
 }

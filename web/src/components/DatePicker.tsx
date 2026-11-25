@@ -2,6 +2,7 @@ import { useEffect, useRef, type CSSProperties } from 'react';
 import flatpickr from 'flatpickr';
 import type { Instance } from 'flatpickr/dist/types/instance';
 import { friendlyDate } from '../lib/date-format';
+import { useIsMobile } from '../lib/use-mobile';
 
 // Calendar dropdown for date and datetime values (the same flatpickr setup as
 // camo-cpq): the native date popup is browser chrome CSS can't restyle.
@@ -22,6 +23,9 @@ import { friendlyDate } from '../lib/date-format';
 // the value it opened with, so an old saved date still shows and isn't cleared.
 // inputClassName and inputStyle go on the visible box (custom views give it
 // their .v-input look and sizes).
+// On a phone the box can't be typed in (the keyboard would cover the
+// calendar): it is read-only, always shows the friendly date, and the
+// calendar has a Clear button to empty it.
 export function localToday(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -35,6 +39,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
   const showFriendlyRef = useRef<(() => void) | null>(null);
   const latest = useRef({ onChange, onCommit });
   latest.current = { onChange, onCommit };
+  const mobile = useIsMobile();
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -52,7 +57,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
       altInput: true,
       ...(inputClassName !== undefined ? { altInputClass: inputClassName } : {}),
       altFormat: withTime ? 'Y-m-d H:i' : 'Y-m-d',
-      allowInput: true,
+      allowInput: !mobile,
       enableTime: withTime,
       time_24hr: true,
       minuteIncrement: 1,
@@ -71,10 +76,11 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
     const box = instance.altInput;
     // the box's text: friendly when idle, flatpickr's own format while editing
     function showFriendly() {
-      if (!box || document.activeElement === box || instance.isOpen) return;
+      if (!box || (!mobile && (document.activeElement === box || instance.isOpen))) return;
       box.value = friendlyDate(instance.input.value, withTime);
     }
     function showEditable() {
+      if (mobile) return;
       if (box) box.value = instance.input.value ? instance.input.value.replace('T', ' ') : '';
     }
     const onBlur = () => setTimeout(showFriendly);
@@ -83,6 +89,18 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
     showFriendly();
     showFriendlyRef.current = showFriendly;
     if (ariaLabel) instance.altInput?.setAttribute('aria-label', ariaLabel);
+    // nothing to backspace on a phone, so the calendar empties the date itself
+    if (mobile) {
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'date-picker-clear';
+      clear.textContent = 'Clear';
+      clear.addEventListener('click', () => {
+        instance.clear();
+        instance.close();
+      });
+      instance.calendarContainer.appendChild(clear);
+    }
     if (autoFocus) {
       instance.altInput?.focus();
       instance.open();
@@ -96,7 +114,7 @@ export function DatePicker({ value, onChange, withTime, autoFocus, onCommit, ari
       fp.current = null;
       host.replaceChildren(); // so remove it (the ref may already be cleared here)
     };
-  }, [withTime, noPastDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [withTime, noPastDays, mobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // class and inline styles on the visible box, kept current
   useEffect(() => {

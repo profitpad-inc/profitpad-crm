@@ -99,6 +99,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const [editing, setEditing] = useState<null | { record: CrmRecord; property: Property; rect: DOMRect }>(null);
   const dragFrom = useRef<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
+  // the column being moved by its grip (tinted, header and cells)
+  const [movingCol, setMovingCol] = useState<number | null>(null);
   const [sel, setSel] = useState<{ anchor: Cell; focus: Cell } | null>(null);
   const selecting = useRef(false);
   // records ticked in the checkbox column, for Edit all and Delete all
@@ -363,40 +365,71 @@ function ObjectTableFor({ object }: { object: string }) {
   }
 
   // Drag a header's grip to move the column (mouse events, like resizing: HTML5
-  // drag and drop did not drop reliably). The line shows where it lands; none
-  // shows while it would stay where it is.
+  // drag and drop did not drop reliably). While moving, a copy of the header
+  // follows the pointer, the column is tinted and a line down the table shows
+  // where it lands; no line while it would stay where it is.
   function startMove(e: React.MouseEvent, i: number) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const row = (e.currentTarget as HTMLElement).closest('tr')!;
+    const th = (e.currentTarget as HTMLElement).closest('th')!;
+    const row = th.closest('tr')!;
+    const table = th.closest('table')!;
+    const box = th.getBoundingClientRect();
+    const grabX = e.clientX - box.left;
     const startX = e.clientX;
     let moving = false;
     let at: number | null = null;
+    let ghost: HTMLElement | null = null;
+    let line: HTMLElement | null = null;
     const onMove = (ev: MouseEvent) => {
       if (!moving && Math.abs(ev.clientX - startX) < 4) return;
       if (!moving) {
         moving = true;
         dragFrom.current = i;
+        setMovingCol(i);
         document.body.classList.add('dg-moving');
+        ghost = document.createElement('div');
+        ghost.className = 'dg-ghost';
+        ghost.textContent = th.querySelector('.dg-label')?.textContent ?? '';
+        Object.assign(ghost.style, { top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
+        line = document.createElement('div');
+        line.className = 'dg-drop-line';
+        document.body.append(ghost, line);
       }
+      ghost!.style.left = `${ev.clientX - grabX}px`;
       // the first header whose middle is right of the pointer; past them all, the end
+      const heads = [...row.querySelectorAll<HTMLElement>('th[data-col]')];
       let next = columns.length;
-      for (const th of row.querySelectorAll<HTMLElement>('th[data-col]')) {
-        const r = th.getBoundingClientRect();
+      let edge = heads.length ? heads[heads.length - 1].getBoundingClientRect().right : 0;
+      for (const h of heads) {
+        const r = h.getBoundingClientRect();
         if (ev.clientX < r.left + r.width / 2) {
-          next = Number(th.dataset.col);
+          next = Number(h.dataset.col);
+          edge = r.left;
           break;
         }
       }
       at = next === i || next === i + 1 ? null : next;
+      // the line runs down the visible part of the table
+      const t = table.getBoundingClientRect();
+      const scroller = table.parentElement!;
+      const v = scroller.getBoundingClientRect();
+      const top = Math.max(t.top, v.top);
+      Object.assign(line!.style, {
+        display: at === null ? 'none' : 'block',
+        left: `${edge - 1}px`, top: `${top}px`, height: `${Math.max(0, Math.min(t.bottom, v.bottom) - top)}px`
+      });
       setDropAt(at);
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       document.body.classList.remove('dg-moving');
+      ghost?.remove();
+      line?.remove();
       dragFrom.current = null;
+      setMovingCol(null);
       setDropAt(null);
       if (moving && at !== null) changeView({ columns: moveTo(columns, i, at) });
     };
@@ -407,7 +440,7 @@ function ObjectTableFor({ object }: { object: string }) {
   // drag handle, drop target and resize handle shared by every header cell
   function headerProps(i: number) {
     return {
-      className: `${i === 0 ? 'lead-col' : ''}${dropAt === i ? ' drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}${dropAt !== null && dragFrom.current === i ? ' dg-moving-col' : ''}`,
+      className: `${i === 0 ? 'lead-col' : ''}${dropAt === i ? ' drop-before' : ''}${dropAt === columns.length && i === columns.length - 1 ? ' drop-after' : ''}${movingCol === i ? ' dg-moving-col' : ''}`,
       'data-col': i,
       style: widthStyle(columns[i])
     };
@@ -487,6 +520,7 @@ function ObjectTableFor({ object }: { object: string }) {
   function cellProps(row: number, col: number, c: Column, extra: string[] = []) {
     const classes = [...extra];
     if (col === 0) classes.push('lead-col'); // stays in view when the table scrolls sideways
+    if (col === movingCol) classes.push('dg-moving-col');
     if (isSelected(row, col)) classes.push('selected');
     if (sel && sel.anchor.row === row && sel.anchor.col === col) classes.push('sel-anchor');
     return {

@@ -40,6 +40,8 @@ interface Field {
   value?: unknown;
   from_url?: boolean;
   conditions?: Condition[];
+  // set by the API for email and phone properties: the visitor may label them
+  can_label?: boolean;
 }
 
 interface Definition {
@@ -161,7 +163,9 @@ export function FormBuilder({ record, onSaved }: { record: CrmRecord; onSaved: (
   // dropdown property options come from the property itself
   const resolved = (f: Field): Field => {
     const p = propOf(f);
-    return p?.type === 'dropdown' ? { ...f, options: optionsOf(p) } : f;
+    const out = p?.type === 'dropdown' ? { ...f, options: optionsOf(p) } : f;
+    // the preview offers labels on fields not saved yet, as the live form will
+    return p?.type === 'email' || p?.type === 'phone' ? { ...out, can_label: true } : out;
   };
 
   function change(next: Definition) {

@@ -6,6 +6,7 @@ import { useApp } from '../lib/app-context';
 import { StatusPill } from './settings';
 import { localToday } from './DatePicker';
 import { confirmDialog } from './confirm';
+import { pendingEdits } from '../lib/pending-edits';
 
 // Record page card for quotes, invoices, forms and booking pages: Publish
 // (quote to Sent, invoice to Open, form and booking page to Published, making
@@ -82,7 +83,9 @@ export function PublicLinkCard({ object, record, onChanged }: {
         props = { ...props, public_key: res.public_key };
         onChanged({ ...record, properties: props });
       }
-      onChanged(await api<CrmRecord>('PATCH', `/v1/objects/${object}/${record.id}`, { properties: { status: PUBLISHED[object] } }));
+      // unsaved changes in the page's editor (booking pages) are saved with it, and checked as they will be
+      const pending = pendingEdits(object, record.id);
+      onChanged(await api<CrmRecord>('PATCH', `/v1/objects/${object}/${record.id}`, { properties: { ...pending, status: PUBLISHED[object] } }));
       toast(isQuote ? 'Quote sent' : isInvoice ? 'Invoice opened' : `${isBooking ? 'Booking page' : 'Form'} published`);
     } catch (err) {
       setError((err as Error).message);

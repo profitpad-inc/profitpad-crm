@@ -39,6 +39,8 @@ export type SecurityEvent =
   | 'mailbox.shared_changed'
   | 'mailbox.autolog_changed'
   | 'calendar.service_changed'
+  | 'mailbox.linked'
+  | 'mailbox.unlinked'
   | 'meetings.settings_changed'
   | 'zoom.settings_changed'
   | 'notification_email.settings_changed'

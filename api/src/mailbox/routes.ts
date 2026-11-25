@@ -17,6 +17,7 @@ import { listSenders } from './senders.js';
 import { cancelSend, cleanAddresses, createSend, retrySend, sendStatus, type SendInput } from './send.js';
 import { cleanEmailHtml } from './html.js';
 import { trackingAvailable, trackingRoutes } from './tracking.js';
+import { USER_MAILBOXES_SQL } from './addresses.js';
 
 // Settings → Mailboxes (admins) and sending from record pages (everyone
 // signed in). See send.ts and providers.ts.
@@ -95,7 +96,7 @@ async function myLogging(userId: string) {
   const { rows } = await pool.query(`select email_autolog[1] as setting from crm.pc_0000 where pc_0000_id = $1`, [userId]);
   const setting = (rows[0]?.setting as string | null) ?? 'default';
   const own = await pool.query<{ email: string }>(
-    `select distinct lower(email) as email from auth.identities where user_id = $1 and provider in ('google', 'microsoft') and email is not null order by 1`,
+    `select distinct email from ${USER_MAILBOXES_SQL} m where user_id = $1 order by 1`,
     [userId]
   );
   const sync = await syncList(userId);
@@ -302,7 +303,7 @@ export async function mailboxRoutes(app: FastifyInstance) {
     let address = typeof req.body?.address === 'string' ? req.body.address.trim().toLowerCase() : '';
     if (!address) {
       const { rows } = await pool.query<{ email: string }>(
-        `select lower(email) as email from auth.identities where user_id = $1 and email is not null`,
+        `select email from ${USER_MAILBOXES_SQL} m where user_id = $1`,
         [p.userId]
       );
       address = rows.map((r) => r.email).find((e) => cfg.domains.includes(e.split('@')[1] ?? '')) ?? '';

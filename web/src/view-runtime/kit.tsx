@@ -1,7 +1,7 @@
 import {
   Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type ReactNode
 } from 'react';
-import { call, getInit, getParams, getViewport, report, subscribeParams, subscribeViewport } from './bridge';
+import { call, getInit, getParams, getViewport, post, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, ViewFile, Viewport } from './protocol';
 import { Select as Dropdown } from '../components/Select';
 import { DatePicker } from '../components/DatePicker';
@@ -107,7 +107,18 @@ export function useMe() {
 }
 
 export function useView() {
-  return getInit()?.view ?? null;
+  const init = getInit();
+  return init ? { ...init.view, crm_url: init.crm_url ?? '' } : null;
+}
+
+// A full link to a page of this CRM, for openUrl, copyText or showing to
+// people: crmUrl('/p/page/launch') is https://<the CRM>/p/page/launch. The
+// frame has no web address of its own, so views cannot build these otherwise.
+// openUrl opens the CRM's own pages without asking about leaving the CRM.
+export function crmUrl(path = '/'): string {
+  const base = getInit()?.crm_url ?? '';
+  const p = String(path ?? '/');
+  return `${base}${p.startsWith('/') ? p : `/${p}`}`;
 }
 
 // ---- actions (run by the CRM page with the viewer's permissions) ------------------
@@ -145,6 +156,10 @@ export const callIntegration = <T = unknown>(key: string, data?: unknown) => cal
 // CRM for <domain>" unless the viewer said not to ask again for that domain.
 // Resolves with { opened: false } when the viewer cancels.
 export const openUrl = (url: string) => call<{ opened: boolean }>('openUrl', [url]);
+
+// Puts text on the viewer's clipboard (the frame has no clipboard access of
+// its own): a link, a generated document, an id.
+export const copyText = (text: string) => call<{ copied: boolean }>('copyText', [String(text ?? '')]);
 
 // ---- the viewer's own settings (kept per user and view on the server) -----------------
 
@@ -332,6 +347,112 @@ export function formatDateTime(v: unknown): string {
 }
 
 // Series colors that read on white, in order; the first follows the theme.
+// ---- HTML previews ------------------------------------------------------------------
+
+// The frame cannot show other pages (no frames, no network), so <HtmlPreview>
+// keeps a box and the CRM page draws a sandboxed iframe exactly over it
+// (pages/CustomView.tsx, and the renderer in api/src/render.ts). The boxes are
+// measured here on every scroll, resize and layout change, clipped to what is
+// visible, and hidden while something of the view (a menu, a side panel)
+// covers them, since the iframe sits above the whole frame.
+const previewEls = new Map<string, HTMLElement>();
+let previewRaf = 0;
+let previewTimer: ReturnType<typeof setInterval> | null = null;
+let lastBoxes = '';
+
+type Rect = { x: number; y: number; w: number; h: number };
+const intersect = (a: Rect, b: Rect): Rect | null => {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x;
+  const h = Math.min(a.y + a.h, b.y + b.h) - y;
+  return w > 0 && h > 0 ? { x, y, w, h } : null;
+};
+const rectOf = (el: Element): Rect => {
+  const r = el.getBoundingClientRect();
+  return { x: r.left, y: r.top, w: r.width, h: r.height };
+};
+
+function measurePreviews() {
+  previewRaf = 0;
+  const boxes = [...previewEls].map(([id, el]) => {
+    const rect = rectOf(el);
+    let clip: Rect | null = rect.w > 0 && rect.h > 0 ? intersect(rect, { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }) : null;
+    for (let p = el.parentElement; clip && p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') clip = intersect(clip, rectOf(p));
+    }
+    if (clip) {
+      // covered by a menu, a dialog or a panel drawn over it: hide the whole preview
+      const c = clip;
+      const points = [[0.5, 0.5], [0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]];
+      const covered = points.some(([fx, fy]) => {
+        const hit = document.elementFromPoint(c.x + c.w * fx, c.y + c.h * fy);
+        return !!hit && hit !== el && !el.contains(hit);
+      });
+      if (covered) clip = null;
+    }
+    const round = (r: Rect) => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
+    return { id, rect: round(rect), clip: clip && round(clip) };
+  });
+  const text = JSON.stringify(boxes);
+  if (text === lastBoxes) return;
+  lastBoxes = text;
+  post({ type: 'pcrm:preview-boxes', boxes });
+}
+const schedulePreviews = () => {
+  if (!previewRaf) previewRaf = requestAnimationFrame(measurePreviews);
+};
+function trackPreviews(on: boolean) {
+  if (on && !previewTimer) {
+    window.addEventListener('scroll', schedulePreviews, { capture: true, passive: true });
+    window.addEventListener('resize', schedulePreviews);
+    // menus opening and layout changes move nothing that fires an event
+    previewTimer = setInterval(schedulePreviews, 250);
+  } else if (!on && previewTimer) {
+    window.removeEventListener('scroll', schedulePreviews, { capture: true });
+    window.removeEventListener('resize', schedulePreviews);
+    clearInterval(previewTimer);
+    previewTimer = null;
+  }
+}
+
+let previewIds = 0;
+// html: drawn as it is, without running scripts (emails, documents, a page
+// being written). landingPage: a landing page's slug, drawn by its own page
+// as visitors see it (draft: the draft, for admins). height: the box's height.
+export function HtmlPreview({ html, landingPage, draft = false, height = 560, title = 'Preview', style, className }: {
+  html?: string | null; landingPage?: string | null; draft?: boolean; height?: number | string; title?: string;
+} & Styled) {
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useRef(`p${++previewIds}`).current;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    previewEls.set(id, el);
+    trackPreviews(true);
+    schedulePreviews();
+    return () => {
+      previewEls.delete(id);
+      post({ type: 'pcrm:preview', id, content: null });
+      lastBoxes = '';
+      if (!previewEls.size) trackPreviews(false);
+      schedulePreviews();
+    };
+  }, [id]);
+  useEffect(() => {
+    const content = landingPage ? { page: { slug: String(landingPage), draft } } : typeof html === 'string' ? { html } : null;
+    post({ type: 'pcrm:preview', id, content });
+    lastBoxes = '';
+    schedulePreviews();
+  }, [id, html, landingPage, draft]);
+  return (
+    <div ref={ref} className={cx('v-preview', className)} style={{ height, ...style }} role="img" aria-label={title}>
+      <span className="muted small">{html || landingPage ? title : 'Nothing to preview'}</span>
+    </div>
+  );
+}
+
 export const chartColors = ['var(--primary)', '#0e9f6e', '#d97706', '#7c3aed', '#db2777', '#0891b2', '#65a30d', '#64748b'];
 
 // ---- layout ---------------------------------------------------------------------------
@@ -449,6 +570,87 @@ export function Card({ title, subtitle, actions, children, style, className }: {
       )}
       {children}
     </section>
+  );
+}
+
+// ---- side panels (the house style for adding and editing from a list) --------------
+
+// The list (children) with the open record's panel beside it: two columns
+// while panel is given, one when it is null. The list scrolls by itself, so
+// give SplitView a height: in a fill view put it in <Page style={{ height:
+// '100vh' }}> (it takes the rest of the page). Below 900px wide the panel
+// covers the screen. panelWidth: CSS width of the panel column.
+export function SplitView({ panel, panelWidth = 'min(520px, 46%)', children, style, className }: {
+  panel?: ReactNode; panelWidth?: string; children?: ReactNode;
+} & Styled) {
+  const open = panel !== null && panel !== undefined && panel !== false;
+  return (
+    <div className={cx('v-split', open && 'open', className)} style={{ ...(open ? { gridTemplateColumns: `minmax(0, 1fr) ${panelWidth}` } : {}), ...style }}>
+      <div className="v-split-main">{children}</div>
+      {open && panel}
+    </div>
+  );
+}
+
+// One record in a panel: a header (title as typed, a badge, a muted line of
+// context, Open record and Close), a body that scrolls by itself, and a footer
+// (error on the left, then your buttons, usually Cancel and Save). Escape
+// closes it (not while a date picker is open). Give it key={id} so opening
+// another record starts a fresh form.
+export function SidePanel({ title, badge, subtitle, onClose, onOpenRecord, actions, footer, error, children, style, className }: {
+  title?: ReactNode; badge?: ReactNode; subtitle?: ReactNode; onClose?: () => void; onOpenRecord?: () => void;
+  actions?: ReactNode; footer?: ReactNode; error?: ReactNode; children?: ReactNode;
+} & Styled) {
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('.flatpickr-calendar.open')) return;
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <section className={cx('v-panel', className)} style={style}>
+      <header className="v-panel-head">
+        <div style={{ minWidth: 0 }}>
+          <div className="v-row" style={{ gap: 8 }}>
+            {title && <h3 className="v-panel-title">{title}</h3>}
+            {badge}
+          </div>
+          {subtitle && <div className="muted small" style={{ marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        <div className="v-row" style={{ flexWrap: 'nowrap' }}>
+          {actions}
+          {onOpenRecord && <Button small onClick={onOpenRecord}>Open record</Button>}
+          {onClose && <Button small onClick={onClose}>Close</Button>}
+        </div>
+      </header>
+      <div className="v-panel-body">{children}</div>
+      {(footer || error) && (
+        <footer className="v-panel-foot">
+          <div className="v-panel-error small">{error}</div>
+          {footer}
+        </footer>
+      )}
+    </section>
+  );
+}
+
+// Form fields two to a row (one below 520px wide); wide fields take the row.
+export function FieldGrid({ children, style, className }: { children?: ReactNode } & Styled) {
+  return <div className={cx('v-fields', className)} style={style}>{children}</div>;
+}
+
+export function Field({ label, hint, wide, required, children, style, className }: {
+  label: ReactNode; hint?: ReactNode; wide?: boolean; required?: boolean; children?: ReactNode;
+} & Styled) {
+  return (
+    <div className={cx('v-field', wide && 'wide', className)} style={style}>
+      <div className="v-field-label">{label}{required && <span style={{ color: 'var(--danger)' }}> *</span>}</div>
+      {children}
+      {hint && <div className="muted small" style={{ marginTop: 4 }}>{hint}</div>}
+    </div>
   );
 }
 

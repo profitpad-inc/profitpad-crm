@@ -12,6 +12,8 @@ import { Select } from './Select';
 import { onFrameFocus } from '../lib/frame-focus';
 import { AddressInput, addressValues, useAddressGroup } from './AddressInput';
 import { TextArea } from '../lib/snippets';
+import { useIsMobile } from '../lib/use-mobile';
+import { useLockPageScroll } from '../lib/pin-editor';
 
 // locked: Escape and clicks outside do nothing; only the X (or the footer's
 // own buttons) close it.
@@ -19,6 +21,8 @@ import { TextArea } from '../lib/snippets';
 export function Modal({ title, onClose, children, footer, wide, locked, className, actions }: {
   title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; locked?: boolean; className?: string; actions?: ReactNode;
 }) {
+  // on a phone the page behind holds still
+  useLockPageScroll(useIsMobile());
   useEffect(() => {
     if (locked) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();

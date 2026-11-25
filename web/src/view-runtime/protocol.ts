@@ -15,6 +15,23 @@ export interface ViewInit {
   view: { id: string; name: string | null; slug: string; draft: boolean };
   // the view's "Allow snippets" setting: typing # in its text boxes offers snippets
   snippets?: boolean;
+  // the CRM's own web address (https://crm.example.com, no trailing slash), for
+  // links a view builds (crmUrl in the kit); the frame has no origin of its own
+  crm_url?: string;
+}
+
+// An <HtmlPreview> in the view. The frame cannot show other pages, so the CRM
+// page draws a sandboxed iframe over the box the view keeps for it. html: drawn
+// without scripts (srcdoc); page: a landing page by slug, as its shell shows it.
+export type PreviewContent = { html: string } | { page: { slug: string; draft: boolean } };
+
+// Where a preview sits, in the frame's viewport pixels. clip: the part that is
+// visible (inside the frame and every scrolling box around it); null when it
+// is out of sight or something (a menu, a panel) covers it.
+export interface PreviewBox {
+  id: string;
+  rect: { x: number; y: number; w: number; h: number };
+  clip: { x: number; y: number; w: number; h: number } | null;
 }
 
 // phoneRegions and checkPhone serve the kit's PhoneInput (read only, never asked).
@@ -76,4 +93,7 @@ export type FromFrame =
   | { type: 'pcrm:height'; height: number }
   | { type: 'pcrm:error'; message: string }
   | { type: 'pcrm:mode'; fill: boolean }
-  | { type: 'pcrm:report'; errors: RuntimeError[] };
+  | { type: 'pcrm:report'; errors: RuntimeError[] }
+  // previews: content when it changes (null removes one), boxes as they move
+  | { type: 'pcrm:preview'; id: string; content: PreviewContent | null }
+  | { type: 'pcrm:preview-boxes'; boxes: PreviewBox[] };

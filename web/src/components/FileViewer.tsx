@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Download, ExternalLink, File as FileIcon, FileArchive, FileAudio, FileCode, FileImage, FileSpreadsheet, FileText, FileVideo, Presentation, X } from 'lucide-react';
 import { fileInfo, fileLink, formatBytes, openFile, type FileInfo } from '../lib/files';
 import { Loading } from './Loading';
+import { useIsMobile } from '../lib/use-mobile';
+import { useLockPageScroll } from '../lib/pin-editor';
 import { CodeBlock } from './CodeBlock';
 import { langFor } from '../lib/code-folds';
 
@@ -139,6 +141,8 @@ export function FileViewer({ fileId, onClose }: { fileId: string; onClose?: () =
 // click outside closes it. Clicks inside stop here, so the activity the tile
 // sits in does not take them as its own.
 export function FilePreviewModal({ fileId, onClose }: { fileId: string; onClose: () => void }) {
+  // on a phone the page behind holds still
+  useLockPageScroll(useIsMobile());
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);

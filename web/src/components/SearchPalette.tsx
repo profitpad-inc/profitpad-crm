@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
+import { useIsMobile } from '../lib/use-mobile';
+import { useLockPageScroll } from '../lib/pin-editor';
 import { useApp } from '../lib/app-context';
 import { api, getSchema, type SearchResult } from '../lib/api';
 import { nameProperties, objectIcon, recordName } from '../lib/display';
@@ -9,6 +11,8 @@ import { nameProperties, objectIcon, recordName } from '../lib/display';
 const SEARCHED = ['contacts', 'companies', 'deals', 'tickets', 'products', 'orders', 'invoices', 'quotes', 'services'];
 
 export function SearchPalette({ onClose }: { onClose: () => void }) {
+  // on a phone the page behind holds still
+  useLockPageScroll(useIsMobile());
   const { objects, objectByName } = useApp();
   const navigate = useNavigate();
   const [q, setQ] = useState('');

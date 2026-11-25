@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { EllipsisVertical, Plus, ShieldCheck, Table2, Trash2, Users, X } from 'lucide-react';
-import { api, can, type RolePermission, type SearchResult } from '../lib/api';
+import { API_BASE, api, can, type RolePermission, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { displayName } from '../lib/display';
 import { primaryValue } from '../lib/multi-values';
@@ -13,6 +13,7 @@ import { Menu } from '../components/ui';
 import { confirmDialog } from '../components/confirm';
 import { SaveHint } from '../components/SaveHint';
 import { CreateUserModal, preloadCreateUser } from '../components/CreateUserModal';
+import { CALENDAR_ERRORS } from './CalendarSettings';
 
 // Admin pages for who can see what: users get roles (directly; team
 // assignments made through the API are shown too), roles get object access
@@ -51,6 +52,18 @@ interface UserRow {
   email: string | null;
   deactivated: boolean;
 }
+
+// GET /v1/users/connections: whether each user's mail and calendar reach the CRM; the details come with
+// the Users or Roles permission
+interface UserConnections {
+  user_id: string;
+  email: boolean;
+  calendar: boolean;
+  mailboxes?: { address: string; provider: 'google' | 'microsoft' | null; linked_id: string | null }[];
+  calendars?: { id: string; provider: 'google' | 'microsoft'; email: string | null; status: string; via_service: boolean }[];
+  linkable?: string[];
+}
+const CALENDAR_PROVIDER = { google: 'Google Calendar', microsoft: 'Outlook calendar' };
 
 type PermissionKey = keyof Omit<ObjectPermission, 'object_type_id'>;
 
@@ -167,6 +180,29 @@ export function UserSettings() {
   // Super Admin, stay with Super Admins (the API checks all of this again).
   const canAssign = can(me, 'users') || can(me, 'roles');
   const canManage = can(me, 'users');
+  // email and calendar for each user; Super Admins can connect them for someone else
+  const [connections, setConnections] = useState<Map<string, UserConnections> | null>(null);
+  const [canConnect, setCanConnect] = useState(false);
+  const [calendarConfig, setCalendarConfig] = useState<{ google: boolean; microsoft: boolean }>({ google: false, microsoft: false });
+  const [notice, setNotice] = useState<string | null>(null);
+  const reloadConnections = useCallback(async () => {
+    const r = await api<{ results: UserConnections[]; can_connect: boolean }>('GET', '/v1/users/connections');
+    setConnections(new Map(r.results.map((c) => [c.user_id, c])));
+    setCanConnect(r.can_connect);
+  }, []);
+  useEffect(() => {
+    reloadConnections().catch(() => setConnections(null));
+    api<{ google: boolean; microsoft: boolean }>('GET', '/v1/calendar/config').then(setCalendarConfig).catch(() => undefined);
+  }, [reloadConnections]);
+  // back from connecting a calendar for someone (the provider round trip), shown once
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const failed = params.get('calendar_error');
+    if (params.get('calendar') === 'connected') toast('Calendar connected');
+    else if (failed) setNotice([CALENDAR_ERRORS[failed] ?? CALENDAR_ERRORS.failed, params.get('calendar_detail')].filter(Boolean).join(' '));
+    if (params.has('calendar') || failed) navigate('/settings/users', { replace: true });
+  }, [params, navigate, toast]);
   useEffect(() => { if (canAssign) preloadCreateUser(); }, [canAssign]);
   // the sign-in options this CRM has set up, named in the description
   const [signIn, setSignIn] = useState('Google or Microsoft');
@@ -217,6 +253,33 @@ export function UserSettings() {
     }
   }
 
+  // the user's own address, reached through the organization's mailbox service account
+  async function linkMailbox(u: UserRow, address: string) {
+    if (!(await confirmDialog(`The CRM reaches ${address} through the organization's mailbox service account, as if ${u.name} had signed in with it: they can send from it, their email is logged by their setting, and their calendar is checked when Settings, Meetings has calendars on.`, { title: `Connect ${address}?`, confirmLabel: 'Connect' }))) return;
+    await connectionChange(() => api('POST', `/v1/users/${u.id}/linked-mailboxes`, { address }), 'Connected');
+  }
+
+  async function connectCalendar(u: UserRow, provider: 'google' | 'microsoft') {
+    if (!(await confirmDialog(`You go to ${provider === 'google' ? 'Google' : 'Microsoft'} next. Sign in there with ${u.name}'s account (not yours) and allow calendar access; the calendar is then connected for them.`, { title: `Connect a calendar for ${u.name}?`, confirmLabel: 'Continue' }))) return;
+    window.location.href = `${API_BASE}/v1/calendar/${provider}/connect?for=${encodeURIComponent(u.id)}`;
+  }
+
+  async function removeConnection(u: UserRow, what: string, path: string) {
+    if (!(await confirmDialog(`${u.name} can connect it again, or you can.`, { title: `Remove ${what}?`, confirmLabel: 'Remove', danger: true }))) return;
+    await connectionChange(() => api('DELETE', path), 'Removed');
+  }
+
+  async function connectionChange(fn: () => Promise<unknown>, message: string) {
+    setError(null);
+    try {
+      await fn();
+      toast(message);
+      await reloadConnections();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   async function setStatus(u: UserRow, status: 'active' | 'deactivated') {
     if (status === 'deactivated' && !(await confirmDialog('They are signed out everywhere, can no longer sign in, and API keys linked to them stop working.', { title: `Deactivate ${u.name}?`, confirmLabel: 'Deactivate', danger: true }))) return;
     setError(null);
@@ -249,6 +312,7 @@ export function UserSettings() {
         </div>
       )}
       {error && <div className="error">{error}</div>}
+      {notice && <div className="error">{notice}</div>}
       {!loaded && <TableSkeleton rows={4} />}
       {loaded && users.length === 0 && (
         <EmptyState icon={<Users size={18} />} title="No users yet" action={canAssign ? <button className="btn primary" onClick={() => setCreating(true)}>Add a user</button> : undefined}>
@@ -264,7 +328,7 @@ export function UserSettings() {
         <div className="access-table">
           <table className="grid">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Status</th><th>Roles</th><th aria-label="Actions" /></tr>
+              <tr><th>Name</th><th>Email</th><th>Status</th><th>Connected</th><th>Roles</th><th aria-label="Actions" /></tr>
             </thead>
             <tbody>
               {shown.map((u) => {
@@ -276,6 +340,12 @@ export function UserSettings() {
                 const canSignInAs = me.is_admin && !me.signed_in_as_by && !isMe && !u.deactivated && !userIsSuperAdmin;
                 const canSetStatus = canManage && !isMe && (me.is_admin || !userIsSuperAdmin);
                 const canInvite = canManage && !u.deactivated && !!u.email;
+                const conn = connections?.get(u.id);
+                const linkable = canConnect && !u.deactivated ? conn?.linkable ?? [] : [];
+                const linked = canConnect ? (conn?.mailboxes ?? []).filter((m) => m.linked_id) : [];
+                const ownCalendars = canConnect ? (conn?.calendars ?? []).filter((c) => !c.via_service) : [];
+                const calendarProviders = canConnect && !isMe && !u.deactivated ? (['google', 'microsoft'] as const).filter((p) => calendarConfig[p]) : [];
+                const connectItems = linkable.length + linked.length + ownCalendars.length + calendarProviders.length > 0;
                 return (
                   <tr key={u.id}>
                     <td className="primary-cell">
@@ -287,6 +357,18 @@ export function UserSettings() {
                     </td>
                     <td>{u.email ?? <span className="muted">No email</span>}</td>
                     <td>{u.deactivated ? <StatusPill tone="off">Deactivated</StatusPill> : <StatusPill tone="on">Active</StatusPill>}</td>
+                    <td>
+                      {conn && !u.deactivated && (
+                        <span className="connection-pills">
+                          <span title={conn.mailboxes?.length ? conn.mailboxes.map((m) => `${m.address}${m.provider ? '' : ' (no mailbox service account for this domain)'}${m.linked_id ? ', connected by an admin' : ''}`).join('\n') : conn.email ? undefined : 'Not connected: they have not signed in with Google or Microsoft in a domain set up in Settings, Mailboxes'}>
+                            <StatusPill tone={conn.email ? 'on' : 'off'}>{conn.email ? 'Email' : 'No email'}</StatusPill>
+                          </span>
+                          <span title={conn.calendars?.length ? conn.calendars.map((c) => `${c.email ?? CALENDAR_PROVIDER[c.provider]}${c.via_service ? ' (through the organization)' : ''}${c.status !== 'active' ? `, ${c.status.replace(/_/g, ' ')}` : ''}`).join('\n') : conn.calendar ? undefined : 'No connected calendar'}>
+                            <StatusPill tone={conn.calendar ? 'on' : conn.calendars?.length ? 'warn' : 'off'}>{conn.calendar ? 'Calendar' : 'No calendar'}</StatusPill>
+                          </span>
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <div className="role-chips">
                         {assigned.length === 0 && <span className="muted small">No role</span>}
@@ -307,7 +389,7 @@ export function UserSettings() {
                       </div>
                     </td>
                     <td className="row-actions">
-                      {(available.length > 0 || canSignInAs || canInvite || canSetStatus) && (
+                      {(available.length > 0 || canSignInAs || canInvite || canSetStatus || connectItems) && (
                         <Menu
                           align="right"
                           trigger={(toggle) => (
@@ -325,6 +407,24 @@ export function UserSettings() {
                                     <button key={r.id} onClick={() => { close(); run(() => api('POST', `/v1/roles/${r.id}/assignments`, { user_id: u.id })); }}>
                                       <Plus size={14} /> {r.name}
                                     </button>
+                                  ))}
+                                  {(canSignInAs || canInvite || canSetStatus || connectItems) && <div className="menu-sep" />}
+                                </>
+                              )}
+                              {connectItems && (
+                                <>
+                                  <div className="menu-label">Email and calendar</div>
+                                  {linkable.map((a) => (
+                                    <button key={a} onClick={() => { close(); linkMailbox(u, a); }}><Plus size={14} /> Connect {a} through the organization</button>
+                                  ))}
+                                  {calendarProviders.map((p) => (
+                                    <button key={p} onClick={() => { close(); connectCalendar(u, p); }}><Plus size={14} /> Connect a {CALENDAR_PROVIDER[p]} for them</button>
+                                  ))}
+                                  {linked.map((m) => (
+                                    <button key={m.address} className="danger" onClick={() => { close(); removeConnection(u, m.address, `/v1/users/${u.id}/linked-mailboxes/${m.linked_id}`); }}>Remove {m.address}</button>
+                                  ))}
+                                  {ownCalendars.map((c) => (
+                                    <button key={c.id} className="danger" onClick={() => { close(); removeConnection(u, `the calendar ${c.email ?? CALENDAR_PROVIDER[c.provider]}`, `/v1/users/${u.id}/calendar-connections/${c.id}`); }}>Remove calendar {c.email ?? CALENDAR_PROVIDER[c.provider]}</button>
                                   ))}
                                   {(canSignInAs || canInvite || canSetStatus) && <div className="menu-sep" />}
                                 </>

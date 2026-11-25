@@ -9,6 +9,7 @@ import { trackingFromUrl } from './form-tracking.js';
 import { identifyVisitor } from './page-views.js';
 import { DomUtils, parseDocument } from 'htmlparser2';
 import { isGmailTypo } from './email-typo.js';
+import { MULTI_LABELS, MultiValueError, isMultiType, normalizeLabel } from './multi-values.js';
 
 // Forms (crm.pc_0052): the `definition` property holds the form as JSON.
 //
@@ -52,7 +53,14 @@ export interface FormField {
   value?: unknown;
   from_url?: boolean;
   conditions?: Condition[];
+  // set by readDefinition for email and phone properties: the visitor may
+  // label the address or number (work, personal, cell, ... or their own
+  // words), sent as the answer "<name>__label"
+  can_label?: boolean;
 }
+
+// The answer key that carries a labelable field's label.
+export const labelKey = (name: string) => `${name}__label`;
 
 export interface FormDefinition {
   fields: FormField[];
@@ -206,7 +214,8 @@ export async function readDefinition(raw: unknown, strict: boolean): Promise<For
       ...(format ? { format } : {}),
       ...(pattern ? { pattern } : {}),
       ...(pattern && str(f.pattern_message, 200) ? { pattern_message: str(f.pattern_message, 200) } : {}),
-      ...(property ? { property } : {})
+      ...(property ? { property } : {}),
+      ...(prop && isMultiType(prop) ? { can_label: true } : {})
     };
 
     if (f.from_url === true) {
@@ -389,7 +398,7 @@ function cleanValue(f: FormField, v: unknown): unknown {
 export function cleanAnswers(def: FormDefinition, input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw badRequest('values must be an object');
   const given = input as Record<string, unknown>;
-  const known = new Set(def.fields.filter((f) => !f.hidden).map((f) => f.name));
+  const known = new Set(def.fields.filter((f) => !f.hidden).flatMap((f) => (f.can_label ? [f.name, labelKey(f.name)] : [f.name])));
   const unknown = Object.keys(given).filter((k) => !known.has(k));
   if (unknown.length) throw badRequest(`unknown fields: ${unknown.join(', ')}`);
 
@@ -416,11 +425,29 @@ export function cleanAnswers(def: FormDefinition, input: unknown): Record<string
       continue;
     }
     out[f.name] = v;
+    if (f.can_label) {
+      let label: string | undefined;
+      try {
+        label = normalizeLabel(given[labelKey(f.name)] === '' ? undefined : given[labelKey(f.name)]);
+      } catch (err) {
+        if (err instanceof MultiValueError) throw badRequest(`${f.label}: ${err.message}`, { field: f.name });
+        throw err;
+      }
+      if (label) out[labelKey(f.name)] = label;
+    }
   }
   return out;
 }
 
-function display(f: FormField, v: unknown): string {
+const PRESET_LABELS = new Set<string>([...MULTI_LABELS.email, ...MULTI_LABELS.phone]);
+
+// "work" -> "Work"; the visitor's own words as typed
+export function entryLabelText(label: string): string {
+  return PRESET_LABELS.has(label) ? label.charAt(0).toUpperCase() + label.slice(1) : label;
+}
+
+function display(f: FormField, v: unknown, label?: unknown): string {
+  if (typeof label === 'string' && label) return `${String(v)} (${entryLabelText(label)})`;
   if (f.type === 'checkbox') return v === true ? 'Yes' : 'No';
   if (f.options) return asList(v).map((x) => f.options!.find((o) => o.value === x)?.label ?? x).join(', ');
   return String(v);
@@ -432,7 +459,7 @@ export function summarize(def: FormDefinition, values: Record<string, unknown>) 
     .map((f) => ({
       name: f.name,
       label: f.label,
-      value: display(f, values[f.name]),
+      value: display(f, values[f.name], f.can_label ? values[labelKey(f.name)] : undefined),
       ...(f.property ? { property: `${f.property.object}.${f.property.name}` } : {}),
       ...(f.hidden ? { hidden: true } : {})
     }));
@@ -459,15 +486,21 @@ export async function applySubmission(
 ): Promise<{ submission: string; contact: string | null; ticket: string | null }> {
   const props = (object: FormObject) => {
     const out: Record<string, unknown> = {};
-    for (const f of def.fields) if (f.property?.object === object && values[f.name] !== undefined) out[f.property.name] = values[f.name];
+    for (const f of def.fields) {
+      if (f.property?.object !== object || values[f.name] === undefined) continue;
+      // a labelled address or number is written as one entry (multi-values.ts toMulti)
+      const label = f.can_label ? values[labelKey(f.name)] : undefined;
+      out[f.property.name] = typeof label === 'string' && label ? { value: values[f.name], label } : values[f.name];
+    }
     return out;
   };
+  const plain = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as { value: unknown }).value : v);
 
   let contact: string | null = null;
   if (def.fields.some((f) => f.property?.object === 'contacts')) {
     const contacts = await getObject('contacts');
     const p = props('contacts');
-    contact = await findIdByUnique(client, contacts, 'email', p.email);
+    contact = await findIdByUnique(client, contacts, 'email', plain(p.email));
     if (contact) {
       await updateRecord(client, contacts, principal, contact, await upsertProperties(client, contacts, 'email', contact, p));
     } else {
@@ -479,7 +512,7 @@ export async function applySubmission(
   if (def.fields.some((f) => f.property?.object === 'tickets')) {
     const tickets = await getObject('tickets');
     const p = props('tickets');
-    const who = (props('contacts').email as string | undefined) ?? new Date().toISOString().slice(0, 10);
+    const who = (plain(props('contacts').email) as string | undefined) ?? new Date().toISOString().slice(0, 10);
     if (p.name === undefined) p.name = `${meta.form.name ?? 'Form'}: ${who}`.slice(0, 200);
     ticket = await createRecord(client, tickets, principal, p, contact ? [{ object: 'contacts', id: contact }] : []);
   }
@@ -561,7 +594,8 @@ export function checkFormHtml(raw: string, def: FormDefinition): { html: string;
   for (const c of controls) byName.set(c.attribs.name, [...(byName.get(c.attribs.name) ?? []), c]);
   const type = (e: El) => (e.attribs.type ?? 'text').toLowerCase();
 
-  const known = new Set(def.fields.filter((f) => !f.hidden).map((f) => f.name));
+  // a labelable field may have its own label control ("<name>__label")
+  const known = new Set(def.fields.filter((f) => !f.hidden).flatMap((f) => (f.can_label ? [f.name, labelKey(f.name)] : [f.name])));
   const unknown = [...byName.keys()].filter((n) => !known.has(n));
   if (unknown.length) problems.push(`controls with names that are not form fields: ${unknown.join(', ')}`);
 

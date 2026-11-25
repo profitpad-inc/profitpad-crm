@@ -91,18 +91,50 @@ async function loadFrameHtml(): Promise<string> {
 function hostHtml(init: unknown): string {
   const json = JSON.stringify(init).replace(/</g, '\\u003c');
   return `<!doctype html><html><head><meta charset="utf-8">
-<style>html,body{margin:0;background:var(--page-background,#fff)}iframe{display:block;width:100%;height:400px;border:0}</style>
+<style>html,body{margin:0;background:var(--page-background,#fff)}body{position:relative}#f{display:block;width:100%;height:400px;border:0}
+.pv{position:absolute;z-index:1;border:0;border-radius:6px;background:#fff;box-sizing:border-box}
+.pv-page{display:grid;place-items:center;padding:16px;text-align:center;font:13px/1.4 sans-serif;color:#555;background:#f4f5f7;border:1px dashed #b8bec8}</style>
 </head><body><iframe id="f" sandbox="allow-scripts" src="${FRAME_URL}"></iframe><script>
 const INIT = ${json};
 const f = document.getElementById('f');
 const st = { ready: false, pending: 0, last: Date.now(), fill: false, params: INIT.params };
 const send = (m) => f.contentWindow.postMessage(m, '*');
+// HtmlPreview boxes, drawn over the frame as the CRM page does (CustomView.tsx).
+// Nothing loads from the network here, so html is drawn (images stay blank)
+// and a landing page shows as a labelled box.
+const previews = new Map();
+function drawPreview(id) {
+  const p = previews.get(id);
+  if (!p) return;
+  if (!p.el) {
+    if (p.content.html !== undefined) {
+      p.el = document.createElement('iframe');
+      p.el.setAttribute('sandbox', '');
+      p.el.srcdoc = p.content.html;
+    } else {
+      p.el = document.createElement('div');
+      p.el.className = 'pv-page';
+      p.el.textContent = 'Landing page preview: ' + p.content.page.slug + (p.content.page.draft ? ' (draft)' : '') + '. render_view does not draw landing pages; check the page with render_landing_page.';
+    }
+    p.el.classList.add('pv');
+    document.body.appendChild(p.el);
+  }
+  const b = p.box;
+  if (!b || !b.clip) { p.el.style.visibility = 'hidden'; return; }
+  const fr = f.getBoundingClientRect();
+  const r = b.rect, c = b.clip;
+  Object.assign(p.el.style, {
+    visibility: 'visible', left: (fr.left + window.scrollX + r.x) + 'px', top: (fr.top + window.scrollY + r.y) + 'px', width: r.w + 'px', height: r.h + 'px',
+    clipPath: 'inset(' + (c.y - r.y) + 'px ' + (r.x + r.w - c.x - c.w) + 'px ' + (r.y + r.h - c.y - c.h) + 'px ' + (c.x - r.x) + 'px)'
+  });
+}
 function viewport() {
   if (!st.fill) send({ type: 'pcrm:viewport', viewport: { scrollTop: Math.max(0, Math.round(window.scrollY - f.offsetTop)), viewportHeight: window.innerHeight } });
 }
 window.__pcrm = {
   settled: () => st.ready && st.pending === 0 && Date.now() - st.last > ${SETTLE_MS},
-  fill: () => st.fill
+  fill: () => st.fill,
+  previews: () => [...previews.values()].map((p) => ({ kind: p.content.html !== undefined ? 'html' : 'landing_page', ...(p.content.page ? { slug: p.content.page.slug, draft: p.content.page.draft } : {}), shown: !!(p.box && p.box.clip) }))
 };
 window.addEventListener('scroll', () => { st.last = Date.now(); viewport(); }, { passive: true });
 window.addEventListener('message', async (e) => {
@@ -113,6 +145,15 @@ window.addEventListener('message', async (e) => {
     send({ ...INIT.init, params: st.params });
     st.ready = true;
     viewport();
+  } else if (m.type === 'pcrm:preview') {
+    const old = previews.get(m.id);
+    if (old && old.el) old.el.remove();
+    const c = m.content;
+    const ok = c && (typeof c.html === 'string' || (c.page && typeof c.page.slug === 'string'));
+    if (!ok) previews.delete(m.id);
+    else if (old || previews.size < 10) { previews.set(m.id, { content: c, box: old ? old.box : null, el: null }); drawPreview(m.id); }
+  } else if (m.type === 'pcrm:preview-boxes') {
+    for (const [id, p] of previews) { p.box = (m.boxes || []).find((b) => b && b.id === id) || null; drawPreview(id); }
   } else if (m.type === 'pcrm:height') {
     if (!st.fill) f.style.height = Math.max(200, Math.min(Number(m.height) || 0, 100000)) + 'px';
   } else if (m.type === 'pcrm:mode') {
@@ -312,7 +353,8 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
       queries: opened.queries,
       theme,
       me: { id: p.userId, name: meRows[0]?.name ?? null, is_admin: p.permissions === null },
-      view: { id: v.id, name: v.name, slug: v.slug, draft: opened.draft }
+      view: { id: v.id, name: v.name, slug: v.slug, draft: opened.draft },
+      crm_url: (process.env.UI_URL ?? '').replace(/\/$/, '')
     }
   };
   const frame = await loadFrameHtml();
@@ -467,6 +509,7 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
         await page.waitForTimeout(150);
         settled = (await settle()) && settled;
       }
+      const previewsShown = await page.evaluate('window.__pcrm.previews()') as { kind: string; slug?: string; draft?: boolean; shown: boolean }[];
       const iframe = await page.evaluate(`(() => {
         const r = document.getElementById('f').getBoundingClientRect();
         return { x: r.left, y: r.top, scrollY: window.scrollY, docHeight: document.documentElement.scrollHeight };
@@ -508,6 +551,7 @@ export async function renderView(p: Principal, slug: string, o: RenderOptions = 
           ...(refused.length ? { not_run: [...new Set(refused)] } : {}),
           ...(integrationCalls.length ? { integration_calls: integrationCalls } : {}),
           ...(navigations.length ? { navigations } : {}),
+          ...(previewsShown.length ? { previews: previewsShown } : {}),
           ...(blocked ? { blocked_requests: blocked } : {}),
           boxes: layout.boxes,
           ...(layout.more ? { more_boxes: layout.more } : {})

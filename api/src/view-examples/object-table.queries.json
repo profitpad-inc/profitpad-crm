@@ -1,0 +1,11 @@
+{
+  "rows": {
+    "sql": "select ct.pc_0010_id as id, ct.name, ct.email, ct.phone, ct.job_title, ct.lifecycle_stage__label as lifecycle_stage_label, ct.owner__label as owner_name, ct.created_at from contacts ct where :s is null or ct.name ilike '%' || :s || '%' or ct.email ilike '%' || :s || '%' or ct.phone ilike '%' || :s || '%' order by ct.created_at desc limit :limit",
+    "params": { "s": "text", "limit": "number" }
+  },
+  "total": {
+    "sql": "select count(*) as n from contacts ct where :s is null or ct.name ilike '%' || :s || '%' or ct.email ilike '%' || :s || '%' or ct.phone ilike '%' || :s || '%'",
+    "params": { "s": "text" }
+  },
+  "options": "select property, api_value as value, label from property_options where object_type_id = 'pc_0010' and property in ('lifecycle_stage') and record_status = 'active' order by property, display_order"
+}

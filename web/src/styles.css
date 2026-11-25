@@ -602,6 +602,9 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
   /* a property being edited is pinned at the top and the page holds still
      (lib/pin-editor.ts); the room at the end lets the last one reach the top */
   .pin-editing { overflow: hidden !important; padding-bottom: 100dvh !important; }
+  /* a dialog holds the page behind it still (useLockPageScroll in lib/pin-editor.ts) */
+  .scroll-locked { overflow: hidden !important; }
+  .modal-body { overscroll-behavior: contain; }
 
   .page { padding: 16px; }
   .page-title { font-size: 22px; }
@@ -782,6 +785,9 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
   .view-code-tabs .code-wrap-toggle { margin-right: 0; }
 }
 .custom-view-frame { display: block; width: 100%; border: 0; background: var(--page-background); }
+/* HtmlPreview frames drawn over the view frame, at the boxes it reports */
+.custom-view-stage { position: relative; }
+.custom-view-preview { position: absolute; z-index: 1; border: 0; border-radius: var(--radius); background: #fff; }
 .view-loading { justify-content: center; padding: 96px 20px; opacity: 0; animation: view-loading-in 200ms ease-out 150ms forwards; }
 @keyframes view-loading-in { to { opacity: 1; } }
 .view-code { margin: 0; padding: 10px 12px; max-height: 520px; overflow: auto; background: var(--surface); border-radius: var(--radius); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; tab-size: 2; }

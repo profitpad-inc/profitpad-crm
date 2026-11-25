@@ -105,6 +105,11 @@ test('email and phone lists: what toDb stores', () => {
   assert.deepEqual(stored(email, 'B@x.example', had), had);
   assert.deepEqual(stored(email, 'c@x.example', had), [{ value: 'c@x.example' }, ...had]);
   assert.deepEqual(stored(email, 'c@x.example; d@x.example', null), [{ value: 'c@x.example' }, { value: 'd@x.example' }]);
+  // one entry adds at the top with its label, or labels the value already there
+  assert.deepEqual(stored(email, { value: 'C@x.example', label: 'Personal' }, had), [{ value: 'c@x.example', label: 'personal' }, ...had]);
+  assert.deepEqual(stored(email, { value: 'b@x.example', label: 'Old school' }, had), [had[0], { value: 'b@x.example', label: 'Old school' }]);
+  assert.deepEqual(stored(email, { value: 'a@x.example' }, had), had);
+  assert.throws(() => toDb(email, { value: 'a@x.example', kind: 'x' }), /unknown entry field/);
   // clearing
   assert.equal(stored(email, null, had), null);
   assert.equal(stored(email, [], had), null);

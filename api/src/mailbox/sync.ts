@@ -11,6 +11,7 @@ import { saveFileBytes } from '../files.js';
 import { SIGNATURE_OPTIONS } from '../signature.js';
 import { MAX_BODY } from './html.js';
 import { isTrackingPixel } from './tracking.js';
+import { USER_MAILBOXES_SQL } from './addresses.js';
 import {
   domainOf, gmailBase, graphBase, loadProviders, MailAuthError, MailReadDenied, providerFor, providerReady, readCall,
   type MailProvider, type ProviderRow
@@ -632,17 +633,16 @@ export const effectiveMode = (userSetting: string | null | undefined, cfg: Provi
   return s === 'all' || s === 'replies' ? s : 'off';
 };
 
-// The mailboxes to read now: each active user's own sign-in addresses on a
+// The mailboxes to read now: each active user's own addresses (sign-in or linked) on a
 // ready provider with logging on, unless their mode comes out off.
 export async function plannedMailboxes(db: pg.Pool | pg.PoolClient = pool): Promise<MailboxPlan[]> {
   const providers = await loadProviders(db);
   if (![...providers.values()].some((p) => providerReady(p) && p.autolog_enabled)) return [];
   const { rows } = await db.query<{ mailbox: string; user_id: string; setting: string | null }>(
-    `select distinct on (lower(i.email)) lower(i.email) as mailbox, i.user_id, u.email_autolog[1] as setting
-     from auth.identities i join crm.pc_0000 u on u.pc_0000_id = i.user_id
-     where i.provider in ('google', 'microsoft') and i.email is not null
-       and u.record_status = 'active' and not coalesce(u.status, '{}') @> '{deactivated}'
-     order by lower(i.email), i.user_id`
+    `select distinct on (i.email) i.email as mailbox, i.user_id, u.email_autolog[1] as setting
+     from ${USER_MAILBOXES_SQL} i join crm.pc_0000 u on u.pc_0000_id = i.user_id
+     where u.record_status = 'active' and not coalesce(u.status, '{}') @> '{deactivated}'
+     order by i.email, i.user_id`
   );
   const out: MailboxPlan[] = [];
   for (const r of rows) {
