@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { createPortal } from 'react-dom';
 import { MapPin, TextCursorInput } from 'lucide-react';
 import { api, type Property } from '../lib/api';
+import { useIsMobile } from '../lib/use-mobile';
 
 // Address autocomplete (api/src/address.ts, Settings → Address autocomplete).
 // The text boxes of an address group suggest places from Google Places as
@@ -202,6 +203,7 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
   const typed = useRef(false); // only typing asks Google, not the starting value
   const seq = useRef(0);
   const picking = useRef(false);
+  const mobile = useIsMobile();
 
   useEffect(() => {
     if (!typed.current) return;
@@ -306,7 +308,11 @@ export function AddressInput({ part = 'street_1', value, onChange, onPick, autoF
       top: rect.bottom + 4,
       left: rect.left,
       width: Math.min(Math.max(rect.width, 280), window.innerWidth - rect.left - 8),
-      maxHeight: Math.max(140, Math.min(360, viewBottom - rect.bottom - 12))
+      // on a phone the box is pinned at the top (lib/pin-editor.ts): the list
+      // takes all the room down to the keyboard and scrolls inside it
+      maxHeight: mobile
+        ? Math.max(96, viewBottom - rect.bottom - 12)
+        : Math.max(140, Math.min(360, viewBottom - rect.bottom - 12))
     }
     : undefined;
 

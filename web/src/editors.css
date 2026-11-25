@@ -181,6 +181,9 @@
 /* shadow only while pinned over content (BookingPageEditor watches the marker just after the bar) */
 .ed-savebar.pinned { box-shadow: 0 -8px 24px rgba(24, 32, 43, 0.08); }
 .ed-section:has(> .ed-savebar-end) { position: relative; }
+/* the booking editor's one Save, a direct child of the sheet: full width, the sheet's bottom corners */
+.ed-savebar.ed-savebar-sheet { margin: 0; }
+.ed-sheet:has(> .ed-savebar-end) { position: relative; }
 .ed-savebar-end { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; pointer-events: none; }
 /* on wide screens the record page's middle column is the scroller, and sticky stops at its bottom padding */
 @media (min-width: 768px) {
@@ -198,6 +201,7 @@
   .ed-sheet .ed-item-error { margin-left: 12px; }
   .ed-browser-page { padding: 20px 16px 28px; }
   .ed-savebar { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+  .ed-savebar.ed-savebar-sheet { margin-left: 0; margin-right: 0; }
   .ed-head-actions { width: 100%; }
   .ed-head-actions .btn.primary { margin-left: auto; }
 }

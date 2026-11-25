@@ -12,7 +12,7 @@ export interface EmailSettings {
   note: string | null;
 }
 
-export const DEFAULT_EMAIL_SETTINGS: EmailSettings = { confirm: true, reminders: [1440], note: null };
+export const DEFAULT_EMAIL_SETTINGS: EmailSettings = { confirm: true, reminders: [60], note: null };
 export const MAX_REMINDERS = 3;
 export const MAX_NOTE = 2000;
 

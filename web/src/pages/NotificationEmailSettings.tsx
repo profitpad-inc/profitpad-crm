@@ -168,10 +168,10 @@ function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => v
         <label><input type="checkbox" role="switch" checked={!!s?.invite_new_users} disabled={busy || !s} onChange={(e) => put({ invite_new_users: e.target.checked }, e.target.checked ? 'New users will get an invite.' : 'New users will not get an invite.')} /> {s?.invite_new_users ? 'On' : 'Off'}</label>
       </SettingRow>
       <SettingRow label="Mailbox" htmlFor="ne-mailbox" hint={provider ? `Sent through ${PROVIDER_LABEL[provider]}. The service account acts as this user.` : domain ? `${domain} is not a domain in Mailboxes.` : 'The licensed user the service account sends as.'}>
-        <input id="ne-mailbox" type="email" value={mailbox} placeholder="noreply@example.com" spellCheck={false} onChange={(e) => setMailbox(e.target.value)} />
+        <input id="ne-mailbox" type="text" inputMode="email" autoCapitalize="none" value={mailbox} placeholder="noreply@example.com" spellCheck={false} onChange={(e) => setMailbox(e.target.value)} />
       </SettingRow>
       <SettingRow label="From address" htmlFor="ne-from" hint="Leave empty to send from the mailbox itself. Otherwise one of its aliases, such as noreply@.">
-        <input id="ne-from" type="email" value={fromAddress} placeholder={mailbox.trim() || 'noreply@example.com'} spellCheck={false} onChange={(e) => setFromAddress(e.target.value)} />
+        <input id="ne-from" type="text" inputMode="email" autoCapitalize="none" value={fromAddress} placeholder={mailbox.trim() || 'noreply@example.com'} spellCheck={false} onChange={(e) => setFromAddress(e.target.value)} />
       </SettingRow>
       <SettingRow label="From name" htmlFor="ne-name" hint="Shown as the sender's name, for example ProfitPad CRM.">
         <input id="ne-name" value={fromName} maxLength={100} placeholder="ProfitPad CRM" onChange={(e) => setFromName(e.target.value)} />
@@ -185,7 +185,7 @@ function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => v
       {s && (
         <SettingRow label="Send a test" htmlFor="ne-test" hint="Sends one email now and checks the From address is allowed. Works while sending is off.">
           <div className="key-row">
-            <input id="ne-test" type="email" value={testTo} placeholder={me.user?.email ?? 'you@example.com'} onChange={(e) => setTestTo(e.target.value)} />
+            <input id="ne-test" type="text" inputMode="email" autoCapitalize="none" value={testTo} placeholder={me.user?.email ?? 'you@example.com'} onChange={(e) => setTestTo(e.target.value)} />
             <button className="btn" disabled={busy || dirty} onClick={runTest}>{busy ? 'Sending…' : 'Send test'}</button>
           </div>
           {test && (test.ok

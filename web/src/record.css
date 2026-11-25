@@ -87,6 +87,15 @@
   margin: 4px -8px; animation: panel-in 120ms ease-out;
 }
 .record-page .prop-edit .btn.small { align-self: flex-start; }
+/* email and phone lists: the frame already marks the field, so the rows,
+   "Add" and Cancel/Save sit close together */
+.record-page .prop-row.editing .mv-table.editing td { padding-block: 0; }
+.record-page .prop-row.editing .mv-table.editing :is(input:not([type='checkbox']), .select-face) { padding-block: 4px; }
+/* "Add email" and Cancel/Save share the last line: Add on the left, the
+   buttons pinned to the right of it */
+.record-page .prop-row.editing .prop-edit:has(> .mv-editor) { position: relative; }
+.record-page .prop-row.editing .mv-add { height: 28px; padding-block: 0; margin-top: 6px; }
+.record-page .prop-row.editing .mv-editor + .prop-edit-actions { position: absolute; right: 0; bottom: 0; height: 28px; margin: 0; align-items: center; }
 /* live updates (lib/live.ts): a property someone else just changed fades from
    a light tint of the brand colour; a value changed while it is being edited
    says so under the box */
@@ -287,7 +296,7 @@
    who-how-when line, then each change on its own inner rail, one line each */
 .change-batch { display: flex; flex-direction: column; }
 .change-batch + .change-batch { margin-top: 14px; }
-.change-batch-head { display: flex; align-items: center; gap: 6px 14px; padding-right: 10px; min-width: 0; }
+.change-batch-head { display: flex; align-items: center; gap: 6px 10px; padding-right: 10px; min-width: 0; }
 .change-batch-head .change-meta { margin-top: 0; }
 .change-batch-head .ledger-time { margin-left: auto; }
 .change-avatar {
@@ -297,19 +306,28 @@
   background: var(--primary-soft); color: var(--primary); box-shadow: 0 0 0 3px var(--page-background);
 }
 .change-avatar.key { background: var(--surface); color: var(--muted-text); }
-.change-batch-items { position: relative; margin: 4px 0 0 44px; }
+.change-batch-items { position: relative; margin: 4px 0 0 26px; }
 .change-batch-items::before { content: ''; position: absolute; left: 10.5px; top: 14px; bottom: 14px; width: 1px; background: var(--hairline); }
-.record-page .change-batch .ledger-entry { gap: 12px; padding: 4px 10px 4px 0; }
+.record-page .change-batch .ledger-entry { gap: 8px; padding: 4px 10px 4px 0; }
 .record-page .change-batch .change-dot { width: 22px; height: 22px; margin-top: 0; }
 .record-page .change-batch .change-body {
-  padding-top: 0; display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr); gap: 2px 16px; align-items: start; min-height: 22px;
+  padding-top: 0; display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 2px 12px; align-items: start; min-height: 22px;
 }
 .change-what { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
 .change-batch .change-values, .change-batch .change-links { margin-top: 0; }
 .change-batch .change-links { flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
 @media (max-width: 640px) {
-  .change-batch-head { flex-wrap: wrap; }
+  .change-batch-head { flex-wrap: wrap; gap: 4px 10px; padding-right: 0; }
   .record-page .change-batch .change-body { grid-template-columns: minmax(0, 1fr); }
+  /* phones: a smaller avatar, and each change's dot on the avatar's own rail
+     instead of indented past it, so the values get the width */
+  .change-avatar { width: 24px; height: 24px; font-size: 10px; }
+  .change-avatar svg { width: 13px; height: 13px; }
+  .record-page .ledger-entries:has(.change-batch)::before { left: 11.5px; }
+  .change-batch-items { margin: 2px 0 0; }
+  .change-batch-items::before { left: 11.5px; }
+  .record-page .change-batch .ledger-entry { gap: 10px; padding-right: 0; }
+  .record-page .change-batch .change-dot { width: 24px; }
 }
 .change-actor { color: var(--text); font-weight: 500; font-size: 13px; }
 

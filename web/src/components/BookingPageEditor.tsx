@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarCheck, CircleAlert, Clock, Plus, Trash2 } from 'lucide-react';
+import { CalendarCheck, Check, CircleAlert, Clock, Plus, Trash2, X } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
@@ -14,8 +14,9 @@ import '../booking.css';
 // of days, from and to, plus date overrides) in the page's time zone, the forms asked before and
 // after the time picker, and whether the page can take bookings (with its next
 // open times). Buffers, notice, location and host are ordinary
-// properties in the left column. The API checks everything again on save
-// (api/src/routes/booking.ts, api/src/calendar/slots.ts).
+// properties in the left column. Everything here is a draft saved by one Save
+// bar, pinned to the bottom while anything is unsaved. The API checks
+// everything again on save (api/src/routes/booking.ts, api/src/calendar/slots.ts).
 
 const DAYS = [
   ['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'],
@@ -252,7 +253,13 @@ export function lengthLabel(minutes: number): string {
   return [h ? `${h} hr` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
 }
 
-function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolean; onSave: (p: Record<string, unknown>, message: string) => void }) {
+// ---- meeting lengths ----------------------------------------------------------------
+
+interface LengthsDraft { lengths: number[]; def: number | null }
+
+const LENGTH_PRESETS = [15, 30, 45, 60, 90, 120];
+
+function readLengths(record: CrmRecord): LengthsDraft {
   const raw = record.properties.duration_minutes;
   const def = raw === null || raw === undefined || raw === '' ? null : Number(raw);
   let list: number[] = [];
@@ -262,49 +269,78 @@ function Lengths({ record, saving, onSave }: { record: CrmRecord; saving: boolea
   } catch {
     list = [];
   }
-  const lengths = [...new Set([...list, ...(def ? [def] : [])])].sort((a, b) => a - b);
-  const [adding, setAdding] = useState('');
-  const save = (next: number[], nextDefault: number | null, message: string) =>
-    onSave({ duration_minutes: nextDefault, duration_options: next.length > 1 ? JSON.stringify(next) : null }, message);
-  const add = () => {
-    const n = Number(adding);
-    if (!Number.isInteger(n) || n < 5 || n > 1440 || lengths.includes(n)) return;
-    save([...lengths, n].sort((a, b) => a - b), def ?? n, 'Length added');
-    setAdding('');
+  return { lengths: [...new Set([...list, ...(def ? [def] : [])])].sort((a, b) => a - b), def };
+}
+
+// Lengths as toggles: the common ones are always shown (tap to offer or stop
+// offering), any other length is added with "Other length". With two or more,
+// the default is picked from them; one length is simply the length.
+function Lengths({ value, onChange, disabled }: { value: LengthsDraft; onChange: (v: LengthsDraft) => void; disabled: boolean }) {
+  const { lengths, def } = value;
+  const [other, setOther] = useState('');
+  const [otherOpen, setOtherOpen] = useState(false);
+  const shown = [...new Set([...LENGTH_PRESETS, ...lengths])].sort((a, b) => a - b);
+  const set = (next: number[], nextDef: number | null) => {
+    const sorted = [...next].sort((a, b) => a - b);
+    onChange({ lengths: sorted, def: nextDef !== null && sorted.includes(nextDef) ? nextDef : (sorted[0] ?? null) });
+  };
+  const toggle = (n: number) => (lengths.includes(n) ? set(lengths.filter((x) => x !== n), def) : set([...lengths, n], def ?? n));
+  const otherN = Number(other);
+  const otherOk = other !== '' && Number.isInteger(otherN) && otherN >= 5 && otherN <= 1440;
+  const addOther = () => {
+    if (!otherOk) return;
+    if (!lengths.includes(otherN)) set([...lengths, otherN], def ?? otherN);
+    setOther('');
+    setOtherOpen(false);
   };
 
   return (
     <section className="ed-section">
       <div className="ed-section-head">
         <h3>Meeting lengths</h3>
-        <p>Visitors pick one. The default is picked at first.</p>
+        <p>Pick every length visitors can choose from. With more than one, they pick, starting on the default.</p>
       </div>
-      <div className="bk-lengths">
-        {lengths.length === 0 && <span className="ed-hint">No length yet. Add one below.</span>}
-        {lengths.map((n) => (
-          <span key={n} className={`bk-length${n === def ? ' default' : ''}`}>
-            <strong>{lengthLabel(n)}</strong>
-            {n === def ? <span className="bk-length-default">Default</span> : (
-              <button className="bk-link" disabled={saving} onClick={() => save(lengths, n, `${lengthLabel(n)} is the default`)}>Make default</button>
-            )}
-            {lengths.length > 1 && (
-              <button className="icon-btn danger" disabled={saving} aria-label={`Remove ${lengthLabel(n)}`}
-                onClick={() => {
-                  const next = lengths.filter((x) => x !== n);
-                  save(next, n === def ? next[0] : def, 'Length removed');
-                }}><Trash2 size={13} /></button>
-            )}
+      <div className="bk-len-grid" role="group" aria-label="Meeting lengths offered">
+        {shown.map((n) => {
+          const on = lengths.includes(n);
+          return (
+            <button key={n} type="button" className={`bk-len${on ? ' on' : ''}`} aria-pressed={on} disabled={disabled} onClick={() => toggle(n)}>
+              {on && <Check size={14} aria-hidden="true" />}
+              {lengthLabel(n)}
+            </button>
+          );
+        })}
+        {otherOpen ? (
+          <span className="bk-len-other">
+            <span className="bk-minutes">
+              <input type="number" min={5} max={1440} step={5} autoFocus placeholder="50" value={other} aria-label="Other length in minutes" disabled={disabled}
+                onChange={(e) => setOther(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addOther();
+                  if (e.key === 'Escape') { setOther(''); setOtherOpen(false); }
+                }} />
+              <span aria-hidden="true">min</span>
+            </span>
+            <button type="button" className="btn small" disabled={disabled || !otherOk} onClick={addOther}>Add</button>
+            <button type="button" className="icon-btn" aria-label="Cancel" onClick={() => { setOther(''); setOtherOpen(false); }}><X size={14} /></button>
           </span>
-        ))}
+        ) : (
+          <button type="button" className="bk-len add" disabled={disabled} onClick={() => setOtherOpen(true)}><Plus size={14} aria-hidden="true" /> Other length</button>
+        )}
       </div>
-      <div className="bk-length-add">
-        <span className="bk-minutes">
-          <input type="number" min={5} max={1440} step={5} placeholder="30" value={adding} aria-label="Length in minutes"
-            onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-          <span aria-hidden="true">min</span>
-        </span>
-        <button className="btn small" disabled={saving || !adding} onClick={add}><Plus size={13} /> Add length</button>
-      </div>
+      {lengths.length === 0 && <p className="ed-hint">Pick at least one length.</p>}
+      {lengths.length > 1 && (
+        <div className="ed-rows">
+          <div className="ed-row">
+            <label className="ed-row-label" htmlFor="bk-default-length">Default</label>
+            <div className="ed-row-control">
+              <Select id="bk-default-length" value={String(def ?? '')} disabled={disabled}
+                options={lengths.map((n) => ({ value: String(n), label: lengthLabel(n) }))}
+                onChange={(v) => set(lengths, Number(v))} />
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -322,7 +358,7 @@ function reminderLabel(minutes: number): string {
 }
 
 function readEmails(raw: unknown): EmailSettings {
-  const fallback = { confirm: true, reminders: [1440], note: '' };
+  const fallback = { confirm: true, reminders: [60], note: '' };
   if (typeof raw !== 'string' || !raw) return fallback;
   try {
     const v = JSON.parse(raw) as Partial<{ confirm: boolean; reminders: number[]; note: string | null }>;
@@ -336,13 +372,7 @@ function readEmails(raw: unknown): EmailSettings {
   }
 }
 
-function EmailsCard({ record, check, saving, onSave }: {
-  record: CrmRecord; check: Check | null; saving: boolean; onSave: (p: Record<string, unknown>, message: string) => Promise<boolean>;
-}) {
-  const saved = useMemo(() => readEmails(record.properties.email_settings), [record.properties.email_settings]);
-  const [v, setV] = useState(saved);
-  useEffect(() => setV(saved), [saved]);
-  const dirty = norm(v) !== norm(saved);
+function EmailsCard({ v, setV, check, saving }: { v: EmailSettings; setV: (v: EmailSettings) => void; check: Check | null; saving: boolean }) {
   const left = REMINDER_CHOICES.filter((m) => !v.reminders.includes(m));
   return (
     <section className="ed-section">
@@ -397,14 +427,23 @@ function EmailsCard({ record, check, saving, onSave }: {
           </div>
         </div>
       </div>
-      <div className="actions">
-        <button className="btn primary" type="button" disabled={saving || !dirty}
-          onClick={async () => { await onSave({ email_settings: JSON.stringify({ confirm: v.confirm, reminders: v.reminders, note: v.note.trim() || null }) }, 'Email settings saved'); }}>
-          Save
-        </button>
-      </div>
     </section>
   );
+}
+
+// A draft of one part of the page: follows the saved value (a live update, a
+// save) until it is edited, then keeps the edit until it is saved or changed
+// back. dirty: differs from the saved value.
+function useDraft<T>(saved: T): [T, (v: T) => void, boolean] {
+  const key = norm(saved);
+  const [draft, setDraft] = useState(saved);
+  const last = useRef(key);
+  useEffect(() => {
+    if (last.current === key) return;
+    setDraft((d) => (norm(d) === last.current ? saved : d));
+    last.current = key;
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [draft, setDraft, norm(draft) !== key];
 }
 
 export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSaved: (r: CrmRecord) => void }) {
@@ -416,11 +455,20 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
   const [zone, setZone] = useState(str(record.properties.timezone) || browserZone());
   // touched: edited here, so a live update of the record no longer replaces the hours on screen
   const [touched, setDirty] = useState(!stored || !record.properties.timezone);
-  // what Save would change: never saved yet, or the hours differ from the saved ones (changing back counts as no change)
-  const dirty = !stored || !record.properties.timezone
+  // the hours differ from the saved ones, or were never saved (changing back counts as no change)
+  const hoursDirty = !stored || !record.properties.timezone
     || norm({ weekly: hours.weekly, overrides: hours.overrides, rows, zone }) !== norm({ weekly: stored.weekly, overrides: stored.overrides, rows: rowsOf(stored), zone: str(record.properties.timezone) });
-  // the save bar shows a shadow only while it is pinned over the hours; the marker just after it is on screen when
-  // the bar sits at the end of its section
+  // the other parts of the middle column, saved together with the hours by the one Save
+  const [lengths, setLengths, lengthsDirty] = useDraft(useMemo(() => readLengths(record), [record.properties.duration_minutes, record.properties.duration_options])); // eslint-disable-line react-hooks/exhaustive-deps
+  const [formIds, setFormIds, formsDirty] = useDraft(useMemo(
+    () => ({ before: str(record.properties.form_before_id), after: str(record.properties.form_after_id) }),
+    [record.properties.form_before_id, record.properties.form_after_id]
+  ));
+  const [emails, setEmails, emailsDirty] = useDraft(useMemo(() => readEmails(record.properties.email_settings), [record.properties.email_settings]));
+  const [rotationId, setRotationId, rotationDirty] = useDraft(str(record.properties.rotation_id));
+  const dirty = hoursDirty || lengthsDirty || formsDirty || emailsDirty || rotationDirty;
+  // the save bar shows a shadow only while it is pinned over the editor; the marker just after it is on screen when
+  // the bar sits at the end of the editor
   const [barPinned, setBarPinned] = useState(false);
   const barObserver = useRef<IntersectionObserver | null>(null);
   const barEnd = useCallback((el: HTMLDivElement | null) => {
@@ -484,8 +532,26 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
     }
   }
 
-  async function saveHours() {
-    if (await save({ timezone: zone, availability: JSON.stringify({ ...hours, rows }) }, 'Hours saved')) setDirty(false);
+  // everything changed in the middle column, in one write
+  function changes(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    if (hoursDirty) Object.assign(out, { timezone: zone, availability: JSON.stringify({ ...hours, rows }) });
+    if (lengthsDirty) {
+      out.duration_minutes = lengths.def;
+      out.duration_options = lengths.lengths.length > 1 ? JSON.stringify(lengths.lengths) : null;
+    }
+    if (formsDirty) Object.assign(out, { form_before_id: formIds.before || null, form_after_id: formIds.after || null });
+    if (emailsDirty) out.email_settings = JSON.stringify({ confirm: emails.confirm, reminders: emails.reminders, note: emails.note.trim() || null });
+    if (rotationDirty) out.rotation_id = rotationId || null;
+    return out;
+  }
+
+  async function saveAll() {
+    if (lengths.lengths.length === 0) {
+      setError('Pick at least one meeting length.');
+      return;
+    }
+    if (await save(changes(), 'Saved')) setDirty(false);
   }
 
   const edit = (next: Availability) => {
@@ -507,7 +573,11 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
     try {
       const pageName = str(record.properties.name) || 'Booking page';
       const form = await api<{ id: string }>('POST', '/v1/objects/forms', { properties: { name: `${pageName}: ${label.toLowerCase()}` } });
-      if (await save({ [key]: form.id }, 'Form created')) navigate(`/objects/forms/${form.id}`);
+      // the page's other unsaved changes are saved with it, since the form builder opens next
+      if (await save({ ...changes(), [key === 'form_before_id' ? 'form_before_id' : 'form_after_id']: form.id }, 'Form created')) {
+        setDirty(false);
+        navigate(`/objects/forms/${form.id}`);
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -515,13 +585,14 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
 
   const when = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const formPicker = (key: 'form_before_id' | 'form_after_id', label: string) => {
-    const value = str(record.properties[key]);
+    const part = key === 'form_before_id' ? 'before' : 'after';
+    const value = formIds[part];
     const id = `bk-${key}`;
     return (
       <div className="ed-row">
         <label className="ed-row-label" htmlFor={id}>{label}</label>
         <div className="ed-row-control">
-          <Select id={id} value={value} disabled={saving} onChange={(v) => save({ [key]: v || null })}>
+          <Select id={id} value={value} disabled={saving} onChange={(v) => setFormIds({ ...formIds, [part]: v })}>
             <option value="">None</option>
             {forms.map((f) => <option key={f.id} value={f.id}>{f.name}{f.published ? '' : ' (not published)'}</option>)}
             {value && !forms.some((f) => f.id === value) && <option value={value}>Form {value}</option>}
@@ -572,7 +643,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
         )}
       </section>
 
-      <Lengths record={record} saving={saving} onSave={(p, m) => void save(p, m)} />
+      <Lengths value={lengths} onChange={setLengths} disabled={saving} />
 
       <section className="ed-section">
         <div className="ed-section-head">
@@ -588,7 +659,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
         </div>
       </section>
 
-      <EmailsCard record={record} check={check} saving={saving} onSave={save} />
+      <EmailsCard v={emails} setV={setEmails} check={check} saving={saving} />
 
       <section className="ed-section">
         <div className="ed-section-head">
@@ -603,15 +674,14 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           <div className="ed-row">
             <label className="ed-row-label" htmlFor="bk-rotation">Owner rotation</label>
             <div className="ed-row-control">
-              <Select id="bk-rotation" value={str(record.properties.rotation_id)} disabled={saving}
-                onChange={(v) => save({ rotation_id: v || null }, v ? 'Round robin on' : 'Round robin off')}>
+              <Select id="bk-rotation" value={rotationId} disabled={saving} onChange={setRotationId}>
                 <option value="">None (the Host hosts every meeting)</option>
                 {rotations.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                {str(record.properties.rotation_id) && !rotations.some((r) => r.id === str(record.properties.rotation_id)) &&
-                  <option value={str(record.properties.rotation_id)}>Rotation {str(record.properties.rotation_id)} (removed)</option>}
+                {rotationId && !rotations.some((r) => r.id === rotationId) &&
+                  <option value={rotationId}>Rotation {rotationId} (removed)</option>}
               </Select>
-              {str(record.properties.rotation_id) && (
-                <div className="bk-form-links"><Link to={`/settings/owner-rotations?r=${str(record.properties.rotation_id)}`}>Open rotation</Link></div>
+              {rotationId && (
+                <div className="bk-form-links"><Link to={`/settings/owner-rotations?r=${rotationId}`}>Open rotation</Link></div>
               )}
             </div>
           </div>
@@ -623,6 +693,8 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           <h3>Available hours</h3>
           <p>When visitors can book, in the page's time zone.</p>
         </div>
+        <WeekGlance weekly={hours.weekly} />
+
         <div className="ed-rows">
           <div className="ed-row">
             <label className="ed-row-label" htmlFor="bk-zone">Time zone</label>
@@ -635,8 +707,6 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
             </div>
           </div>
         </div>
-
-        <WeekGlance weekly={hours.weekly} />
 
         <div className="ed-sub">
           <h4>Weekly hours</h4>
@@ -689,12 +759,16 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           </div>
         </div>
 
-        <div className={`ed-savebar${dirty ? ' dirty' : ''}${dirty && barPinned ? ' pinned' : ''}`}>
-          <span className="ed-savebar-note" role="status">{dirty ? (stored ? 'Unsaved changes to the hours' : 'Hours not saved yet') : 'Hours saved'}</span>
-          <button className="btn primary" onClick={saveHours} disabled={!dirty || saving}>Save hours</button>
-        </div>
-        <div className="ed-savebar-end" ref={barEnd} aria-hidden="true" />
       </section>
+
+      {/* one Save for the whole column, pinned to the bottom while anything is unsaved */}
+      {dirty && (
+        <div className={`ed-savebar ed-savebar-sheet dirty${barPinned ? ' pinned' : ''}`}>
+          <span className="ed-savebar-note" role="status">{!stored && !lengthsDirty && !formsDirty && !emailsDirty && !rotationDirty ? 'Hours not saved yet' : 'Unsaved changes'}</span>
+          <button className="btn primary" onClick={saveAll} disabled={saving}>Save</button>
+        </div>
+      )}
+      <div className="ed-savebar-end" ref={barEnd} aria-hidden="true" />
     </div>
   );
 }

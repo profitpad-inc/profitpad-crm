@@ -342,7 +342,7 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
       {hasCredentials && (
         <SettingRow label="Test" htmlFor={`${p.provider}-test`} hint="Signs in as a mailbox and reads the addresses it can send as. Nothing is sent. Leave empty to use your own address.">
           <div className="key-row">
-            <input id={`${p.provider}-test`} type="email" value={testAddress} placeholder={me.user?.email ?? 'someone@example.com'} onChange={(e) => setTestAddress(e.target.value)} />
+            <input id={`${p.provider}-test`} type="text" inputMode="email" autoCapitalize="none" value={testAddress} placeholder={me.user?.email ?? 'someone@example.com'} onChange={(e) => setTestAddress(e.target.value)} />
             <button className="btn" disabled={busy} onClick={runTest}>{busy ? 'Testing…' : 'Test'}</button>
           </div>
           {test && (test.ok ? (
@@ -598,7 +598,7 @@ function SharedMailboxModal({ mailbox, providers, users, onClose, onSaved }: {
       {!mailbox && (
         <label className="field">
           <span>Address</span>
-          <input type="email" autoFocus value={address} placeholder={`sales@${domains[0] ?? 'example.com'}`} onChange={(e) => setAddress(e.target.value)} />
+          <input type="text" inputMode="email" autoCapitalize="none" autoFocus value={address} placeholder={`sales@${domains[0] ?? 'example.com'}`} onChange={(e) => setAddress(e.target.value)} />
           <small className="muted mailbox-hint">{provider === 'google' ? 'A mailbox in your Google Workspace (Gmail has no shared mailboxes: use a user mailbox, or add a group address as an alias of someone\'s mailbox).' : 'A shared or user mailbox in Microsoft 365.'}</small>
         </label>
       )}

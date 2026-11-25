@@ -4,7 +4,7 @@ import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Chec
 import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, can, getAssociationLabels, getSchema, type AssociationLabel, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName } from '../lib/display';
+import { displayName, displayValue, formatValue, initials, isButton, nameProperties, objectIcon, recordName, isUrlDisplay } from '../lib/display';
 import { Menu, Modal, PropertyInput, fromInput, isEditable, toInput } from '../components/ui';
 import { GROUP_ORDER, addressText, useAddressGroups, withAddressesTogether, type AddressGroup } from '../components/AddressInput';
 import { PublicLinkCard } from '../components/PublicLinkCard';
@@ -48,6 +48,7 @@ import { confirmDialog, alertDialog } from '../components/confirm';
 import { LiveContext, bumpVersions, useLiveRecords, useLiveStamp, useLiveVersion, type LiveEvents } from '../lib/live';
 import { useUrlSearch } from '../lib/use-url-search';
 import { useIsMobile, useMediaQuery } from '../lib/use-mobile';
+import { usePinWhileEditing } from '../lib/pin-editor';
 import { Loading, Spinner } from '../components/Loading';
 
 // a contact's additional emails, as stored ("a@x.com; b@y.com")
@@ -139,6 +140,22 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   email_campaigns: ['audience'],
   emails: ['reply_token']
 };
+// "About this ..." order: these first, in this order, then the rest as before
+const ABOUT_ORDER: Record<string, string[]> = {
+  booking_pages: [
+    'name', 'public_name', 'description', 'status', 'host', 'co_hosts', 'rotation_id', 'max_guests', 'location_type', 'location_details',
+    'min_notice_minutes', 'slot_step_minutes', 'buffer_before_minutes', 'buffer_after_minutes', 'max_days_ahead', 'daily_limit', 'email_settings'
+  ]
+};
+function aboutOrder(object: string, list: Property[]): Property[] {
+  const order = ABOUT_ORDER[object];
+  if (!order) return list;
+  const rank = (p: Property) => {
+    const i = order.indexOf(p.api_name);
+    return i === -1 ? order.length : i;
+  };
+  return list.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p);
+}
 // An accepted quote is locked (migration 0073; the database refuses changes):
 // these properties and its line items. A line on one is locked as a whole.
 const ACCEPTED_QUOTE_LOCKED = ['amount', 'currency', 'expiration_date', 'responded_at', 'customer_signed_at'];
@@ -577,11 +594,12 @@ export function RecordPage() {
       {object === 'quotes' && <QuoteTemplateCard quoteId={record.id} canEdit={schema.permissions.edit && record.can_edit !== false} />}
       {object === 'quotes' && <QuoteSigningCard record={record} onChanged={setRecord} />}
       {object === 'files' && <FileCard record={record} />}
-      {object === 'contacts' && <PageViewsCard contactId={record.id} />}
     </>
   );
   const linkCards = (
     <>
+      {/* with the linked records: the Associations tab on phones and tablets */}
+      {object === 'contacts' && <PageViewsCard contactId={record.id} />}
       {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
       {cards.map((o) => (
         <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} linked={associated} onChanged={refresh} />
@@ -858,6 +876,9 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   // in the editor with its preview
   const [htmlEditing, setHtmlEditing] = useState<Property | null>(null);
   const [historyOf, setHistoryOf] = useState<Property | null>(null);
+  // on a phone the row being edited sits at the top and the page holds still
+  const listRef = useRef<HTMLDivElement>(null);
+  usePinWhileEditing(useIsMobile(), editing, listRef, '.prop-row.editing');
   async function copyValue(p: Property) {
     const value = record.properties[p.api_name];
     // HTML and code copy as written; everything else as it reads on the page
@@ -890,7 +911,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
     .map((sec) => ({ ...sec, list: sec.props.map((n) => shown.find((p) => p.api_name === n)).filter((p): p is Property => !!p) }))
     .filter((sec) => sec.list.length > 0);
   const inSection = new Set(extraSections.flatMap((sec) => sec.list.map((p) => p.api_name)));
-  const main = withAddressesTogether(shown.filter((p) => (!p.is_base || p.api_name === 'name') && !inSection.has(p.api_name)), addressGroups);
+  const main = aboutOrder(schema.api_name, withAddressesTogether(shown.filter((p) => (!p.is_base || p.api_name === 'name') && !inSection.has(p.api_name)), addressGroups));
   const system = shown.filter((p) => p.is_base && p.api_name !== 'name');
   // without edit access (the role, or this record only through a read-only
   // sharing rule) every property is locked, like a calculation; a save's
@@ -1126,7 +1147,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   );
 
   return (
-    <div className="props">
+    <div className="props" ref={listRef}>
       {section('main', `About this ${schema.label_singular.toLowerCase()}`, main)}
       {extraSections.map((sec) => <Fragment key={sec.key}>{section(sec.key, sec.title, sec.list)}</Fragment>)}
       {section('system', 'System', system)}
@@ -2460,9 +2481,9 @@ function changeBatches(entries: ChangeEntry[]): ChangeEntry[][] {
 // A value as the property shows it elsewhere; JSON only for shapes no property type explains.
 function historyValue(p: Property | undefined, value: unknown): ReactNode {
   if (p) {
-    // a button property's history shows the link itself
+    // a button or link property's history shows the address as plain text, not a link
     // email and phone lists: every entry
-    const shown = isButton(p) || isMultiType(p) ? formatValue(p, value) : displayValue(p, value);
+    const shown = isButton(p) || isUrlDisplay(p) || isMultiType(p) ? formatValue(p, value) : displayValue(p, value);
     if (shown !== '') return shown;
   }
   if (typeof value === 'string' || typeof value === 'number') return String(value);

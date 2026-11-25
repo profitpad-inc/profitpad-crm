@@ -39,6 +39,11 @@ const CARD_FIELDS = 5;
 // already in the card's title
 const NAME_PARTS = new Set(['name', 'first_name', 'last_name']);
 const LONG_PRESS_MS = 450;
+// Quick filters: a dropdown next to the search for each of these properties
+// (single-choice user or option pickers), kept in the URL (?host=<id>).
+const QUICK_FILTERS: Record<string, string[]> = {
+  booking_pages: ['host']
+};
 
 // Keyed by object so switching tables starts fresh instead of sending one
 // search with the previous object's schema, columns and sorts.
@@ -64,6 +69,24 @@ function ObjectTableFor({ object }: { object: string }) {
   const archived = searchParams.get('status') === 'archived';
   // the search lives in ?s= so a refresh or shared link keeps it
   const [query, setQuery, debounced] = useUrlSearch();
+  // quick filters (QUICK_FILTERS): property -> picked value, from the URL
+  const quickProps = useMemo(
+    () => (QUICK_FILTERS[object] ?? []).map((n) => schema?.properties.find((p) => p.api_name === n && p.record_status === 'active')).filter((p): p is Property => !!p),
+    [object, schema]
+  );
+  const quickKey = quickProps.map((p) => `${p.api_name}=${searchParams.get(p.api_name) ?? ''}`).join('&');
+  const quickFilters = useMemo(
+    () => quickProps.filter((p) => searchParams.get(p.api_name)).map((p) => ({ property: p.api_name, operator: 'eq', value: searchParams.get(p.api_name)! })),
+    [quickKey] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  function setQuick(name: string, value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set(name, value);
+      else next.delete(name);
+      return next;
+    }, { replace: true });
+  }
   const [data, setData] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +162,7 @@ function ObjectTableFor({ object }: { object: string }) {
       if (id !== undefined) next.set('view', String(id));
       if (debounced) next.set('s', debounced);
       if (archived) next.set('status', 'archived');
+      for (const f of quickFilters) next.set(f.property, f.value);
       return next;
     });
   }
@@ -180,6 +204,7 @@ function ObjectTableFor({ object }: { object: string }) {
         const res = await api<SearchResult>('POST', `/v1/objects/${object}/search`, {
           query: debounced || undefined,
           status: archived ? 'archived' : undefined,
+          filter_groups: quickFilters.length ? [{ filters: quickFilters }] : undefined,
           sorts,
           limit: PAGE,
           after,
@@ -193,7 +218,7 @@ function ObjectTableFor({ object }: { object: string }) {
         setLoading(false);
       }
     },
-    [schema, activeViewId, appliedViewId, object, debounced, archived, sorts, columnProperties, assocObjects, otherSchemas]
+    [schema, activeViewId, appliedViewId, object, debounced, archived, quickFilters, sorts, columnProperties, assocObjects, otherSchemas]
   );
 
   useEffect(() => {
@@ -205,7 +230,7 @@ function ObjectTableFor({ object }: { object: string }) {
     setPicked(new Set());
     setSelectMode(false);
     lastPicked.current = null;
-  }, [debounced, archived, sorts, activeViewId]);
+  }, [debounced, archived, quickFilters, sorts, activeViewId]);
 
   const shown = data?.results ?? [];
   const pickedCount = shown.filter((r) => picked.has(r.id)).length;
@@ -533,6 +558,25 @@ function ObjectTableFor({ object }: { object: string }) {
   const plural = schema.label_plural.toLowerCase();
   const singular = schema.label_singular.toLowerCase();
 
+  // the table's 3-dot menu: switches between the active records and the recycle bin
+  const tableMenu = (
+    <Menu
+      align="right"
+      trigger={(toggle) => (
+        <button className="btn icon-only table-more" onClick={toggle} aria-label="More options">
+          <EllipsisVertical size={16} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <button onClick={() => { close(); showArchived(!archived); }}>
+          {archived ? <RotateCcw size={15} /> : <Archive size={15} />}
+          {archived ? `View active ${plural}` : `View archived ${plural} only`}
+        </button>
+      )}
+    </Menu>
+  );
+
   // files are uploaded rather than created: a file record without bytes is no use
   const createButton = object === 'files' ? (
     <FileUploadButton
@@ -659,10 +703,24 @@ function ObjectTableFor({ object }: { object: string }) {
               </button>
             )}
           </div>
-          <div className="segmented" role="group" aria-label="Which records">
-            <button type="button" aria-pressed={!archived} onClick={() => archived && showArchived(false)}>Active</button>
-            <button type="button" aria-pressed={archived} onClick={() => !archived && showArchived(true)}>Archived</button>
-          </div>
+          {quickProps.map((p) => {
+            const picked = searchParams.get(p.api_name) ?? '';
+            const opts = (p.dropdown_options ?? []).filter((o) => o.record_status === 'active' || o.api_value === picked);
+            return (
+              <Select key={p.api_name} className="table-quick-filter" style={{ width: 180 }} value={picked} aria-label={`Filter by ${p.label.toLowerCase()}`}
+                onChange={(v) => setQuick(p.api_name, v)}
+                options={[
+                  { value: '', label: `Any ${p.label.toLowerCase()}` },
+                  ...(me.user && opts.some((o) => o.api_value === me.user!.id) ? [{ value: me.user.id, label: 'Me' }] : []),
+                  ...opts.filter((o) => o.api_value !== me.user?.id).map((o) => ({ value: o.api_value, label: o.label }))
+                ]} />
+            );
+          })}
+          {archived && (
+            <button type="button" className="table-archived-chip" onClick={() => showArchived(false)} title={`Back to active ${plural}`}>
+              <Archive size={13} /> Archived only <X size={13} />
+            </button>
+          )}
           {dirty && <span className="table-note">Changes aren't saved: this shared view is admin-managed. Use "Save as new view" to keep them.</span>}
           {isMobile ? (
             <div className="table-phone-actions">
@@ -694,11 +752,15 @@ function ObjectTableFor({ object }: { object: string }) {
               <button className="btn icon-only" onClick={() => setShowColumns(true)} aria-label="Edit columns">
                 <Columns3 size={16} />
               </button>
+              {tableMenu}
             </div>
           ) : (
-            <button className="btn table-columns" onClick={() => setShowColumns(true)}>
-              <Columns3 size={16} /> Edit columns
-            </button>
+            <>
+              <button className="btn table-columns" onClick={() => setShowColumns(true)}>
+                <Columns3 size={16} /> Edit columns
+              </button>
+              {tableMenu}
+            </>
           )}
         </div>
       )}

@@ -188,6 +188,41 @@
         "--strictPort"
       ],
       "port": 5181
+    },
+    {
+      "name": "api-booking-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5499",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_preview",
+        "PORT=3021",
+        "UI_URL=http://localhost:5183",
+        "DOCS_PUBLIC=true",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
+      "port": 3021
+    },
+    {
+      "name": "web-booking-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3021",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5183",
+        "--strictPort"
+      ],
+      "port": 5183
     }
   ]
 }

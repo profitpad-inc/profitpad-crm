@@ -24,8 +24,8 @@ const CREATE_FIELDS: Record<string, string[]> = {
   // the rest is filled in on the record page; they start as drafts
   quotes: ['name', 'expiration_date'],
   invoices: ['name', 'due_date'],
-  // key, lengths and start times are set in the editor; status starts as draft
-  booking_pages: ['name', 'description', 'host'],
+  // the rest is set in the editor; status starts as draft
+  booking_pages: ['name', 'public_name', 'host'],
   // the HTML comes from the API or MCP (the record page shows it)
   landing_pages: ['name', 'slug', 'description']
 };
@@ -36,6 +36,8 @@ const STARTS_WITH: Record<string, Record<string, unknown>> = {
   forms: { status: 'draft' },
   quotes: { status: 'draft' },
   invoices: { status: 'draft' },
+  // the booking defaults (start times, buffers, notice, guests, reminder) are
+  // filled by the API on every create (routes/booking.ts NEW_PAGE_DEFAULTS)
   booking_pages: { status: 'draft' }
 };
 

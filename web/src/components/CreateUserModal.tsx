@@ -125,7 +125,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
               <span>{f.label}{f.required && ' *'}</span>
               {p
                 ? <PropertyInput property={p} object="users" value={values[f.key] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [f.key]: v }))} />
-                : <input type={f.key === 'email' ? 'email' : 'text'} disabled={!schema} value={values[f.key] ?? ''} onChange={(e) => setValues((s) => ({ ...s, [f.key]: e.target.value }))} />}
+                : <input type="text" inputMode={f.key === 'email' ? 'email' : undefined} autoCapitalize={f.key === 'email' ? 'none' : undefined} disabled={!schema} value={values[f.key] ?? ''} onChange={(e) => setValues((s) => ({ ...s, [f.key]: e.target.value }))} />}
               {error?.field === f.key && <div className="error prop-error" role="alert">{error.message}</div>}
             </label>
           );

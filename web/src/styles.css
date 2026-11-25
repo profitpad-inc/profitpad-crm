@@ -599,6 +599,9 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 @media (max-width: 767px) {
   .app.mobile { flex-direction: column; height: 100dvh; }
   input, .select-face, textarea, .rich-box { font-size: 16px; } /* stops iOS zooming into fields */
+  /* a property being edited is pinned at the top and the page holds still
+     (lib/pin-editor.ts); the room at the end lets the last one reach the top */
+  .pin-editing { overflow: hidden !important; padding-bottom: 100dvh !important; }
 
   .page { padding: 16px; }
   .page-title { font-size: 22px; }
@@ -967,7 +970,7 @@ a.url-value { overflow-wrap: anywhere; }
 .mv-table.editing td { padding: 3px 0; border-top: 0; }
 .mv-table.editing .mv-value { width: 100%; padding-right: 6px; }
 .mv-table.editing .mv-value input, .mv-table.editing .mv-value .phone-input { width: 100%; min-width: 0; box-sizing: border-box; }
-.mv-table.editing .mv-label { width: 132px; min-width: 132px; padding-right: 4px; text-align: left; }
+.mv-table.editing .mv-label { width: 112px; min-width: 112px; padding-right: 4px; text-align: left; font-size: inherit; color: inherit; }
 .mv-table.editing .mv-label input { width: 100%; box-sizing: border-box; }
 .mv-table.editing .mv-actions { white-space: nowrap; }
 .mv-table .mv-is-primary:disabled { color: var(--primary); opacity: 1; }

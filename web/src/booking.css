@@ -14,16 +14,17 @@
 .bk-slot { font-size: 12.5px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); white-space: nowrap; }
 
 /* meeting lengths */
-.bk-lengths { display: flex; flex-wrap: wrap; gap: 8px; }
-.bk-length {
-  display: inline-flex; align-items: center; gap: 10px; min-height: 34px; padding: 3px 4px 3px 14px;
+.bk-len-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bk-len {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--page-background);
+  font: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); cursor: pointer;
 }
-.bk-length strong { font-weight: 600; }
-.bk-length.default { border-color: var(--primary-line); background: var(--primary-soft); }
-.bk-length:not(:has(.icon-btn)) { padding-right: 14px; }
-.bk-length-default { font-size: 12px; font-weight: 500; color: var(--primary); }
-.bk-length-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bk-len:hover:not(:disabled) { border-color: var(--primary-line); }
+.bk-len.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.bk-len.add { border-style: dashed; color: var(--muted-text); }
+.bk-len:disabled { opacity: .6; cursor: default; }
+.bk-len-other { display: inline-flex; align-items: center; gap: 6px; }
 .bk-minutes { position: relative; display: inline-flex; align-items: center; }
 .bk-minutes input { width: 112px; padding-right: 40px; }
 .bk-minutes > span { position: absolute; right: 10px; font-size: 13px; color: var(--muted-text); pointer-events: none; }

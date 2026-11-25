@@ -495,7 +495,15 @@ export function ImportModal({ object, onClose, onImported }: { object: ObjectDef
         </div>
         <label className="import-paste">
           <span>Or paste rows (copied from a spreadsheet, or comma separated)</span>
-          <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={6} placeholder={'Name\tEmail\nAda Lovelace\tada@example.com'} spellCheck={false} />
+          <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={6}
+            // Tab types a tab (a column break), so rows can be typed by hand;
+            // Shift+Tab still leaves the box. insertText keeps undo working.
+            onKeyDown={(e) => {
+              if (e.key !== 'Tab' || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+              e.preventDefault();
+              document.execCommand('insertText', false, '\t');
+            }}
+            placeholder={'Name\tEmail\nAda Lovelace\tada@example.com'} spellCheck={false} />
         </label>
         <p className="muted small">
           The first row must be the column headings. Up to {MAX_IMPORT_ROWS.toLocaleString()} rows.{' '}

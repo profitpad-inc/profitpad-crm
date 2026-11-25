@@ -148,7 +148,7 @@ export function EmailSettings() {
           <input id="pm-from-name" value={draft.from_name} placeholder="ProfitPad" onChange={set('from_name')} />
         </SettingRow>
         <SettingRow label="From address" htmlFor="pm-from">
-          <input id="pm-from" type="email" value={draft.from_address} placeholder="news@yourdomain.com" onChange={set('from_address')} />
+          <input id="pm-from" type="text" inputMode="email" autoCapitalize="none" value={draft.from_address} placeholder="news@yourdomain.com" onChange={set('from_address')} />
         </SettingRow>
         <SettingRow label="Mailing address" htmlFor="pm-mailing" hint="Your postal address. Anti-spam laws require it in every marketing email; the CRM adds it to the footer.">
           <textarea id="pm-mailing" rows={3} value={draft.mailing_address} onChange={set('mailing_address')} />
@@ -160,7 +160,7 @@ export function EmailSettings() {
           <input id="pm-reply" value={draft.reply_domain} placeholder="reply.yourdomain.com" onChange={set('reply_domain')} />
         </SettingRow>
         <SettingRow label="Forward other mail to" htmlFor="pm-fallback" hint="Mail to the reply domain that matches nothing the CRM sent is forwarded here. Empty: it is dropped.">
-          <input id="pm-fallback" type="email" value={draft.fallback_address} placeholder="team@yourdomain.com" onChange={set('fallback_address')} />
+          <input id="pm-fallback" type="text" inputMode="email" autoCapitalize="none" value={draft.fallback_address} placeholder="team@yourdomain.com" onChange={set('fallback_address')} />
         </SettingRow>
       </SettingsSection>
 

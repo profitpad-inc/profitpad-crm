@@ -93,9 +93,17 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
   });
   const [focusId, setFocusId] = useState<number | null>(autoFocus ? rows[0]?.id ?? null : null);
 
+  // a typed label that names a preset ("work", "Mobile ") is that preset
+  const presetFor = (label: string | undefined) => {
+    const t = label?.trim().toLowerCase();
+    return t ? presets.find((p) => p.key.toLowerCase() === t || p.label.toLowerCase() === t) : undefined;
+  };
   const update = (next: Row[]) => {
     setRows(next);
-    onChange(encodeEntries(next));
+    onChange(encodeEntries(next.map((r) => {
+      const preset = r.custom ? presetFor(r.label) : undefined;
+      return preset ? { ...r, label: preset.key } : r;
+    })));
   };
   const set = (id: number, patch: Partial<Row>) => update(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const add = () => {
@@ -162,7 +170,7 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
                   />
                 ) : (
                   <input
-                    type="email" value={r.value} placeholder="name@example.com" autoFocus={focusId === r.id}
+                    type="text" inputMode="email" autoCapitalize="none" value={r.value} placeholder="name@example.com" autoFocus={focusId === r.id}
                     onChange={(e) => set(r.id, { value: e.target.value })}
                     aria-label={`Email ${i + 1}`}
                   />
@@ -173,7 +181,11 @@ export function MultiValueEditor({ type, value, onChange, autoFocus, phoneSource
                   <input
                     value={r.label ?? ''} maxLength={MAX_LABEL} placeholder="Label" autoFocus={r.custom && !r.label}
                     onChange={(e) => set(r.id, { label: e.target.value })}
-                    onBlur={() => { if (!r.label?.trim()) set(r.id, { custom: false, label: undefined }); }}
+                    onBlur={() => {
+                      const preset = presetFor(r.label);
+                      if (preset) set(r.id, { custom: false, label: preset.key });
+                      else if (!r.label?.trim()) set(r.id, { custom: false, label: undefined });
+                    }}
                     aria-label={`Label for ${noun} ${i + 1}`}
                   />
                 ) : (

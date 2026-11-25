@@ -164,7 +164,7 @@ export function PaymentSettings() {
               </div>
               <label className="field">
                 <span>Contact email</span>
-                <input type="email" value={setup.email} maxLength={254} onChange={(e) => setSetup({ ...setup, email: e.target.value })} />
+                <input type="text" inputMode="email" autoCapitalize="none" value={setup.email} maxLength={254} onChange={(e) => setSetup({ ...setup, email: e.target.value })} />
               </label>
               <div className="actions">
                 <button className="btn primary" disabled={busy || !setup.business_name.trim() || !setup.email.trim()} onClick={onboard}>Set up Stripe payments</button>
@@ -220,7 +220,7 @@ export function PaymentSettings() {
           {draft.etransfer.enabled && (
             <>
               <SettingRow label="Send e-Transfers to" htmlFor="etransfer-email">
-                <input id="etransfer-email" type="email" value={draft.etransfer.email} maxLength={254} placeholder="payments@example.com"
+                <input id="etransfer-email" type="text" inputMode="email" autoCapitalize="none" value={draft.etransfer.email} maxLength={254} placeholder="payments@example.com"
                   onChange={(e) => setDraft({ ...draft, etransfer: { ...draft.etransfer, email: e.target.value } })} />
               </SettingRow>
               <SettingRow label="Instructions" hint="Optional." htmlFor="etransfer-instructions">

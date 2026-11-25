@@ -51,6 +51,15 @@
 .table-note::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .table-toolbar .table-columns { margin-left: auto; height: 32px; padding: 0 12px; }
 .table-columns svg { color: var(--muted-text); }
+.table-toolbar .table-more { height: 32px; width: 32px; padding: 0; justify-content: center; }
+.table-more svg { color: var(--muted-text); }
+.table-archived-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.table-archived-chip svg { color: var(--muted-text); }
+.table-archived-chip:hover { border-color: var(--muted-text); }
 
 .selection-bar {
   gap: 4px; padding: 0 4px 0 12px; border: 1px solid var(--primary-line); border-radius: var(--radius);
@@ -118,6 +127,10 @@
 .data-grid th:hover .dg-grip { visibility: visible; }
 .dg-grip:hover { background: var(--surface); color: var(--text); }
 .dg-resize { position: absolute; top: 0; right: -4px; bottom: 0; z-index: 1; width: 8px; cursor: col-resize; }
+/* the last column's handle (before the filler) stays inside the table: poking
+   out past it would add scroll room beyond the row lines */
+.data-grid th:nth-last-child(2) .dg-resize { right: 0; }
+.data-grid th:nth-last-child(2) .dg-resize::after { left: auto; right: 1px; }
 .dg-resize::after { content: ''; position: absolute; top: 8px; bottom: 8px; left: 3px; width: 2px; border-radius: 1px; background: transparent; }
 .data-grid th:hover .dg-resize::after { background: var(--border); }
 .data-grid th .dg-resize:hover::after, body.dg-resizing .dg-resize:hover::after { background: var(--primary); }
@@ -167,8 +180,9 @@ body.dg-resizing, body.dg-resizing * { cursor: col-resize !important; user-selec
 }
 /* a single text box (SKU, name, a number): the frame is the cell itself, the
    same height, the text where the cell's text was */
-.grid-editor:has(> input:only-child) { padding: 0 11px; }
-.grid-editor:has(> input:only-child) > input { padding-block: 0; height: 36px; }
+.grid-editor:has(> :is(input, .select-face):only-child) { padding: 0 11px; }
+.grid-editor:has(> :is(input, .select-face):only-child) > :is(input, .select-face) { padding-block: 0; height: 36px; }
+.grid-editor:has(> .select-face:only-child) > .select-face { padding-right: 22px; background-position: right 0 center; }
 .grid-editor .checks { max-height: 220px; overflow: auto; }
 .grid-editor-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .grid-editor-foot .error-text { margin-right: auto; color: var(--danger); font-size: 12px; }

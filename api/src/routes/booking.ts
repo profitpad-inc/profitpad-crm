@@ -225,10 +225,18 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
   return out;
 }
 
+// What a new booking page starts with, however it is made (CRM, API, MCP):
+// start times every 15 minutes, no buffers, 30 minutes' notice, 20 guests and
+// a reminder 1 hour before. Anything the create sends wins.
+export const NEW_PAGE_DEFAULTS: Record<string, unknown> = {
+  slot_step_minutes: 15, buffer_before_minutes: 0, buffer_after_minutes: 0, min_notice_minutes: 30, max_guests: MAX_GUESTS,
+  email_settings: JSON.stringify({ confirm: true, reminders: [60], note: null })
+};
+
 // Booking page writes: the time zone, the hours and the forms are checked,
 // and a page can only be published when it can take bookings.
 onWrite('booking_pages', async (client, properties, existing) => {
-  const out = { ...properties };
+  const out = existing ? { ...properties } : { ...NEW_PAGE_DEFAULTS, ...properties };
   if (out.timezone !== undefined && out.timezone !== null && out.timezone !== '') {
     if (!isTimeZone(out.timezone)) throw badRequest('timezone must be an IANA time zone like America/Toronto', { property: 'timezone' });
   }
