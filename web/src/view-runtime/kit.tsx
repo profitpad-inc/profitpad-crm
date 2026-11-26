@@ -1,5 +1,5 @@
 import {
-  Component, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent, type ReactNode
+  Component, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ErrorInfo, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent, type ReactNode
 } from 'react';
 import { call, getInit, getParams, getViewport, post, report, subscribeParams, subscribeViewport } from './bridge';
 import type { Params, ViewFile, Viewport } from './protocol';
@@ -807,6 +807,20 @@ const orDash = (n: ReactNode) => (n === null || n === undefined || n === false |
 const CARD_NAME_PARTS = new Set(['first_name', 'last_name']);
 
 const NARROW = '(max-width: 719px)';
+// the CRM's phone breakpoint (lib/use-mobile.ts)
+const PHONE = '(max-width: 767px)';
+function useMediaMatch(query: string): boolean {
+  const [on, setOn] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const change = () => setOn(mq.matches);
+    change();
+    mq.addEventListener('change', change);
+    return () => mq.removeEventListener('change', change);
+  }, [query]);
+  return on;
+}
+
 function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia(NARROW).matches);
   useEffect(() => {
@@ -1318,11 +1332,24 @@ function localDateTime(v: unknown): string {
 
 // One property shown and edited as on a CRM record page's About card: the
 // label, the value under it, Edit and Copy on hover (a lock when readOnly),
-// and a click that opens the editor in place with Cancel and Save (a dropdown
-// saves on pick). Enter saves, Escape cancels. email and phone take the whole
+// and a click that opens the editor in place, saving the way the record page
+// does (see the click-outside effect below). email and phone take the whole
 // list (<name>__all) and edit it with MultiValueInput. onSave gets the value
 // to store (null for empty) and should save it (updateRecord) and refresh;
 // if it throws, the error shows under the box and the editor stays open.
+// Only one PropertyField in the view edits at a time, as on a record page:
+// opening one closes the one that was open.
+let activeProp: string | null = null;
+const propListeners = new Set<() => void>();
+function setActiveProp(id: string | null) {
+  activeProp = id;
+  propListeners.forEach((l) => l());
+}
+function subscribeActiveProp(l: () => void) {
+  propListeners.add(l);
+  return () => { propListeners.delete(l); };
+}
+
 export function PropertyField({ label, type = 'text', value, options = [], readOnly, onSave, style, className }: {
   label: ReactNode; type?: PropertyFieldType; value: unknown; options?: { value: string; label: string }[]; readOnly?: boolean;
   onSave?: (value: unknown) => Promise<unknown> | unknown;
@@ -1330,7 +1357,13 @@ export function PropertyField({ label, type = 'text', value, options = [], readO
   const multi = type === 'email' || type === 'phone';
   const list = multi ? entriesOf(Array.isArray(value) ? value : value ? [{ value: String(value) }] : []) : [];
   const start = multi ? list : type === 'datetime' ? localDateTime(value) : type === 'date' ? String(value ?? '').slice(0, 10) : value === null || value === undefined ? '' : String(value);
-  const [editing, setEditing] = useState(false);
+  const id = useId();
+  const editing = useSyncExternalStore(subscribeActiveProp, () => activeProp === id);
+  const setEditing = (on: boolean) => { if (on) setActiveProp(id); else if (activeProp === id) setActiveProp(null); };
+  const boxRef = useRef<HTMLDivElement>(null);
+  // a phone (the CRM's own breakpoint): every field saves with its button,
+  // Cancel and Save sit on the label line, and taps outside do nothing
+  const phone = useMediaMatch(PHONE);
   const [draft, setDraft] = useState<unknown>(start);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1360,17 +1393,51 @@ export function PropertyField({ label, type = 'text', value, options = [], readO
       setEditing(false);
     } catch (e) {
       setError((e as Error).message || String(e));
+      // a refused value reopens with the reason under it
+      setActiveProp(id);
     } finally {
       setBusy(false);
     }
   }
+  // On a computer, as on a record page: a click outside the open field closes
+  // it when nothing changed and saves a changed one-value field (those have no
+  // buttons: Enter or leaving saves, Escape cancels); a changed email or phone
+  // list stays open for its Save or Cancel. On a phone it closes only with them.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!editing || phone) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      // dropdown lists, calendars and dialogs are drawn on <body>
+      if (boxRef.current?.contains(t) || t.closest?.('.select-menu, .menu, .modal, [role="dialog"], .flatpickr-calendar')) return;
+      if (!changed) setEditing(false);
+      else if (!multi) void saveRef.current();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [editing, changed, multi, phone]);
+  // the box gets the cursor when the field opens
+  useEffect(() => {
+    if (editing) boxRef.current?.querySelector<HTMLElement>('.v-prop-edit input:not([type=hidden]), .v-prop-edit textarea')?.focus();
+  }, [editing]);
+  // a field that unmounts while open lets the next one open
+  useEffect(() => () => { if (activeProp === id) setActiveProp(null); }, [id]);
+
   const keys = (e: ReactKeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
-    if (e.key === 'Enter' && type !== 'longtext' && !multi && changed) { e.preventDefault(); void save(); }
+    if (e.key === 'Enter' && type !== 'longtext' && !multi && !phone && changed) { e.preventDefault(); void save(); }
   };
 
+  const actions = (
+    <div className="v-prop-actions">
+      <Button small className="v-btn-ghost" onClick={() => setEditing(false)}>Cancel</Button>
+      <Button small disabled={busy || !changed} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
+    </div>
+  );
+
   return (
-    <div className={cx('v-prop', canEdit && 'editable', editing && 'editing', className)} style={style}
+    <div ref={boxRef} className={cx('v-prop', canEdit && 'editable', editing && 'editing', className)} style={style}
       onClick={editing ? undefined : (e) => { if (!(e.target as HTMLElement).closest('button, a')) open(); }}>
       <div className="v-prop-label">
         <span>{label}</span>
@@ -1380,22 +1447,20 @@ export function PropertyField({ label, type = 'text', value, options = [], readO
             {text !== '' && <button type="button" className="v-prop-tool" title="Copy" aria-label="Copy" onClick={() => void copyText(text)}><Copy size={13} /></button>}
           </span>
         )}
+        {/* on a phone Cancel and Save sit on the label line, above the box,
+            so its dropdown list or calendar never covers them */}
+        {editing && phone && actions}
         {!canEdit && <Lock className="v-prop-lock" size={12} aria-label="Read only" />}
       </div>
       {editing ? (
-        <div className="v-prop-edit" onKeyDown={keys}>
+        <div className={cx('v-prop-edit', multi && 'multi')} onKeyDown={keys}>
           {multi ? <MultiValueInput type={type as 'email' | 'phone'} value={draft} onChange={setDraft} />
-            : type === 'dropdown' ? <Select value={String(draft ?? '')} onChange={(v) => { setDraft(v); void save(v); }} options={options} placeholder="--" />
+            : type === 'dropdown' ? <Select value={String(draft ?? '')} onChange={(v) => { setDraft(v); if (!phone) void save(v); }} options={options} placeholder="--" />
               : type === 'date' || type === 'datetime' ? <DateInput value={String(draft ?? '')} onChange={setDraft} withTime={type === 'datetime'} />
                 : type === 'longtext' ? <TextArea value={String(draft ?? '')} onChange={setDraft} rows={4} />
                   : <TextInput value={String(draft ?? '')} onChange={setDraft} type={type === 'number' ? 'number' : 'text'} />}
           {error && <div className="v-field-error">{error}</div>}
-          {type !== 'dropdown' && (
-            <div className="v-prop-actions">
-              <Button small onClick={() => setEditing(false)}>Cancel</Button>
-              <Button small variant="primary" disabled={busy || !changed} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
-            </div>
-          )}
+          {!phone && multi && actions}
         </div>
       ) : (
         <div className="v-prop-value">

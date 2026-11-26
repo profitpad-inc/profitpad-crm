@@ -385,3 +385,25 @@ input[type='checkbox']:disabled { opacity: 0.5; cursor: default; }
 .v-prop-edit { display: flex; flex-direction: column; gap: 6px; }
 .v-prop-edit .v-input, .v-prop-edit .v-select, .v-prop-edit textarea { width: 100%; box-sizing: border-box; }
 .v-prop-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.v-prop-label > .v-prop-actions { flex: none; margin: -4px 0 -4px auto; }
+
+/* a field being edited is one field in one frame, as on the record page
+   (styles.css .prop-row.editing): its boxes have no border of their own and
+   line up with the label; Cancel is quiet, Save a plain button */
+.v-prop.editing .v-prop-label { color: var(--muted-text); }
+.v-prop.editing :is(input:not([type='checkbox']):not([type='radio']), textarea, .select-face),
+.v-prop.editing :is(input:not([type='checkbox']):not([type='radio']), textarea, .select-face):focus {
+  border-color: transparent; background-color: transparent; box-shadow: none; outline: none; padding-left: 0;
+}
+.v-prop.editing .phone-input { gap: 8px; }
+.v-prop.editing .phone-input .phone-country { padding-right: 20px; background-position: right 4px center; }
+.v-prop.editing .v-multi .mv-table td { padding-block: 0; }
+.v-prop.editing .v-multi .mv-label { width: 1%; min-width: 0; padding-right: 8px; }
+.v-prop.editing .v-multi .mv-label :is(.select-face, input) { width: auto; max-width: 100%; color: var(--muted-text); padding-right: 18px; }
+.v-prop.editing .v-multi .mv-add { margin-left: -8px; margin-top: 6px; color: var(--muted-text); font-size: 12px; }
+.v-prop.editing .v-multi .mv-add:hover { color: var(--text); }
+.v-btn-ghost { border-color: transparent; background: none; color: var(--muted-text); }
+.v-btn-ghost:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+/* lists: "Add" on the left and Cancel / Save on the same line, pinned right */
+.v-prop-edit.multi { position: relative; }
+.v-prop-edit.multi .v-prop-actions { position: absolute; right: 0; bottom: 0; height: 28px; align-items: center; }
