@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type RefObject } from 'react';
+import type { LucideProps } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Ellipsis, Eye, Folder, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import type { NavItem } from '../lib/api';
 import { MORE_OFF, moreGroups, objectIcon } from '../lib/display';
 import { isNavActive, navLink } from '../lib/nav';
-import { ViewIcon } from '../lib/lucide-icons';
+import { DEFAULT_VIEW_ICON, ViewIcon } from '../lib/lucide-icons';
 import { onFrameFocus } from '../lib/frame-focus';
 import { SearchPalette } from './SearchPalette';
 import { BrandMark } from './Logo';
@@ -167,23 +168,49 @@ export function Sidebar({ variant = 'rail' }: { variant?: 'rail' | 'drawer' }) {
 // doesn't jump when hovering between groups of different lengths.
 const MORE_MENU_HEIGHT = 580;
 
+// A More menu group with its links: the object groups from moreGroups, plus
+// "Custom views" (every view this user can open, A to Z) right after Data.
+type MoreLink = { key: string; to: string; label: string; Icon: ComponentType<Omit<LucideProps, 'name'>>; iconName?: string | null };
+type MoreLinkGroup = { label: string; links: MoreLink[] };
+
+function useMoreLinkGroups(objects: string[]): MoreLinkGroup[] {
+  const { objectByName, customViews } = useApp();
+  const groups: MoreLinkGroup[] = moreGroups(objects).map((g) => ({
+    label: g.label,
+    links: g.objects.map((o) => ({ key: o, to: `/objects/${o}`, label: objectByName.get(o)?.label_plural ?? o, Icon: objectIcon(o) }))
+  }));
+  const views = customViews
+    .map((v) => ({ v, name: v.name?.trim() || v.slug }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }))
+    .map(({ v, name }) => ({
+      key: `view:${v.slug}`,
+      to: `/view/#${v.slug}`,
+      label: v.status === 'draft' ? `${name} (draft)` : name,
+      Icon: DEFAULT_VIEW_ICON,
+      iconName: v.icon
+    }));
+  if (views.length > 0) {
+    // after Data, which is the last built-in group, so before Custom objects
+    const at = groups.findIndex((g) => g.label === 'Custom objects');
+    groups.splice(at === -1 ? groups.length : at, 0, { label: 'Custom views', links: views });
+  }
+  return groups;
+}
+
 // Drawer version of More: every group listed in place, no flyout.
 function InlineMore({ objects }: { objects: string[] }) {
-  const { objectByName } = useApp();
+  const groups = useMoreLinkGroups(objects);
   return (
     <div className="nav-section">
-      {moreGroups(objects).map((g) => (
+      {groups.map((g) => (
         <div key={g.label} className="nav-section">
           <div className="nav-section-head">{g.label}</div>
-          {g.objects.map((o) => {
-            const Icon = objectIcon(o);
-            return (
-              <Link key={o} to={`/objects/${o}`} className="nav-item">
-                <Icon size={20} strokeWidth={1.75} />
-                <span>{objectByName.get(o)?.label_plural ?? o}</span>
-              </Link>
-            );
-          })}
+          {g.links.map((l) => (
+            <Link key={l.key} to={l.to} className="nav-item">
+              <ViewIcon icon={l.iconName} fallback={l.Icon} size={20} strokeWidth={1.75} />
+              <span>{l.label}</span>
+            </Link>
+          ))}
         </div>
       ))}
     </div>
@@ -210,9 +237,8 @@ function useFlyoutClose(ref: RefObject<HTMLDivElement | null>, onClose: () => vo
 }
 
 function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTop: number; onClose: () => void }) {
-  const { objectByName } = useApp();
   const ref = useRef<HTMLDivElement>(null);
-  const groups = moreGroups(objects);
+  const groups = useMoreLinkGroups(objects);
   const [group, setGroup] = useState(groups[0]?.label);
   useFlyoutClose(ref, onClose);
 
@@ -237,15 +263,12 @@ function MoreMenu({ objects, anchorTop, onClose }: { objects: string[]; anchorTo
         ))}
       </div>
       <div className="more-objects">
-        {current?.objects.map((o) => {
-          const Icon = objectIcon(o);
-          return (
-            <Link key={o} to={`/objects/${o}`} className="more-object" onClick={onClose}>
-              <Icon size={16} strokeWidth={1.75} />
-              <span>{objectByName.get(o)?.label_plural ?? o}</span>
-            </Link>
-          );
-        })}
+        {current?.links.map((l) => (
+          <Link key={l.key} to={l.to} className="more-object" onClick={onClose}>
+            <ViewIcon icon={l.iconName} fallback={l.Icon} size={16} strokeWidth={1.75} />
+            <span>{l.label}</span>
+          </Link>
+        ))}
       </div>
     </div>
   );
