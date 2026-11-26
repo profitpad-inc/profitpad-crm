@@ -19,6 +19,7 @@ export type SecurityEvent =
   | 'role.deleted'
   | 'role.object_permission'
   | 'role.property_permission'
+  | 'property.access'
   | 'role.assigned'
   | 'role.unassigned'
   | 'sharing_rule.created'

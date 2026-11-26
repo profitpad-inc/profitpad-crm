@@ -6,7 +6,7 @@ import { pool, quoteIdent, withTx, type Db } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import {
   generateKey, hashKey, hasPermission, isSuperAdmin, noneHidden, requireObjectPermission, requirePermission, requireRecentSignIn, requireScope,
-  ROLE_PERMISSIONS, sharingClauses, USER_CAN_SIGN_IN, type Principal, type RolePermission, type Scope, type SharingRule
+  ROLE_PERMISSIONS, sharingClauses, USER_CAN_SIGN_IN, type Principal, type PropertyAccessLevel, type RolePermission, type Scope, type SharingRule
 } from '../auth.js';
 import { forbidden } from '../errors.js';
 import { logEvent } from '../audit.js';
@@ -26,6 +26,30 @@ const DAY = 86400_000;
 
 // Changes to who can do what: Super Admins, or a role with the permission
 // (API keys, Roles, Users), and from a browser only with a recent sign-in.
+// A property's access as the Access tab shows it: the default, and every
+// role with what it gets (Super Admins always full; override null = default)
+async function propertyAccessOut(prop: PropertyDef) {
+  const [{ rows: def }, { rows: roles }] = await Promise.all([
+    pool.query('select access from auth.property_access_defaults where property_id = $1', [prop.pc_0002_id]),
+    pool.query(
+      `select r.id::text as id, r.name, r.is_admin, pp.access as override from auth.roles r
+       left join auth.role_property_permissions pp on pp.role_id = r.id and pp.property_id = $1
+       order by r.is_admin desc, lower(r.name)`,
+      [prop.pc_0002_id]
+    )
+  ]);
+  const defaultAccess: PropertyAccessLevel = def[0]?.access ?? 'full';
+  return {
+    property: prop.api_name,
+    system: prop.is_base,
+    default: defaultAccess,
+    roles: roles.map((r) => ({
+      id: r.id, name: r.name, is_admin: r.is_admin, override: r.is_admin ? null : (r.override as PropertyAccessLevel | null),
+      access: (r.is_admin ? 'full' : r.override ?? defaultAccess) as PropertyAccessLevel
+    }))
+  };
+}
+
 function requireChange(p: Principal, perm: RolePermission): void {
   requirePermission(p, perm);
   requireRecentSignIn(p);
@@ -466,7 +490,67 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   );
 
-  app.put<{ Params: { id: string; object: string; property: string }; Body: { access: 'hidden' | 'read_only' | null } }>(
+  // ---- Property access (migration 0142) -------------------------------------
+  // One property's access for every role, as the property editor's Access tab
+  // shows it: a default for all roles plus the roles that differ from it.
+  // default 'full' and no roles: everyone views and edits; 'read_only':
+  // everyone views; 'hidden': Super Admins only, unless roles are given access.
+
+  app.get<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property/access', async (req) => {
+    if (!canSeeRoles(req.principal!)) throw forbidden('this needs the Roles permission');
+    const obj = await getObject(req.params.object);
+    const prop = getProperty(obj, req.params.property);
+    if (!prop) throw notFound(`unknown property "${req.params.property}"`);
+    return propertyAccessOut(prop);
+  });
+
+  app.put<{
+    Params: { object: string; property: string };
+    Body: { default: PropertyAccessLevel; roles?: Record<string, PropertyAccessLevel> };
+  }>('/v1/schema/:object/properties/:property/access', async (req) => {
+    const p = req.principal!;
+    requireChange(p, 'roles');
+    const obj = await getObject(req.params.object);
+    const prop = getProperty(obj, req.params.property);
+    if (!prop) throw notFound(`unknown property "${req.params.property}"`);
+    if (prop.is_base) throw badRequest(`${prop.label} is a system property: everyone who can read ${obj.label_plural} sees it`);
+    const levels: PropertyAccessLevel[] = ['full', 'read_only', 'hidden'];
+    const def = req.body?.default;
+    if (!levels.includes(def)) throw badRequest(`default must be one of ${levels.join(', ')}`);
+    const given = req.body?.roles ?? {};
+    if (typeof given !== 'object' || Array.isArray(given)) throw badRequest('roles must be an object of role id to access');
+    const { rows: roles } = await pool.query('select id::text as id, is_admin from auth.roles');
+    const known = new Map(roles.map((r) => [r.id as string, r.is_admin as boolean]));
+    const rows: [string, PropertyAccessLevel][] = [];
+    for (const [roleId, access] of Object.entries(given)) {
+      if (!known.has(roleId)) throw badRequest(`no role ${roleId}`);
+      if (!levels.includes(access)) throw badRequest(`access for role ${roleId} must be one of ${levels.join(', ')}`);
+      // Super Admins always have full access; a role at the default needs no row
+      if (known.get(roleId) || access === def) continue;
+      rows.push([roleId, access]);
+    }
+    await withTx({ principal: p }, async (c) => {
+      await c.query('delete from auth.role_property_permissions where property_id = $1', [prop.pc_0002_id]);
+      for (const [roleId, access] of rows) {
+        await c.query('insert into auth.role_property_permissions (role_id, property_id, access) values ($1, $2, $3)', [roleId, prop.pc_0002_id, access]);
+      }
+      if (def === 'full') await c.query('delete from auth.property_access_defaults where property_id = $1', [prop.pc_0002_id]);
+      else {
+        await c.query(
+          `insert into auth.property_access_defaults (property_id, access, updated_by) values ($1, $2, $3)
+           on conflict (property_id) do update set access = excluded.access, updated_by = excluded.updated_by, updated_at = now()`,
+          [prop.pc_0002_id, def, p.actor]
+        );
+      }
+    });
+    await logEvent(req, 'property.access', {
+      target: { type: 'property', id: prop.pc_0002_id },
+      details: { object: obj.api_name, property: prop.api_name, default: def, roles: Object.fromEntries(rows) }
+    });
+    return propertyAccessOut(prop);
+  });
+
+  app.put<{ Params: { id: string; object: string; property: string }; Body: { access: PropertyAccessLevel | null } }>(
     '/v1/roles/:id/property-permissions/:object/:property',
     async (req) => {
       requireChange(req.principal!, 'roles');
@@ -475,6 +559,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const prop = getProperty(obj, req.params.property);
       if (!prop) throw notFound(`unknown property "${req.params.property}"`);
       const access = req.body?.access ?? null;
+      if (access !== null && !['full', 'read_only', 'hidden'].includes(access)) throw badRequest('access must be full, read_only, hidden or null');
       if (access === null) {
         await pool.query('delete from auth.role_property_permissions where role_id = $1 and property_id = $2', [req.params.id, prop.pc_0002_id]);
       } else {

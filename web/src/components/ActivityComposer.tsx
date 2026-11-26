@@ -127,7 +127,7 @@ export function ActivityComposer({ object, page, pageLabel, focusKey, hidden, on
     <div className="composer-fields">
       {fields.map((p) => (
         <label key={p.api_name} className={`field${p.api_name === 'name' || p.api_name === 'subject' || p.api_name === 'to_addresses' ? ' wide' : ''}`}>
-          <span>{p.label}</span>
+          <span title={p.description || undefined}>{p.label}</span>
           <PropertyInput property={p} object={object} value={values[p.api_name] ?? ''} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))} />
           {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
         </label>

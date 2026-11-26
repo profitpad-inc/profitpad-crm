@@ -174,7 +174,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
         ))}
         {showFields && fields.map((p, i) => (
           <label key={p.api_name} className="field">
-            <span>{p.label}</span>
+            <span title={p.description || undefined}>{p.label}</span>
             <PropertyInput property={p} value={values[p.api_name] ?? ''} autoFocus={mode === 'custom' && i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))} />
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>

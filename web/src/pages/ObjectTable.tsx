@@ -789,7 +789,7 @@ function ObjectTableFor({ object }: { object: string }) {
                       const dir = sorts[0]?.property === p.api_name ? sorts[0].direction : null;
                       return (
                         <button key={p.api_name} className={dir ? 'sort-current' : undefined} onClick={() => { close(); clickHeader(p.api_name); }}>
-                          <span className="sort-option-label">{p.label}</span>
+                          <span className="sort-option-label" title={p.description || undefined}>{p.label}</span>
                           {dir && <span className="sort-option-dir">{dir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />} {directionWords(p, dir)}</span>}
                         </button>
                       );
@@ -920,7 +920,7 @@ function ObjectTableFor({ object }: { object: string }) {
                       {headerHandles(i)}
                       <div className="dg-head">
                         <button className="dg-sort" onClick={() => clickHeader(prop.api_name)}>
-                          <span className="dg-label">{prop.label}</span>
+                          <span className="dg-label" title={prop.description || undefined}>{prop.label}</span>
                           {sorted === 'asc' ? <ArrowUp size={13} /> : sorted === 'desc' ? <ArrowDown size={13} /> : <ArrowUpDown size={13} className="dg-sort-idle" />}
                         </button>
                         <ColumnMenu

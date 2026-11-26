@@ -1112,7 +1112,7 @@ function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy =
   const row = (p: Property, showLock: boolean) => (
     <div key={p.api_name} className={`prop-row${editable(p) ? ' editable' : ''}${editing === p.api_name ? ' editing' : ''}${isHtml(p) ? ' html' : ''}${flash?.has(p.api_name) && editing !== p.api_name ? ' live-changed' : ''}`} onMouseDown={press(p)}>
       <div className="prop-label">
-        <span>{p.label}</span>
+        <span title={p.description || undefined}>{p.label}</span>
         {editing !== p.api_name && (
           <span className="prop-tools" onClick={(e) => e.stopPropagation()}>
             {editable(p) && (

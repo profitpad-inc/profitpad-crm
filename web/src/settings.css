@@ -481,3 +481,22 @@
 .rot-share-input { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .rot-share-input input { width: 64px; text-align: right; }
 .rot-shares-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+
+/* property editor: Access and Usage tabs (components/PropertyAccessUsage.tsx) */
+.prop-editor[hidden] { display: none; }
+.prop-access { display: grid; gap: 14px; }
+.prop-access-modes { display: grid; gap: 2px; border-top: 1px solid var(--border); padding-top: 10px; }
+.prop-access-mode { display: flex; align-items: flex-start; gap: 10px; padding: 7px 8px; border-radius: var(--radius-sm, 4px); cursor: pointer; }
+.prop-access-mode:hover { background: var(--hover, color-mix(in srgb, var(--text) 4%, transparent)); }
+.prop-access-mode > input[type="radio"] { width: auto; height: auto; margin: 3px 0 0; accent-color: var(--primary); flex-shrink: 0; }
+.prop-access-mode > span { display: grid; gap: 2px; }
+.prop-access-label { font-weight: 500; }
+.prop-access .access-table .select-face { min-width: 160px; }
+.prop-usage { display: grid; gap: 14px; }
+.prop-usage-title { margin: 0; font-size: 16px; }
+.prop-usage-fill { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+.prop-usage-rate { font-size: 22px; font-weight: 500; margin-top: 4px; }
+.prop-usage-fill .link-btn, .prop-usage .grid .link-btn { display: inline-flex; align-items: center; gap: 4px; }
+.prop-usage-group { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
+.prop-usage-head { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 4px 0; font-weight: 500; color: var(--text); justify-self: start; }
+.prop-usage .prop-usage-when { text-align: right; white-space: nowrap; }

@@ -132,7 +132,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       <div className="form">
         {fields.map((p, i) => (
           <label key={p.api_name} className="field">
-            <span>{p.label}</span>
+            <span title={p.description || undefined}>{p.label}</span>
             <PropertyInput property={p} object={object.api_name} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))}
               onFill={(v) => { setValues((s) => ({ ...s, ...v })); setFilled((f) => new Set([...f, ...Object.keys(v)])); }}
             />

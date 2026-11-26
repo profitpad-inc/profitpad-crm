@@ -210,7 +210,7 @@ export function MergeRecordsModal({ object, schema, record, onClose, onMerged }:
                               onChange={() => setChoice((c) => ({ ...c, [p.api_name]: side }))}
                             />
                             <span className="merge-prop-text">
-                              <span className="merge-prop-label">{p.label}</span>
+                              <span className="merge-prop-label" title={p.description || undefined}>{p.label}</span>
                               <span className="merge-prop-value">{empty ? 'No value' : displayValue(p, v)}</span>
                             </span>
                           </label>
@@ -251,7 +251,7 @@ export function MergeRecordsModal({ object, schema, record, onClose, onMerged }:
                   const v = valueOf(p);
                   return (
                     <div className="merge-preview-field" key={p.api_name}>
-                      <div className="merge-prop-label">{p.label}</div>
+                      <div className="merge-prop-label" title={p.description || undefined}>{p.label}</div>
                       <div>{isEmpty(v) ? <span className="merge-no-value">No value</span> : displayValue(p, v)}</div>
                     </div>
                   );

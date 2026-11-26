@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hasPermission, optionChangeByEditor, recordFilter, type ObjectPermission, type Permissions, type Principal } from './auth.js';
+import { combinePropertyAccess, hasPermission, optionChangeByEditor, recordFilter, type ObjectPermission, type Permissions, type Principal, type PropertyAccessLevel } from './auth.js';
 import { normalizeObjectSwitches } from './routes/admin.js';
 import type { ObjectDef } from './registry.js';
 
@@ -102,4 +102,20 @@ test('owner rotations: a permission apps can be given, unlike Users', () => {
   } as unknown as Principal;
   assert.equal(hasPermission(app, 'owner_rotations'), true);
   assert.equal(hasPermission(app, 'users'), false);
+});
+
+test('property access: role rows win over the default, most permissive role wins', () => {
+  const defaults = new Map<string, PropertyAccessLevel>([['p_hidden', 'hidden'], ['p_view', 'read_only']]);
+  const overrides = new Map<string, Map<string, PropertyAccessLevel>>([
+    ['p_hidden', new Map([['r1', 'full']])],
+    ['p_role_only', new Map([['r1', 'hidden']])]
+  ]);
+  // r1 is given p_hidden; p_view stays view-only; p_role_only is hidden for r1 alone
+  assert.deepEqual([...combinePropertyAccess(['r1'], defaults, overrides)].sort(), [['p_role_only', 'hidden'], ['p_view', 'read_only']]);
+  // r2 has no rows: the defaults
+  assert.deepEqual([...combinePropertyAccess(['r2'], defaults, overrides)].sort(), [['p_hidden', 'hidden'], ['p_view', 'read_only']]);
+  // both roles: the most permissive of each (a role without a row on p_role_only gets full)
+  assert.deepEqual([...combinePropertyAccess(['r1', 'r2'], defaults, overrides)].sort(), [['p_view', 'read_only']]);
+  // no roles: the defaults
+  assert.deepEqual([...combinePropertyAccess([], defaults, overrides)].sort(), [['p_hidden', 'hidden'], ['p_view', 'read_only']]);
 });

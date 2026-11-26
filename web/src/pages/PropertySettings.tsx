@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowUp, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { api, clearSchemaCache, getSchema, type DropdownOption, type OptionList, type Property, type SearchResult } from '../lib/api';
+import { api, can, clearSchemaCache, getSchema, type DropdownOption, type OptionList, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { nameProperties, recordName } from '../lib/display';
 import { Menu, Modal } from '../components/ui';
@@ -11,6 +11,7 @@ import { EmptyState, SettingsPage, TableSkeleton } from '../components/settings'
 import { ColorPicker } from '../components/ColorPicker';
 import { Select } from '../components/Select';
 import { useUrlSearch } from '../lib/use-url-search';
+import { AccessTab, UsageTab, accessBody, accessDraftOf, type AccessDraft, type PropertyAccess } from '../components/PropertyAccessUsage';
 
 // Admin page for an object's properties. Every change goes through the
 // /v1/schema endpoints, so the database (meta.* functions) enforces the
@@ -201,7 +202,7 @@ export function PropertySettings() {
               {shown.map((p) => (
                 <tr key={p.id}>
                   <td className="primary-cell">
-                    <button className="link-btn" onClick={() => setEditing(p)}>{p.label}</button>
+                    <button className="link-btn" onClick={() => setEditing(p)} title={p.description || undefined}>{p.label}</button>
                   </td>
                   <td><code className="muted">{p.api_name}</code></td>
                   <td>{typeLabel(p)}</td>
@@ -331,6 +332,22 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   object: string; property: Property | null; siblings: Property[]; onClose: () => void; onSaved: (message: string) => Promise<void>;
 }) {
   const isNew = property === null;
+  const { me, objects } = useApp();
+  const objectLabel = objects.find((o) => o.api_name === object)?.label_plural ?? object;
+  // tabs for an existing property: Details, Access (who sees and edits it), Usage
+  const [tab, setTab] = useState<'details' | 'access' | 'usage'>('details');
+  const seeAccess = !isNew && (can(me, 'roles') || can(me, 'users'));
+  const editAccess = can(me, 'roles');
+  const [access, setAccess] = useState<PropertyAccess | null>(null);
+  const [accessDraft, setAccessDraft] = useState<AccessDraft | null>(null);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!seeAccess || !property) return;
+    api<PropertyAccess>('GET', `/v1/schema/${object}/properties/${encodeURIComponent(property.api_name)}/access`)
+      .then((a) => { setAccess(a); setAccessDraft(accessDraftOf(a)); })
+      .catch((e) => setAccessError((e as Error).message));
+  }, [seeAccess, object, property]);
+  const { dirty: accessDirty } = useDirty(accessDraft, access);
   const [label, setLabel] = useState(property?.label ?? '');
   const [apiName, setApiName] = useState(property?.api_name ?? '');
   const [autoName, setAutoName] = useState(isNew);
@@ -370,7 +387,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   // once something is edited, closing asks first so the work isn't lost by accident;
   // until then Escape, clicking outside, X and Cancel just close
-  const { dirty } = useDirty({ label, apiName, description, type, options, calcSql, calcType, choices, stages, listId });
+  const { dirty: detailsDirty } = useDirty({ label, apiName, description, type, options, calcSql, calcType, choices, stages, listId });
+  const dirty = detailsDirty || (editAccess && accessDirty);
   const [confirmClose, setConfirmClose] = useState(false);
   const requestClose = () => (dirty ? setConfirmClose(true) : onClose());
   // choices get a colour swatch once the dropdown shows colours
@@ -525,6 +543,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         // link after: the choices merge with the list's
         if (listId && listId !== listBefore) await api('POST', `/v1/option-lists/${listId}/dropdowns`, { object, property: property.api_name });
       }
+      if (editAccess && accessDirty && accessDraft) await api('PUT', `${url}/access`, accessBody(accessDraft));
       await onSaved(`${label.trim()} saved`);
     } catch (e) {
       // a failed step may have saved earlier ones, so reload on the next open
@@ -604,7 +623,21 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         </>
       }
     >
-      <div className="prop-editor">
+      {!isNew && (
+        <div className="tabs" role="tablist" aria-label="Property">
+          {([['details', 'Details'], ...(seeAccess ? [['access', 'Access']] : []), ['usage', 'Usage']] as [typeof tab, string][]).map(([k, l]) => (
+            <div key={k} className={`tab${tab === k ? ' active' : ''}`}>
+              <button role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab === 'access' && (accessError
+        ? <div className="error">{accessError}</div>
+        : <AccessTab access={access} draft={accessDraft} setDraft={setAccessDraft} objectLabel={objectLabel} canEdit={editAccess} />)}
+      {tab === 'usage' && property && <UsageTab object={object} property={property.api_name} label={property.label} objectLabel={objectLabel} />}
+      {/* stays mounted on the other tabs, so nothing typed is lost */}
+      <div className="prop-editor" hidden={tab !== 'details'}>
         <div className="field-row">
           <label className="field grow">
             <span>Label</span>
@@ -622,8 +655,8 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
         </div>
         {isNew && <p className="muted small">The internal name is used by the API, imports and reports. It cannot be changed later.</p>}
         <label className="field">
-          <span>Description</span>
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <span>Description (shown when people hover over the property)</span>
+          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this property holds and when to fill it in" />
         </label>
         <label className="field">
           <span>Type</span>

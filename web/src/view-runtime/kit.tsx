@@ -1350,8 +1350,10 @@ function subscribeActiveProp(l: () => void) {
   return () => { propListeners.delete(l); };
 }
 
-export function PropertyField({ label, type = 'text', value, options = [], readOnly, onSave, style, className }: {
-  label: ReactNode; type?: PropertyFieldType; value: unknown; options?: { value: string; label: string }[]; readOnly?: boolean;
+export function PropertyField({ label, description, type = 'text', value, options = [], readOnly, onSave, style, className }: {
+  label: ReactNode;
+  // the property's description, shown when hovering the label
+  description?: string | null; type?: PropertyFieldType; value: unknown; options?: { value: string; label: string }[]; readOnly?: boolean;
   onSave?: (value: unknown) => Promise<unknown> | unknown;
 } & Styled) {
   const multi = type === 'email' || type === 'phone';
@@ -1440,7 +1442,7 @@ export function PropertyField({ label, type = 'text', value, options = [], readO
     <div ref={boxRef} className={cx('v-prop', canEdit && 'editable', editing && 'editing', className)} style={style}
       onClick={editing ? undefined : (e) => { if (!(e.target as HTMLElement).closest('button, a')) open(); }}>
       <div className="v-prop-label">
-        <span>{label}</span>
+        <span title={description || undefined}>{label}</span>
         {!editing && (
           <span className="v-prop-tools">
             {canEdit && <button type="button" className="v-prop-tool" title="Edit" aria-label="Edit" onClick={open}><Pencil size={13} /></button>}

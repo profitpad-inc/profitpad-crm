@@ -233,6 +233,7 @@ const EVENT_LABELS: Record<string, string> = {
   'role.deleted': 'Role deleted',
   'role.object_permission': 'Role object access changed',
   'role.property_permission': 'Role property access changed',
+  'property.access': 'Property access changed',
   'role.assigned': 'Role given',
   'role.unassigned': 'Role removed',
   'sharing_rule.created': 'Sharing rule created',

@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
-import { optionChangeByEditor, propertyAccess, requireObjectPermission, requirePropertyChange, requireScope, type Principal } from '../auth.js';
+import { optionChangeByEditor, propertyAccess, requireObjectPermission, requirePermission, requirePropertyChange, requireScope, type Principal } from '../auth.js';
+import { propertyUsage } from '../property-usage.js';
 import { getObject, getProperty, getRegistry, type ObjectDef, type PropertyDef } from '../registry.js';
 import { createForm } from '../native-ui.js';
 import { ICON_NAMES } from '../icons.js';
@@ -285,6 +286,15 @@ export async function schemaRoutes(app: FastifyInstance) {
     requireScope(req.principal!, 'read');
     const [, prop] = await findProperty(req.params.object, req.params.property);
     return propertyOut(prop);
+  });
+
+  // where the property is used (property-usage.ts); for people who manage properties
+  app.get<{ Params: { object: string; property: string } }>('/v1/schema/:object/properties/:property/usage', async (req) => {
+    const p = req.principal!;
+    if (p.permissions === null) requireScope(p, 'read');
+    else requirePermission(p, 'properties', { write: false });
+    const [obj, prop] = await findProperty(req.params.object, req.params.property);
+    return propertyUsage(obj, prop);
   });
 
   app.post<{

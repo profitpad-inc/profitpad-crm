@@ -365,17 +365,7 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
     });
   }
 
-  // a property is restricted only if every role restricts it
-  const propertyAccess = new Map<string, 'hidden' | 'read_only'>();
-  const { rows: propPerms } = await db.query(
-    `select property_id, array_agg(access) as accesses, count(*) as n from auth.role_property_permissions
-     where role_id = any ($1) group by property_id`,
-    [roleIds]
-  );
-  for (const p of propPerms) {
-    if (Number(p.n) < roleIds.length) continue;
-    propertyAccess.set(p.property_id, p.accesses.every((a: string) => a === 'hidden') ? 'hidden' : 'read_only');
-  }
+  const propertyAccess = await loadPropertyAccess(db, roleIds);
 
   let teamUserIds: string[] = [userId];
   if (ownScope === 'team' && teamIds.length > 0) {
@@ -389,6 +379,42 @@ async function loadPermissions(db: Db, userId: string): Promise<Permissions | nu
   const sharingRules = await loadSharingRules(db, roleIds);
   const knowledgeAccess = strongestKnowledgeAccess(roles.map((r) => r.knowledge_access));
   return { objects, propertyAccess, ownScope, teamUserIds, granted, sharingRules, knowledgeAccess };
+}
+
+// Property access (migration 0142): for each role, its own row on the
+// property, else the property's default (auth.property_access_defaults),
+// else full; across roles the most permissive wins. Only restricted
+// properties go in the map. A user with no role gets the defaults.
+export type PropertyAccessLevel = 'full' | 'read_only' | 'hidden';
+const ACCESS_RANK: Record<PropertyAccessLevel, number> = { hidden: 0, read_only: 1, full: 2 };
+
+export function combinePropertyAccess(
+  roleIds: string[], defaults: Map<string, PropertyAccessLevel>, overrides: Map<string, Map<string, PropertyAccessLevel>>
+): Map<string, 'hidden' | 'read_only'> {
+  const out = new Map<string, 'hidden' | 'read_only'>();
+  const ids = new Set([...defaults.keys(), ...overrides.keys()]);
+  for (const id of ids) {
+    const def = defaults.get(id) ?? 'full';
+    const perRole = overrides.get(id);
+    const levels = roleIds.length ? roleIds.map((r) => perRole?.get(r) ?? def) : [def];
+    const best = levels.reduce((a, b) => (ACCESS_RANK[b] > ACCESS_RANK[a] ? b : a), 'hidden' as PropertyAccessLevel);
+    if (best !== 'full') out.set(id, best);
+  }
+  return out;
+}
+
+async function loadPropertyAccess(db: Db, roleIds: unknown[]): Promise<Map<string, 'hidden' | 'read_only'>> {
+  const [{ rows: defs }, { rows: perms }] = await Promise.all([
+    db.query('select property_id, access from auth.property_access_defaults'),
+    db.query('select role_id::text as role_id, property_id, access from auth.role_property_permissions where role_id = any ($1)', [roleIds])
+  ]);
+  const defaults = new Map<string, PropertyAccessLevel>(defs.map((d) => [d.property_id, d.access]));
+  const overrides = new Map<string, Map<string, PropertyAccessLevel>>();
+  for (const p of perms) {
+    if (!overrides.has(p.property_id)) overrides.set(p.property_id, new Map());
+    overrides.get(p.property_id)!.set(p.role_id, p.access);
+  }
+  return combinePropertyAccess(roleIds.map(String), defaults, overrides);
 }
 
 async function loadSharingRules(db: Db, roleIds: unknown[]): Promise<SharingRule[]> {
