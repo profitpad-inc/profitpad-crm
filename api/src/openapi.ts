@@ -392,7 +392,7 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
   const tag = o.label_plural;
   const base = `/v1/objects/${o.api_name}`;
   const rec = ref(`${n}Record`);
-  const list = { type: 'object', properties: { total: { type: 'integer', description: 'How many records match, up to 10,000 unless exact_total was asked for' }, total_capped: { type: 'boolean', description: 'true when more than 10,000 match: total is then 10,000' }, results: { type: 'array', items: rec }, next: { type: 'string', nullable: true } } };
+  const list = { type: 'object', properties: { total: { type: 'integer' }, results: { type: 'array', items: rec }, next: { type: 'string', nullable: true } } };
   return {
     [base]: {
       get: {
@@ -615,8 +615,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
         properties: { type: 'array', items: { type: 'string' } },
         limit: { type: 'integer', maximum: 200 },
         after: { type: 'string' },
-        status: { type: 'string', enum: ['active', 'archived'] },
-        exact_total: { type: 'boolean', description: 'Count every match. By default total stops at 10,000 (total_capped is then true), which keeps searches on big tables fast' }
+        status: { type: 'string', enum: ['active', 'archived'] }
       }
     },
     AssociationRequest: {

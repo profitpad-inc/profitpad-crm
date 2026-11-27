@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { History } from 'lucide-react';
-import { api, ApiError, totalText, type ObjectDef } from '../lib/api';
+import { api, ApiError, type ObjectDef } from '../lib/api';
 import { Modal } from './ui';
 import { Select } from './Select';
 import '../import.css';
@@ -22,8 +22,6 @@ export interface ExportView {
   // property columns shown in the view (association columns are left out)
   properties: string[];
   total: number | null;
-  // the count stopped at 10,000: more match
-  totalCapped?: boolean;
   picked: string[];
 }
 
@@ -153,7 +151,7 @@ export function ExportModal({ object, view, onClose }: { object: ObjectDef; view
               value={records} onChange={(v) => setRecords(v as typeof records)} aria-label="Records"
               options={[
                 ...(view.picked.length > 0 ? [{ value: 'picked', label: `The ${view.picked.length.toLocaleString()} picked ${view.picked.length === 1 ? 'row' : 'rows'}` }] : []),
-                { value: 'view', label: filtered ? `This view's records${view.total !== null ? ` (${totalText({ total: view.total, total_capped: view.totalCapped })})` : ''}` : `All ${plural}${view.total !== null ? ` (${totalText({ total: view.total, total_capped: view.totalCapped })})` : ''}` },
+                { value: 'view', label: filtered ? `This view's records${view.total !== null ? ` (${view.total.toLocaleString()})` : ''}` : `All ${plural}${view.total !== null ? ` (${view.total.toLocaleString()})` : ''}` },
                 ...(filtered ? [{ value: 'all', label: view.status === 'archived' ? `All ${plural} in the recycle bin` : `All ${plural}, without the search` }] : [])
               ]}
             />
@@ -179,7 +177,7 @@ export function ExportModal({ object, view, onClose }: { object: ObjectDef; view
               options={[{ value: 'csv', label: 'CSV' }, { value: 'xlsx', label: 'Excel (.xlsx)' }]}
             />
           </label>
-          {count !== null && (count > MAX_EXPORT || (records === 'view' && view.totalCapped)) && <p className="muted small">Only the first {MAX_EXPORT.toLocaleString()} records are exported.</p>}
+          {count !== null && count > MAX_EXPORT && <p className="muted small">Only the first {MAX_EXPORT.toLocaleString()} records are exported.</p>}
           <p className="muted small">Every record gets its Record ID first. Exports are listed in Settings, Imports and exports.</p>
         </div>
       )}

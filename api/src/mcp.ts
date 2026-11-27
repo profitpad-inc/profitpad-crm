@@ -257,7 +257,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   server.registerTool('search_records', {
     title: 'Search records',
-    description: 'Searches one object. query is free text over its search properties; filter_groups filter on properties. Returns total (counted up to 10,000; total_capped is true when more match), results and a next cursor.',
+    description: 'Searches one object. query is free text over its search properties; filter_groups filter on properties. Returns total, results and a next cursor.',
     inputSchema: z.object({
       object: objectArg,
       query: z.string().optional(),

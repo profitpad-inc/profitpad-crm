@@ -299,7 +299,8 @@ export async function filterAssociationContext(obj: ObjectDef, groups: FilterGro
   };
 }
 
-export const TOTAL_CAP = 10000;
+// up to this many matches, a search fetches them all and sorts them (see searchRecords)
+const FEW_MATCHES = 1000;
 
 export async function searchRecords(obj: ObjectDef, principal: Principal, req: SearchRequest) {
   requireObjectPermission(principal, obj, 'read');
@@ -309,26 +310,41 @@ export async function searchRecords(obj: ObjectDef, principal: Principal, req: S
   const q = compileSearch(obj, req, params, hidden, await filterAssociationContext(obj, req.filter_groups, principal));
   const access = recordFilter(principal, obj, params);
   const table = `crm.${quoteIdent(obj.object_type_id)}`;
-  // The count stops at TOTAL_CAP (searches page up to 10,000 results anyway),
-  // so a search matching a million records doesn't read them all just to
-  // count them. exact_total asks for the real number (the home page).
-  const counted = req.exact_total
-    ? `select count(*)::int as n from ${table} t where ${q.where} and ${access}`
-    : `select count(*)::int as n from (select 1 from ${table} t where ${q.where} and ${access} limit ${TOTAL_CAP + 1}) c`;
-  const [{ rows }, count] = await Promise.all([
-    pool.query(
-      `select ${selectList(obj, props)} from ${table} t where ${q.where} and ${access} order by ${q.orderBy} limit ${q.limit} offset ${q.offset}`,
-      params
-    ),
-    pool.query(counted, params)
-  ]);
+  const counted = `select count(*)::int as n from ${table} t where ${q.where} and ${access}`;
+  const page = `select ${selectList(obj, props)} from ${table} t where ${q.where} and ${access} order by ${q.orderBy} limit ${q.limit} offset ${q.offset}`;
+  let rows: Record<string, unknown>[];
+  let n: number;
+  if (req.query || req.filter_groups?.length) {
+    // A search or filter. Postgres often guesses thousands of matches where
+    // there are few or none, and then walks the whole table in sort order
+    // looking for them (4 s for "acme" at a million contacts). A probe for
+    // up to FEW_MATCHES + 1 ids finds them through the indexes: none, no
+    // page query; a few, fetch exactly those and sort them; many, the usual
+    // query. The exact count runs alongside.
+    const id = quoteIdent(obj.id_column);
+    const countP = pool.query(counted, params);
+    countP.catch(() => undefined); // awaited below; this keeps an early probe failure from leaving it unhandled
+    const { rows: probe } = await pool.query(`select t.${id} as id from ${table} t where ${q.where} and ${access} limit ${FEW_MATCHES + 1}`, params);
+    if (probe.length === 0 || q.offset >= probe.length && probe.length <= FEW_MATCHES) {
+      rows = [];
+    } else if (probe.length <= FEW_MATCHES) {
+      rows = (await pool.query(
+        `select ${selectList(obj, props)} from ${table} t where t.${id} = any ($1::text[]) order by ${q.orderBy} limit ${q.limit} offset ${q.offset}`,
+        [probe.map((r) => r.id)]
+      )).rows;
+    } else {
+      rows = (await pool.query(page, params)).rows;
+    }
+    n = (await countP).rows[0].n as number;
+  } else {
+    const [p, c] = await Promise.all([pool.query(page, params), pool.query(counted, params)]);
+    rows = p.rows;
+    n = c.rows[0].n as number;
+  }
   const results = rows.map((r) => serialize(obj, props, r));
   await attachAssociations(pool, obj, principal, results, validateSpecs(req.associations));
-  const n = count.rows[0].n as number;
-  const capped = !req.exact_total && n > TOTAL_CAP;
   return {
-    total: capped ? TOTAL_CAP : n,
-    total_capped: capped,
+    total: n,
     results,
     next: nextCursor(q.offset, q.limit, rows.length)
   };

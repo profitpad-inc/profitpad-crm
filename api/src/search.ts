@@ -68,8 +68,6 @@ export interface SearchRequest {
   after?: string;
   status?: 'active' | 'archived';
   associations?: { object: string; properties?: string[]; limit?: number }[];
-  // count every match instead of stopping at 10,000 (slower on big tables)
-  exact_total?: boolean;
 }
 
 export const OPERATORS = [
