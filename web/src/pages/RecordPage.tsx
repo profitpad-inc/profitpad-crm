@@ -632,7 +632,6 @@ export function RecordPage() {
   const linkCards = (
     <>
       {/* with the linked records: the Associations tab on phones and tablets */}
-      {object === 'contacts' && <PageViewsCard contactId={record.id} />}
       {object === 'lines' && <LineParentCard selfId={id} associated={associated} saves={lineSaves} onChanged={loadAssociations} />}
       {cards.map((o) => (
         <AssociationCard key={o} self={object} selfId={id} selfRecord={record} other={o} items={associated.find((a) => a.object === o)?.records ?? []} lineCount={lineCount} linked={associated} onChanged={refresh} />
@@ -1239,7 +1238,7 @@ export function PropertyList({ schema, record, lock, onSaved, flash = null, chan
 // the lists, calendars and dialogs it opens on <body>
 const HOLD_KEEP = '.prop-row.editing, .menu, .select-menu, .modal, [role="dialog"], .flatpickr-calendar';
 
-type Tab = 'preview' | PanelTab | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
+type Tab = 'preview' | PanelTab | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'page_views' | 'changes';
 // On phones the properties and the right column are tabs of the stream (RecordPage passes them in)
 type PanelTab = 'comments' | 'properties' | 'associations' | 'code' | 'editor' | 'sign-ins';
 interface StreamPanel { key: PanelTab; label: string; count?: number; content: ReactNode }
@@ -1333,7 +1332,7 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
   const previewFirst = object === 'files' || !!preview;
   const tabs: Tab[] = bare
     ? [...panels.map((p) => p.key), 'changes']
-    : [...(previewFirst ? ['preview' as const] : []), ...panels.map((p) => p.key), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), 'changes'];
+    : [...(previewFirst ? ['preview' as const] : []), ...panels.map((p) => p.key), 'activity', ...ACTIVITY_OBJECTS.filter((o) => objectByName.has(o) && linksTo.includes(o)), ...(object === 'contacts' ? ['page_views' as const] : []), 'changes'];
   const codeOf = (o: string) => objectByName.get(o)?.object_type_id ?? '';
   const codes = ACTIVITY_OBJECTS.map(codeOf).filter(Boolean);
   const opened = ACTIVITY_OBJECTS.map((o) => ({ object: o, id: codeOf(o) ? params.get(codeOf(o)) : null })).find((x) => x.id) as { object: string; id: string } | undefined;
@@ -1363,13 +1362,16 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
   });
 
   // a contact's website visits (page views grouped by session), Activity tab only
+  // (the Page views tab lists them one by one, and its count is the total)
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [pageViewTotal, setPageViewTotal] = useState(0);
   useEffect(() => {
     setVisits([]);
+    setPageViewTotal(0);
     if (object !== 'contacts') return;
     let live = true;
     api<PageViews>('GET', `/v1/objects/contacts/${encodeURIComponent(id)}/page-views?limit=200`)
-      .then((r) => { if (live) setVisits(groupVisits(r.results)); })
+      .then((r) => { if (live) { setVisits(groupVisits(r.results)); setPageViewTotal(r.total); } })
       .catch(() => undefined);
     return () => { live = false; };
   }, [object, id, liveStamp]);
@@ -1486,6 +1488,7 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
   const tabCount = (t: Tab) => {
     const p = panels.find((x) => x.key === t);
     if (p) return p.count ?? 0;
+    if (t === 'page_views') return pageViewTotal;
     return t === 'preview' || t === 'activity' || t === 'changes' ? 0 : countOf(t);
   };
 
@@ -1647,7 +1650,7 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
         {tabs.map((t) => (
           <div key={t} className={`tab${tab === t ? ' active' : ''}`}>
             <button onClick={() => { if (t !== tab) navigate({ search: searchFor(t, opened?.object ?? null, opened?.id) }); }}>
-              {panels.find((p) => p.key === t)?.label ?? (t === 'preview' ? 'Preview' : t === 'activity' ? 'Activity' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural)}
+              {panels.find((p) => p.key === t)?.label ?? (t === 'preview' ? 'Preview' : t === 'activity' ? 'Activity' : t === 'page_views' ? 'Page views' : t === 'changes' ? 'Changes' : objectByName.get(t)?.label_plural)}
               {tabCount(t) > 0 && <span className="tab-count">{tabCount(t)}</span>}
             </button>
           </div>
@@ -1664,13 +1667,15 @@ function ActivityStream({ preview, linksLoaded, object, id, record, associated, 
         <ActivityComposer key={compose.object} hidden={!composing} object={compose.object} page={{ object, id }} pageLabel={schema.label_singular} focusKey={compose.key} onDirty={onComposeDirty}
           onSaved={async () => { onCompose(null); await onChanged(); }} onCancel={() => onCompose(null)} />
       ))}
-      {openedHidden && opened && tab !== 'changes' && tab !== 'preview' && !panel && (
+      {openedHidden && opened && tab !== 'changes' && tab !== 'page_views' && tab !== 'preview' && !panel && (
         <MentionedActivity object={opened.object} id={opened.id} highlight={params.get('comment')} quiet pinned />
       )}
       {panel ? (
         <div className="stream-panel">{panel.content}</div>
       ) : tab === 'preview' ? (
         preview ?? <FileViewer fileId={id} />
+      ) : tab === 'page_views' ? (
+        <PageViewsCard contactId={id} bare />
       ) : tab === 'changes' ? (
         <ChangeHistory object={object} id={id} schema={schema} />
       ) : (

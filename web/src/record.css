@@ -1031,7 +1031,7 @@ a.comment-author:hover { color: var(--primary); }
   .merge-modal .modal-foot { flex-wrap: wrap; }
 }
 
-/* Page views card on contacts (components/PageViewsCard.tsx): long addresses stay on one line */
+/* Page views tab on contacts (components/PageViewsCard.tsx): long addresses stay on one line */
 .page-views-card .page-view-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .page-views-card .card-row-main { min-width: 0; }
 

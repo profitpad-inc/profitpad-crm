@@ -52,7 +52,7 @@ export async function pageViewRoutes(app: FastifyInstance) {
     return reply.send();
   });
 
-  // A contact's page views, newest first (the Page views card).
+  // A contact's page views, newest first (the contact's Page views tab).
   app.get<{ Params: { id: string }; Querystring: { limit?: string; before?: string } }>('/v1/objects/contacts/:id/page-views', async (req) => {
     const p = req.principal!;
     requireScope(p, 'read');

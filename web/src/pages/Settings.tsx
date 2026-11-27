@@ -726,7 +726,7 @@ function EmbedDomains() {
         description={<>
           Put this on every page of an allowed website, before <code>&lt;/body&gt;</code>, to record page views. Views of
           a visitor the CRM does not know yet are kept with their browser; once that browser sends a form, they show on
-          the contact&apos;s Page views card. The CRM&apos;s own landing pages are tracked without it.
+          the contact&apos;s Page views tab. The CRM&apos;s own landing pages are tracked without it.
         </>}
       >
         <CodeBlock text={`<script src="${window.location.origin}/p/track.js" async></script>`} wrap lang="html" />

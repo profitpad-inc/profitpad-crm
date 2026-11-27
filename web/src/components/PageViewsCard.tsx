@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Eye } from 'lucide-react';
+import { ChevronRight, MousePointerClick } from 'lucide-react';
 import { api } from '../lib/api';
 import { Spinner } from './Loading';
 
@@ -53,7 +53,8 @@ function tagTitle(t: Record<string, string> | undefined): string | undefined {
 }
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-export function PageViewsCard({ contactId }: { contactId: string }) {
+// bare: on the contact's Page views tab, where the tab already names it and counts them
+export function PageViewsCard({ contactId, bare = false }: { contactId: string; bare?: boolean }) {
   const [data, setData] = useState<PageViews | null>(null);
   const [error, setError] = useState(false);
   const [more, setMore] = useState(false);
@@ -85,11 +86,13 @@ export function PageViewsCard({ contactId }: { contactId: string }) {
   if (error && !data) return null;
   return (
     <div className="card assoc-card page-views-card">
-      <div className="card-head">
-        <span className="card-icon"><Eye size={15} strokeWidth={1.75} /></span>
-        <h3>Page views</h3>
-        {data && <span className="card-count" aria-label={`${data.total} page views`}>{data.total}</span>}
-      </div>
+      {!bare && (
+        <div className="card-head">
+          <span className="card-icon"><MousePointerClick size={15} strokeWidth={1.75} /></span>
+          <h3>Page views</h3>
+          {data && <span className="card-count" aria-label={`${data.total} page views`}>{data.total}</span>}
+        </div>
+      )}
       {!data && <div className="card-empty"><Spinner /></div>}
       {data && data.total === 0 && <div className="card-empty">No page views yet. They show up once this contact sends a form from a page with the tracking code.</div>}
       {data && data.first_viewed_at && <div className="card-row small muted">First seen {when(data.first_viewed_at)}</div>}
@@ -176,7 +179,7 @@ export function VisitItem({ visit }: { visit: Visit }) {
     : `Visited ${hosts.length === 1 ? hosts[0] : `${hosts.length} websites`}, ${n} pages`;
   return (
     <div className={`activity-item visit-item${open ? ' open' : ''}`} onClick={open ? undefined : () => { if (!window.getSelection()?.toString()) setOpen(true); }}>
-      <span className="activity-icon"><Eye size={15} strokeWidth={1.75} /></span>
+      <span className="activity-icon"><MousePointerClick size={15} strokeWidth={1.75} /></span>
       <div className="activity-body">
         <div className="activity-head">
           <button className="activity-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
