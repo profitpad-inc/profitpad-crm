@@ -104,6 +104,9 @@ function ObjectTableFor({ object }: { object: string }) {
   const [data, setData] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // a new search or filter is loading while the old results are still shown
+  const [reloading, setReloading] = useState(false);
+  const lastSearch = useRef(0);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -255,6 +258,9 @@ function ObjectTableFor({ object }: { object: string }) {
       if (filtersWaiting) return;
       setLoading(true);
       setError(null);
+      // a new first page supersedes any still loading: only the latest one is shown
+      const id = after ? lastSearch.current : ++lastSearch.current;
+      if (!after) setReloading(true);
       try {
         const res = await api<SearchResult>('POST', `/v1/objects/${object}/search`, {
           query: debounced || undefined,
@@ -269,11 +275,15 @@ function ObjectTableFor({ object }: { object: string }) {
           properties: [...new Set([...nameProperties(schema.properties), ...columnProperties])],
           associations: assocObjects.map((o) => ({ object: o, properties: nameProperties(otherSchemas[o].properties) }))
         });
+        if (id !== lastSearch.current) return;
         setData((prev) => (after && prev ? { ...res, results: [...prev.results, ...res.results] } : res));
       } catch (err) {
-        setError((err as Error).message);
+        if (id === lastSearch.current) setError((err as Error).message);
       } finally {
-        setLoading(false);
+        if (id === lastSearch.current) {
+          setLoading(false);
+          if (!after) setReloading(false);
+        }
       }
     },
     [schema, activeViewId, appliedViewId, object, debounced, archived, quickFilters, searchGroups, sorts, columnProperties, assocObjects, otherSchemas, filtersWaiting]
@@ -765,6 +775,7 @@ function ObjectTableFor({ object }: { object: string }) {
           <Icon size={20} strokeWidth={1.75} aria-hidden />
           <h1>{schema.label_plural}</h1>
           {data && <span className="table-count">{data.total.toLocaleString()} {data.total === 1 ? 'record' : 'records'}</span>}
+          {data && reloading && <Loading inline label="Updating results…" className="table-count-loading" />}
         </div>
         <div className="table-head-actions">
           {object === 'contacts' && <Link className="btn" to="/scan"><IdCard size={16} /> Scan card</Link>}
@@ -983,7 +994,7 @@ function ObjectTableFor({ object }: { object: string }) {
             })}
           </ul>
         ) : (
-          <table className="data-grid">
+          <table className={`data-grid${data && reloading ? ' reloading' : ''}`}>
             <thead>
               <tr>
                 <th className="pick-cell">

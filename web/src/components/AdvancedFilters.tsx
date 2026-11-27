@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type InputHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Boxes, Calendar, CalendarClock, ChevronLeft, ChevronRight, Copy, Hash, Link2, ListChecks, Mail, Paperclip, Phone, Plus, Search, SlidersHorizontal, Trash2, Type, X } from 'lucide-react';
 import { Select } from './Select';
@@ -149,6 +149,20 @@ function Condition({ fields, field, filter, cls, onChange, onRemove }: {
   );
 }
 
+// A typed value applies when the box loses focus or on Enter, not on every
+// keystroke, so the table doesn't search again for each letter.
+function DraftInput({ value, onCommit, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string; onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => { if (draft !== value) onCommit(draft); };
+  return (
+    <input {...rest} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }} />
+  );
+}
+
 function ValueEditor({ field, filter, input, cls, onChange }: {
   field: FilterField; filter: Filter; input: string; cls: { input?: string; select?: string }; onChange: (f: Filter) => void;
 }) {
@@ -158,9 +172,9 @@ function ValueEditor({ field, filter, input, cls, onChange }: {
   const box = (value: unknown, set: (v: unknown) => void, label: string) => isDate ? (
     <DatePicker value={value ? String(value).slice(0, 10) : ''} onChange={(v) => set(v || undefined)} ariaLabel={label} inputClassName={cls.input} />
   ) : (
-    <input className={cls.input} type={numberish ? 'number' : 'text'} aria-label={label} placeholder={numberish ? 'Number' : 'Value'}
+    <DraftInput className={cls.input} type={numberish ? 'number' : 'text'} aria-label={label} placeholder={numberish ? 'Number' : 'Value'}
       value={value === undefined || value === null ? '' : String(value)}
-      onChange={(e) => set(e.target.value === '' ? undefined : numberish ? Number(e.target.value) : e.target.value)} />
+      onCommit={(v) => set(v === '' ? undefined : numberish ? Number(v) : v)} />
   );
 
   switch (input) {
@@ -184,9 +198,9 @@ function ValueEditor({ field, filter, input, cls, onChange }: {
     case 'days':
       return (
         <div className="af-days">
-          <input className={cls.input} type="number" min={0} step={1} aria-label="Days" placeholder="Days"
+          <DraftInput className={cls.input} type="number" min={0} step={1} aria-label="Days" placeholder="Days"
             value={filter.value === undefined || filter.value === null ? '' : String(filter.value)}
-            onChange={(e) => onChange({ ...filter, value: e.target.value === '' ? undefined : Math.max(0, Math.floor(Number(e.target.value))) })} />
+            onCommit={(v) => onChange({ ...filter, value: v === '' ? undefined : Math.max(0, Math.floor(Number(v))) })} />
           <span className="af-muted">{daysSuffix(filter.operator)}</span>
         </div>
       );

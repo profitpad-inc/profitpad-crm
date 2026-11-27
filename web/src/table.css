@@ -13,6 +13,9 @@
 .table-title > svg { color: var(--muted-text); flex: none; align-self: center; }
 .table-title h1 { font-size: 22px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-count { color: var(--muted-text); font-size: 13px; white-space: nowrap; }
+/* a new search or filter is loading: spinner by the count, old rows dimmed */
+.table-count-loading { margin-left: 2px; }
+.data-grid.reloading tbody { opacity: 0.5; transition: opacity 0.15s ease 0.15s; }
 .table-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 /* whole-pixel rows (the body's 20.3px line height made these 36.3px and the
    tabs 42.3px), so the toolbar below starts on a whole pixel: at a fraction
