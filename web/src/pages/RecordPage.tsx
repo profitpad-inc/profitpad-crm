@@ -325,6 +325,8 @@ export function RecordPage() {
 
   // whether the links have come back once (the stream pins an opened activity it cannot list)
   const [linksLoaded, setLinksLoaded] = useState(false);
+  // the comment count on an activity's Comments tab, for the record it was counted on
+  const [comments, setComments] = useState<{ of: string; n: number } | null>(null);
   const loadAssociations = useCallback(async () => {
     setAssociated(await loadLinked(object, id, codeToName));
     setLinksLoaded(true);
@@ -594,7 +596,7 @@ export function RecordPage() {
     next.set('tab', o);
     navigate({ search: `?${next.toString()}` }, { replace: true });
   }
-  // calls, emails, notes, tasks, submissions, participations and occurrences carry a comment thread
+  // a form submission's comment thread, under its answers (the other activities have a Comments tab)
   const commentThread = COMMENT_TARGETS.includes(object) && (
     <div className="card record-comments">
       <Comments object={object} id={record.id} readOnly={record.record_status === 'archived'} highlight={new URLSearchParams(location.search).get('comment')} />
@@ -650,10 +652,26 @@ export function RecordPage() {
   const assocTab = (narrow || assocAlways) && streamOnly;
   const linkedCount = cards.reduce((n, o) => n + (associated.find((a) => a.object === o)?.records.length ?? 0), 0);
   const associationsPanel: StreamPanel = { key: 'associations', label: 'Associations', count: linkedCount, content: <div className="record-right record-tab-panel">{linkCards}</div> };
-  const panels: StreamPanel[] = tabbed ? [
-    { key: 'properties', label: 'Properties', content: <><div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
+  // an activity's comment thread is the stream's first tab, open by default
+  // (form submissions keep theirs under the answers)
+  const commentTab = hasStream && object !== 'form_submissions' && COMMENT_TARGETS.includes(object);
+  const commentCount = comments?.of === `${object}/${record.id}` ? comments.n : 0;
+  const setCommentCount = (n: number) => setComments({ of: `${object}/${record.id}`, n });
+  const commentsPanel: StreamPanel[] = commentTab ? [{
+    key: 'comments',
+    label: 'Comments',
+    count: commentCount,
+    content: (
+      <div className="card record-comments">
+        <Comments object={object} id={record.id} readOnly={record.record_status === 'archived'} heading={false} onCount={setCommentCount}
+          highlight={new URLSearchParams(location.search).get('comment')} />
+      </div>
+    )
+  }] : [];
+  const panels: StreamPanel[] = [...commentsPanel, ...(tabbed ? [
+    { key: 'properties' as const, label: 'Properties', content: <><div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
     associationsPanel
-  ] : assocTab ? [associationsPanel] : [];
+  ] : assocTab ? [associationsPanel] : [])];
   // Views: Code and Changes tabs (no activity), with Properties first on phones
   const isView = object === 'views';
   const viewTabbed = mobile && isView;
@@ -826,7 +844,6 @@ export function RecordPage() {
               <ActivityStream {...streamProps} panels={viewPanels} bare />
             ) : (
               <>
-                {commentThread}
                 <ActivityStream {...streamProps} panels={panels} />
               </>
             )}
@@ -1224,7 +1241,7 @@ const HOLD_KEEP = '.prop-row.editing, .menu, .select-menu, .modal, [role="dialog
 
 type Tab = 'preview' | PanelTab | 'activity' | (typeof ACTIVITY_OBJECTS)[number] | 'changes';
 // On phones the properties and the right column are tabs of the stream (RecordPage passes them in)
-type PanelTab = 'properties' | 'associations' | 'code' | 'editor' | 'sign-ins';
+type PanelTab = 'comments' | 'properties' | 'associations' | 'code' | 'editor' | 'sign-ins';
 interface StreamPanel { key: PanelTab; label: string; count?: number; content: ReactNode }
 
 type HistoryVia = 'crm_ui' | 'api' | 'mcp' | 'calculation' | 'other';
@@ -2530,6 +2547,12 @@ function changeBatches(entries: ChangeEntry[]): ChangeEntry[][] {
 // A value as the property shows it elsewhere; JSON only for shapes no property type explains.
 function historyValue(p: Property | undefined, value: unknown): ReactNode {
   if (p) {
+    // date and datetime history shows the stored value (timestamptz), the pretty one on hover
+    const dateLike = (t: string | undefined) => t === 'date' || t === 'datetime';
+    if (typeof value === 'string' && (dateLike(p.type) || (p.type === 'calculation' && dateLike(p.calc_output_type)))) {
+      const pretty = displayValue(p, value);
+      return <span title={typeof pretty === 'string' && pretty !== value ? pretty : undefined}>{value}</span>;
+    }
     // a button or link property's history shows the address as plain text, not a link
     // email and phone lists: every entry
     const shown = isButton(p) || isUrlDisplay(p) || isMultiType(p) ? formatValue(p, value) : displayValue(p, value);
@@ -3308,7 +3331,7 @@ const CAMPAIGN_EMAILS_PAGE = 25;
 // "<code>_id"), which the table's Filters panel shows and can change.
 function associatedTableUrl(other: string, self: string, selfCode: string, selfId: string): string {
   const q = new URLSearchParams();
-  q.set('filters', filterParam([{ filters: [{ property: `${selfCode}_id`, operator: 'eq', value: selfId, case_sensitive: false, association: { object: self } }] }]));
+  q.set('filters', filterParam([{ filters: [{ property: `${selfCode}_id`, operator: 'in', values: [selfId], case_sensitive: false, association: { object: self } }] }]));
   return `/objects/${other}?${q.toString()}`;
 }
 

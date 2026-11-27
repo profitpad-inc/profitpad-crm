@@ -12,6 +12,10 @@ import { dirtyCampaigns } from './events.js';
 // The contacts dropdown is read as the source of truth (the list keeps the
 // campaign's the same). Contacts start subscribed to every type.
 
+// Every campaign has a type, and new ones start as this one (migration
+// 0162). It can be renamed but not archived.
+export const DEFAULT_TOPIC = 'marketing';
+
 export interface Topic {
   value: string;
   label: string;
@@ -92,6 +96,9 @@ export async function updateTopic(p: Principal, value: string, body: { label?: u
   if (body.status !== undefined) {
     if (body.status !== 'active' && body.status !== 'archived') throw badRequest('status must be active or archived', { property: 'status' });
     status = body.status;
+  }
+  if (status === 'archived' && value === DEFAULT_TOPIC) {
+    throw badRequest(`${t.label} is the default subscription type: new campaigns start with it, so it cannot be archived.`, { property: 'status' });
   }
   await withTx({ principal: p, source: 'email_settings' }, (c) =>
     c.query(`select meta.update_option('contacts', 'email_unsubscribed_topics', $1, $2, null, $3, $4)`, [value, label, description, status]));

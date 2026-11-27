@@ -19,6 +19,7 @@ import { formatSql, renderSql } from './sql.js';
 export const LISTS_ACTOR = { actor: 'system:lists', source: 'lists' } as const;
 export const MAX_IDS = 10_000;
 const REFRESH_TIMEOUT = '60s';
+const REFRESH_WORK_MEM = '64MB';
 // a refresh that adds (or removes) more records than this logs one history row with the count
 export const MAX_LOGGED = 1000;
 const PREVIEW_TIMEOUT = '15s';
@@ -130,6 +131,12 @@ export async function refreshList(id: string, by?: Principal, opts: { keepAddedB
         if (def.groups.length === 0) throw badRequest('Give the static list filters first: filling it adds the records they match, once.');
       }
       await c.query(`set local statement_timeout = '${REFRESH_TIMEOUT}'`);
+      // Comparing the matches with the members: Postgres chose to sort a
+      // million ids by text rules and merge them (5 s at a million, on disk
+      // at the default 4 MB); hashing them takes under a second. Only for
+      // this transaction; one refresh runs at a time (the worker's lock).
+      await c.query(`set local work_mem = '${REFRESH_WORK_MEM}'`);
+      await c.query('set local enable_mergejoin = off');
       // records the filters add have no added_by: added_by marks members added by hand
       const keep = list.list_type === 'static' && opts.keepAddedByHand === true;
       const params: unknown[] = [id, 'refresh', by?.userId ?? null, keep];
@@ -145,8 +152,11 @@ export async function refreshList(id: string, by?: Principal, opts: { keepAddedB
            on conflict do nothing returning record_id),
          removed as (delete from meta.list_members lm where lm.list_id = $1 and not exists (select 1 from m where m.id = lm.record_id)
            and not ($4::boolean and lm.added_by is not null) returning record_id),
-         matched as (update meta.list_members lm set added_by = null where lm.list_id = $1 and not $4::boolean and lm.added_by is not null
-           and exists (select 1 from m where m.id = lm.record_id) returning 1),
+         -- the few members added by hand (their own index, 0163) are found
+         -- first; probing the members once per match took 6 s at a million
+         hand as materialized (select record_id from meta.list_members where list_id = $1 and added_by is not null and not $4::boolean),
+         matched as (update meta.list_members lm set added_by = null where lm.list_id = $1
+           and lm.record_id in (select h.record_id from hand h join m on m.id = h.record_id) returning 1),
          counts as (select (select count(*) from added)::int as added, (select count(*) from removed)::int as removed),
          logged as (
            insert into meta.list_member_changes (list_id, record_id, record_count, change, source, changed_by)

@@ -200,7 +200,7 @@ export async function checkCampaign(id: string): Promise<{ campaign: CampaignRow
     if (!topics.some((t) => t.value === campaign.subscription_type)) {
       problems.push('The campaign\'s subscription type is archived or gone. Pick another one.');
     }
-  } else if (topics.length) {
+  } else {
     problems.push('Pick the campaign\'s subscription type, so contacts who left that type are left out.');
   }
   let recipients = 0;
@@ -222,9 +222,14 @@ async function begin(c: pg.PoolClient, campaign: CampaignRow, sentBy: string | n
     `insert into auth.email_outbox (campaign_id, contact_id, email) select $1, a.contact_id, a.email from (${sql}) a on conflict do nothing`,
     params
   );
+  // The sender it goes out as is written on the campaign, so the record shows
+  // it even when the campaign left it to the Settings → Email default.
+  const from = marketingSender(await loadEmailSettings(), campaign);
   await c.query(
-    `update crm.pc_0058 set status = '{sending}', recipient_count = $2, sent_by = coalesce(sent_by, $3) where pc_0058_id = $1`,
-    [campaign.id, rowCount ?? 0, sentBy ? [sentBy] : null]
+    `update crm.pc_0058 set status = '{sending}', recipient_count = $2, sent_by = coalesce(sent_by, $3),
+       from_name = coalesce(nullif(from_name, ''), $4), from_address = coalesce(nullif(from_address, ''), $5)
+     where pc_0058_id = $1`,
+    [campaign.id, rowCount ?? 0, sentBy ? [sentBy] : null, from.name, from.address]
   );
   return rowCount ?? 0;
 }

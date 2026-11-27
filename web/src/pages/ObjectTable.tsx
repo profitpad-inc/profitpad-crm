@@ -1555,9 +1555,11 @@ function tsvField(s: string): string {
 
 // The id an "associated record's Record ID is <id>" condition picks, else null
 // (each object's id property is "<code>_id", as RecordPage's associatedTableUrl writes it)
+// ("is equal to any of" one ID: the filters offer no eq on text or ID properties)
 function recordIdFilter(f: Filter): string | null {
-  if (!f.association || f.operator !== 'eq' || typeof f.value !== 'string' || !f.value) return null;
-  return /^pc_[0-9a-z]+_id$/.test(f.property) ? f.value : null;
+  if (!f.association || f.operator !== 'in' || f.values?.length !== 1 || !/^pc_[0-9a-z]+_id$/.test(f.property)) return null;
+  const id = f.values[0];
+  return typeof id === 'string' && id ? id : null;
 }
 
 function associatedItems(record: CrmRecord, column: { object: string; label_id: string | null }): AssociatedRecord[] {

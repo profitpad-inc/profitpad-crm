@@ -225,12 +225,12 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
         <div className="card">
           <div className="card-head"><h3>Audience</h3></div>
           <p className="muted">The campaign goes to the contacts in its lists; dynamic lists are worked out again when it sends. Contacts who opted out of marketing email, unsubscribed from the campaign's subscription type or have no email address are always left out, and each address gets one copy.</p>
-          {types && (types.length > 0 || savedTopic) && (
+          {types && (
             <div className="campaign-type">
               <label htmlFor="campaign-type">Subscription type</label>
               <Select id="campaign-type" value={topic} onChange={setTopic}
                 options={[
-                  { value: '', label: 'Pick a type' },
+                  ...(topic ? [] : [{ value: '', label: 'Pick a type', disabled: true }]),
                   ...types.map((t) => ({ value: t.value, label: t.label })),
                   ...(savedTopic && !types.some((t) => t.value === savedTopic) ? [{ value: savedTopic, label: `${savedTopic} (archived)`, disabled: true }] : [])
                 ]} />

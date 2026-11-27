@@ -38,8 +38,10 @@ const ago = (iso: string) => {
 const full = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const authorName = (c: Comment) => c.author?.name ?? (c.created_by.startsWith('api:') ? 'API key' : 'Someone');
 
-export function Comments({ object, id, readOnly = false, onCount, highlight }: {
+export function Comments({ object, id, readOnly = false, onCount, highlight, heading = true }: {
   object: string; id: string; readOnly?: boolean;
+  // false in a Comments tab, whose label already says it
+  heading?: boolean;
   // called with the number of comments after each load and change
   onCount?: (n: number) => void;
   // a comment to scroll to and mark (from a Mentions link)
@@ -93,10 +95,12 @@ export function Comments({ object, id, readOnly = false, onCount, highlight }: {
   if (hidden) return null;
   return (
     <div className="comments" onClick={(e) => e.stopPropagation()}>
-      <div className="comments-head">
-        <MessageSquare size={14} strokeWidth={1.75} aria-hidden />
-        <span>Comments{list && list.length > 0 ? ` (${list.length})` : ''}</span>
-      </div>
+      {heading && (
+        <div className="comments-head">
+          <MessageSquare size={14} strokeWidth={1.75} aria-hidden />
+          <span>Comments{list && list.length > 0 ? ` (${list.length})` : ''}</span>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       {list === null && !error && <Loading className="muted small" />}
       {list && list.length > 0 && (

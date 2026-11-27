@@ -13,6 +13,8 @@ import { EditPanel, EmptyState, SettingsSection, StatusPill, TableSkeleton } fro
 // preference page behind the unsubscribe link. Each campaign picks one.
 // They are the choices of the shared option list "Email subscription types";
 // archiving keeps contacts' choices, so restoring brings them back.
+// Marketing is the default every new campaign starts with (migration 0162):
+// it can be renamed but not archived.
 
 interface SubscriptionType {
   value: string;
@@ -21,6 +23,8 @@ interface SubscriptionType {
   status: 'active' | 'archived';
   unsubscribed_count: number;
 }
+
+const DEFAULT_TYPE = 'marketing';
 
 type Draft = { kind: 'new' | 'edit'; value?: string; label: string; description: string };
 
@@ -126,7 +130,7 @@ export function EmailSubscriptionTypes() {
               {[...active, ...archived].map((t) => (
                 <tr key={t.value}>
                   <td className="primary-cell wrap">
-                    {t.label} {t.status === 'archived' && <StatusPill tone="off">Archived</StatusPill>}
+                    {t.label} {t.value === DEFAULT_TYPE && <StatusPill tone="info">Default</StatusPill>} {t.status === 'archived' && <StatusPill tone="off">Archived</StatusPill>}
                     {t.description && <span className="sub">{t.description}</span>}
                   </td>
                   <td>{t.unsubscribed_count.toLocaleString()} contact{t.unsubscribed_count === 1 ? '' : 's'}</td>
@@ -135,7 +139,7 @@ export function EmailSubscriptionTypes() {
                       {(close) => (
                         <>
                           <button onClick={() => { close(); setDraft({ kind: 'edit', value: t.value, label: t.label, description: t.description ?? '' }); }}>Edit</button>
-                          {t.status === 'active'
+                          {t.value === DEFAULT_TYPE ? null : t.status === 'active'
                             ? <button className="danger" onClick={() => { close(); void setStatus(t, 'archived'); }}>Archive</button>
                             : <button onClick={() => { close(); void setStatus(t, 'active'); }}>Restore</button>}
                         </>
