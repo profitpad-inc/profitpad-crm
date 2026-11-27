@@ -7,6 +7,7 @@ import { OPERATORS } from '../search.js';
 import {
   APP_MIME, buildListCard, buildRecordCard, displayNote, DISPLAY_HTML, DISPLAY_URI, listMarkdown, recordMarkdown, type ListCard, type RecordCard
 } from './cards.js';
+import { buildChartCard, chartMarkdown, type ChartCard } from './charts.js';
 
 // show_record and show_records: the CRM's own card for a record or a list of
 // records, drawn in the chat by the MCP App resource (cards.ts explains).
@@ -26,10 +27,10 @@ const filterGroupsArg = z.array(z.object({
   }))
 })).optional().describe('Same as search_records: filters within a group are ANDed, groups are ORed.');
 
-async function card(kind: 'record' | 'records', build: () => Promise<RecordCard | ListCard>): Promise<CallToolResult> {
+async function card(kind: 'record' | 'records' | 'chart', build: () => Promise<RecordCard | ListCard | ChartCard>): Promise<CallToolResult> {
   try {
     const c = await build();
-    const markdown = c.view === 'record' ? recordMarkdown(c) : listMarkdown(c);
+    const markdown = c.view === 'record' ? recordMarkdown(c) : c.view === 'chart' ? chartMarkdown(c) : listMarkdown(c);
     return { content: [{ type: 'text', text: displayNote(kind, markdown) }], structuredContent: c as unknown as Record<string, unknown> };
   } catch (err) {
     const mapped = err instanceof ApiError ? err : fromPg(err);
@@ -94,5 +95,30 @@ export function registerDisplayTools(server: McpServer, p: Principal, crmTitle: 
     const obj = await objectForWrite(object);
     requireObjectPermission(p, obj, 'read');
     return buildListCard(p, obj, { search: { ...search, limit: limit ?? 10 }, ids, columns, heading: title, title: crmTitle });
+  }));
+
+  server.registerTool('show_chart', {
+    title: 'Show chart',
+    description: 'Shows the user a bar, line or pie chart of one object\'s records, counted or added up by the CRM itself (exact numbers, the same filters and access as search_records) and drawn in the CRM\'s own style and theme, with the numbers one click away as a table. Use it whenever the user wants a chart, a breakdown or a trend ("deals by stage", "new contacts per month", "revenue by owner"). Pick the type by the question: bar to compare groups (ranked largest first; order "natural" keeps a dropdown\'s own order, such as pipeline stages), line for a trend over time (group_by a date or datetime, with date_bucket), pie for how one whole splits into a few parts (count or sum, at most 6 slices plus Other). The chart is drawn for you: never make your own chart, widget, artifact or table of these numbers, and do not repeat them; add a sentence only to answer the question. Filter dates with filter_groups (e.g. created_at last_n_days 90).',
+    inputSchema: z.object({
+      object: z.string().describe('Object api_name from list_objects, e.g. deals'),
+      type: z.enum(['bar', 'line', 'pie']),
+      group_by: z.string().describe('Property api_name to group by: a dropdown (stage, owner, industry), text, or a date/datetime for a trend'),
+      date_bucket: z.enum(['day', 'week', 'month', 'quarter', 'year']).optional().describe('For a date group_by: the size of each step (default month)'),
+      metric: z.enum(['count', 'sum', 'average', 'min', 'max']).optional().describe('Default count (number of records); the others need metric_property'),
+      metric_property: z.string().optional().describe('A number property to add up or average, e.g. amount_base. Amounts kept in each record\'s own currency are refused; use the single-currency one'),
+      query: z.string().optional().describe('Free text over the object\'s search properties, as in search_records'),
+      filter_groups: filterGroupsArg,
+      status: z.enum(['active', 'archived']).optional(),
+      order: z.enum(['value', 'natural']).optional().describe('Bar and pie: largest first (default), or the dropdown\'s own order / A to Z'),
+      limit: z.number().int().min(1).max(30).optional().describe('Bar: groups to show before folding the rest into Other (default 12, at most 30); pie: slices (default and at most 6)'),
+      title: z.string().max(80).optional().describe('Heading in the user\'s words, e.g. "Open deals by stage" (default: what is measured by what)')
+    }),
+    annotations: { readOnlyHint: true },
+    _meta: UI_META
+  }, async ({ object, type, ...rest }) => card('chart', async () => {
+    requireScope(p, 'read');
+    const obj = await objectForWrite(object);
+    return buildChartCard(p, obj, { type, ...rest }, crmTitle);
   }));
 }

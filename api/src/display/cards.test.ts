@@ -135,7 +135,7 @@ test('the tools point at the card page, which talks MCP Apps', () => {
     registerResource: (_name: string, uri: string, config: { mimeType?: string }) => resources.push({ uri, config })
   } as unknown as McpServer;
   registerDisplayTools(fake, { scopes: new Set(['read']) } as unknown as Principal, 'ProfitPad CRM');
-  assert.deepEqual([...tools.keys()], ['show_record', 'show_records']);
+  assert.deepEqual([...tools.keys()], ['show_record', 'show_records', 'show_chart']);
   for (const t of tools.values()) assert.deepEqual((t._meta?.ui as { resourceUri: string }).resourceUri, DISPLAY_URI);
   assert.deepEqual(resources.map((r) => [r.uri, r.config.mimeType]), [[DISPLAY_URI, APP_MIME]]);
   for (const s of ['ui/initialize', 'ui/notifications/initialized', 'ui/notifications/tool-result', 'ui/notifications/size-changed', 'ui/open-link']) {

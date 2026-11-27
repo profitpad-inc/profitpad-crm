@@ -25,6 +25,7 @@
     --radius: 6px;
     --radius-lg: 10px;
     --shadow-card: 0 1px 2px rgba(24, 32, 43, 0.06), 0 4px 12px rgba(24, 32, 43, 0.07);
+    --shadow-pop: 0 6px 20px rgba(24, 32, 43, 0.12), 0 1px 3px rgba(24, 32, 43, 0.08);
     color-scheme: light;
   }
   :root[data-mode='dark'] {
@@ -36,6 +37,7 @@
     --border: #2e3646;
     --money: #3fbf7f;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.25);
+    --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -188,6 +190,57 @@
     .bar .count { display: none; }
   }
 
+  /* charts: one hue (the theme's primary) for a single series, theme dropdown
+     colours for pie slices; thin marks, hairline grid, values in text colours */
+  .chart-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; padding: 12px 16px 0; font-size: 13px; color: var(--muted-text); }
+  .chart-meta strong { color: var(--text); font-weight: 600; }
+  .chart-area { position: relative; padding: 12px 16px 14px; }
+  .tip { position: absolute; z-index: 5; pointer-events: none; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--page-background); box-shadow: var(--shadow-pop); font-size: 12px; line-height: 1.35; white-space: nowrap; }
+  .tip b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+  .tip span { color: var(--muted-text); }
+  .hbars { display: grid; gap: 6px; }
+  .hbar { display: grid; grid-template-columns: minmax(72px, 32%) 1fr; align-items: center; gap: 12px; padding: 2px 4px; margin: 0 -4px; border-radius: var(--radius-sm); outline: none; }
+  .hbar:hover, .hbar:focus-visible { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+  .hbar:focus-visible { box-shadow: 0 0 0 2px var(--primary); }
+  .hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .hbar-track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .hbar-fill { flex: none; height: 16px; width: calc((100% - 104px) * var(--w)); min-width: 2px; border-radius: 0 4px 4px 0; background: var(--primary); }
+  .hbar.other .hbar-fill { background: color-mix(in srgb, var(--muted-text) 55%, var(--page-background)); }
+  .hbar-value { flex: none; font-size: 13px; color: var(--muted-text); white-space: nowrap; }
+  svg.plot { display: block; width: 100%; overflow: visible; outline: none; }
+  svg.plot:focus-visible { box-shadow: 0 0 0 2px var(--primary); border-radius: var(--radius-sm); }
+  svg.plot text { font-family: inherit; font-size: 11px; fill: var(--muted-text); }
+  svg.plot text.end-value { font-size: 12px; font-weight: 600; fill: var(--text); }
+  svg.plot .grid-line { stroke: color-mix(in srgb, var(--border) 70%, transparent); stroke-width: 1; }
+  svg.plot .col { fill: var(--primary); }
+  svg.plot .col.dim { opacity: 0.45; }
+  svg.plot .line { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  svg.plot .area { fill: var(--primary); opacity: 0.1; }
+  svg.plot .dot { fill: var(--primary); stroke: var(--page-background); stroke-width: 2; }
+  svg.plot .cross { stroke: var(--muted-text); stroke-width: 1; }
+  .pie-wrap { display: flex; align-items: center; gap: 24px; }
+  svg.pie { flex: none; width: 168px; height: 168px; outline: none; }
+  svg.pie path, svg.pie circle { stroke: var(--page-background); stroke-width: 2; transition: opacity 0.12s; }
+  svg.pie .dim { opacity: 0.3; }
+  .legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 4px 6px; margin: 0 -6px;
+    border-radius: var(--radius-sm); font-size: 13px; outline: none; transition: opacity 0.12s; }
+  .legend li:hover, .legend li:focus-visible { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+  .legend li:focus-visible { box-shadow: 0 0 0 2px var(--primary); }
+  .legend li.dim { opacity: 0.45; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+  .legend .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend .val { color: var(--muted-text); white-space: nowrap; }
+  .legend .pct { min-width: 44px; text-align: right; font-weight: 500; white-space: nowrap; }
+  details.rest .grid { margin-bottom: 4px; }
+  .grid tfoot td { font-weight: 600; border-top: 1px solid var(--border); border-bottom: 0; }
+  @container (max-width: 460px) {
+    .pie-wrap { flex-direction: column; align-items: stretch; }
+    svg.pie { align-self: center; }
+    .hbar { grid-template-columns: minmax(64px, 38%) 1fr; gap: 8px; }
+  }
+
   /* while the result is on its way (components/Loading.tsx) */
   .loading { display: flex; align-items: center; gap: 10px; padding: 16px; color: var(--muted-text); font-size: 13px; }
   .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--primary); animation: spin 0.8s linear infinite; }
@@ -235,7 +288,7 @@
         else if (m.params && m.params.isError) showError(m.params);
         break;
       case 'ui/notifications/host-context-changed':
-        if (m.params && m.params.theme) { hostTheme = m.params.theme; applyTheme(); }
+        if (m.params && m.params.theme) { hostTheme = m.params.theme; applyTheme(); if (data && data.view === 'chart') show(data); }
         break;
       case 'ui/resource-teardown':
       case 'ping':
@@ -264,7 +317,10 @@
       else root.style.removeProperty('--' + k.replace(/_/g, '-'));
     });
   }
-  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+    applyTheme();
+    if (data && data.view === 'chart') show(data);
+  });
 
   // ---- building blocks ----
   function h(tag, attrs, kids) {
@@ -520,11 +576,260 @@
     if (s && s.offsetParent) s.focus({ preventScroll: true });
   }
 
+  // ---- a chart ----
+  // The CRM did the counting (charts.ts); this draws it. Single series in the
+  // primary colour, pie slices in the colours sent (light or dark step), values
+  // in text colours, a tooltip on hover and focus, and the numbers as a table.
+  function svgEl(tag, attrs, kids) {
+    var el = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { if (attrs[k] !== null && attrs[k] !== undefined) el.setAttribute(k, attrs[k]); });
+    (kids || []).forEach(function (c) { if (c) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return el;
+  }
+  function numberFormat(c, compact) {
+    var o = compact ? { notation: 'compact', maximumFractionDigits: 1 } : { maximumFractionDigits: 0 };
+    if (c.currency) { o.style = 'currency'; o.currency = c.currency; }
+    try { return new Intl.NumberFormat(undefined, o); } catch (e) { return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }); }
+  }
+  // 0 and four or five clean steps up to the largest value
+  function niceTicks(max) {
+    if (!(max > 0)) return [0, 1];
+    var raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+    var step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+    var ticks = [];
+    for (var v = 0; v < max + step * 0.999; v += step) ticks.push(v);
+    return ticks;
+  }
+  function tipContent(tip, p, c, one, plural) {
+    var lines = [h('b', { text: p.text }), h('span', { text: p.label })];
+    var extra = [];
+    if (p.share !== null && p.share !== undefined) extra.push(formatShare(p.share));
+    if (!(c.measure.indexOf('Number of') === 0)) extra.push(p.records.toLocaleString() + ' ' + (p.records === 1 ? one : plural));
+    if (extra.length) { lines.push(h('br')); lines.push(h('span', { text: extra.join(', ') })); }
+    tip.replaceChildren.apply(tip, lines);
+  }
+  function formatShare(s) { return (s * 100 >= 10 || s === 0 ? Math.round(s * 100) : (s * 100).toFixed(1)) + '%'; }
+  // place the tooltip above a point inside the chart area, kept on screen
+  function placeTip(tip, area, x, y) {
+    tip.hidden = false;
+    var w = tip.offsetWidth, hgt = tip.offsetHeight, max = area.clientWidth - w - 4;
+    tip.style.left = Math.max(4, Math.min(max, x - w / 2)) + 'px';
+    tip.style.top = Math.max(0, y - hgt - 8) + 'px';
+  }
+
+  function rankedBars(c, area, tip, one, plural) {
+    var max = Math.max.apply(null, c.points.map(function (p) { return p.value || 0; })) || 1;
+    var rows = c.points.map(function (p, i) {
+      var row = h('div', { class: 'hbar' + (p.other ? ' other' : ''), role: 'listitem', tabindex: '0', 'aria-label': p.label + ': ' + p.text + (p.share !== null ? ', ' + formatShare(p.share) : '') }, [
+        h('span', { class: 'hbar-label', text: p.label, title: p.label }),
+        h('span', { class: 'hbar-track' }, [
+          h('span', { class: 'hbar-fill', style: { '--w': String(p.value ? Math.max(p.value / max, 0.004) : 0) } }),
+          h('span', { class: 'hbar-value', text: p.text })
+        ])
+      ]);
+      var on = function () {
+        tipContent(tip, p, c, one, plural);
+        var fill = row.querySelector('.hbar-fill');
+        var a = area.getBoundingClientRect(), f = fill.getBoundingClientRect();
+        placeTip(tip, area, f.right - a.left, f.top - a.top);
+      };
+      row.addEventListener('pointerenter', on);
+      row.addEventListener('focus', on);
+      row.addEventListener('pointerleave', function () { tip.hidden = true; });
+      row.addEventListener('blur', function () { tip.hidden = true; });
+      return row;
+    });
+    return h('div', { class: 'hbars', role: 'list', 'aria-label': c.title }, rows);
+  }
+
+  function timePlot(c, area, tip, width, one, plural) {
+    var pts = c.points, n = pts.length, line = c.type === 'line';
+    var values = pts.map(function (p) { return p.value; });
+    var ticks = niceTicks(Math.max.apply(null, values.map(function (v) { return v || 0; })));
+    var top = ticks[ticks.length - 1] || 1;
+    // in full under 10,000, compact past it, one style for the whole axis
+    var tickFmt = numberFormat(c, top >= 10000);
+    var labels = ticks.map(function (t) { return tickFmt.format(t); });
+    var left = Math.max.apply(null, labels.map(function (l) { return l.length; })) * 6.4 + 10;
+    var endLabel = line && n ? (pts[n - 1].text || '') : '';
+    var right = line ? Math.max(16, endLabel.length * 6.8 + 12) : 4;
+    var H = 220, T = 14, B = 26, W = Math.max(240, width), plotW = W - left - right, plotH = H - T - B;
+    var y = function (v) { return T + plotH - (v / top) * plotH; };
+    var band = plotW / Math.max(n, 1);
+    var x = line ? function (i) { return left + (n === 1 ? plotW / 2 : (i * plotW) / (n - 1)); } : function (i) { return left + band * i + band / 2; };
+    var svg = svgEl('svg', { class: 'plot', viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', tabindex: '0', 'aria-label': c.title + '. Use the arrow keys to read each value.' });
+    ticks.forEach(function (t, i) {
+      svg.appendChild(svgEl('line', { class: 'grid-line', x1: left, x2: W - right, y1: y(t), y2: y(t) }));
+      svg.appendChild(svgEl('text', { x: left - 8, y: y(t) + 4, 'text-anchor': 'end' }, [labels[i]]));
+    });
+    // x labels spaced at least 72px apart, the last one always
+    var every = Math.max(1, Math.ceil(72 / (line ? plotW / Math.max(n - 1, 1) : band)));
+    pts.forEach(function (p, i) {
+      if (i % every !== 0 && i !== n - 1) return;
+      if (i !== n - 1 && n - 1 - i < every && i !== 0) return;
+      var anchor = line && i === 0 ? 'start' : line && i === n - 1 ? 'end' : 'middle';
+      svg.appendChild(svgEl('text', { x: x(i), y: H - 8, 'text-anchor': anchor }, [p.short]));
+    });
+    var marks = [];
+    if (line) {
+      var segs = [], cur = [];
+      pts.forEach(function (p, i) { if (p.value === null) { if (cur.length) segs.push(cur); cur = []; } else cur.push(i); });
+      if (cur.length) segs.push(cur);
+      segs.forEach(function (s) {
+        var d = s.map(function (i, k) { return (k ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(values[i]).toFixed(1); }).join(' ');
+        if (s.length > 1) svg.appendChild(svgEl('path', { class: 'area', d: d + ' L' + x(s[s.length - 1]).toFixed(1) + ' ' + y(0) + ' L' + x(s[0]).toFixed(1) + ' ' + y(0) + ' Z' }));
+        svg.appendChild(svgEl('path', { class: 'line', d: d }));
+      });
+      var last = n - 1;
+      if (n && values[last] !== null) {
+        svg.appendChild(svgEl('circle', { class: 'dot', cx: x(last), cy: y(values[last]), r: 4 }));
+        svg.appendChild(svgEl('text', { class: 'end-value', x: x(last) + 8, y: y(values[last]) + 4 }, [endLabel]));
+      }
+    } else {
+      var bw = Math.max(2, Math.min(24, band * 0.62));
+      pts.forEach(function (p, i) {
+        var v = p.value || 0, x0 = x(i) - bw / 2, y0 = y(v), y1 = y(0), r = Math.min(4, bw / 2, y1 - y0);
+        var d = v > 0
+          ? 'M' + x0 + ' ' + y1 + ' V' + (y0 + r) + ' Q' + x0 + ' ' + y0 + ' ' + (x0 + r) + ' ' + y0 + ' H' + (x0 + bw - r) + ' Q' + (x0 + bw) + ' ' + y0 + ' ' + (x0 + bw) + ' ' + (y0 + r) + ' V' + y1 + ' Z'
+          : '';
+        var m = svgEl('path', { class: 'col', d: d });
+        svg.appendChild(m);
+        marks.push(m);
+      });
+    }
+    var cross = svgEl('line', { class: 'cross', y1: T, y2: T + plotH, visibility: 'hidden' });
+    var hot = svgEl('circle', { class: 'dot', r: 5, visibility: 'hidden' });
+    if (line) { svg.appendChild(cross); svg.appendChild(hot); }
+    var current = -1;
+    function point(i) {
+      current = i;
+      var p = pts[i];
+      if (line) {
+        cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
+        if (p.value !== null) { hot.setAttribute('cx', x(i)); hot.setAttribute('cy', y(p.value)); hot.setAttribute('visibility', 'visible'); } else hot.setAttribute('visibility', 'hidden');
+      } else marks.forEach(function (m, k) { m.classList.toggle('dim', k !== i); });
+      tipContent(tip, p, c, one, plural);
+      var scale = svg.getBoundingClientRect().width / W;
+      var a = area.getBoundingClientRect(), s = svg.getBoundingClientRect();
+      placeTip(tip, area, s.left - a.left + x(i) * scale, s.top - a.top + (p.value !== null ? y(p.value) : T + plotH) * scale);
+    }
+    function clear() {
+      current = -1; tip.hidden = true;
+      cross.setAttribute('visibility', 'hidden'); hot.setAttribute('visibility', 'hidden');
+      marks.forEach(function (m) { m.classList.remove('dim'); });
+    }
+    // the crosshair finds the nearest step: the pointer need not touch the line
+    svg.addEventListener('pointermove', function (e) {
+      var s = svg.getBoundingClientRect(), px = (e.clientX - s.left) * (W / s.width);
+      if (px < left - 4 || px > W - right + 4) { clear(); return; }
+      var i = line ? Math.round(((px - left) / plotW) * (n - 1)) : Math.floor((px - left) / band);
+      point(Math.max(0, Math.min(n - 1, n === 1 ? 0 : i)));
+    });
+    svg.addEventListener('pointerleave', clear);
+    svg.addEventListener('blur', clear);
+    svg.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      var i = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : current < 0 ? (e.key === 'ArrowLeft' ? n - 1 : 0) : current + (e.key === 'ArrowLeft' ? -1 : 1);
+      point(Math.max(0, Math.min(n - 1, i)));
+    });
+    return svg;
+  }
+
+  function pieChart(c, area, tip, one, plural) {
+    var dark = mode() === 'dark';
+    var colorOf = function (p) { var v = dark ? p.color_dark : p.color; return v && HEX.test(v) ? v : 'var(--muted-text)'; };
+    var sum = c.points.reduce(function (a, p) { return a + (p.value > 0 ? p.value : 0); }, 0) || 1;
+    var R = 84, C = 84, angle = -Math.PI / 2;
+    var svg = svgEl('svg', { class: 'pie', viewBox: '0 0 168 168', role: 'img', 'aria-label': c.title });
+    var slices = [], rows = [];
+    c.points.forEach(function (p, i) {
+      var v = p.value > 0 ? p.value : 0, a = (v / sum) * Math.PI * 2, el;
+      if (a >= Math.PI * 2 - 1e-6) el = svgEl('circle', { cx: C, cy: C, r: R, fill: colorOf(p) });
+      else {
+        var a2 = angle + a, large = a > Math.PI ? 1 : 0;
+        el = svgEl('path', { fill: colorOf(p), d: 'M' + C + ' ' + C + ' L' + (C + R * Math.cos(angle)).toFixed(2) + ' ' + (C + R * Math.sin(angle)).toFixed(2) +
+          ' A' + R + ' ' + R + ' 0 ' + large + ' 1 ' + (C + R * Math.cos(a2)).toFixed(2) + ' ' + (C + R * Math.sin(a2)).toFixed(2) + ' Z' });
+        angle = a2;
+      }
+      if (v > 0) svg.appendChild(el);
+      slices.push(el);
+    });
+    function focusOn(i) {
+      slices.forEach(function (s, k) { s.classList.toggle('dim', k !== i); });
+      rows.forEach(function (r, k) { r.classList.toggle('dim', k !== i); });
+      tipContent(tip, c.points[i], c, one, plural);
+      var a = area.getBoundingClientRect(), s = svg.getBoundingClientRect();
+      placeTip(tip, area, s.left - a.left + s.width / 2, s.top - a.top + 6);
+    }
+    function clear() {
+      tip.hidden = true;
+      slices.forEach(function (s) { s.classList.remove('dim'); });
+      rows.forEach(function (r) { r.classList.remove('dim'); });
+    }
+    c.points.forEach(function (p, i) {
+      var row = h('li', { tabindex: '0', 'aria-label': p.label + ': ' + p.text + ', ' + formatShare(p.share || 0) }, [
+        h('span', { class: 'sw', style: { background: colorOf(p) }, 'aria-hidden': 'true' }),
+        h('span', { class: 'nm', text: p.label, title: p.label }),
+        h('span', { class: 'val', text: p.text }),
+        h('span', { class: 'pct', text: formatShare(p.share || 0) })
+      ]);
+      [row, slices[i]].forEach(function (el) {
+        el.addEventListener('pointerenter', function () { focusOn(i); });
+        el.addEventListener('pointerleave', clear);
+      });
+      row.addEventListener('focus', function () { focusOn(i); });
+      row.addEventListener('blur', clear);
+      rows.push(row);
+    });
+    return h('div', { class: 'pie-wrap' }, [svg, h('ul', { class: 'legend', 'aria-label': 'Legend' }, rows)]);
+  }
+
+  function chartCard(d) {
+    var c = d.chart, one = d.object.label.toLowerCase(), plural = d.object.label_plural.toLowerCase();
+    var kids = [bar(d.object.icon, c.title, null, d.list_url, 'Open in CRM')];
+    // what is measured, unless the title already says it; a total only where it adds something (a sum)
+    var from = c.records.toLocaleString() + ' ' + (c.records === 1 ? one : plural);
+    var said = c.title.toLowerCase().indexOf(c.measure.toLowerCase()) === 0;
+    var meta = [h('span', { text: said ? 'From ' + from : c.measure + ', from ' + from })];
+    if (c.total && c.type !== 'pie' && c.metric === 'sum') meta.push(h('span', null, ['Total ', h('strong', { text: c.total.text })]));
+    kids.push(h('div', { class: 'chart-meta' }, meta));
+    var area = h('div', { class: 'chart-area' });
+    var tip = h('div', { class: 'tip', role: 'status', hidden: true });
+    if (!c.points.length) area.appendChild(h('div', { class: 'none', text: 'No ' + plural + ' match.' }));
+    else if (c.type === 'pie') area.appendChild(pieChart(c, area, tip, one, plural));
+    else if (c.axis === 'category') area.appendChild(rankedBars(c, area, tip, one, plural));
+    else area.appendChild(timePlot(c, area, tip, chartWidth(), one, plural));
+    area.appendChild(tip);
+    kids.push(area);
+    if (c.points.length) {
+      var shares = c.points.some(function (p) { return p.share !== null; });
+      var table = h('table', { class: 'grid' }, [
+        h('thead', null, [h('tr', null, [h('th', { scope: 'col', text: c.group_label }), h('th', { scope: 'col', class: 'num', text: c.measure }), shares ? h('th', { scope: 'col', class: 'num', text: 'Share' }) : null])]),
+        h('tbody', null, c.points.map(function (p) {
+          return h('tr', null, [h('td', { text: p.label }), h('td', { class: 'num', text: p.text }), shares ? h('td', { class: 'num', text: p.share === null ? '--' : formatShare(p.share) }) : null]);
+        })),
+        c.total ? h('tfoot', null, [h('tr', null, [h('td', { text: 'Total' }), h('td', { class: 'num', text: c.total.text }), shares ? h('td', { class: 'num', text: '100%' }) : null])]) : null
+      ]);
+      kids.push(h('details', { class: 'rest' }, [h('summary', null, [icon(CHEVRON), 'Show as table (' + c.points.length + ' rows)']), h('div', { class: 'scroll table-view' }, [table])]));
+    }
+    if (c.undated) kids.push(h('div', { class: 'foot', text: c.undated.toLocaleString() + ' ' + (c.undated === 1 ? one : plural) + ' with no ' + c.group_label.split(',')[0].toLowerCase() + ' are not shown.' }));
+    return h('article', { class: 'card', 'aria-label': c.title }, kids);
+  }
+  // the plot's width in pixels: the card's, less the chart area's padding
+  function chartWidth() { return Math.max(240, (app.clientWidth || document.documentElement.clientWidth) - 36); }
+  var lastWidth = 0;
+  window.addEventListener('resize', function () {
+    var w = chartWidth();
+    if (data && data.view === 'chart' && data.chart.axis === 'time' && data.chart.type !== 'pie' && Math.abs(w - lastWidth) > 4) { lastWidth = w; show(data); }
+  });
+
   function show(d) {
-    if (!d || (d.view !== 'record' && d.view !== 'records')) return;
+    if (!d || (d.view !== 'record' && d.view !== 'records' && d.view !== 'chart')) return;
     data = d;
     applyTheme();
-    app.replaceChildren(d.view === 'record' ? recordCard(d) : listCard(d));
+    lastWidth = chartWidth();
+    app.replaceChildren(d.view === 'record' ? recordCard(d) : d.view === 'chart' ? chartCard(d) : listCard(d));
   }
   function showError(result) {
     var text = 'The CRM could not load this.';
