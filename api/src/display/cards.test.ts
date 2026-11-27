@@ -124,7 +124,11 @@ test('the markdown fallback has the same content as the card', () => {
   assert.match(lmd, /^\*\*Open deals\*\*: 1 of 12 deals/);
   assert.match(lmd, /\| Name \| Amount \|\n\| --- \| ---: \|\n\| Big one \(9\) \| \$1\.00 \|/);
   assert.match(listMarkdown({ ...list, rows: [], total: 0 }), /No deals match\./);
-  assert.match(displayNote('records', lmd), /Do not build your own visual/);
+  const note = displayNote('records', lmd);
+  assert.match(note, /Do not build your own visual/);
+  // the model cannot see whether the card appeared, so it must not say it did
+  assert.match(note, /never say it is shown/);
+  assert.doesNotMatch(note, /is now shown/);
 });
 
 test('the tools point at the card page, which talks MCP Apps', () => {

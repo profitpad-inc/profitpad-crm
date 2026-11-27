@@ -483,5 +483,6 @@ export function listMarkdown(card: ListCard): string {
 // What the model reads: the card is already on screen, so it adds a sentence
 // at most; the markdown is for clients that could not show it.
 export function displayNote(kind: 'record' | 'records' | 'chart', markdown: string): string {
-  return `This ${kind === 'record' ? 'record' : kind === 'chart' ? 'chart' : 'list'} is now shown to the user as a card drawn by the CRM in its own style and theme. Do not build your own visual, widget, artifact or table for it, and do not repeat its fields: reply with one or two sentences at most, and only to answer the user's question or suggest a next step. Only if the user's app cannot show the card (it does not display MCP Apps), show the markdown below exactly as written instead.\n\n${markdown}`;
+  const what = kind === 'record' ? 'record' : kind === 'chart' ? 'chart' : 'list';
+  return `The CRM sent this ${what} as a card for the user's app to draw in the CRM's own style and theme. You cannot see whether it appeared, so never say it is shown, above or below, and never point the user to it. Do not build your own visual, widget, artifact or table for it, and do not repeat its fields: reply with one or two sentences at most, and only to answer the user's question or suggest a next step. If the user says they cannot see it, or their app does not display MCP Apps, show the markdown below exactly as written.\n\n${markdown}`;
 }
