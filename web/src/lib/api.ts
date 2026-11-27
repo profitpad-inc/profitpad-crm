@@ -156,16 +156,9 @@ export interface CrmRecord {
 }
 
 // search filters: groups are OR'ed, filters inside a group AND'ed
-export interface Filter {
-  property: string;
-  operator: string;
-  value?: unknown;
-  values?: unknown[];
-}
-
-export interface FilterGroup {
-  filters: Filter[];
-}
+// the search API's filter_groups (lib/filters.ts has the operators and helpers)
+export type { Filter, FilterGroup } from './filters';
+import type { FilterGroup } from './filters';
 
 export interface SearchResult {
   total: number;
@@ -208,6 +201,8 @@ export interface View {
   editable: boolean;
   columns: Column[];
   sorts: Sort[];
+  // the view's filters
+  filter_groups: FilterGroup[];
   position: number;
 }
 

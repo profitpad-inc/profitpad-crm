@@ -9,6 +9,8 @@ import { Markdown as BaseMarkdown } from '../components/Markdown';
 import { CodeBlock as BaseCodeBlock, setCopyText } from '../components/CodeBlock';
 import { langFor, type CodeLang } from '../lib/code-folds';
 import { MultiValueEditor } from '../components/MultiValueField';
+import { AdvancedFilters as BaseAdvancedFilters } from '../components/AdvancedFilters';
+import type { FilterField, FilterGroup } from '../lib/filters';
 import { decodeEntries, encodeEntries, entriesOf, labelText } from '../lib/multi-values';
 import { PhoneInput as BasePhoneInput, type PhoneResult, type PhoneSource } from '../components/PhoneInput';
 import { decorateRegions, type PhoneRegions, type RawPhoneRegions } from '../public/phone-regions';
@@ -1290,6 +1292,49 @@ export function Select({ value, onChange, options, placeholder, small, style, cl
       // the placeholder is the empty choice, unless the view lists its own ("All regions")
       options={placeholder !== undefined && !options.some((o) => o.value === '') ? [{ value: '', label: placeholder }, ...options] : options}
     />
+  );
+}
+
+// ---- advanced filters --------------------------------------------------------------
+// The CRM's table filters (HubSpot style: groups of conditions, AND inside a
+// group, OR between groups; text has a case-sensitivity switch, off by
+// default). value is the filter_groups list; filterRows applies it to query
+// rows in the browser. Fields come from useObjectFields(object) or are
+// written by hand ({ key, label, type, options? }).
+
+export type { Filter, FilterField, FilterFieldType, FilterGroup } from '../lib/filters';
+export { completeGroups, countFilters, describeFilter, filterRows, matchesFilters } from '../lib/filters';
+
+// An object's properties as filter fields (the ones the viewer may see),
+// optionally only some, in that order.
+export function useObjectFields(object: string, opts: { only?: string[] } = {}): { fields: FilterField[]; loading: boolean; error: Error | null } {
+  const only = opts.only?.join(',') ?? '';
+  const [state, setState] = useState<{ fields: FilterField[]; loading: boolean; error: Error | null }>({ fields: [], loading: true, error: null });
+  useEffect(() => {
+    let live = true;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    call<FilterField[]>('objectFields', [object])
+      .then((all) => {
+        if (!live) return;
+        const keys = only ? only.split(',') : null;
+        const fields = keys ? keys.flatMap((k) => all.filter((f) => f.key === k)) : all;
+        setState({ fields, loading: false, error: null });
+      })
+      .catch((e: Error) => live && setState({ fields: [], loading: false, error: e }));
+    return () => {
+      live = false;
+    };
+  }, [object, only]);
+  return state;
+}
+
+export function AdvancedFilters({ fields, value, onChange, placeholder, style, className }: {
+  fields: FilterField[]; value: FilterGroup[]; onChange: (groups: FilterGroup[]) => void; placeholder?: string;
+} & Styled) {
+  return (
+    <div className={cx('v-advanced-filters', className)} style={style}>
+      <BaseAdvancedFilters kit fields={fields} groups={value ?? []} onChange={onChange} searchPlaceholder={placeholder} />
+    </div>
   );
 }
 

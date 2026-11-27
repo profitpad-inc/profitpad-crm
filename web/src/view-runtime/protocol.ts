@@ -52,7 +52,9 @@ type BaseBridgeMethod = 'query' | 'openRecord' | 'navigate' | 'setParams' | 'cre
   // choices of a dropdown that lets users add them (a library's folders): add, rename, archive (a change: asked like createRecord)
   | 'addOption' | 'updateOption'
   // the copy buttons on code (the frame has no clipboard access; never asked: it only writes the view's own text)
-  | 'copyText';
+  | 'copyText'
+  // an object's properties as filter fields for the kit's AdvancedFilters (read only, never asked; what the viewer may see)
+  | 'objectFields';
 // openUrl: a web page in a new tab (external-url.ts says which); the page may ask the viewer first
 export type BridgeMethod = BaseBridgeMethod | 'openUrl';
 

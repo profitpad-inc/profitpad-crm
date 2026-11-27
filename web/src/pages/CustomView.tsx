@@ -11,6 +11,7 @@ import type { RecordBack } from './RecordPage';
 import { fileInfo, fileLink, formatBytes, openFile, uploadFile } from '../lib/files';
 import type { BridgeMethod, FromFrame, Params, PreviewBox, PreviewContent, RuntimeError, ToFrame, ViewFile, ViewInit } from '../view-runtime/protocol';
 import { checkExternalUrl } from '../view-runtime/external-url';
+import { fieldsFromSchema } from '../lib/filters';
 import { confirmDialog } from '../components/confirm';
 import { loadSnippets, renderSnippet } from '../lib/snippets';
 import { LineItemsEditor } from '../components/LineItemsEditor';
@@ -516,6 +517,10 @@ export function CustomView() {
           setLeaving(ask);
         });
         return { opened };
+      }
+      case 'objectFields': {
+        if (typeof args[0] !== 'string' || !args[0]) throw new Error('useObjectFields takes an object api_name');
+        return fieldsFromSchema((await getSchema(args[0])).properties);
       }
       case 'copyText': {
         if (typeof args[0] !== 'string') throw new Error('copyText takes a string');

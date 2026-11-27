@@ -49,6 +49,15 @@ COUNTS = {
 }
 
 
+# a number the CRM accepts (it checks phone numbers; 555 numbers are refused)
+AREA_CODES = [212, 312, 415, 416, 512, 604, 617, 647, 720, 905]
+
+
+def phone_number():
+    exchange = random.choice([x for x in range(201, 999) if x != 555 and x % 100 != 11])
+    return "+1 %d %03d %04d" % (random.choice(AREA_CODES), exchange, random.randint(0, 9999))
+
+
 class ApiError(Exception):
     pass
 
@@ -71,6 +80,26 @@ def request(api_key, method, path, body=None):
 
 
 # ---- value helpers ----------------------------------------------------------
+
+def sample_pdf(text):
+    """A one-page PDF with a line of text, small enough to upload in one go."""
+    stream = ("BT /F1 18 Tf 72 720 Td (%s) Tj ET" % text).encode()
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out = b"%PDF-1.4\n"
+    offsets = []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + o + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    out += b"".join(b"%010d 00000 n \n" % off for off in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+    return out
+
 
 def iso(dt):
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -122,6 +151,17 @@ class Generator:
         print("  %-32s %4d records" % (obj, len(ids)))
         return ids
 
+    def upload(self, name, data):
+        start = self.call("POST", "/v1/files/uploads", {"name": name, "size": len(data), "content_type": "application/pdf"})
+        req = urllib.request.Request("%s/v1/files/%s/content?offset=0" % (BASE_URL, start["id"]), data=data, method="PUT")
+        req.add_header("Authorization", "Bearer " + self.key)
+        req.add_header("Content-Type", "application/octet-stream")
+        try:
+            urllib.request.urlopen(req, timeout=60).read()
+        except urllib.error.HTTPError as err:
+            raise ApiError("PUT /v1/files/%s/content -> %s: %s" % (start["id"], err.code, err.read().decode(errors="replace")))
+        return start["id"]
+
     def link(self, from_obj, from_id, to_obj, to_id, label_id=None):
         self.links.append((from_obj, from_id, to_obj, to_id, label_id))
 
@@ -151,7 +191,9 @@ class Generator:
             f, l = person()
             users.append({"name": "%s %s" % (f, l), "first_name": f, "last_name": l,
                           "email": "%s.%s.%s%d@example.com" % (f.lower(), l.lower().replace("-", ""), RUN, i),
-                          "status": "active", "timezone": "America/Toronto"})
+                          "status": "active", "timezone": "America/Toronto",
+                          # every new user needs a role; View Only is the default every CRM has
+                          "role": "View Only"})
         self.create("users", users)
         owner = lambda: random.choice(self.owners())
 
@@ -167,7 +209,7 @@ class Generator:
             companies.append({"name": name, "domain": "%s-%s%d.example.com" % (name.lower().replace(" ", ""), RUN, i),
                               "industry": random.choice(INDUSTRIES), "address_city": city, "address_province": state, "address_country": country,
                               "employee_count": random.randint(5, 5000), "annual_revenue": money(2e5, 5e7),
-                              "phone": "+1 555 %03d %04d" % (random.randint(100, 999), random.randint(0, 9999)),
+                              "phone": phone_number(),
                               "owner": owner(), "created_at": iso(past(900))})
         self.create("companies", companies)
 
@@ -175,9 +217,10 @@ class Generator:
         for i in range(COUNTS["contacts"]):
             f, l = person()
             city, state, country = random.choice(CITIES)
-            contacts.append({"name": "%s %s" % (f, l), "first_name": f, "last_name": l,
+            # the contact's name is worked out from first and last name (read-only)
+            contacts.append({"first_name": f, "last_name": l,
                              "email": "%s.%s.%s%d@example.org" % (f.lower(), l.lower().replace("-", ""), RUN, i),
-                             "phone": "+1 555 %03d %04d" % (random.randint(100, 999), random.randint(0, 9999)),
+                             "phone": phone_number(),
                              "job_title": random.choice(TITLES), "address_city": city, "address_province": state, "address_country": country,
                              "lifecycle_stage": random.choice(["lead", "mql", "sql", "opportunity", "customer", "other"]),
                              "owner": owner(), "created_at": iso(past(700))})
@@ -221,10 +264,12 @@ class Generator:
                                   "unit_price": money(5, 900), "active": random.choice(["true", "true", "false"])}
                                  for i, p in enumerate(PRODUCTS[:COUNTS["products"]])])
 
-        self.create("quotes", [{"name": "Quote Q-%s-%03d" % (RUN.upper(), i),
-                                "status": random.choice(["draft", "sent", "accepted", "rejected", "expired"]),
+        quote_status = [random.choice(["draft", "sent", "accepted", "rejected", "expired"]) for _ in range(COUNTS["quotes"])]
+        self.create("quotes", [{"name": "Quote Q-%s-%03d" % (RUN.upper(), i), "status": quote_status[i],
                                 "expiration_date": day(future(60)), "amount": money(500, 1e5), "currency": "USD"}
                                for i in range(COUNTS["quotes"])])
+        # an accepted quote takes no new line items
+        open_quotes = [q for q, st in zip(self.ids["quotes"], quote_status) if st != "accepted"]
         self.link_some("quotes", "deals", 1, 1)
         self.link_some("quotes", "contacts", 1, 1)
 
@@ -264,7 +309,9 @@ class Generator:
         for lid in self.ids["lines"]:
             self.link("lines", lid, "products", random.choice(self.ids["products"]))
             parent = random.choice(parents)
-            self.link("lines", lid, parent, random.choice(self.ids[parent]))
+            choices = open_quotes if parent == "quotes" else self.ids[parent]
+            if choices:
+                self.link("lines", lid, parent, random.choice(choices))
 
         # activities
         calls = []
@@ -307,9 +354,9 @@ class Generator:
         self.link_some("tasks", "deals", 0, 1)
 
         # files and marketing
-        self.create("files", [{"name": "document-%d.pdf" % i, "mime_type": "application/pdf",
-                               "size_bytes": random.randint(10000, 5000000),
-                               "storage_key": "sample/%s/document-%d.pdf" % (RUN, i)} for i in range(COUNTS["files"])])
+        # files are made by uploading (their size, type and storage are read-only)
+        self.ids["files"] = [self.upload("document-%d.pdf" % i, sample_pdf("Sample document %d" % i)) for i in range(COUNTS["files"])]
+        print("  %-32s %4d records" % ("files", len(self.ids["files"])))
         self.link_some("files", "contacts", 1, 1)
         self.link_some("files", "deals", 0, 1)
 

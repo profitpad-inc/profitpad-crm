@@ -596,8 +596,14 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       properties: {
         property: { type: 'string' },
         operator: { type: 'string', enum: [...OPERATORS] },
-        value: { description: 'Single value (eq, neq, lt, lte, gt, gte, contains, not_contains, starts_with)' },
-        values: { type: 'array', items: {}, description: 'Several values (in, not_in, contains_all, between)' }
+        value: { description: 'Single value (eq, neq, lt, lte, gt, gte, contains, not_contains, starts_with, ends_with; a whole number of days for last_n_days, next_n_days, more_than_n_days_ago on dates)' },
+        values: { type: 'array', items: {}, description: 'Several values (in, not_in, contains_all, between)' },
+        case_sensitive: { type: 'boolean', description: 'Text only. false: eq, neq, in and not_in ignore case. true: contains, not_contains, starts_with and ends_with match case. Omitted: equality is exact, the others ignore case' },
+        association: {
+          type: 'object', required: ['object'],
+          properties: { object: { type: 'string', example: 'companies' }, label_id: { type: 'string', description: 'Only links under this association label' } },
+          description: 'Filter on linked records: property is a property of this object, and the record matches when at least one active linked record of it, one the caller can read, meets the condition. property "__count" filters on how many linked records there are instead: has_property (any), not_has_property (none), or eq, neq, gt, gte, lt, lte, between with whole numbers. Search (and exports) only; sharing rules and webhook filters refuse it'
+        }
       }
     },
     SearchRequest: {

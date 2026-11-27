@@ -10,6 +10,45 @@ export interface Filter {
   operator: string;
   value?: unknown;
   values?: unknown[];
+  // text comparisons: false compares ignoring case (eq, neq, in, not_in),
+  // true makes contains / starts_with / ends_with match case. Omitted keeps
+  // the defaults: equality exact, contains and friends ignoring case.
+  case_sensitive?: boolean;
+  // a condition on linked records of another object: true when at least one
+  // active linked record of that object (one the caller may read; with
+  // label_id, linked under that label) meets it. property is the other
+  // object's property. property "__count" filters on how many linked records
+  // there are instead: has_property (any), not_has_property (none), or a
+  // number (eq, neq, gt, gte, lt, lte, between).
+  association?: { object: string; label_id?: string };
+}
+
+// The association filter's property for the number of linked records (real
+// property names start with a letter, so it never clashes).
+export const ASSOCIATION_COUNT = '__count';
+const COUNT_OPERATORS = ['has_property', 'not_has_property', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between'];
+
+// What compiling filters on associated records needs: the linked objects
+// (by api_name), which of their records the caller may read, and which of
+// their properties are hidden from the caller. Built by
+// filterAssociationContext (records.ts); without one such filters are refused.
+export interface AssociationFilterContext {
+  objects: Map<string, ObjectDef>;
+  access: (other: ObjectDef, alias: string, params: unknown[]) => string;
+  isHidden: (p: PropertyDef) => boolean;
+}
+
+// The objects named by filters on associated records (api names as sent).
+export function filterAssociationObjects(groups: FilterGroup[] | undefined): string[] {
+  if (!Array.isArray(groups)) return [];
+  const names = new Set<string>();
+  for (const g of groups) for (const f of Array.isArray(g?.filters) ? g.filters : []) {
+    if (f?.association !== undefined) {
+      if (!f.association || typeof f.association.object !== 'string' || !f.association.object) throw badRequest('association must be { object, label_id? }');
+      names.add(f.association.object);
+    }
+  }
+  return [...names];
 }
 
 export interface FilterGroup {
@@ -29,7 +68,8 @@ export interface SearchRequest {
 
 export const OPERATORS = [
   'eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'between', 'in', 'not_in',
-  'has_property', 'not_has_property', 'contains', 'not_contains', 'starts_with', 'contains_all'
+  'has_property', 'not_has_property', 'contains', 'not_contains', 'starts_with', 'ends_with', 'contains_all',
+  'last_n_days', 'next_n_days', 'more_than_n_days_ago'
 ] as const;
 
 function valueType(prop: PropertyDef): string {
@@ -53,13 +93,19 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => '\\' + c);
 }
 
+// contains / not_contains / starts_with / ends_with -> a LIKE pattern
+function likePattern(op: string, s: string): string {
+  const e = escapeLike(s);
+  return op === 'starts_with' ? e + '%' : op === 'ends_with' ? '%' + e : '%' + e + '%';
+}
+
 // Email and phone lists: true when any entry matches. A phone is compared
 // as stored (+15550100) for eq and in; contains and starts_with also match
 // its digits, so "555 0100" finds +15550100.
-function multiMatch(col: string, op: 'like' | 'eq', param: string, digitsParam?: string): string {
+function multiMatch(col: string, op: 'like' | 'eq', param: string, digitsParam?: string, caseSensitive = false): string {
   if (op === 'eq') return `exists (select 1 from jsonb_array_elements(${col}) e where e ->> 'value' = ${param})`;
   const digits = digitsParam ? ` or regexp_replace(e ->> 'value', '[^0-9]', '', 'g') like ${digitsParam}` : '';
-  return `exists (select 1 from jsonb_array_elements(${col}) e where e ->> 'value' ilike ${param}${digits})`;
+  return `exists (select 1 from jsonb_array_elements(${col}) e where e ->> 'value' ${caseSensitive ? 'like' : 'ilike'} ${param}${digits})`;
 }
 
 function multiScalar(prop: PropertyDef, v: unknown): string {
@@ -75,7 +121,10 @@ function phoneDigits(v: string): string | null {
   return d.length >= 3 ? d : null;
 }
 
-function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't'): string {
+function compileFilter(
+  obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't', assoc?: AssociationFilterContext
+): string {
+  if (f.association !== undefined) return compileAssociationFilter(obj, f, params, alias, assoc);
   const prop = getProperty(obj, f.property);
   if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
   if (!(OPERATORS as readonly string[]).includes(f.operator)) throw badRequest(`unknown operator "${f.operator}"`);
@@ -115,13 +164,13 @@ function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (
       }
       case 'contains':
       case 'not_contains':
-      case 'starts_with': {
+      case 'starts_with':
+      case 'ends_with': {
         if (typeof f.value !== 'string') throw badRequest(`filter on "${prop.api_name}" expects a string`);
         const s = f.value.trim();
-        const pattern = f.operator === 'starts_with' ? escapeLike(s) + '%' : '%' + escapeLike(s) + '%';
         const d = prop.type === 'phone' ? phoneDigits(s) : null;
-        const dp = d ? p(f.operator === 'starts_with' ? d + '%' : '%' + d + '%', 'text') : undefined;
-        const m = multiMatch(col, 'like', p(pattern, 'text'), dp);
+        const dp = d ? p(likePattern(f.operator, d), 'text') : undefined;
+        const m = multiMatch(col, 'like', p(likePattern(f.operator, s), 'text'), dp, f.case_sensitive === true);
         return f.operator === 'not_contains' ? `not ${m}` : m;
       }
       default:
@@ -146,15 +195,32 @@ function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (
     }
   }
 
+  // text compared ignoring case: case_sensitive: false
+  const fold = t === 'text' && f.case_sensitive === false;
+  const lc = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : v);
+  const c = fold ? `lower(${col})` : col;
   switch (f.operator) {
     case 'eq':
-      return `${col} = ${p(coerceScalar(prop, f.value))}`;
+      return `${c} = ${p(fold ? lc(coerceScalar(prop, f.value)) : coerceScalar(prop, f.value))}`;
     case 'neq':
-      return `${col} is distinct from ${p(coerceScalar(prop, f.value))}`;
+      return `${c} is distinct from ${p(fold ? lc(coerceScalar(prop, f.value)) : coerceScalar(prop, f.value))}`;
     case 'in':
-      return `${col} = any (${p(list(), cast + '[]')})`;
+      return `${c} = any (${p(fold ? list().map(lc) : list(), cast + '[]')})`;
     case 'not_in':
-      return `not coalesce(${col} = any (${p(list(), cast + '[]')}), false)`;
+      return `not coalesce(${c} = any (${p(fold ? list().map(lc) : list(), cast + '[]')}), false)`;
+  }
+  // relative dates, value a whole number of days: rolling windows for
+  // datetimes (now() - n days .. now()), whole days for dates
+  if (f.operator === 'last_n_days' || f.operator === 'next_n_days' || f.operator === 'more_than_n_days_ago') {
+    if (t !== 'date' && t !== 'datetime') throw badRequest(`operator "${f.operator}" only applies to date and datetime properties`);
+    const n = Number(f.value);
+    if (!Number.isInteger(n) || n < 0 || n > 36500) throw badRequest(`"${f.operator}" on "${f.property}" needs a whole number of days (0 to 36500)`);
+    const days = p(n, 'integer');
+    const now = t === 'date' ? 'current_date' : 'now()';
+    const span = t === 'date' ? days : `make_interval(days => ${days})`;
+    if (f.operator === 'last_n_days') return `${col} between ${now} - ${span} and ${now}`;
+    if (f.operator === 'next_n_days') return `${col} between ${now} and ${now} + ${span}`;
+    return `${col} < ${now} - ${span}`;
   }
   if (['lt', 'lte', 'gt', 'gte', 'between'].includes(f.operator)) {
     if (t === 'text') throw badRequest(`operator "${f.operator}" does not apply to text properties`);
@@ -167,27 +233,79 @@ function compileFilter(obj: ObjectDef, f: Filter, params: unknown[], isHidden: (
   }
   if (t !== 'text') throw badRequest(`operator "${f.operator}" only applies to text properties`);
   const s = coerceScalar(prop, f.value) as string;
+  const like = f.case_sensitive === true ? 'like' : 'ilike';
   switch (f.operator) {
     case 'contains':
-      return `${col} ilike ${p('%' + escapeLike(s) + '%')}`;
-    case 'not_contains':
-      return `coalesce(${col} not ilike ${p('%' + escapeLike(s) + '%')}, true)`;
     case 'starts_with':
-      return `${col} ilike ${p(escapeLike(s) + '%')}`;
+    case 'ends_with':
+      return `${col} ${like} ${p(likePattern(f.operator, s))}`;
+    case 'not_contains':
+      return `coalesce(${col} not ${like} ${p(likePattern(f.operator, s))}, true)`;
   }
   throw badRequest(`unsupported operator "${f.operator}"`);
 }
 
+// A condition on linked records: exists (a link to an active, readable
+// record of the other object that meets the condition).
+function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], alias: string, assoc?: AssociationFilterContext): string {
+  if (!assoc) throw badRequest('filters on associated records are not supported here');
+  const a = f.association;
+  if (!a || typeof a.object !== 'string') throw badRequest('association must be { object, label_id? }');
+  const other = assoc.objects.get(a.object);
+  if (!other || !obj.links_to.includes(other.api_name)) throw badRequest(`${obj.api_name} records cannot be associated with "${a.object}"`);
+  if (a.label_id !== undefined && (typeof a.label_id !== 'string' || !a.label_id)) throw badRequest('association.label_id must be a label id');
+  // unique aliases, so several association filters can sit side by side
+  const n = params.length + 1;
+  const link = `al${n}`;
+  const other_alias = `ar${n}`;
+  params.push(obj.object_type_id, other.object_type_id);
+  const from = `$${params.length - 1}::text`;
+  const to = `$${params.length}::text`;
+  let label = '';
+  if (a.label_id) {
+    params.push(a.label_id);
+    label = ` and ${link}.label_id = $${params.length}::text`;
+  }
+  const access = assoc.access(other, other_alias, params);
+  const linked = `from crm.associations_both ${link} join crm.${quoteIdent(other.object_type_id)} ${other_alias} on ${other_alias}.${quoteIdent(other.id_column)} = ${link}.other_record_id`
+    + ` where ${link}.object_type_id = ${from} and ${link}.record_id = ${alias}.${quoteIdent(obj.id_column)} and ${link}.other_object_type_id = ${to}${label}`
+    + ` and ${other_alias}.record_status = 'active' and ${access}`;
+
+  if (f.property === ASSOCIATION_COUNT) {
+    if (!COUNT_OPERATORS.includes(f.operator)) throw badRequest(`operator "${f.operator}" does not apply to the number of associated ${other.label_plural.toLowerCase()}`);
+    if (f.operator === 'has_property') return `exists (select 1 ${linked})`;
+    if (f.operator === 'not_has_property') return `not exists (select 1 ${linked})`;
+    const count = (v: unknown) => {
+      const n = Number(v);
+      if (v === null || v === '' || !Number.isInteger(n) || n < 0) throw badRequest(`the number of associated ${other.label_plural.toLowerCase()} must be a whole number, 0 or more`);
+      params.push(n);
+      return `$${params.length}::integer`;
+    };
+    const total = `(select count(distinct ${other_alias}.${quoteIdent(other.id_column)}) ${linked})`;
+    if (f.operator === 'between') {
+      const vals = f.values ?? (Array.isArray(f.value) ? f.value : undefined);
+      if (!Array.isArray(vals) || vals.length !== 2) throw badRequest('"between" needs values: [low, high]');
+      return `${total} between ${count(vals[0])} and ${count(vals[1])}`;
+    }
+    const ops: Record<string, string> = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' };
+    return `${total} ${ops[f.operator]} ${count(f.value)}`;
+  }
+
+  const inner = compileFilter(other, { property: f.property, operator: f.operator, value: f.value, values: f.values, case_sensitive: f.case_sensitive }, params, assoc.isHidden, other_alias);
+  return `exists (select 1 ${linked} and ${inner})`;
+}
+
 // filter_groups -> "((a and b) or (c))" on the given table alias, or null
-// when there are no groups. Also used by sharing rules (auth.ts).
+// when there are no groups. Also used by sharing rules (auth.ts), which pass
+// no association context: filters on associated records are refused there.
 export function compileFilterGroups(
-  obj: ObjectDef, groups: FilterGroup[], params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't'
+  obj: ObjectDef, groups: FilterGroup[], params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't', assoc?: AssociationFilterContext
 ): string | null {
   if (!Array.isArray(groups)) throw badRequest('filter_groups must be an array');
   if (groups.length > 5) throw badRequest('at most 5 filter groups');
   const ors = groups.map((g) => {
     if (!Array.isArray(g?.filters) || g.filters.length === 0 || g.filters.length > 10) throw badRequest('each filter group needs 1 to 10 filters');
-    return '(' + g.filters.map((f) => compileFilter(obj, f, params, isHidden, alias)).join(' and ') + ')';
+    return '(' + g.filters.map((f) => compileFilter(obj, f, params, isHidden, alias, assoc)).join(' and ') + ')';
   });
   return ors.length > 0 ? '(' + ors.join(' or ') + ')' : null;
 }
@@ -199,7 +317,9 @@ export interface CompiledSearch {
   offset: number;
 }
 
-export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknown[], isHidden: (p: PropertyDef) => boolean): CompiledSearch {
+export function compileSearch(
+  obj: ObjectDef, req: SearchRequest, params: unknown[], isHidden: (p: PropertyDef) => boolean, assoc?: AssociationFilterContext
+): CompiledSearch {
   const clauses: string[] = [];
   params.push(req.status ?? 'active');
   clauses.push(`t.record_status = $${params.length}`);
@@ -231,7 +351,7 @@ export function compileSearch(obj: ObjectDef, req: SearchRequest, params: unknow
     }
     clauses.push('(' + (cols.length ? cols.join(' or ') : `t.name ilike $${n}`) + ')');
   }
-  const groups = compileFilterGroups(obj, req.filter_groups ?? [], params, isHidden);
+  const groups = compileFilterGroups(obj, req.filter_groups ?? [], params, isHidden, 't', assoc);
   if (groups) clauses.push(groups);
 
   const orders = (req.sorts ?? []).map((s) => {

@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { pool } from '../db.js';
 import { badRequest, forbidden, notFound } from '../errors.js';
-import { grantedPermissions, requirePermission, requireScope, type Principal } from '../auth.js';
+import { grantedPermissions, noneHidden, requirePermission, requireScope, type Principal } from '../auth.js';
+import { compileFilterGroups, type FilterGroup } from '../search.js';
+import { filterAssociationContext } from '../records.js';
 import { logEvent } from '../audit.js';
 import { approveFields, approveUrl, canApprove, requestFields } from '../approval.js';
 import { getObject, getProperty, getRegistry, type ObjectDef } from '../registry.js';
@@ -547,6 +549,24 @@ async function validateColumns(obj: ObjectDef, columns: unknown): Promise<Column
   return out;
 }
 
+// A view's filters, in the search API's filter_groups format (stored
+// in ui.views.filters). Checked by compiling them, so only conditions the
+// search accepts are saved.
+async function validateFilterGroups(obj: ObjectDef, groups: unknown, p: Principal): Promise<FilterGroup[]> {
+  if (!Array.isArray(groups)) throw badRequest('filter_groups must be an array');
+  compileFilterGroups(obj, groups as FilterGroup[], [], noneHidden, 't', await filterAssociationContext(groups as FilterGroup[], p));
+  return (groups as FilterGroup[]).map((g) => ({
+    filters: g.filters.map((f) => ({
+      property: f.property,
+      operator: f.operator,
+      ...(f.value !== undefined ? { value: f.value } : {}),
+      ...(f.values !== undefined ? { values: f.values } : {}),
+      ...(typeof f.case_sensitive === 'boolean' ? { case_sensitive: f.case_sensitive } : {}),
+      ...(f.association ? { association: { object: f.association.object, ...(f.association.label_id ? { label_id: f.association.label_id } : {}) } } : {})
+    }))
+  }));
+}
+
 function validateSorts(obj: ObjectDef, sorts: unknown): { property: string; direction: 'asc' | 'desc' }[] {
   if (!Array.isArray(sorts) || sorts.length > 3) throw badRequest('sorts must be an array of at most 3');
   return sorts.map((s) => {
@@ -586,7 +606,9 @@ function canEditView(p: Principal, view: { owner: string | null }): boolean {
   return view.owner === null ? isAdmin(p) : view.owner === p.actor || isAdmin(p);
 }
 
-const viewOut = (v: Record<string, unknown>, p: Principal) => ({ ...v, shared: v.owner === null, editable: canEditView(p, v as { owner: string | null }) });
+const viewOut = ({ filters, ...v }: Record<string, unknown>, p: Principal) => ({
+  ...v, filter_groups: filters ?? [], shared: v.owner === null, editable: canEditView(p, v as { owner: string | null })
+});
 
 // An object's table views: shared ones plus the caller's own, in tab order (the
 // first is the one the table opens on). A default shared view is created on
@@ -805,7 +827,7 @@ export async function uiRoutes(app: FastifyInstance) {
     return { results: await tableViews(p, await getObject(req.query.object)) };
   });
 
-  app.post<{ Body: { object: string; name: string; columns?: unknown; sorts?: unknown; shared?: boolean } }>('/v1/ui/views', async (req, reply) => {
+  app.post<{ Body: { object: string; name: string; columns?: unknown; sorts?: unknown; filter_groups?: unknown; shared?: boolean } }>('/v1/ui/views', async (req, reply) => {
     const p = req.principal!;
     requireScope(p, 'read');
     const b = req.body ?? ({} as never);
@@ -814,16 +836,17 @@ export async function uiRoutes(app: FastifyInstance) {
     if (!b.name || b.name.length > 63) throw badRequest('name must be 1 to 63 characters');
     const columns = b.columns === undefined ? defaultColumns(obj) : await validateColumns(obj, b.columns);
     const sorts = b.sorts === undefined ? [{ property: 'created_at', direction: 'desc' }] : validateSorts(obj, b.sorts);
+    const filters = b.filter_groups === undefined ? [] : await validateFilterGroups(obj, b.filter_groups, p);
     const { rows } = await pool.query(
-      `insert into ui.views (object_type_id, name, owner, columns, sorts, position, created_by)
-       values ($1, $2, $3, $4, $5, (select coalesce(max(position), 0) + 1 from ui.views where object_type_id = $1), $6) returning *`,
-      [obj.object_type_id, b.name, b.shared ? null : p.actor, JSON.stringify(columns), JSON.stringify(sorts), p.actor]
+      `insert into ui.views (object_type_id, name, owner, columns, sorts, filters, position, created_by)
+       values ($1, $2, $3, $4, $5, $7, (select coalesce(max(position), 0) + 1 from ui.views where object_type_id = $1), $6) returning *`,
+      [obj.object_type_id, b.name, b.shared ? null : p.actor, JSON.stringify(columns), JSON.stringify(sorts), p.actor, JSON.stringify(filters)]
     );
     reply.code(201);
     return viewOut(rows[0], p);
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; columns?: unknown; sorts?: unknown; position?: number } }>('/v1/ui/views/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; columns?: unknown; sorts?: unknown; filter_groups?: unknown; position?: number } }>('/v1/ui/views/:id', async (req) => {
     const p = req.principal!;
     const view = await loadView(req.params.id);
     if (!canEditView(p, view)) throw forbidden('you cannot change this view');
@@ -832,10 +855,11 @@ export async function uiRoutes(app: FastifyInstance) {
     if (b.name !== undefined && (!b.name || b.name.length > 63)) throw badRequest('name must be 1 to 63 characters');
     const columns = b.columns === undefined ? null : JSON.stringify(await validateColumns(obj, b.columns));
     const sorts = b.sorts === undefined ? null : JSON.stringify(validateSorts(obj, b.sorts));
+    const filters = b.filter_groups === undefined ? null : JSON.stringify(await validateFilterGroups(obj, b.filter_groups, p));
     const { rows } = await pool.query(
       `update ui.views set name = coalesce($2, name), columns = coalesce($3, columns), sorts = coalesce($4, sorts),
-         position = coalesce($5, position), updated_at = now() where id = $1 returning *`,
-      [req.params.id, b.name ?? null, columns, sorts, b.position ?? null]
+         filters = coalesce($6, filters), position = coalesce($5, position), updated_at = now() where id = $1 returning *`,
+      [req.params.id, b.name ?? null, columns, sorts, b.position ?? null, filters]
     );
     return viewOut(rows[0], p);
   });

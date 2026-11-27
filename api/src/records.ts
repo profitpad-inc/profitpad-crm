@@ -3,7 +3,7 @@ import { channelOf, pool, quoteIdent, type Db } from './db.js';
 import { badRequest, forbidden, notFound } from './errors.js';
 import { propertyAccess, recordFilter, requireObjectPermission, type AccessMode, type Principal } from './auth.js';
 import { activeProperties, getObject, getProperty, getRegistry, isSingleValue, type ObjectDef, type PropertyDef } from './registry.js';
-import { compileSearch, nextCursor, type SearchRequest } from './search.js';
+import { compileSearch, filterAssociationObjects, nextCursor, type AssociationFilterContext, type FilterGroup, type SearchRequest } from './search.js';
 import { emailValueProblem, fromDb, isWritable, toDb } from './values.js';
 import { MultiValueError, isMultiType, normalizeMultiValue, splitMultiText } from './multi-values.js';
 
@@ -265,12 +265,33 @@ export async function batchReadRecords(
 }
 
 
+// What filters on associated records need (see AssociationFilterContext): the
+// linked objects they name, each readable by the caller, with the caller's
+// record access and hidden properties. principal null (checking a saved
+// filter's shape) skips the access checks. undefined when no filter needs one.
+export async function filterAssociationContext(groups: FilterGroup[] | undefined, principal: Principal | null): Promise<AssociationFilterContext | undefined> {
+  const names = filterAssociationObjects(groups);
+  if (names.length === 0) return undefined;
+  const objects = new Map<string, ObjectDef>();
+  for (const name of names) {
+    const other = await getObject(name).catch(() => null);
+    if (!other) throw badRequest(`unknown object "${name}" in a filter's association`);
+    if (principal) requireObjectPermission(principal, other, 'read');
+    objects.set(name, other);
+  }
+  return {
+    objects,
+    access: (other, alias, params) => (principal ? recordFilter(principal, other, params, alias) : 'true'),
+    isHidden: (p) => (principal ? propertyAccess(principal, p) === 'hidden' : false)
+  };
+}
+
 export async function searchRecords(obj: ObjectDef, principal: Principal, req: SearchRequest) {
   requireObjectPermission(principal, obj, 'read');
   const props = visibleProperties(obj, principal, req.properties);
   const params: unknown[] = [];
   const hidden = (p: PropertyDef) => propertyAccess(principal, p) === 'hidden';
-  const q = compileSearch(obj, req, params, hidden);
+  const q = compileSearch(obj, req, params, hidden, await filterAssociationContext(req.filter_groups, principal));
   const access = recordFilter(principal, obj, params);
   const table = `crm.${quoteIdent(obj.object_type_id)}`;
   const [{ rows }, count] = await Promise.all([

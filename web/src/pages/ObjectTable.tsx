@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, Columns3, EllipsisVertical, GripVertical, IdCard, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
-  api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type ObjectDef,
+  api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type FilterGroup, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
 } from '../lib/api';
+import { AdvancedFilters } from '../components/AdvancedFilters';
+import { completeGroups, countFilters, fieldsFromSchema, filterParam, parseFilterParam, toSearchGroups } from '../lib/filters';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
 import { SaveHint } from '../components/SaveHint';
@@ -41,6 +43,15 @@ const NAME_PARTS = new Set(['name', 'first_name', 'last_name']);
 const LONG_PRESS_MS = 450;
 // Quick filters: a dropdown next to the search for each of these properties
 // (single-choice user or option pickers), kept in the URL (?host=<id>).
+// the filter picker's associated objects start with these, then the rest
+// alphabetically (an object's own entry, else the default)
+const PINNED_FILTER_OBJECTS: Record<string, string[]> = {
+  default: ['contacts', 'companies', 'deals'],
+  deals: ['contacts', 'companies', 'lines'],
+  quotes: ['contacts', 'companies', 'lines'],
+  invoices: ['contacts', 'companies', 'lines'],
+  orders: ['contacts', 'companies', 'lines']
+};
 const QUICK_FILTERS: Record<string, string[]> = {
   booking_pages: ['host']
 };
@@ -63,6 +74,9 @@ function ObjectTableFor({ object }: { object: string }) {
   const [otherSchemas, setOtherSchemas] = useState<Record<string, ObjectDef>>({});
   const [columns, setColumns] = useState<Column[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
+  // the view's filters, half-made conditions included (the panel's working copy)
+  const [filterGroups, setFilterGroups] = useState<FilterGroup[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [appliedViewId, setAppliedViewId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   // ?status=archived shows the recycle bin instead of the active records
@@ -153,6 +167,8 @@ function ObjectTableFor({ object }: { object: string }) {
     if (!activeView) return;
     setColumns(activeView.columns);
     setSorts(activeView.sorts);
+    // a link's ?filters= wins over the view's own (applied, not saved)
+    setFilterGroups(parseFilterParam(searchParams.get('filters')) ?? activeView.filter_groups ?? []);
     setAppliedViewId(activeView.id);
     setDirty(false);
   }, [activeView?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -195,18 +211,58 @@ function ObjectTableFor({ object }: { object: string }) {
 
   const columnProperties = useMemo(() => (propKey ? propKey.split(',') : []), [propKey]);
 
+  // filters: only finished conditions on properties this user can see
+  // reach the search, keyed by their text so typing into a half-made one
+  // doesn't fetch again
+  // Filters on associated objects: their schemas load for objects the filters
+  // already use, and for every linked object once the picker opens. Objects
+  // the user cannot read fail and are left out.
+  const [wantAllLinked, setWantAllLinked] = useState(false);
+  const [unreadable, setUnreadable] = useState<Set<string>>(() => new Set());
+  const filterObjectsKey = [...new Set(filterGroups.flatMap((g) => g.filters.flatMap((f) => (f.association ? [f.association.object] : []))))].sort().join(',');
+  const linkedWanted = useMemo(() => {
+    if (!schema) return [];
+    const used = filterObjectsKey ? filterObjectsKey.split(',') : [];
+    return [...new Set([...used, ...(wantAllLinked ? schema.links_to : [])])].filter((o) => o !== object);
+  }, [schema, filterObjectsKey, wantAllLinked, object]);
+  useEffect(() => {
+    linkedWanted.filter((o) => !otherSchemas[o] && !unreadable.has(o)).forEach((o) =>
+      getSchema(o)
+        .then((s) => setOtherSchemas((m) => ({ ...m, [o]: s })))
+        .catch(() => setUnreadable((u) => new Set(u).add(o)))
+    );
+  }, [linkedWanted]); // eslint-disable-line react-hooks/exhaustive-deps
+  const linkedLoading = linkedWanted.some((o) => !otherSchemas[o] && !unreadable.has(o));
+  const linkedKey = linkedWanted.filter((o) => otherSchemas[o]).sort().join(',');
+  const filterFields = useMemo(() => {
+    if (!schema) return [];
+    const own = fieldsFromSchema(schema.properties);
+    const linked = (linkedKey ? linkedKey.split(',') : []).flatMap((o) =>
+      fieldsFromSchema(otherSchemas[o].properties, { object: o, group: otherSchemas[o].label_singular, plural: otherSchemas[o].label_plural }));
+    return [...own, ...linked];
+  }, [schema, linkedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the search waits for the objects its filters use, so it never runs without them
+  const filtersWaiting = (filterObjectsKey ? filterObjectsKey.split(',') : []).some((o) => !otherSchemas[o] && !unreadable.has(o));
+  const searchKey = JSON.stringify(toSearchGroups(filterGroups, filterFields));
+  const searchGroups = useMemo(() => JSON.parse(searchKey) as FilterGroup[], [searchKey]);
+  const filterCount = countFilters(searchGroups);
+
   const fetchPage = useCallback(
     async (after?: string) => {
       if (!schema) return;
       if (activeViewId !== undefined && appliedViewId !== activeViewId) return; // view's columns not applied yet
       if (assocObjects.some((o) => !otherSchemas[o])) return;
+      if (filtersWaiting) return;
       setLoading(true);
       setError(null);
       try {
         const res = await api<SearchResult>('POST', `/v1/objects/${object}/search`, {
           query: debounced || undefined,
           status: archived ? 'archived' : undefined,
-          filter_groups: quickFilters.length ? [{ filters: quickFilters }] : undefined,
+          // quick filters apply on top of every filter group
+          filter_groups: searchGroups.length
+            ? searchGroups.map((g) => ({ filters: [...quickFilters, ...g.filters] }))
+            : quickFilters.length ? [{ filters: quickFilters }] : undefined,
           sorts,
           limit: PAGE,
           after,
@@ -220,7 +276,7 @@ function ObjectTableFor({ object }: { object: string }) {
         setLoading(false);
       }
     },
-    [schema, activeViewId, appliedViewId, object, debounced, archived, quickFilters, sorts, columnProperties, assocObjects, otherSchemas]
+    [schema, activeViewId, appliedViewId, object, debounced, archived, quickFilters, searchGroups, sorts, columnProperties, assocObjects, otherSchemas, filtersWaiting]
   );
 
   useEffect(() => {
@@ -232,7 +288,7 @@ function ObjectTableFor({ object }: { object: string }) {
     setPicked(new Set());
     setSelectMode(false);
     lastPicked.current = null;
-  }, [debounced, archived, quickFilters, sorts, activeViewId]);
+  }, [debounced, archived, quickFilters, searchGroups, sorts, activeViewId]);
 
   const shown = data?.results ?? [];
   const pickedCount = shown.filter((r) => picked.has(r.id)).length;
@@ -320,7 +376,9 @@ function ObjectTableFor({ object }: { object: string }) {
 
   // persist column/sort changes to the view when the user may edit it
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  function changeView(next: { columns?: Column[]; sorts?: Sort[] }) {
+  // changes waiting for the timer, merged so a quick second change doesn't drop the first
+  const pendingSave = useRef<{ columns?: Column[]; sorts?: Sort[]; filter_groups?: FilterGroup[] }>({});
+  function changeView(next: { columns?: Column[]; sorts?: Sort[]; filter_groups?: FilterGroup[] }) {
     if (next.columns) setColumns(next.columns);
     if (next.sorts) setSorts(next.sorts);
     if (!activeView) return;
@@ -328,12 +386,52 @@ function ObjectTableFor({ object }: { object: string }) {
       setDirty(true);
       return;
     }
+    pendingSave.current = { ...pendingSave.current, ...next };
+    const viewIdNow = activeView.id;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      const updated = await api<View>('PATCH', `/v1/ui/views/${activeView.id}`, next).catch(() => null);
+      const body = pendingSave.current;
+      pendingSave.current = {};
+      const updated = await api<View>('PATCH', `/v1/ui/views/${viewIdNow}`, body).catch(() => null);
       if (updated) setViews((vs) => vs.map((v) => (v.id === updated.id ? updated : v)));
     }, 400);
   }
+
+  // the panel's edits apply at once; finished conditions are saved with the view
+  function changeFilters(next: FilterGroup[]) {
+    setFilterGroups(next);
+    const done = completeGroups(next, filterFields);
+    if (JSON.stringify(done) !== JSON.stringify(completeGroups(filterGroups, filterFields))) changeView({ filter_groups: done });
+  }
+
+  // The finished filters also live in ?filters=, so a refresh, a copied link
+  // and the back button keep them. Replaced, not pushed, like the search.
+  // Empty filters leave it out, unless the view has saved ones (then
+  // "filters=[]" says "none" rather than "the view's").
+  const filterUrlValue = useMemo(() => {
+    if (!activeView) return null;
+    const done = searchGroups.length ? completeGroups(filterGroups, filterFields) : [];
+    if (done.length) return filterParam(done);
+    return (activeView.filter_groups ?? []).length ? '[]' : null;
+  }, [searchKey, activeView?.id, JSON.stringify(activeView?.filter_groups ?? [])]); // eslint-disable-line react-hooks/exhaustive-deps
+  const urlFilters = searchParams.get('filters');
+  const syncedFilters = useRef<string | null>(urlFilters);
+  useEffect(() => {
+    if (appliedViewId !== activeView?.id || filterUrlValue === syncedFilters.current) return;
+    syncedFilters.current = filterUrlValue;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (filterUrlValue === null) next.delete('filters');
+      else next.set('filters', filterUrlValue);
+      return next;
+    }, { replace: true });
+  }, [filterUrlValue, appliedViewId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the address changed from outside (back button, a pasted link)
+  useEffect(() => {
+    if (urlFilters === syncedFilters.current || !activeView) return;
+    syncedFilters.current = urlFilters;
+    setFilterGroups(parseFilterParam(urlFilters) ?? activeView.filter_groups ?? []);
+  }, [urlFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drag a header's right edge to resize; the width is saved on mouse up.
   function startResize(e: React.MouseEvent, i: number) {
@@ -582,7 +680,7 @@ function ObjectTableFor({ object }: { object: string }) {
   async function saveViewDialog() {
     if (!viewDialog || !viewDialogReady) return;
     if (viewDialog.mode === 'create') {
-      const created = await api<View>('POST', '/v1/ui/views', { object, name: viewDialog.name.trim(), columns, sorts });
+      const created = await api<View>('POST', '/v1/ui/views', { object, name: viewDialog.name.trim(), columns, sorts, filter_groups: completeGroups(filterGroups, filterFields) });
       setViews((vs) => [...vs, created]);
       showView(created.id);
     } else if (activeView) {
@@ -765,6 +863,11 @@ function ObjectTableFor({ object }: { object: string }) {
                 ]} />
             );
           })}
+          <button type="button" className={`btn${isMobile ? ' icon-only' : ''} table-filters-btn`} onClick={() => setShowFilters(true)}
+            aria-label={isMobile ? `Filters${filterCount ? ` (${filterCount})` : ''}` : undefined} aria-expanded={showFilters}>
+            <ListFilter size={14} />{!isMobile && ' Filters'}
+            {filterCount > 0 && <span className="af-count">{filterCount}</span>}
+          </button>
           {archived && (
             <button type="button" className="table-archived-chip" onClick={() => showArchived(false)} title={`Back to active ${plural}`}>
               <Archive size={13} /> Archived only <X size={13} />
@@ -987,6 +1090,14 @@ function ObjectTableFor({ object }: { object: string }) {
               >
                 The search looks at {searchedFields}.
               </EmptyState>
+            ) : filterCount > 0 ? (
+              <EmptyState
+                icon={<ListFilter size={18} />}
+                title={`No ${archived ? 'archived ' : ''}${plural} match these filters`}
+                action={<button className="btn" onClick={() => setShowFilters(true)}>Edit filters</button>}
+              >
+                {filterCount === 1 ? 'One filter is' : `${filterCount} filters are`} on for this view.
+              </EmptyState>
             ) : archived ? (
               <EmptyState
                 icon={<Archive size={18} />}
@@ -1106,6 +1217,19 @@ function ObjectTableFor({ object }: { object: string }) {
       {showImport && (
         <ImportModal object={schema} onClose={() => setShowImport(false)} onImported={() => fetchPage()} />
       )}
+      {showFilters && (
+        <FiltersPanel
+          title="Filters"
+          note={activeView && !activeView.editable ? 'This shared view is admin-managed: filters apply now, use "Save as new view" to keep them.' : undefined}
+          onClose={() => setShowFilters(false)}
+          onClear={filterGroups.length ? () => changeFilters([]) : undefined}
+        >
+          <AdvancedFilters fields={filterFields} groups={filterGroups} onChange={changeFilters}
+            searchPlaceholder={`Search ${schema.label_singular.toLowerCase()} properties`}
+            objectLabel={schema.label_singular} onPickerOpen={() => setWantAllLinked(true)} fieldsLoading={linkedLoading} objectIcon={objectIcon}
+            pinnedObjects={PINNED_FILTER_OBJECTS[object] ?? PINNED_FILTER_OBJECTS.default} />
+        </FiltersPanel>
+      )}
       {showColumns && (
         <ColumnPicker
           schema={schema}
@@ -1143,6 +1267,36 @@ function ObjectTableFor({ object }: { object: string }) {
 type Cell = { row: number; col: number };
 
 // how a sort reads in the phone Sort menu
+// The right-hand panel that holds a table's filters, like HubSpot's
+// "All filters": the table stays usable beside it and updates as filters change.
+function FiltersPanel({ title, note, onClose, onClear, children }: {
+  title: string; note?: string; onClose: () => void; onClear?: () => void; children: React.ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Escape closes an open menu or picker first
+      if (e.key === 'Escape' && !document.querySelector('.select-menu, .af-picker')) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <aside className="af-panel" role="dialog" aria-label={title}>
+      <header className="af-panel-head">
+        <h2>{title}</h2>
+        <button className="icon-btn" onClick={onClose} aria-label="Close filters"><X size={18} /></button>
+      </header>
+      <div className="af-panel-body">
+        {children}
+      </div>
+      <footer className="af-panel-foot">
+        <span className="muted" style={{ fontSize: 12 }}>{note ?? 'Filters in a group must all match; any group can match.'}</span>
+        {onClear && <button className="btn small ghost" onClick={onClear}>Clear all</button>}
+      </footer>
+    </aside>
+  );
+}
+
 function directionWords(p: Property, dir: 'asc' | 'desc'): string {
   const t = valueType(p);
   if (t === 'number') return dir === 'asc' ? 'Low to high' : 'High to low';

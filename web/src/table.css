@@ -14,6 +14,10 @@
 .table-title h1 { font-size: 22px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-count { color: var(--muted-text); font-size: 13px; white-space: nowrap; }
 .table-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* whole-pixel rows (the body's 20.3px line height made these 36.3px and the
+   tabs 42.3px), so the toolbar below starts on a whole pixel: at a fraction
+   its words snap to the pixel grid but its icons don't, and look off-centre */
+.table-head-actions .btn, .view-tab-name { line-height: 20px; }
 
 /* view tabs: underlined, on the same hairline */
 .view-tabs {
@@ -51,6 +55,9 @@
 .table-note::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .table-toolbar .table-columns { margin-left: auto; height: 32px; padding: 0 12px; }
 .table-columns svg { color: var(--muted-text); }
+.table-toolbar .table-filters-btn { height: 32px; padding: 0 12px; }
+.table-toolbar .table-filters-btn.icon-only { width: 32px; padding: 0; justify-content: center; }
+.table-filters-btn svg { color: var(--muted-text); }
 .table-toolbar .table-more { height: 32px; width: 32px; padding: 0; justify-content: center; }
 .table-more svg { color: var(--muted-text); }
 .table-archived-chip {

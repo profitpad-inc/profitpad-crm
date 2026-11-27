@@ -136,7 +136,10 @@ const filterGroupsArg = z.array(z.object({
     property: z.string(),
     operator: z.enum(OPERATORS as unknown as [string, ...string[]]),
     value: z.unknown().optional(),
-    values: z.array(z.unknown()).optional()
+    values: z.array(z.unknown()).optional(),
+    case_sensitive: z.boolean().optional().describe('Text only. false: eq, neq, in, not_in ignore case. true: contains, not_contains, starts_with, ends_with match case. Omitted: equality exact, the others ignore case.'),
+    association: z.object({ object: z.string(), label_id: z.string().optional() }).optional()
+      .describe('Filter on linked records instead: property is a property of this other object (api_name), and the record matches when at least one linked record of it (that you can read; with label_id, linked under that label) meets the condition. E.g. deals whose company is in Canada: {"property": "address_country", "operator": "in", "values": ["CA"], "association": {"object": "companies"}}. property "__count" filters on how many linked records there are: has_property (any), not_has_property (none), or eq/neq/gt/gte/lt/lte/between a whole number. Search, exports and table views only.')
   }))
 })).optional().describe('Filters within a group are ANDed; groups are ORed. between uses values [low, high]; in/not_in use values.');
 

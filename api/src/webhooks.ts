@@ -324,7 +324,8 @@ interface SubscriptionRow extends ApprovalRow {
 const OPERATOR_WORDS: Record<string, string> = {
   eq: 'is', neq: 'is not', lt: '<', lte: '<=', gt: '>', gte: '>=', between: 'is between', in: 'is any of', not_in: 'is none of',
   has_property: 'is known', not_has_property: 'is empty', contains: 'contains', not_contains: 'does not contain',
-  starts_with: 'starts with', contains_all: 'has all of'
+  starts_with: 'starts with', ends_with: 'ends with', contains_all: 'has all of',
+  last_n_days: 'is in the last (days)', next_n_days: 'is in the next (days)', more_than_n_days_ago: 'is more than (days) ago'
 };
 
 const literal = (v: unknown) => (typeof v === 'string' ? `'${v.replace(/'/g, "''")}'` : JSON.stringify(v));
