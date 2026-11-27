@@ -1,0 +1,25 @@
+contacts_default_view_page                    1686      1269      1173 ms   seq scan: pc_0010
+contacts_count_all                            1751       214       172 ms   
+contacts_sort_created_desc                     877       820       813 ms   seq scan: pc_0010
+contacts_sort_last_name                        989       980       976 ms   seq scan: pc_0010
+contacts_page_offset_10000                    2125      1998      1930 ms   seq scan: pc_0010 | sort spilled to disk
+contacts_search_smith_page                    4643      4484      4410 ms   seq scan: pc_0010
+contacts_search_smith_count                   4204      4158      4218 ms   
+contacts_search_rare_name                     4450      4498      4577 ms   seq scan: pc_0010
+contacts_search_phone_digits                  3261      5689      2987 ms   seq scan: pc_0010
+contacts_email_exact_lookup                      7         0         0 ms   
+contacts_filter_owner_page                     540       435       470 ms   
+contacts_filter_owner_count                    473       477       476 ms   
+contacts_filter_stage_city_sort_name           485       430       477 ms   
+contacts_report_by_stage                       639       558       500 ms   seq scan: pc_0010
+companies_default_view_page                     80        79        83 ms   seq scan: pc_0011
+companies_count_all                            176        32        32 ms   
+companies_search_acme                          314       264       266 ms   seq scan: pc_0011
+deals_default_view_page                        144       117       105 ms   seq scan: pc_0012
+deals_count_all                                153        74        40 ms   
+deals_pipeline_by_stage                        189       183       185 ms   seq scan: pc_0012
+deals_won_by_month_report                      175        86        84 ms   
+record_page_company_contacts                     5         3         3 ms   
+record_page_history                            368       332       332 ms   
+contacts_page_with_company_column              674       707       670 ms   seq scan: pc_0004
+contacts_filter_by_company_industry           1992      1490      1612 ms   

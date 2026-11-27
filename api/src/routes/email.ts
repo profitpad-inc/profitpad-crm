@@ -5,7 +5,7 @@ import { hasPermission, requireObjectPermission, requireRecentSignIn, requireSco
 import { canApprove } from '../approval.js';
 import { getObject } from '../registry.js';
 import { rateLimit } from './public.js';
-import { loadEmailSettings, saveEmailSettings, settingsOut, webhookAuthOk } from '../email/settings.js';
+import { loadEmailSettings, marketingSender, saveEmailSettings, settingsOut, webhookAuthOk } from '../email/settings.js';
 import { sendEmail } from '../email/send.js';
 import { handleEvent, handleInbound, optOut } from '../email/events.js';
 import { readUnsubscribeToken, unsubscribePageUrl, unsubscribeToken } from '../email/links.js';
@@ -68,7 +68,9 @@ export async function previewCampaign(id: string, contactId: unknown) {
   const s = await loadEmailSettings();
   const token = unsubscribeToken(cid, id);
   const out = await renderCampaignEmail(campaign, template, who, s, token ? unsubscribePageUrl(token) : '#unsubscribe');
-  return { contact_id: cid, to: who.email, ...out };
+  const sender = marketingSender(s, campaign);
+  // who it comes from, when a sender is set (tests are sent from it too)
+  return { contact_id: cid, to: who.email, from: sender.address ? sender : null, ...out };
 }
 
 export async function emailRoutes(app: FastifyInstance) {
@@ -130,7 +132,7 @@ export async function emailRoutes(app: FastifyInstance) {
     await requireCampaignEdit(p);
     const to = await myEmail(p);
     const out = await previewCampaign(campaignId(req.params.id), req.body?.contact_id);
-    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test' });
+    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test', from: out.from ?? undefined });
     return { sent_to: to, drawn_for: out.contact_id, message_id: res.message_id };
   });
 
@@ -214,7 +216,7 @@ export async function emailRoutes(app: FastifyInstance) {
     const c = await tokenContact(req.params.token);
     const s = await loadEmailSettings();
     const { rows } = await pool.query("select value from ui.settings where key = 'theme'");
-    return { email: mask(c.email), opted_out: c.opted_out, sender: s.from_name, theme: rows[0]?.value ?? {} };
+    return { email: mask(c.email), opted_out: c.opted_out, sender: s.marketing_from_name || s.from_name, theme: rows[0]?.value ?? {} };
   });
 
   // The page's button, and mail apps' one-click unsubscribe (RFC 8058),

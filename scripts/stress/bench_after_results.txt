@@ -1,0 +1,21 @@
+contacts newest first, page                          0        0        0 ms
+contacts recently updated, page                    110      110      109 ms
+contacts newest first, offset 5000                  47       14       15 ms
+contacts sorted by phone, page (unchanged)        1324     1348     1434 ms
+contacts count, capped                               6        6        5 ms
+contacts count, exact (home page)                  297      303      305 ms
+search "smith", page                                10        7        6 ms
+search "smith", count capped                        75       41       34 ms
+search "sarah smith", page                          14       17       17 ms
+search "sarah smith", count capped                  16       23       18 ms
+sidebar "sarah", 5 results                           1        1        1 ms
+sidebar "sarah", count capped                       68       51       38 ms
+search "wright.77" (rare), page                      4        3        3 ms
+search "wright.77", count capped                     3        2        2 ms
+search "(613) 059-80" (phone), page                 11       10       12 ms
+filter owner + stage, count capped                 137      174      254 ms
+companies by name, page                              0        0        0 ms
+companies search "acme", page                        1        1        1 ms
+companies search "acme", count capped               43       25       22 ms
+deals newest first, page                             0        0        0 ms
+deals count, capped                                  4        4        4 ms

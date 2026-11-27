@@ -10,10 +10,13 @@ import {
   gmailSendAs, listAliases, loadProviders, MailAuthError, MailSendError, providerFor, providerReady, sendMessage, type MailProvider, type OutgoingMessage,
   type ProviderRow
 } from '../mailbox/providers.js';
+import { fromHeader, loadEmailSettings } from '../email/settings.js';
+import { PostmarkError, sendOne } from '../email/postmark.js';
 
 // Internal notification emails (migration 0099): sent to CRM users from one
 // system address (Settings → Notification emails) through the Google or
-// Microsoft service account of Settings → Mailboxes. The service account acts
+// Microsoft service account of Settings → Mailboxes, or (migration 0150)
+// Postmark's transactional stream from Settings → Email. The service account acts
 // as a real mailbox (a licensed user); the From address is that mailbox or one
 // of its aliases (Gmail send-as, or a Microsoft proxy address when
 // Settings → Mailboxes allows aliases).
@@ -33,8 +36,11 @@ const EXCERPT = 300;
 export type Kind = 'mention' | 'task_assigned' | 'invite' | 'api' | 'test';
 export type Status = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped';
 
+// How notifications go out: a Mailboxes service account, or Postmark.
+export type SenderProvider = MailProvider | 'postmark';
+
 export interface SenderRow {
-  provider: MailProvider;
+  provider: SenderProvider;
   mailbox: string;
   from_address: string;
   from_name: string | null;
@@ -55,6 +61,7 @@ export async function loadSender(): Promise<SenderRow | null> {
 
 // The ready provider for the sender's mailbox, or an error saying what is missing.
 export async function senderProvider(sender: Pick<SenderRow, 'provider' | 'mailbox'>): Promise<ProviderRow> {
+  if (sender.provider === 'postmark') throw new Error('Postmark has no Mailboxes provider');
   const providers = await loadProviders();
   const cfg = providers.get(sender.provider);
   const name = sender.provider === 'google' ? 'Google' : 'Microsoft';
@@ -108,6 +115,44 @@ export async function checkFromAddress(cfg: ProviderRow, mailbox: string, from: 
       ? `${from} is not an alias (proxy address) of ${mailbox} in Microsoft 365`
       : `${from} is not ${mailbox}: sending from an alias needs "Send from aliases" on in Settings → Mailboxes (and SendFromAliasesEnabled in Exchange)`
   );
+}
+
+// Postmark's side (Settings → Email): the token is set and email is turned
+// on there. Returns what is missing, or null when it can send.
+export async function postmarkProblem(): Promise<string | null> {
+  const s = await loadEmailSettings();
+  if (!s.token) return 'Postmark is not connected: add its server token in Settings → Email';
+  if (!s.enabled) return 'Email is turned off in Settings → Email';
+  return null;
+}
+
+// Sends one notification through Postmark's transactional stream, without
+// open or link tracking (the buttons link into the CRM). Network trouble,
+// rate limits and Postmark's own errors (5xx) are tried again.
+async function sendWithPostmark(sender: SenderRow, to: string, subject: string, html: string, kind: Kind): Promise<string> {
+  const problem = await postmarkProblem();
+  if (problem) throw new MailAuthError(problem);
+  const s = await loadEmailSettings();
+  try {
+    const res = await sendOne(s.token!, {
+      From: fromHeader(sender.from_name, sender.from_address),
+      To: to,
+      Subject: subject,
+      HtmlBody: html,
+      TextBody: htmlToText(html),
+      Tag: `notification-${kind}`,
+      TrackOpens: false,
+      TrackLinks: 'None',
+      MessageStream: s.transactional_stream
+    });
+    if (res.ErrorCode !== 0 || !res.MessageID) throw new MailSendError(`Postmark: ${res.Message}`, false);
+    return res.MessageID;
+  } catch (err) {
+    if (err instanceof PostmarkError) {
+      throw new MailSendError(`Postmark: ${err.message}`, err.status === 0 || err.status === 429 || err.status >= 500);
+    }
+    throw err;
+  }
 }
 
 // ---- writing the emails -------------------------------------------------------------
@@ -387,9 +432,13 @@ export async function deliver(id: string, opts: { retry: boolean }): Promise<{ o
     return { ok: false, status: 'failed', error: 'no system sender is set up' };
   }
   try {
-    const cfg = await senderProvider(sender);
+    const cfg = sender.provider === 'postmark' ? null : await senderProvider(sender);
     // a From Gmail would quietly replace fails here instead of going out wrong
-    await checkFromAddress(cfg, sender.mailbox, sender.from_address, false);
+    if (cfg) await checkFromAddress(cfg, sender.mailbox, sender.from_address, false);
+    else {
+      const problem = await postmarkProblem();
+      if (problem) throw new MailAuthError(problem);
+    }
     let subject = row.subject;
     let html = row.html;
     if (subject === null || html === null) {
@@ -413,7 +462,9 @@ export async function deliver(id: string, opts: { retry: boolean }): Promise<{ o
       text: htmlToText(html),
       attachments: []
     };
-    const messageId = await sendMessage(cfg, msg, () => buildMime(msg));
+    const messageId = cfg
+      ? await sendMessage(cfg, msg, () => buildMime(msg))
+      : await sendWithPostmark(sender, row.to_address, subject, html, row.kind);
     await finish(id, { status: 'sent', messageId, sender });
     return { ok: true, status: 'sent', error: null };
   } catch (err) {
@@ -502,7 +553,9 @@ export async function sendTest(p: Principal, address: string): Promise<{ ok: boo
   if (!sender) throw badRequest('save the sender first');
   const html = layout({
     heading: 'Notification emails work',
-    bodyHtml: `<p style="margin:0">This test was sent from ${esc(sender.from_address)} through ${sender.provider === 'google' ? 'Google Workspace' : 'Microsoft 365'} (mailbox ${esc(sender.mailbox)}).</p>`,
+    bodyHtml: sender.provider === 'postmark'
+      ? `<p style="margin:0">This test was sent from ${esc(sender.from_address)} through Postmark.</p>`
+      : `<p style="margin:0">This test was sent from ${esc(sender.from_address)} through ${sender.provider === 'google' ? 'Google Workspace' : 'Microsoft 365'} (mailbox ${esc(sender.mailbox)}).</p>`,
     link: '/settings/notification-emails',
     linkLabel: 'Open the log'
   });
@@ -514,8 +567,13 @@ export async function sendTest(p: Principal, address: string): Promise<{ ok: boo
   const id = rows[0].id;
   let error: string | null = null;
   try {
-    const cfg = await senderProvider(sender);
-    await checkFromAddress(cfg, sender.mailbox, sender.from_address);
+    if (sender.provider === 'postmark') {
+      const problem = await postmarkProblem();
+      if (problem) throw new MailAuthError(problem);
+    } else {
+      const cfg = await senderProvider(sender);
+      await checkFromAddress(cfg, sender.mailbox, sender.from_address);
+    }
   } catch (err) {
     error = (err as Error).message;
     await finish(id, { status: 'failed', error, sender });

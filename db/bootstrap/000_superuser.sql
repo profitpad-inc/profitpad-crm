@@ -42,6 +42,18 @@ grant pc_reader to pc_migrator;
 grant pc_view_reader to pc_api;
 grant pc_reader to reporting_reader;
 
+-- The API's own queries skip row-level security. It reads every row anyway
+-- (record access is applied by the API, and every object table gives pc_api
+-- a plain true policy, migration 0145), but while a policy applies Postgres
+-- will not use column statistics for ilike and other operators that are not
+-- leakproof: it guessed 20 companies with "software" in their industry where
+-- there were 20,000, and gathered 100,000 contacts to sort 50 of them (the
+-- 2026-11-27 stress test). Custom views run as pc_view_reader (the API
+-- switches with set local role), which has no such right, so they stay
+-- filtered to what the viewing user may see.
+alter role pc_api bypassrls;
+alter role pc_view_reader nobypassrls;
+
 do $$
 begin
   execute format('alter database %I owner to pc_owner', current_database());

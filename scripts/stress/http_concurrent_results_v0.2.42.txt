@@ -1,0 +1,48 @@
+=== 08:28:27 5 users
+users=5 duration=91s actions=299 (3.3/s) errors=0 p50=145ms p95=1641ms max=3317ms
+  companies_table_default_view     n=  18 p50=     55 p95=    151
+  contacts_filter_company_industry n=  16 p50=   2097 p95=   3126
+  contacts_search_smith            n=  27 p50=    200 p95=    540
+  contacts_table_default_view      n=  29 p50=     66 p95=    195
+  contacts_table_newest            n=  54 p50=     69 p95=    149
+  deals_table_default_view         n=  30 p50=     56 p95=    140
+  global_search_sarah              n=  23 p50=    536 p95=   1096
+  home_counts                      n=  19 p50=     71 p95=    166
+  record_page_company              n=  29 p50=    229 p95=    297
+  record_page_contact              n=  54 p50=    169 p95=    246
+=== 08:30:18 10 users
+users=10 duration=91s actions=505 (5.5/s) errors=0 p50=161ms p95=2762ms max=10670ms
+  companies_table_default_view     n=  19 p50=     65 p95=    143
+  contacts_filter_company_industry n=  31 p50=   4463 p95=  10025
+  contacts_search_smith            n=  49 p50=    328 p95=    819
+  contacts_table_default_view      n=  46 p50=     77 p95=    168
+  contacts_table_newest            n= 103 p50=     70 p95=    176
+  deals_table_default_view         n=  52 p50=     59 p95=    147
+  global_search_sarah              n=  37 p50=   1082 p95=   2267
+  home_counts                      n=  22 p50=     92 p95=    225
+  record_page_company              n=  45 p50=    209 p95=    263
+  record_page_contact              n= 101 p50=    180 p95=    279
+=== 08:32:10 20 users
+users=20 duration=93s actions=783 (8.4/s) errors=0 p50=170ms p95=5056ms max=20646ms
+  companies_table_default_view     n=  42 p50=     75 p95=    430
+  contacts_filter_company_industry n=  27 p50=  15636 p95=  20556
+  contacts_search_smith            n=  79 p50=    747 p95=   1693
+  contacts_table_default_view      n=  75 p50=     81 p95=    256
+  contacts_table_newest            n= 148 p50=     95 p95=    529
+  deals_table_default_view         n=  78 p50=     66 p95=    206
+  global_search_sarah              n=  78 p50=   3699 p95=   5611
+  home_counts                      n=  31 p50=     87 p95=    165
+  record_page_company              n=  82 p50=    215 p95=    319
+  record_page_contact              n= 143 p50=    215 p95=    341
+=== 08:34:03 50 users
+users=50 duration=100s actions=650 (6.5/s) errors=0 p50=3852ms p95=21473ms max=33146ms
+  companies_table_default_view     n=  30 p50=   1575 p95=   5014
+  contacts_filter_company_industry n=  37 p50=  28026 p95=  31735
+  contacts_search_smith            n=  70 p50=   3163 p95=   6338
+  contacts_table_default_view      n=  55 p50=   2254 p95=   7563
+  contacts_table_newest            n= 112 p50=   2954 p95=   7930
+  deals_table_default_view         n=  60 p50=   1490 p95=   5531
+  global_search_sarah              n=  60 p50=   8116 p95=  11642
+  home_counts                      n=  30 p50=   1524 p95=   5422
+  record_page_company              n=  73 p50=   6924 p95=  14642
+  record_page_contact              n= 123 p50=   7159 p95=  12654

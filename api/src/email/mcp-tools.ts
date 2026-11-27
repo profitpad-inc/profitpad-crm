@@ -22,6 +22,7 @@ export const EMAIL_GUIDE = `Email campaigns (object email_campaigns) send a mark
 - The CRM adds a footer with the sender's mailing address and an unsubscribe link, unless the body places {{ unsubscribe_url }} itself.
 - The campaign's audience property is JSON: {"filter_groups": [...]} (contacts, like search_records) or {"all_contacts": true}. Opted-out contacts and contacts without an email are always left out.
 - Campaign subject (optional, Liquid) overrides the template's; preheader is the preview line mail apps show.
+- Campaigns come from the campaign's from_name / from_address, else the marketing sender in Settings → Email, else the one-to-one sender. Leave them empty unless the user wants a different sender for this campaign.
 - Check with email_campaign_status, draw it with preview_email_campaign, and send_email_campaign_test sends it to the user. Sending to the audience is done by an admin in the CRM, on the campaign's page: give the user its link (/objects/email_campaigns/<id>).`;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
@@ -104,7 +105,7 @@ export function registerEmailTools(server: McpServer, p: Principal): void {
     const { rows } = await pool.query("select email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.userId]);
     if (!rows[0]?.email) throw badRequest('Your user has no email address.');
     const out = await previewCampaign(campaign, contact_id);
-    const res = await sendEmail({ to: rows[0].email, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test' });
+    const res = await sendEmail({ to: rows[0].email, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test', from: out.from ?? undefined });
     return { sent_to: rows[0].email, drawn_for: out.contact_id, message_id: res.message_id };
   }));
 }

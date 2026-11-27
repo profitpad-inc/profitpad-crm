@@ -4,7 +4,7 @@ import { Boxes, Calendar, CalendarClock, ChevronLeft, ChevronRight, Copy, Hash, 
 import { Select } from './Select';
 import { DatePicker } from './DatePicker';
 import {
-  FIELD_TYPE_LABELS, MAX_FILTERS, MAX_GROUPS, daysSuffix, filterKey, newFilter, operatorOf, operatorsFor, withOperator,
+  FIELD_TYPE_LABELS, MAX_FILTERS, MAX_GROUPS, daysSuffix, filterKey, newFilter, operatorOf, operatorsFor, withOperator, withProperty,
   type Filter, type FilterField, type FilterFieldType, type FilterGroup
 } from '../lib/filters';
 import '../advanced-filters.css';
@@ -41,11 +41,15 @@ export interface AdvancedFiltersProps {
   objectIcon?: (object: string) => ObjectIconType;
   // associated objects listed first, in this order (api names); the rest follow alphabetically
   pinnedObjects?: string[];
+  // association labels between the record's object and another one, named
+  // from the record's side ("Primary company"); with any, a condition on that
+  // object gets a label menu ("Any label" first), which sets association.label_id
+  associationLabels?: (object: string) => { value: string; label: string }[];
   // inside a custom view's frame
   kit?: boolean;
 }
 
-export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 'Search properties', objectLabel, onPickerOpen, fieldsLoading, objectIcon, pinnedObjects, kit }: AdvancedFiltersProps) {
+export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 'Search properties', objectLabel, onPickerOpen, fieldsLoading, objectIcon, pinnedObjects, associationLabels, kit }: AdvancedFiltersProps) {
   const byKey = new Map(fields.map((f) => [f.key, f]));
   const picker = { fields, placeholder: searchPlaceholder, objectLabel, onOpen: onPickerOpen, loading: fieldsLoading, objectIcon, pinnedObjects };
   const cls = { input: kit ? 'v-input' : undefined, select: kit ? 'v-input v-select' : undefined };
@@ -84,6 +88,7 @@ export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 
                   field={byKey.get(filterKey(f))}
                   filter={f}
                   cls={cls}
+                  labels={f.association ? associationLabels?.(f.association.object) : undefined}
                   onChange={(nf) => setGroup(gi, { filters: g.filters.map((x, j) => (j === fi ? nf : x)) })}
                   onRemove={() => setGroup(gi, { filters: g.filters.filter((_, j) => j !== fi) })}
                 />
@@ -110,9 +115,9 @@ export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 
   );
 }
 
-function Condition({ fields, field, filter, cls, onChange, onRemove }: {
+function Condition({ fields, field, filter, cls, labels, onChange, onRemove }: {
   fields: FilterField[]; field: FilterField | undefined; filter: Filter; cls: { input?: string; select?: string };
-  onChange: (f: Filter) => void; onRemove: () => void;
+  labels?: { value: string; label: string }[]; onChange: (f: Filter) => void; onRemove: () => void;
 }) {
   const ops = field ? operatorsFor(field) : [];
   const op = operatorOf(field, filter.operator);
@@ -121,14 +126,31 @@ function Condition({ fields, field, filter, cls, onChange, onRemove }: {
   const group = field?.group ?? (filter.association ? filter.association.object : undefined);
   const options = fields.filter((x) => x.group === group).map((x) => ({ value: x.key, label: x.label }));
   if (!field) options.unshift({ value: key, label: `${filter.property} (not available)` });
+  // "Any label" plus the pair's labels; a saved label that is gone still shows
+  const labelId = filter.association?.label_id ?? '';
+  const labelOptions = filter.association && (labels?.length || labelId) ? [
+    { value: '', label: 'Any label' },
+    ...(labels ?? []),
+    ...(labelId && !labels?.some((l) => l.value === labelId) ? [{ value: labelId, label: 'Label (not available)' }] : [])
+  ] : null;
+  const labelMenu = labelOptions && filter.association && (
+    <Select className={cls.select} value={labelId} aria-label="Association label"
+      onChange={(v) => {
+        const { label_id: _drop, ...rest } = filter.association!;
+        onChange({ ...filter, association: v ? { ...rest, label_id: v } : rest });
+      }}
+      options={labelOptions} />
+  );
 
   return (
     <div className={`af-cond${field ? '' : ' missing'}`}>
       <div className="af-cond-fields">
         {filter.association && !field?.count && <div className="af-cond-object">Associated {(field?.group ?? filter.association.object).toLowerCase()}</div>}
+        {!field?.count && labelMenu}
         <Select className={cls.select} value={key} aria-label="Property"
-          onChange={(v) => { const nf = fields.find((x) => x.key === v); if (nf) onChange(newFilter(nf)); }}
+          onChange={(v) => { const nf = fields.find((x) => x.key === v); if (nf) onChange(withProperty(field, nf, filter)); }}
           options={options} />
+        {field?.count && labelMenu}
         {field && (
           <Select className={cls.select} value={filter.operator} aria-label="Condition" search
             onChange={(v) => onChange(withOperator(field, filter, v))}

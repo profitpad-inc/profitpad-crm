@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { pool, withTx } from '../db.js';
 import { ApiError } from '../errors.js';
-import { fromHeader, readySettings } from './settings.js';
+import { fromHeader, readySettings, replyDomain, replyToFor } from './settings.js';
 import { newReplyToken } from './links.js';
 import { PostmarkError, sendOne } from './postmark.js';
 
@@ -61,18 +61,21 @@ export interface TransactionalEmail {
   replyable?: boolean;
   ownerUserId?: string | null;
   tag?: string;
+  // another sender than the one-to-one default (a campaign's test comes from its marketing sender)
+  from?: { name: string | null; address: string };
 }
 
 // Sends one transactional email now. Link tracking stays off (sign-in links
 // must not be rewritten); opens are not tracked either.
 export async function sendEmail(m: TransactionalEmail): Promise<{ email_id: string | null; message_id: string }> {
   const s = await readySettings();
-  const from = fromHeader(s.from_name, s.from_address);
+  const sender = m.from ?? { name: s.from_name, address: s.from_address };
+  const from = fromHeader(sender.name, sender.address);
   const keep = m.record ?? !!m.contactId;
-  const replyToken = keep && m.replyable && s.reply_domain ? newReplyToken() : null;
+  const replyToken = keep && m.replyable && replyDomain(s) ? newReplyToken() : null;
   const emailId = keep
     ? await withTx(EMAIL_ACTOR, (c) =>
-        insertEmailRecord(c, { subject: m.subject, body: m.html, from: s.from_address, to: m.to, stream: 'transactional', replyToken, ownerUserId: m.ownerUserId },
+        insertEmailRecord(c, { subject: m.subject, body: m.html, from: sender.address, to: m.to, stream: 'transactional', replyToken, ownerUserId: m.ownerUserId },
           m.contactId ? [{ object: 'pc_0010', id: m.contactId }] : []))
     : null;
   try {
@@ -82,7 +85,7 @@ export async function sendEmail(m: TransactionalEmail): Promise<{ email_id: stri
       Subject: m.subject,
       HtmlBody: m.html,
       ...(m.text ? { TextBody: m.text } : {}),
-      ...(replyToken ? { ReplyTo: `reply+${replyToken}@${s.reply_domain}` } : {}),
+      ...((r) => (r ? { ReplyTo: r } : {}))(replyToFor(s, replyToken)),
       ...(m.tag ? { Tag: m.tag } : {}),
       TrackOpens: false,
       TrackLinks: 'None',
@@ -95,6 +98,12 @@ export async function sendEmail(m: TransactionalEmail): Promise<{ email_id: stri
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (emailId) await markFailed(pool, emailId, msg);
+    // the address is on Postmark's suppression list: the contact stops getting marketing email too
+    if (err instanceof PostmarkError && err.errorCode === 406 && m.contactId) {
+      // imported here: events.ts imports this file
+      const { optOut } = await import('./events.js');
+      await withTx(EMAIL_ACTOR, (c) => optOut(c, [m.contactId!], 'suppressed', null));
+    }
     if (err instanceof PostmarkError) throw new ApiError(502, `Postmark did not send it: ${msg}`, 'postmark_error');
     throw err;
   }

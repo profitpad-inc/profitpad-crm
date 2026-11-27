@@ -73,6 +73,18 @@ begin
   -- settings has its one row
   select count(*) into v_n from auth.email_settings;
   if v_n <> 1 then raise exception 'one email settings row'; end if;
+
+  -- 0151: opt-out reasons for Postmark refusals and repeated soft bounces
+  select count(*) into v_n from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+  where p.object_type_id = 'pc_0010' and p.api_name = 'email_opt_out_reason' and o.api_value in ('suppressed', 'soft_bounces');
+  if v_n <> 2 then raise exception 'opt-out reasons suppressed and soft_bounces'; end if;
+  update crm.pc_0010 set email_opt_out_reason = '{soft_bounces}' where pc_0010_id = v_contact;
+  insert into auth.email_soft_bounces (email, count) values ('ann@example.com', 1);
+  begin
+    insert into auth.email_soft_bounces (email, count) values ('Ann@Example.com', 1);
+    raise exception 'soft bounce addresses are lower case';
+  exception when check_violation then null;
+  end;
 end
 $t$;
 

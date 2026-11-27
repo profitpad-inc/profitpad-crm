@@ -5,12 +5,12 @@ import { noneHidden, type Principal } from '../auth.js';
 import { getObject } from '../registry.js';
 import { onWrite } from '../records.js';
 import { compileFilterGroups, type FilterGroup } from '../search.js';
-import { fromHeader, loadEmailSettings, missing, readySettings, type EmailSettings } from './settings.js';
+import { fromHeader, loadEmailSettings, marketingSender, missing, readySettings, replyDomain, replyToFor, type EmailSettings } from './settings.js';
 import { newReplyToken, oneClickUrl, unsubscribePageUrl, unsubscribeToken } from './links.js';
 import { BATCH_MAX, PostmarkError, sendBatch, type PostmarkMessage } from './postmark.js';
 import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, type CampaignRow, type TemplateParts } from './render.js';
 import { EMAIL_ACTOR, insertEmailRecord, markFailed, markSent } from './send.js';
-import { dirtyCampaigns } from './events.js';
+import { dirtyCampaigns, optOut } from './events.js';
 
 // Email campaigns (pc_0058): a marketing email (its email template) sent to
 // an audience of contacts through Postmark's broadcast stream.
@@ -24,6 +24,8 @@ import { dirtyCampaigns } from './events.js';
 // up to date from those records.
 
 const MAX_ATTEMPTS = 5;
+// Postmark's API error code for an inactive (suppressed) recipient
+export const INACTIVE_RECIPIENT = 406;
 const LEASE_MINUTES = 5;
 const MAX_AUDIENCE = 100_000;
 
@@ -202,11 +204,11 @@ function messageFor(s: EmailSettings, campaign: CampaignRow, to: string, subject
   replyToken: string | null, unsub: string | null, emailId: string): PostmarkMessage {
   const oneClick = unsub ? oneClickUrl(unsub) : null;
   return {
-    From: fromHeader(campaign.from_name || s.from_name, campaign.from_address || s.from_address!),
+    From: (({ name, address }) => fromHeader(name, address))(marketingSender(s, campaign)),
     To: to,
     Subject: subject,
     HtmlBody: html,
-    ...(replyToken && s.reply_domain ? { ReplyTo: `reply+${replyToken}@${s.reply_domain}` } : {}),
+    ...((r) => (r ? { ReplyTo: r } : {}))(replyToFor(s, replyToken)),
     Tag: `campaign-${campaign.id}`,
     Headers: oneClick
       ? [{ Name: 'List-Unsubscribe', Value: `<${oneClick}>` }, { Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' }]
@@ -272,10 +274,10 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
         const { rows: e } = await c.query('select reply_token from crm.pc_0031 where pc_0031_id = $1', [emailId]);
         replyToken = e[0]?.reply_token ?? null;
       } else {
-        replyToken = s.reply_domain ? newReplyToken() : null;
+        replyToken = replyDomain(s) ? newReplyToken() : null;
         // the body is the campaign's template, so it is not copied onto each record
         emailId = await insertEmailRecord(c, {
-          subject: rendered.subject, body: null, from: campaign.from_address || s.from_address, to: who.email,
+          subject: rendered.subject, body: null, from: marketingSender(s, campaign).address, to: who.email,
           stream: 'broadcast', replyToken, ownerUserId: null
         }, [{ object: 'pc_0010', id: row.contact_id }, { object: 'pc_0058', id: campaignId }]);
         await c.query('update auth.email_outbox set email_id = $2 where id = $1', [row.id, emailId]);
@@ -307,6 +309,12 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
         if (r && r.ErrorCode === 0 && r.MessageID) {
           await markSent(c, emailId, r.MessageID, r.SubmittedAt);
           await c.query(`update auth.email_outbox set status = 'sent', sent_at = now(), lease_until = null where id = $1`, [row.id]);
+        } else if (r?.ErrorCode === INACTIVE_RECIPIENT) {
+          // on Postmark's suppression list (an earlier hard bounce, complaint or
+          // unsubscribe): not sent, not retried, and the contact is opted out here too
+          await markFailed(c, emailId, `Postmark refused it: the address is suppressed there (${r.Message})`);
+          await c.query(`update auth.email_outbox set status = 'skipped', error = 'suppressed in Postmark', lease_until = null where id = $1`, [row.id]);
+          await optOut(c, [row.contact_id], 'suppressed', null);
         } else {
           const why = r ? `${r.ErrorCode}: ${r.Message}` : 'no answer from Postmark';
           await markFailed(c, emailId, why);

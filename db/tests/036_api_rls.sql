@@ -47,4 +47,28 @@ begin
 end $t$;
 reset role;
 
+-- the API skips row-level security (bootstrap), custom views do not
+do $t$
+begin
+  if not (select rolbypassrls from pg_roles where rolname = 'pc_api') then
+    raise exception 'pc_api does not bypass row-level security';
+  end if;
+  if (select rolbypassrls from pg_roles where rolname = 'pc_view_reader') then
+    raise exception 'pc_view_reader bypasses row-level security';
+  end if;
+end $t$;
+set local role pc_view_reader;
+do $t$
+declare
+  v_line text;
+  v_found boolean := false;
+begin
+  for v_line in execute 'explain (costs off) select 1 from crm.pc_0010 where name = ''x''' loop
+    if v_line like '%pcrm.access%' then v_found := true; end if;
+  end loop;
+  if not v_found then raise exception 'custom views lost their row filter'; end if;
+  raise notice 'ok: views keep their row filter, the api skips it';
+end $t$;
+reset role;
+
 rollback;
