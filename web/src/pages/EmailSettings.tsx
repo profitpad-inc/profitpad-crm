@@ -27,16 +27,19 @@ interface State {
   transactional_stream: string;
   webhook_url: string | null;
   inbound_url: string | null;
+  replies_enabled: boolean;
+  default_reply_to: string | null;
   missing: string[];
   secrets_ready: boolean;
 }
 
-const FIELDS = ['from_name', 'from_address', 'marketing_from_name', 'marketing_from_address', 'reply_domain', 'fallback_address', 'mailing_address', 'broadcast_stream', 'transactional_stream'] as const;
+const FIELDS = ['from_name', 'from_address', 'marketing_from_name', 'marketing_from_address', 'reply_domain', 'fallback_address', 'default_reply_to', 'mailing_address', 'broadcast_stream', 'transactional_stream'] as const;
 type Field = typeof FIELDS[number];
-type Draft = Record<Field, string> & { enabled: boolean };
+type Draft = Record<Field, string> & { enabled: boolean; replies_enabled: boolean };
 
 const draftOf = (s: State): Draft => ({
   enabled: s.enabled,
+  replies_enabled: s.replies_enabled,
   ...Object.fromEntries(FIELDS.map((f) => [f, s[f] ?? ''])) as Record<Field, string>
 });
 
@@ -95,10 +98,11 @@ export function EmailSettings() {
     return <SettingsPage title="Email" description={description}>{error ? <div className="error">{error}</div> : <TableSkeleton rows={4} />}</SettingsPage>;
   }
 
-  const dirty = draft.enabled !== state.enabled || FIELDS.some((f) => draft[f] !== (state[f] ?? ''));
+  const dirty = draft.enabled !== state.enabled || draft.replies_enabled !== state.replies_enabled || FIELDS.some((f) => draft[f] !== (state[f] ?? ''));
   const set = (f: Field) => (e: { target: { value: string } }) => setDraft({ ...draft, [f]: e.target.value });
   const save = () => put({
     enabled: draft.enabled,
+    replies_enabled: draft.replies_enabled,
     ...Object.fromEntries(FIELDS.map((f) => [f, draft[f].trim() || null]))
   }, 'Email settings saved.');
 
@@ -163,24 +167,46 @@ export function EmailSettings() {
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection title="Replies" description="Replies to campaigns and tracked email come back to the CRM and show on the contact's timeline. Point a subdomain's MX record at inbound.postmarkapp.com and set it as the inbound domain of Postmark's inbound stream.">
-        <SettingRow label="Reply domain" htmlFor="pm-reply" hint="Email is sent with Reply-To reply+<code>@ this domain. Empty: replies go to the from address and are not tracked.">
-          <input id="pm-reply" value={draft.reply_domain} placeholder="reply.yourdomain.com" onChange={set('reply_domain')} />
+      <SettingsSection title="Replies" description="Whether replies to campaigns and tracked email come back into the CRM, where they show on the contact's timeline and in the campaign's Replied count.">
+        <SettingRow label="Bring replies into the CRM" hint={draft.replies_enabled ? 'Replies come back through Postmark.' : 'Off: replies go to the default reply-to below, like any email, and the CRM does not see them.'}>
+          <label><input type="checkbox" role="switch" checked={draft.replies_enabled} onChange={(e) => setDraft({ ...draft, replies_enabled: e.target.checked })} /> {draft.replies_enabled ? 'On' : 'Off'}</label>
         </SettingRow>
-        <SettingRow label="Forward other mail to" htmlFor="pm-fallback" hint="Mail to the reply domain that matches nothing the CRM sent is forwarded here. Empty: it is dropped.">
-          <input id="pm-fallback" type="text" inputMode="email" autoCapitalize="none" value={draft.fallback_address} placeholder="team@yourdomain.com" onChange={set('fallback_address')} />
-        </SettingRow>
+        <div className="callout">
+          <strong>{draft.replies_enabled ? 'What this costs' : 'Why this is off'}</strong>
+          <span>
+            Postmark bills every email it receives the same as one it sends: each reply counts as one email against your monthly volume, and past it at your plan's overage rate (on Pro, $1.30 per 1,000 as of November 2026).
+            Receiving email also needs Postmark's Pro or Platform plan; Basic does not include it.
+            Anything sent to the reply domain counts, spam included, and mail forwarded to the address below is billed twice: once received, once sent.
+            {' '}<a href="https://postmarkapp.com/pricing" target="_blank" rel="noreferrer">Postmark pricing</a>
+          </span>
+        </div>
+        {draft.replies_enabled ? (
+          <>
+            <SettingRow label="Reply domain" htmlFor="pm-reply" hint="Email is sent with Reply-To reply+<code>@ this domain. Point the domain's MX record at inbound.postmarkapp.com (priority 10) and set it as the inbound domain of Postmark's inbound stream.">
+              <input id="pm-reply" value={draft.reply_domain} placeholder="reply.yourdomain.com" onChange={set('reply_domain')} />
+            </SettingRow>
+            <SettingRow label="Forward other mail to" htmlFor="pm-fallback" hint="Mail to the reply domain that matches nothing the CRM sent is forwarded here. Empty: it is dropped.">
+              <input id="pm-fallback" type="text" inputMode="email" autoCapitalize="none" value={draft.fallback_address} placeholder="team@yourdomain.com" onChange={set('fallback_address')} />
+            </SettingRow>
+          </>
+        ) : (
+          <SettingRow label="Default reply-to" htmlFor="pm-reply-to" hint="Where replies go: an inbox someone reads. Empty: replies go to the from address of each email.">
+            <input id="pm-reply-to" type="text" inputMode="email" autoCapitalize="none" value={draft.default_reply_to} placeholder="team@yourdomain.com" onChange={set('default_reply_to')} />
+          </SettingRow>
+        )}
       </SettingsSection>
 
       <SettingsSection
         title="Webhooks"
-        description="Paste these into Postmark. The first goes on both the transactional and broadcast streams (Webhooks tab: Delivery, Bounce, Spam complaint, Open, Click, Subscription change); the second is the inbound stream's webhook. They include a password, so treat them as secrets."
+        description={state.replies_enabled
+          ? "Paste these into Postmark. The first goes on both the transactional and broadcast streams (Webhooks tab: Delivery, Bounce, Spam complaint, Open, Click, Subscription change); the second is the inbound stream's webhook. They include a password, so treat them as secrets."
+          : "Paste this into Postmark, on both the transactional and broadcast streams (Webhooks tab: Delivery, Bounce, Spam complaint, Open, Click, Subscription change). It includes a password, so treat it as a secret. With replies on, an inbound webhook appears here too."}
         actions={state.webhook_url ? <button className="btn" disabled={busy} onClick={newSecret}>New password</button> : undefined}
       >
         {state.webhook_url && state.inbound_url ? (
           <>
             <SettingRow label="Events webhook"><CopyField value={state.webhook_url} label="Events webhook address" secret /></SettingRow>
-            <SettingRow label="Inbound webhook"><CopyField value={state.inbound_url} label="Inbound webhook address" secret /></SettingRow>
+            {state.replies_enabled && <SettingRow label="Inbound webhook"><CopyField value={state.inbound_url} label="Inbound webhook address" secret /></SettingRow>}
           </>
         ) : (
           <p className="muted">The addresses appear once a Postmark token is saved.</p>

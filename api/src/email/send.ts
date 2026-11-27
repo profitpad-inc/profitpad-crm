@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { pool, withTx } from '../db.js';
 import { ApiError } from '../errors.js';
-import { fromHeader, readySettings } from './settings.js';
+import { fromHeader, readySettings, replyDomain, replyToFor } from './settings.js';
 import { newReplyToken } from './links.js';
 import { PostmarkError, sendOne } from './postmark.js';
 
@@ -72,7 +72,7 @@ export async function sendEmail(m: TransactionalEmail): Promise<{ email_id: stri
   const sender = m.from ?? { name: s.from_name, address: s.from_address };
   const from = fromHeader(sender.name, sender.address);
   const keep = m.record ?? !!m.contactId;
-  const replyToken = keep && m.replyable && s.reply_domain ? newReplyToken() : null;
+  const replyToken = keep && m.replyable && replyDomain(s) ? newReplyToken() : null;
   const emailId = keep
     ? await withTx(EMAIL_ACTOR, (c) =>
         insertEmailRecord(c, { subject: m.subject, body: m.html, from: sender.address, to: m.to, stream: 'transactional', replyToken, ownerUserId: m.ownerUserId },
@@ -85,7 +85,7 @@ export async function sendEmail(m: TransactionalEmail): Promise<{ email_id: stri
       Subject: m.subject,
       HtmlBody: m.html,
       ...(m.text ? { TextBody: m.text } : {}),
-      ...(replyToken ? { ReplyTo: `reply+${replyToken}@${s.reply_domain}` } : {}),
+      ...((r) => (r ? { ReplyTo: r } : {}))(replyToFor(s, replyToken)),
       ...(m.tag ? { Tag: m.tag } : {}),
       TrackOpens: false,
       TrackLinks: 'None',

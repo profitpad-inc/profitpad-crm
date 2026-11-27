@@ -305,7 +305,7 @@ Users send email from record pages as themselves through the organization's Goog
 5. Postmark (someone with the account):
    - One server with a **Transactional** stream (`outbound`) and a **Broadcast** stream (ask Postmark to approve broadcast sending). On the broadcast stream, set unsubscribe handling to none: the CRM adds its own link and headers. Check this setting name in Postmark when doing it.
    - Sender signature / domain: add the sending domain and its DKIM and Return-Path DNS records; DMARC on the root domain.
-   - Inbound stream: inbound domain e.g. `reply.profitpad.com`, with an MX record `reply.profitpad.com → inbound.postmarkapp.com` (priority 10).
+   - Only if replies should come back into the CRM (Settings → Email, Replies, off by default; each received email is billed like a sent one and needs Postmark's Pro or Platform plan): inbound stream with inbound domain e.g. `reply.profitpad.com`, and an MX record `reply.profitpad.com → inbound.postmarkapp.com` (priority 10).
 6. In the CRM, Settings → Email: paste the server API token, from name and address, mailing address, reply domain (and a fallback address), turn sending on, Save. Copy the two webhook addresses shown there into Postmark: the events webhook on both the transactional and broadcast streams (Delivery, Bounce, Spam complaint, Open, Click, Subscription change; open and link tracking on for the broadcast stream), the inbound webhook on the inbound stream. Then "Send me a test".
 7. Try a campaign on 2 or 3 internal contacts before a real one: delivery, open and click counts, a reply (shows on the contact's timeline), unsubscribe (contact opted out, left out next time).
 

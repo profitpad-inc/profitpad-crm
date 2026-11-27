@@ -283,7 +283,8 @@ export async function handleInbound(p: Payload, traceId: string | undefined): Pr
 
   // Mail to the reply domain that matches nothing sent goes to a person.
   const s = await loadEmailSettings();
-  if (!s.fallback_address || !s.token || !s.from_address) return out;
+  // with replies off nothing is forwarded (each forward is another billed email)
+  if (!s.replies_enabled || !s.fallback_address || !s.token || !s.from_address) return out;
   const from = str(p.From) ?? 'unknown sender';
   const html = str(p.HtmlBody);
   await sendOne(s.token, {
