@@ -6,7 +6,7 @@ import { Menu, Modal } from '../components/ui';
 import { SaveHint } from '../components/SaveHint';
 import { useDirty } from '../lib/use-dirty';
 import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
-import { Select } from '../components/Select';
+import { Select, type SelectOption } from '../components/Select';
 
 // Settings -> Currencies (admins): the base currency, how exchange rates are
 // kept (typed by hand, or looked up on a schedule from a free provider), each
@@ -228,7 +228,7 @@ export function CurrencySettings() {
       >
         {noRate.length > 0 && (
           <div className="callout warn">
-            {noRate.map((c) => c.code).join(', ')} {noRate.length === 1 ? 'has' : 'have'} no rate yet, so amounts in {noRate.length === 1 ? 'it' : 'them'} are left out of converted totals.
+            {noRate.length > 8 ? `${noRate.length} currencies` : noRate.map((c) => c.code).join(', ')} {noRate.length === 1 ? 'has' : 'have'} no rate yet, so amounts in {noRate.length === 1 ? 'it' : 'them'} are left out of converted totals.
             {automatic ? ' Look up rates now, or set a rate by hand.' : ' Set a rate for each.'}
           </div>
         )}
@@ -259,7 +259,7 @@ export function CurrencySettings() {
                         <Menu align="right" trigger={(open) => <button className="icon-btn" onClick={open} aria-label={`Actions for ${c.code}`}><MoreHorizontal size={16} /></button>}>
                           {(close) => (
                             <>
-                              {c.record_status === 'active' && <button onClick={() => { close(); setEditing(c); }}>{automatic ? 'Pin a rate' : 'Set rate'}</button>}
+                              {c.record_status === 'active' && <button onClick={() => { close(); setEditing(c); }}>{automatic ? 'Pin rate' : 'Set rate'}</button>}
                               {automatic && c.rate_manual && (
                                 <button onClick={() => { close(); run(() => api('PATCH', `/v1/currencies/${c.code}`, { rate_manual: false }), `${c.code} follows the lookup again.`); }}>
                                   Use looked up rate
@@ -298,6 +298,7 @@ export function CurrencySettings() {
           currency={editing === 'new' ? null : editing}
           base={base}
           automatic={automatic}
+          existing={currencies}
           onClose={() => setEditing(null)}
           onSaved={async (message, f) => { setEditing(null); await load(); toast(fetchMessage(f) ? `${message} ${fetchMessage(f)}` : message); }}
         />
@@ -362,8 +363,29 @@ function isoDetails(code: string): { name: string; decimals: number } | null {
   }
 }
 
-function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
-  currency: Currency | null; base: Currency; automatic: boolean; onClose: () => void; onSaved: (message: string, fetch?: FetchOutcome) => Promise<void>;
+// Every ISO 4217 code the browser knows a name for, as Add currency choices:
+// those already in the list are left out, archived ones are offered back.
+function codeChoices(existing: Currency[]): SelectOption[] {
+  let codes: string[] = [];
+  try {
+    codes = Intl.supportedValuesOf('currency');
+  } catch {
+    return [];
+  }
+  const have = new Map(existing.map((c) => [c.code, c]));
+  const out: SelectOption[] = [];
+  for (const code of codes) {
+    const had = have.get(code);
+    if (had?.record_status === 'active') continue;
+    const name = had?.name ?? isoDetails(code)?.name;
+    if (!name) continue;
+    out.push({ value: code, label: `${code}, ${name}${had ? ' (archived: restore it)' : ''}` });
+  }
+  return out;
+}
+
+function CurrencyEditor({ currency, base, automatic, existing, onClose, onSaved }: {
+  currency: Currency | null; base: Currency; automatic: boolean; existing: Currency[]; onClose: () => void; onSaved: (message: string, fetch?: FetchOutcome) => Promise<void>;
 }) {
   const isNew = currency === null;
   const [code, setCode] = useState(currency?.code ?? '');
@@ -374,22 +396,28 @@ function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const details = useMemo(() => isoDetails(code), [code]);
+  const choices = useMemo(() => (isNew ? codeChoices(existing) : []), [isNew, existing]);
+  const archived = isNew ? existing.find((c) => c.code === code && c.record_status === 'archived') : undefined;
   const shownCode = code || 'XXX';
   const rateNum = Number(rate.replace(/,/g, ''));
   const rateOk = rate.trim() !== '' && Number.isFinite(rateNum) && rateNum > 0;
   const needRate = !isNew || !automatic;
 
-  function onCode(v: string) {
-    const c = v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  function onCode(c: string) {
     setCode(c);
-    if (autoName) setName(isoDetails(c)?.name ?? '');
+    const had = existing.find((x) => x.code === c);
+    if (had) setName(had.name);
+    else if (autoName) setName(isoDetails(c)?.name ?? '');
   }
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      if (isNew) {
+      if (archived) {
+        await api('PATCH', `/v1/currencies/${archived.code}`, { record_status: 'active' });
+        await onSaved(`${archived.code} restored.`);
+      } else if (isNew) {
         const out = await api<Currency & { added_to: string[]; fetch?: FetchOutcome }>('POST', '/v1/currencies', {
           code,
           name: name.trim(),
@@ -411,7 +439,7 @@ function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
   // a manual rate saves only when changed; with automatic rates, saving the
   // fetched rate as it is pins it there, which is a change of its own
   const { dirty } = useDirty(rate);
-  const canSave = !busy && (isNew ? /^[A-Z]{3}$/.test(code) && !!name.trim() && (rate.trim() === '' ? !needRate : rateOk) : rateOk && (automatic || dirty));
+  const canSave = !busy && (archived ? true : isNew ? /^[A-Z]{3}$/.test(code) && !!name.trim() && (rate.trim() === '' ? !needRate : rateOk) : rateOk && (automatic || dirty));
 
   return (
     <Modal
@@ -420,25 +448,38 @@ function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
       onClose={onClose}
       footer={
         <>
-          {isNew && <SaveHint missing={[!/^[A-Z]{3}$/.test(code) && 'a 3-letter code', !name.trim() && 'a name', rate.trim() === '' ? needRate && 'a rate' : !rateOk && 'a rate above 0']} />}
+          {isNew && !archived && <SaveHint missing={[!/^[A-Z]{3}$/.test(code) && 'a currency', !name.trim() && 'a name', rate.trim() === '' ? needRate && 'a rate' : !rateOk && 'a rate above 0']} />}
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={!canSave}>{isNew ? 'Add' : 'Save rate'}</button>
+          <button className="btn primary" onClick={save} disabled={!canSave}>{archived ? 'Restore' : isNew ? 'Add' : 'Save rate'}</button>
         </>
       }
     >
       <div className="prop-editor">
         {isNew && (
           <div className="field-row">
-            <label className="field">
-              <span>Code</span>
-              <input value={code} placeholder="EUR" maxLength={3} onChange={(e) => onCode(e.target.value)} autoFocus />
+            <label className="field" htmlFor="currency-code">
+              <span>Currency</span>
+              <Select
+                id="currency-code"
+                value={code}
+                onChange={onCode}
+                options={choices}
+                search
+                autoFocus
+                face={code ? undefined : <span className="muted">{choices.length ? 'Pick a currency' : 'Every currency is in the list'}</span>}
+              />
             </label>
             <label className="field grow">
               <span>Name</span>
-              <input value={name} maxLength={63} placeholder="Euro" onChange={(e) => { setAutoName(false); setName(e.target.value); }} />
+              <input value={name} maxLength={63} placeholder="Euro" disabled={!!archived} onChange={(e) => { setAutoName(false); setName(e.target.value); }} />
             </label>
           </div>
         )}
+        {archived ? (
+          <p className="muted small">
+            {archived.code} is archived. Restoring it brings it back here and in conversions{automatic ? ', and the next lookup updates its rate' : ''}. Its choices in the currency dropdowns stay as they are.
+          </p>
+        ) : (<>
         <label className="field">
           <span>1 {base.code} =</span>
           <div className="key-row">
@@ -459,6 +500,7 @@ function CurrencyEditor({ currency, base, automatic, onClose, onSaved }: {
             <label><input type="checkbox" role="switch" checked={toDropdowns} onChange={(e) => setToDropdowns(e.target.checked)} /> Offer it in the currency dropdowns of deals, quotes, invoices and other money records</label>
           </div>
         )}
+        </>)}
         {error && <div className="error">{error}</div>}
       </div>
     </Modal>

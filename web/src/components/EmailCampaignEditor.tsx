@@ -1,34 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, Send, CalendarClock, Ban, RefreshCw } from 'lucide-react';
-import { api, getSchema, type CrmRecord, type FilterGroup, type ObjectDef } from '../lib/api';
+import { Link } from 'react-router-dom';
+import { Eye, Send, CalendarClock, Ban, RefreshCw, X } from 'lucide-react';
+import { api, type CrmRecord, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { FilterBuilder } from './FilterBuilder';
 import { DatePicker } from './DatePicker';
 import { StatusPill, type Tone } from './settings';
 import { confirmDialog } from './confirm';
+import { Select } from './Select';
 import '../email.css';
+import '../lists.css';
 
 // The middle of an email campaign's record page (api/src/email/campaigns.ts):
-// who gets it (filters on contacts, or everyone), a preview drawn for one
+// who gets it (the contact lists linked to it), a preview drawn for one
 // contact, a test to yourself, then send now or schedule. After it goes out,
 // the counts. The email itself is the linked email template (right column).
 
 interface Check { ready: boolean; problems: string[]; recipients: number; can_send: boolean }
 interface Preview { contact_id: string; to: string | null; subject: string; html: string }
-interface Audience { filter_groups?: FilterGroup[]; all_contacts?: boolean }
+interface LinkedList { id: string; name: string; member_count: number; list_type: string }
+interface SubscriptionType { value: string; label: string; description: string | null }
 
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined;
 const TONES: Record<string, Tone> = { draft: 'off', scheduled: 'info', sending: 'pending', sent: 'on', canceled: 'warn' };
-
-function parseAudience(v: unknown): Audience {
-  if (typeof v !== 'string' || !v.trim()) return { filter_groups: [] };
-  try {
-    const a = JSON.parse(v) as Audience;
-    return a.all_contacts ? { all_contacts: true } : { filter_groups: Array.isArray(a.filter_groups) ? a.filter_groups : [] };
-  } catch {
-    return { filter_groups: [] };
-  }
-}
 
 const COUNTS: [string, string][] = [
   ['recipient_count', 'Sent to'], ['delivered_count', 'Delivered'], ['opened_count', 'Opened'], ['clicked_count', 'Clicked'],
@@ -40,8 +33,13 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   const p = record.properties;
   const status = first(p.status) ?? 'draft';
   const editable = status === 'draft' || status === 'scheduled';
-  const [contacts, setContacts] = useState<ObjectDef | null>(null);
-  const [audience, setAudience] = useState<Audience>(() => parseAudience(p.audience));
+  // the contact lists it goes to (linked records), and the ones that could be added
+  const [lists, setLists] = useState<LinkedList[] | null>(null);
+  const [choices, setChoices] = useState<{ value: string; label: string }[]>([]);
+  // email subscription types (Settings → Email); null while loading
+  const [types, setTypes] = useState<SubscriptionType[] | null>(null);
+  const savedTopic = first(p.subscription_type) ?? '';
+  const [topic, setTopic] = useState(savedTopic);
   const [count, setCount] = useState<{ n: number; sample: { id: string; email: string }[] } | null>(null);
   const [countError, setCountError] = useState<string | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
@@ -51,27 +49,58 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   const [error, setError] = useState<string | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
 
-  const saved = JSON.stringify(parseAudience(p.audience));
-  const dirty = JSON.stringify(audience) !== saved;
+  // lists are linked straight away; only the subscription type waits for Save
+  const dirty = topic !== savedTopic;
+  const listIds = (lists ?? []).map((l) => l.id);
 
-  useEffect(() => { getSchema('contacts').then(setContacts).catch(() => undefined); }, []);
-  useEffect(() => { setAudience(parseAudience(p.audience)); }, [record.id, p.audience]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadCheck = () => api<Check>('GET', `/v1/email/campaigns/${record.id}/check`).then(setCheck).catch((e) => setError((e as Error).message));
-  useEffect(() => { loadCheck(); }, [record.id, p.audience, status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // live size of the audience being edited
+  const loadLists = () => api<CrmRecord>('GET',
+    `/v1/objects/email_campaigns/${record.id}?properties=name&associations=lists&association_properties=lists:name,lists:member_count,lists:list_type,lists:list_object`)
+    .then((r) => setLists((r.associations?.lists ?? []).map((a) => ({
+      id: a.id, name: String(a.properties?.name ?? 'Untitled list'), member_count: Number(a.properties?.member_count ?? 0),
+      list_type: first(a.properties?.list_type) ?? 'dynamic'
+    }))))
+    .catch((e) => setError((e as Error).message));
+  useEffect(() => { loadLists(); }, [record.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // contact lists to pick from
   useEffect(() => {
     if (!editable) return;
-    const empty = !audience.all_contacts && !(audience.filter_groups?.length);
-    if (empty) { setCount(null); setCountError(null); return; }
+    api<SearchResult>('QUERY', '/v1/objects/lists/search', {
+      limit: 200, properties: ['name', 'member_count', 'list_type'], sorts: [{ property: 'name', direction: 'asc' }],
+      filter_groups: [{ filters: [{ property: 'list_object', operator: 'in', values: ['contacts'] }] }]
+    }).then((r) => setChoices(r.results.map((l) => ({
+      value: l.id, label: `${String(l.properties.name ?? 'Untitled list')} (${Number(l.properties.member_count ?? 0).toLocaleString()}, ${first(l.properties.list_type) ?? 'dynamic'})`
+    })))).catch(() => setChoices([]));
+  }, [editable]);
+  useEffect(() => {
+    api<{ subscription_types: SubscriptionType[] }>('GET', '/v1/email/subscription-types')
+      .then((r) => setTypes(r.subscription_types)).catch(() => setTypes([]));
+  }, []);
+  useEffect(() => { setTopic(savedTopic); }, [record.id, savedTopic]);
+
+  const loadCheck = () => api<Check>('GET', `/v1/email/campaigns/${record.id}/check`).then(setCheck).catch((e) => setError((e as Error).message));
+  useEffect(() => { loadCheck(); }, [record.id, savedTopic, status, listIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // how many contacts the lists reach together, with the type being picked
+  useEffect(() => {
+    if (!editable || !lists) return;
+    if (lists.length === 0) { setCount(null); setCountError(null); return; }
     const t = setTimeout(() => {
-      api<{ count: number; sample: { id: string; email: string }[] }>('POST', '/v1/email/audience', { audience })
+      api<{ count: number; sample: { id: string; email: string }[] }>('POST', '/v1/email/audience', { list_ids: listIds, subscription_type: topic || null })
         .then((r) => { setCount({ n: r.count, sample: r.sample }); setCountError(null); })
         .catch((e) => { setCount(null); setCountError((e as Error).message); });
-    }, 400);
+    }, 300);
     return () => clearTimeout(t);
-  }, [JSON.stringify(audience), editable]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [listIds.join(','), topic, editable, !!lists]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addList = (id: string) => run('lists', async () => {
+    await api('PUT', `/v1/objects/email_campaigns/${record.id}/associations/lists/${id}`, {});
+    await loadLists();
+  });
+
+  const removeList = (id: string) => run('lists', async () => {
+    await api('DELETE', `/v1/objects/email_campaigns/${record.id}/associations/lists/${id}`);
+    await loadLists();
+  });
 
   async function reload() {
     onChanged(await api<CrmRecord>('GET', `/v1/objects/email_campaigns/${record.id}`));
@@ -90,9 +119,11 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   }
 
   const saveAudience = () => run('save', async () => {
-    const r = await api<CrmRecord>('PATCH', `/v1/objects/email_campaigns/${record.id}`, { properties: { audience: JSON.stringify(audience) } });
+    const r = await api<CrmRecord>('PATCH', `/v1/objects/email_campaigns/${record.id}`, {
+      properties: { subscription_type: topic ? [topic] : null }
+    });
     onChanged(r);
-    toast('Audience saved.');
+    toast('Subscription type saved.');
   });
 
   const showPreview = () => run('preview', async () => {
@@ -110,7 +141,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     const n = check?.recipients ?? 0;
     const ok = await confirmDialog(
       scheduled
-        ? `Schedule "${String(p.name ?? 'this campaign')}" for ${at!.toLocaleString()}? It goes to the contacts who match the audience then (${n} right now).`
+        ? `Schedule "${String(p.name ?? 'this campaign')}" for ${at!.toLocaleString()}? It goes to the contacts in its lists then (${n} right now).`
         : `Send "${String(p.name ?? 'this campaign')}" to ${n} contact${n === 1 ? '' : 's'} now? This can't be undone.`,
       { title: scheduled ? 'Schedule campaign' : 'Send campaign', confirmLabel: scheduled ? 'Schedule' : `Send to ${n}` }
     );
@@ -173,23 +204,47 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
       {editable && (
         <div className="card">
           <div className="card-head"><h3>Audience</h3></div>
-          <p className="muted">Contacts who opted out of marketing email or have no email address are always left out, and each address gets one copy.</p>
-          <label className="campaign-all">
-            <input type="checkbox" role="switch" checked={!!audience.all_contacts}
-              onChange={(e) => setAudience(e.target.checked ? { all_contacts: true } : { filter_groups: [] })} /> Send to all contacts
-          </label>
-          {!audience.all_contacts && contacts && (
-            <FilterBuilder schema={contacts} groups={audience.filter_groups ?? []} onChange={(g) => setAudience({ filter_groups: g })} />
+          <p className="muted">The campaign goes to the contacts in its lists; dynamic lists are worked out again when it sends. Contacts who opted out of marketing email, unsubscribed from the campaign's subscription type or have no email address are always left out, and each address gets one copy.</p>
+          {types && (types.length > 0 || savedTopic) && (
+            <div className="campaign-type">
+              <label htmlFor="campaign-type">Subscription type</label>
+              <Select id="campaign-type" value={topic} onChange={setTopic}
+                options={[
+                  { value: '', label: 'Pick a type' },
+                  ...types.map((t) => ({ value: t.value, label: t.label })),
+                  ...(savedTopic && !types.some((t) => t.value === savedTopic) ? [{ value: savedTopic, label: `${savedTopic} (archived)`, disabled: true }] : [])
+                ]} />
+              <span className="small muted">{types.find((t) => t.value === topic)?.description ?? 'What kind of email this is. The footer names it, and contacts who left it do not get it.'}</span>
+            </div>
           )}
+          {lists === null ? null : lists.length > 0 && (
+            <ul className="campaign-lists">
+              {lists.map((l) => (
+                <li key={l.id}>
+                  <Link to={`/objects/lists/${l.id}`} target="_blank" rel="noopener">{l.name}</Link>
+                  <span className="small muted">{l.member_count.toLocaleString()} · {l.list_type}</span>
+                  <button className="icon-btn" aria-label={`Remove ${l.name}`} title="Remove this list" disabled={!!busy} onClick={() => removeList(l.id)}><X size={14} /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Select className="campaign-add-list" value="" aria-label="Add a list" search disabled={!!busy}
+            onChange={(v) => v && addList(v)}
+            options={[
+              { value: '', label: choices.some((c) => !listIds.includes(c.value)) ? 'Add a contact list' : 'No other contact lists (make one under Marketing → Lists)' },
+              ...choices.filter((c) => !listIds.includes(c.value))
+            ]} />
           <div className="campaign-count">
             {countError ? <span className="error">{countError}</span>
-              : count ? <span><strong>{count.n.toLocaleString()}</strong> contact{count.n === 1 ? '' : 's'} match{count.n === 1 ? 'es' : ''}{count.sample.length ? `, like ${count.sample.slice(0, 3).map((s) => s.email).join(', ')}` : ''}.</span>
-              : <span className="muted">Add a filter, or send to all contacts.</span>}
+              : count ? <span><strong>{count.n.toLocaleString()}</strong> contact{count.n === 1 ? '' : 's'} can be emailed{count.sample.length ? `, like ${count.sample.slice(0, 3).map((s) => s.email).join(', ')}` : ''}.</span>
+              : <span className="muted">Add a contact list.</span>}
           </div>
-          <div className="campaign-actions">
-            <button className="btn" disabled={!dirty || !!busy} onClick={() => setAudience(parseAudience(p.audience))}>Discard</button>
-            <button className="btn primary" disabled={!dirty || !!busy} onClick={saveAudience}>Save audience</button>
-          </div>
+          {dirty && (
+            <div className="campaign-actions">
+              <button className="btn" disabled={!!busy} onClick={() => setTopic(savedTopic)}>Discard</button>
+              <button className="btn primary" disabled={!!busy} onClick={saveAudience}>Save subscription type</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -227,7 +282,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
               </button>
             </div>
           )}
-          {dirty && <p className="small muted">Save the audience before sending.</p>}
+          {dirty && <p className="small muted">Save the subscription type before sending.</p>}
           {(status === 'scheduled' || status === 'sending') && check?.can_send && (
             <button className="btn danger-text" disabled={!!busy} onClick={cancel}><Ban size={14} /> {status === 'sending' ? 'Stop sending' : 'Cancel campaign'}</button>
           )}

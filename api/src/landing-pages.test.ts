@@ -142,3 +142,21 @@ test('links carry the visitor address params on, not the CRM own ones', () => {
   for (const same of ['#section', 'mailto:a@b.com', 'tel:123', '']) assert.equal(run(same), same);
   assert.equal(run('/p/page/pricing', true), '/p/page/pricing');
 });
+
+test('links, mailto: and tel: included, open in the whole window, not the sandboxed frame', () => {
+  const html = lp.preparePageHtml('<html><head></head></html>');
+  const js = html.match(/<script data-pcrm-page>([\s\S]*?)<\/script>/)![1];
+  const body = js.slice(js.indexOf('function linkOf'), js.indexOf('var BRIDGED='));
+  let onClick: ((e: unknown) => void) | undefined;
+  const document = { addEventListener: (type: string, fn: (e: unknown) => void) => { if (type === 'click') onClick = fn; } };
+  new Function('document', 'carry', 'UI', `${body}`)(document, () => {}, 'https://crm.example.com');
+  const click = (href: string, target = '') => {
+    const a = { target, getAttribute: () => href, setAttribute: () => {}, hasAttribute: () => false };
+    onClick!({ target: { closest: () => a }, defaultPrevented: false });
+    return a.target;
+  };
+  for (const href of ['mailto:a@b.com', 'tel:123', 'sms:123', 'https://example.com/', '/p/page/x']) assert.equal(click(href), '_top', href);
+  assert.equal(click('#section'), '');
+  assert.equal(click('javascript:void(0)'), '');
+  assert.equal(click('mailto:a@b.com', '_blank'), '_blank');
+});

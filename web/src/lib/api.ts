@@ -1,5 +1,20 @@
 import { requestReauth } from './reauth';
-import { alertDialog } from '../components/confirm';
+import { alertDialog, promptDialog } from '../components/confirm';
+
+// A write that opts a contact back in to marketing email without a legal
+// reason (api/src/email/campaigns.ts, migration 0156): ask for one and send
+// the same write again with it. Works for any write whose body carries
+// `properties` (record page, table cells, bulk edit, bulk jobs).
+async function withOptInReason(body: unknown): Promise<unknown | null> {
+  if (!body || typeof body !== 'object' || !('properties' in body)) return null;
+  const b = body as { properties?: Record<string, unknown> };
+  if (!b.properties || typeof b.properties !== 'object') return null;
+  const reason = await promptDialog(
+    'This contact opted out of marketing email. To email them again you need a legal reason, for example that they asked to be subscribed. It is kept on the contact and in its history.',
+    { title: 'Opt back in to marketing email', label: 'Legal reason', placeholder: 'They asked to be subscribed again at our booth on Nov 20', confirmLabel: 'Opt back in' }
+  );
+  return reason ? { ...b, properties: { ...b.properties, email_opt_in_reason: reason } } : null;
+}
 
 // Thin client for the CRM API. The UI authenticates via the HttpOnly session
 // cookie set after Google sign-in (sent with credentials: 'include').
@@ -37,6 +52,10 @@ async function send<T>(method: string, path: string, body: unknown, retried: boo
     // admin changes need a recent sign-in: the app asks for one over the page
     // (the check runs before anything is written), then sends this again
     if (data?.error === 'reauth_required' && !retried && (await requestReauth())) return send<T>(method, path, body, true);
+    if (data?.error === 'opt_in_reason_required' && !retried) {
+      const again = await withOptInReason(body);
+      if (again) return send<T>(method, path, again, true);
+    }
     // a "Sign in as" session that stopped holding (the user became a Super
     // Admin, say): say so, then load the app again as the Super Admin
     if (data?.error === 'sign_in_as_ended') {

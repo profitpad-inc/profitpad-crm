@@ -1,16 +1,16 @@
 import type pg from 'pg';
-import { pool, withTx } from '../db.js';
+import { pool, withTx, type Db } from '../db.js';
 import { ApiError, badRequest } from '../errors.js';
-import { noneHidden, type Principal } from '../auth.js';
-import { getObject } from '../registry.js';
+import type { Principal } from '../auth.js';
 import { onWrite } from '../records.js';
-import { compileFilterGroups, type FilterGroup } from '../search.js';
+import { currentMembersSql, loadList, type ListRow } from '../lists/members.js';
 import { fromHeader, loadEmailSettings, marketingSender, missing, readySettings, replyDomain, replyToFor, type EmailSettings } from './settings.js';
 import { newReplyToken, oneClickUrl, unsubscribePageUrl, unsubscribeToken } from './links.js';
 import { BATCH_MAX, PostmarkError, sendBatch, type PostmarkMessage } from './postmark.js';
 import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, type CampaignRow, type TemplateParts } from './render.js';
 import { EMAIL_ACTOR, insertEmailRecord, markFailed, markSent } from './send.js';
 import { dirtyCampaigns, optOut } from './events.js';
+import { listTopics } from './topics.js';
 
 // Email campaigns (pc_0058): a marketing email (its email template) sent to
 // an audience of contacts through Postmark's broadcast stream.
@@ -31,54 +31,82 @@ const MAX_AUDIENCE = 100_000;
 
 // ---- audience ------------------------------------------------------------------
 
-// {"filter_groups": [...]} (contacts, like a search), or {"all_contacts": true}.
-export interface Audience {
-  filter_groups?: FilterGroup[];
-  all_contacts?: boolean;
+// A campaign goes to the contacts in the lists linked to it (lists, migration
+// 0154): dynamic lists worked out again at that moment, static lists as they
+// stand. Campaigns made before lists kept their filters in the audience
+// property; 0154 turned those into lists, and it is now only a record of who
+// older campaigns went to.
+
+// The active lists linked to a campaign.
+export async function campaignLists(db: Db, campaignId: string): Promise<ListRow[]> {
+  const { rows } = await db.query(
+    `select t.pc_0064_id as id from crm.pc_0064 t
+     where t.record_status = 'active' and exists (
+       select 1 from crm.pc_0005 a
+       where (a.from_object_type = 'pc_0058' and a.from_id = $1 and a.to_object_type = 'pc_0064' and a.to_id = t.pc_0064_id)
+          or (a.to_object_type = 'pc_0058' and a.to_id = $1 and a.from_object_type = 'pc_0064' and a.from_id = t.pc_0064_id))
+     order by t.name, t.pc_0064_id`,
+    [campaignId]);
+  return loadLists(db, rows.map((r) => r.id as string));
 }
 
-export function parseAudience(raw: unknown): Audience {
-  let a: unknown = raw;
-  if (typeof raw === 'string') {
-    if (!raw.trim()) throw badRequest('The campaign has no audience yet.', { property: 'audience' });
-    try {
-      a = JSON.parse(raw);
-    } catch {
-      throw badRequest('The audience must be JSON: {"filter_groups": [...]}.', { property: 'audience' });
-    }
+async function loadLists(db: Db, ids: string[]): Promise<ListRow[]> {
+  const out: ListRow[] = [];
+  for (const id of [...new Set(ids)]) {
+    const list = await loadList(db, id);
+    if (!list || list.record_status !== 'active') throw badRequest(`list ${id} not found`);
+    out.push(list);
   }
-  if (!a || typeof a !== 'object' || Array.isArray(a)) throw badRequest('The audience must be {"filter_groups": [...]} or {"all_contacts": true}.', { property: 'audience' });
-  const o = a as Audience;
-  if (o.all_contacts === true) return { all_contacts: true };
-  if (!Array.isArray(o.filter_groups) || o.filter_groups.length === 0) {
-    throw badRequest('The audience needs at least one filter group (or {"all_contacts": true} to send to everyone).', { property: 'audience' });
-  }
-  return { filter_groups: o.filter_groups };
+  return out;
 }
 
-// SQL for the audience's contacts: active, with an email, not opted out,
-// one per email address.
-async function audienceSql(a: Audience, params: unknown[]): Promise<string> {
-  const contacts = await getObject('contacts');
-  const where = a.all_contacts ? null : compileFilterGroups(contacts, a.filter_groups ?? [], params, noneHidden);
+// Why these lists can't be an audience, or null.
+function listsProblem(lists: ListRow[]): string | null {
+  if (lists.length === 0) return 'Add a contacts list to the campaign: its contacts are who it goes to.';
+  const wrong = lists.find((l) => l.list_object !== 'contacts');
+  return wrong ? `The list "${wrong.name ?? wrong.id}" holds ${wrong.list_object}, not contacts. Campaigns go to contact lists.` : null;
+}
+
+// SQL for the audience's contacts: in any of the lists, active, with an
+// email, not opted out, not unsubscribed from the campaign's subscription
+// type (when it has one), one per email address.
+async function audienceSql(lists: ListRow[], params: unknown[], topic: string | null = null): Promise<string> {
+  const problem = listsProblem(lists);
+  if (problem) throw badRequest(problem);
+  const members: string[] = [];
+  for (const list of lists) members.push(await currentMembersSql(list, params));
+  let left = '';
+  if (topic) {
+    params.push(topic);
+    left = `and not (coalesce(t.email_unsubscribed_topics, '{}') @> array[$${params.length}]::text[])`;
+  }
   // the primary address (the first of the contact's Email list)
   return `select distinct on (t.email -> 0 ->> 'value') t.pc_0010_id as contact_id, t.email -> 0 ->> 'value' as email
           from crm.pc_0010 t
           where t.record_status = 'active' and t.email -> 0 ->> 'value' is not null
-            and t.email_opt_out is distinct from '{true}' ${where ? `and ${where}` : ''}
+            and t.email_opt_out is distinct from '{true}' ${left}
+            and t.pc_0010_id in (${members.join(' union ')})
           order by t.email -> 0 ->> 'value', t.created_at`;
 }
 
-export async function countAudience(raw: unknown): Promise<number> {
+const topicOf = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+// list_ids as sent (the campaign editor's lists while they change).
+export function listIds(raw: unknown): string[] {
+  if (!Array.isArray(raw) || !raw.every((v) => typeof v === 'string' && v)) throw badRequest('list_ids must be an array of list ids');
+  return raw as string[];
+}
+
+export async function countAudience(ids: string[], topic?: unknown): Promise<number> {
   const params: unknown[] = [];
-  const sql = await audienceSql(parseAudience(raw), params);
+  const sql = await audienceSql(await loadLists(pool, ids), params, topicOf(topic));
   const { rows } = await pool.query(`select count(*)::int as n from (${sql}) a`, params);
   return rows[0].n;
 }
 
-export async function sampleAudience(raw: unknown, limit = 5): Promise<{ id: string; email: string }[]> {
+export async function sampleAudience(ids: string[], limit = 5, topic?: unknown): Promise<{ id: string; email: string }[]> {
   const params: unknown[] = [];
-  const sql = await audienceSql(parseAudience(raw), params);
+  const sql = await audienceSql(await loadLists(pool, ids), params, topicOf(topic));
   const { rows } = await pool.query(`select contact_id as id, email from (${sql}) a limit ${Math.min(Math.max(limit, 1), 50)}`, params);
   return rows;
 }
@@ -86,16 +114,12 @@ export async function sampleAudience(raw: unknown, limit = 5): Promise<{ id: str
 // ---- record rules --------------------------------------------------------------
 
 const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v);
-const CONTENT = ['subject', 'preheader', 'from_name', 'from_address', 'audience'];
+const CONTENT = ['subject', 'preheader', 'from_name', 'from_address', 'subscription_type'];
 
 onWrite('email_campaigns', async (_client, properties, existing) => {
   const status = existing ? (first(existing.status) as string | undefined) ?? 'draft' : 'draft';
   if (existing && !['draft', 'scheduled'].includes(status) && CONTENT.some((k) => k in properties)) {
-    throw badRequest(`This campaign is ${status}: its email and audience can no longer change.`);
-  }
-  if (typeof properties.audience === 'string' && properties.audience.trim()) {
-    const a = parseAudience(properties.audience);
-    if (a.filter_groups) compileFilterGroups(await getObject('contacts'), a.filter_groups, [], noneHidden);
+    throw badRequest(`This campaign is ${status}: its email can no longer change.`);
   }
   if (typeof properties.from_address === 'string' && properties.from_address.trim()) {
     const v = properties.from_address.trim().toLowerCase();
@@ -105,8 +129,30 @@ onWrite('email_campaigns', async (_client, properties, existing) => {
   return properties;
 });
 
-// Opting a contact out by hand records why; opting back in clears it.
-onWrite('contacts', async (_client, properties) => {
+// Opting a contact back in to marketing email (email_opt_out Yes to No, or
+// cleared) needs a legal reason in the same write, any text (migration 0156).
+// The CRM answers this code by asking for the reason and sending again
+// (web/src/lib/api.ts).
+export const OPT_IN_REASON_REQUIRED = 'opt_in_reason_required';
+
+const optingIn = (v: unknown) => first(v) !== 'true';
+const reasonOf = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+
+export function optInReasonError(): ApiError {
+  return new ApiError(400,
+    'Opting a contact back in to marketing email needs a legal reason: write why you may email them again (for example, they asked to be subscribed).',
+    OPT_IN_REASON_REQUIRED, { property: 'email_opt_in_reason' });
+}
+
+// Bulk edits are checked up front (a bulk job runs later, record by record):
+// setting the field to No for many contacts needs the reason too.
+export function checkBulkOptIn(properties: Record<string, unknown>): void {
+  if ('email_opt_out' in properties && optingIn(properties.email_opt_out) && !reasonOf(properties.email_opt_in_reason)) throw optInReasonError();
+}
+
+// Opting a contact out by hand records why; opting back in clears it and
+// needs a legal reason when they were opted out.
+onWrite('contacts', async (_client, properties, existing) => {
   if (!('email_opt_out' in properties)) return properties;
   const on = first(properties.email_opt_out) === 'true';
   if (on) {
@@ -116,6 +162,11 @@ onWrite('contacts', async (_client, properties) => {
       email_opt_out_at: properties.email_opt_out_at ?? new Date().toISOString()
     };
   }
+  if (existing && first(existing.email_opt_out) === 'true') {
+    const reason = reasonOf(properties.email_opt_in_reason);
+    if (!reason) throw optInReasonError();
+    properties = { ...properties, email_opt_in_reason: reason };
+  }
   return { ...properties, email_opt_out_reason: null, email_opt_out_at: null };
 });
 
@@ -123,7 +174,8 @@ onWrite('contacts', async (_client, properties) => {
 
 async function lockCampaign(c: pg.PoolClient, id: string): Promise<CampaignRow> {
   const { rows } = await c.query(
-    `select pc_0058_id as id, name, subject, preheader, from_name, from_address, audience, status[1] as status, scheduled_at
+    `select pc_0058_id as id, name, subject, preheader, from_name, from_address, audience, status[1] as status, scheduled_at,
+            subscription_type[1] as subscription_type, null::text as subscription_type_label
      from crm.pc_0058 where pc_0058_id = $1 and record_status = 'active' for update`,
     [id]
   );
@@ -143,9 +195,18 @@ export async function checkCampaign(id: string): Promise<{ campaign: CampaignRow
   if (!template) problems.push('Link an email template to the campaign.');
   else if (!template.body?.trim()) problems.push('The email template has no body.');
   if (!(campaign.subject || template?.subject)) problems.push('Give the campaign (or its template) a subject.');
+  const topics = await listTopics();
+  if (campaign.subscription_type) {
+    if (!topics.some((t) => t.value === campaign.subscription_type)) {
+      problems.push('The campaign\'s subscription type is archived or gone. Pick another one.');
+    }
+  } else if (topics.length) {
+    problems.push('Pick the campaign\'s subscription type, so contacts who left that type are left out.');
+  }
   let recipients = 0;
+  const lists = await campaignLists(pool, id);
   try {
-    recipients = await countAudience(campaign.audience);
+    recipients = await countAudience(lists.map((l) => l.id), campaign.subscription_type);
     if (recipients === 0) problems.push('The audience has no contacts who can be emailed.');
     if (recipients > MAX_AUDIENCE) problems.push(`The audience has ${recipients} contacts; at most ${MAX_AUDIENCE} per campaign.`);
   } catch (err) {
@@ -156,7 +217,7 @@ export async function checkCampaign(id: string): Promise<{ campaign: CampaignRow
 
 async function begin(c: pg.PoolClient, campaign: CampaignRow, sentBy: string | null): Promise<number> {
   const params: unknown[] = [campaign.id];
-  const sql = await audienceSql(parseAudience(campaign.audience), params);
+  const sql = await audienceSql(await campaignLists(c, campaign.id), params, campaign.subscription_type);
   const { rowCount } = await c.query(
     `insert into auth.email_outbox (campaign_id, contact_id, email) select $1, a.contact_id, a.email from (${sql}) a on conflict do nothing`,
     params
@@ -251,6 +312,15 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
     return 0;
   }
   const people = await contactData(rows.map((r) => r.contact_id));
+  // contacts who left the campaign's type since it started
+  const leftTopic = new Set<string>();
+  if (campaign.subscription_type) {
+    const { rows: gone } = await pool.query(
+      `select pc_0010_id as id from crm.pc_0010 where pc_0010_id = any($1) and email_unsubscribed_topics @> array[$2]::text[]`,
+      [rows.map((r) => r.contact_id), campaign.subscription_type]
+    );
+    for (const g of gone) leftTopic.add(g.id);
+  }
 
   const msgs: PostmarkMessage[] = [];
   const sent: { row: OutboxRow; emailId: string }[] = [];
@@ -260,6 +330,7 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
       const who = people.get(row.contact_id);
       if (!who || !who.email) { skipped.push({ id: row.id, why: 'the contact or its email is gone' }); continue; }
       if (first(who.contact.email_opt_out) === 'true') { skipped.push({ id: row.id, why: 'opted out' }); continue; }
+      if (leftTopic.has(row.contact_id)) { skipped.push({ id: row.id, why: 'unsubscribed from this subscription type' }); continue; }
       const unsub = unsubscribeToken(row.contact_id, campaignId);
       let rendered;
       try {

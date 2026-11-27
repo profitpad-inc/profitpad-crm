@@ -29,3 +29,7 @@ iframe.campaign-preview { display: block; width: 100%; min-height: 400px; border
 .email-setup li { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; }
 .email-setup li svg { flex: none; margin-top: 2px; color: var(--muted-text); }
 .email-setup li.done svg { color: var(--money); }
+
+/* campaign editor: the campaign's email subscription type */
+.campaign-type { display: flex; flex-direction: column; gap: 6px; max-width: 420px; margin: 4px 0 12px; }
+.campaign-type > label { font-weight: 600; font-size: 13px; }

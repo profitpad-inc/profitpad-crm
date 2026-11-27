@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, CheckCheck, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, CheckCheck, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, ListPlus, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
   api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type FilterGroup, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
 } from '../lib/api';
 import { AdvancedFilters } from '../components/AdvancedFilters';
-import { completeGroups, countFilters, fieldsFromSchema, filterParam, parseFilterParam, toSearchGroups } from '../lib/filters';
+import { AddToListModal, SaveAsListModal } from '../components/ListDialogs';
+import { completeGroups, countFilters, fieldsFromSchema, filterParam, listMembershipField, parseFilterParam, toSearchGroups, type FilterField } from '../lib/filters';
+import { useListChoices } from '../lib/lists';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
 import { SaveHint } from '../components/SaveHint';
@@ -72,6 +74,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const [views, setViews] = useState<View[]>([]);
   const [labels, setLabels] = useState<AssociationLabel[]>([]);
   const [otherSchemas, setOtherSchemas] = useState<Record<string, ObjectDef>>({});
+  // lists, for the "List membership" filter (this object's and linked objects')
+  const listChoices = useListChoices(objectByName.has('lists'));
   const [columns, setColumns] = useState<Column[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
   // the view's filters, half-made conditions included (the panel's working copy)
@@ -126,6 +130,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const [allMatching, setAllMatching] = useState(false);
   const lastPicked = useRef<number | null>(null);
   const [bulk, setBulk] = useState<null | 'edit' | 'delete' | 'remove'>(null);
+  // lists: the filters saved as a list, or the ticked rows added to one
+  const [listDialog, setListDialog] = useState<null | 'save' | 'add'>(null);
   // phones: tapping a card picks it instead of opening it (the Select button or a long press)
   const [selectMode, setSelectMode] = useState(false);
   const press = useRef<{ timer?: ReturnType<typeof setTimeout>; fired: boolean; x: number; y: number }>({ fired: false, x: 0, y: 0 });
@@ -244,10 +250,14 @@ function ObjectTableFor({ object }: { object: string }) {
   const filterFields = useMemo(() => {
     if (!schema) return [];
     const own = fieldsFromSchema(schema.properties);
-    const linked = (linkedKey ? linkedKey.split(',') : []).flatMap((o) =>
-      fieldsFromSchema(otherSchemas[o].properties, { object: o, group: otherSchemas[o].label_singular, plural: otherSchemas[o].label_plural }));
-    return [...own, ...linked];
-  }, [schema, linkedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const ownList = object === 'lists' ? null : listMembershipField(object, listChoices);
+    const linked = (linkedKey ? linkedKey.split(',') : []).flatMap((o) => {
+      const a = { object: o, group: otherSchemas[o].label_singular, plural: otherSchemas[o].label_plural };
+      const listField = listMembershipField(object, listChoices, a);
+      return [...fieldsFromSchema(otherSchemas[o].properties, a), ...(listField ? [listField] : [])];
+    });
+    return [...own, ...(ownList ? [ownList] : []), ...linked] as FilterField[];
+  }, [schema, linkedKey, listChoices]); // eslint-disable-line react-hooks/exhaustive-deps
   // the search waits for the objects its filters use, so it never runs without them
   const filtersWaiting = (filterObjectsKey ? filterObjectsKey.split(',') : []).some((o) => !otherSchemas[o] && !unreadable.has(o));
   const searchKey = JSON.stringify(toSearchGroups(filterGroups, filterFields));
@@ -327,6 +337,16 @@ function ObjectTableFor({ object }: { object: string }) {
       }
     }
     : { ids: [...picked] };
+  // lists hold the records of other objects; a list of lists isn't offered
+  const canList = object !== 'lists' && objectByName.has('lists');
+  // the table's search as it stands, for "Save as list"
+  const tableSearch = {
+    query: debounced || undefined,
+    status: archived ? 'archived' : undefined,
+    filter_groups: searchGroups.length
+      ? searchGroups.map((g) => ({ filters: [...quickFilters, ...g.filters] }))
+      : quickFilters.length ? [{ filters: quickFilters }] : undefined
+  };
 
   // bulk jobs running on the server for this object (started here, or still
   // going from before), checked every 2 s until they finish
@@ -988,6 +1008,11 @@ function ObjectTableFor({ object }: { object: string }) {
               <Pencil size={14} /> Edit all
             </button>
           )}
+          {!archived && canList && (
+            <button className="btn small ghost" onClick={() => setListDialog('add')} disabled={pickedTotal === 0}>
+              <ListPlus size={14} /> Add to list
+            </button>
+          )}
           {!archived && schema?.permissions.delete && (
             <button className="btn small ghost danger-text" onClick={() => setBulk('delete')} disabled={pickedTotal === 0}>
               <Trash2 size={14} /> Delete all
@@ -1309,6 +1334,12 @@ function ObjectTableFor({ object }: { object: string }) {
           onSaved={recordSaved}
         />
       )}
+      {listDialog === 'save' && schema && (
+        <SaveAsListModal object={object} plural={schema.label_plural} search={tableSearch} onClose={() => setListDialog(null)} />
+      )}
+      {listDialog === 'add' && schema && (
+        <AddToListModal object={object} plural={schema.label_plural} target={pickedTarget} onClose={() => setListDialog(null)} onDone={clearPicked} />
+      )}
       {bulk === 'edit' && (
         <BulkEditModal
           object={object}
@@ -1399,6 +1430,9 @@ function ObjectTableFor({ object }: { object: string }) {
           note={activeView && !activeView.editable ? 'This shared view is admin-managed: filters apply now, use "Save as new view" to keep them.' : undefined}
           onClose={() => setShowFilters(false)}
           onClear={filterGroups.length ? () => changeFilters([]) : undefined}
+          extra={canList && searchGroups.length > 0 && (
+            <button className="btn small" onClick={() => setListDialog('save')}><ListPlus size={14} /> Save as list</button>
+          )}
         >
           <AdvancedFilters fields={filterFields} groups={filterGroups} onChange={changeFilters}
             searchPlaceholder={`Search ${schema.label_singular.toLowerCase()} properties`}
@@ -1446,8 +1480,8 @@ type Cell = { row: number; col: number };
 // how a sort reads in the phone Sort menu
 // The right-hand panel that holds a table's filters, like HubSpot's
 // "All filters": the table stays usable beside it and updates as filters change.
-function FiltersPanel({ title, note, onClose, onClear, children }: {
-  title: string; note?: string; onClose: () => void; onClear?: () => void; children: React.ReactNode;
+function FiltersPanel({ title, note, onClose, onClear, extra, children }: {
+  title: string; note?: string; onClose: () => void; onClear?: () => void; extra?: React.ReactNode; children: React.ReactNode;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1468,6 +1502,7 @@ function FiltersPanel({ title, note, onClose, onClear, children }: {
       </div>
       <footer className="af-panel-foot">
         <span className="muted" style={{ fontSize: 12 }}>{note ?? 'Filters in a group must all match; any group can match.'}</span>
+        {extra}
         {onClear && <button className="btn small ghost" onClick={onClear}>Clear all</button>}
       </footer>
     </aside>

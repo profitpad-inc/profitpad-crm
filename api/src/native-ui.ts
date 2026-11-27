@@ -27,7 +27,9 @@ const CREATE_FIELDS: Record<string, string[]> = {
   // the rest is set in the editor; status starts as draft
   booking_pages: ['name', 'public_name', 'host'],
   // the HTML comes from the API or MCP (the record page shows it)
-  landing_pages: ['name', 'slug', 'description']
+  landing_pages: ['name', 'slug', 'description'],
+  // filters and members are set on the list's page
+  lists: ['name', 'description', 'list_object', 'list_type', 'refresh_schedule']
 };
 // User pickers that start on the signed-in user.
 const STARTS_AS_ME = ['owner', 'host'];

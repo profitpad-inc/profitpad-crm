@@ -22,6 +22,7 @@ import { Login } from './pages/Login';
 import { Home } from './pages/Home';
 import { ObjectTable } from './pages/ObjectTable';
 import { RecordPage } from './pages/RecordPage';
+import { ListPage } from './pages/ListPage';
 import { Settings } from './pages/Settings';
 import { CustomView } from './pages/CustomView';
 import { CardScanner } from './pages/CardScanner';
@@ -95,6 +96,7 @@ function App() {
         <Route element={<Layout />}>
           <Route index element={<StartPage />} />
           <Route path="objects/:object" element={<ObjectTable />} />
+          <Route path="objects/lists/:id" element={<ListPage />} />
           <Route path="objects/:object/:id" element={<RecordPage />} />
           <Route path="view" element={<CustomView />} />
           <Route path="scan" element={<CardScanner />} />

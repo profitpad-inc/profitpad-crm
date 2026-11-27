@@ -1,0 +1,151 @@
+/* Lists: the list page (pages/ListPage.tsx), the campaign's lists card and
+   the create form's help. The page is two panes under a header: the rule on
+   the left, on the app's surface tint, and the records on the right, on the
+   page itself, so what decides membership and who is in it read apart. */
+
+.list-page { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--page-background); }
+
+/* ---- header: one row of facts, one line of what the list is ---- */
+.list-head { padding: 10px 24px 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.list-head-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 34px; }
+.list-back { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; color: var(--muted-text); text-decoration: none; flex: none; }
+.list-back:hover { color: var(--text); }
+.list-head h1 { margin: 0; font-family: var(--font-title); font-size: 19px; line-height: 1.25; font-weight: 650; letter-spacing: -0.01em;
+  min-width: 0; max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-kind { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); flex: none; }
+.list-kind.dynamic { border-color: var(--primary); color: var(--primary); }
+.list-count { font-size: 14px; color: var(--muted-text); white-space: nowrap; }
+.list-count strong { color: var(--primary); font-weight: 650; font-variant-numeric: tabular-nums; }
+.list-head-gap { flex: 1; }
+.list-head-status .list-schedule, .list-head-row .list-schedule { width: 200px; flex: none; }
+/* the description and the rule, on one line (the full text on hover) */
+/* the description on the left, the rule in words on the right; each cut short with … when long */
+.list-head-sub { margin: 0; display: flex; align-items: baseline; gap: 24px; font-size: 13px; line-height: 1.45; color: var(--muted-text); }
+.list-head-sub > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-head-sub .list-description { flex: 0 1 auto; color: var(--text); }
+.list-head-sub .list-rule { flex: 0 1 auto; margin-left: auto; text-align: right; }
+.spin { animation: list-spin 1s linear infinite; }
+@keyframes list-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* ---- body: rule pane | records ---- */
+.list-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 400px minmax(0, 1fr); }
+.list-tabs { padding: 0 20px; border-bottom: 1px solid var(--border); gap: 20px; flex: none; }
+
+.list-rule-pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); }
+.list-rule-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; }
+.list-rule-pane .af-group { background: var(--page-background); }
+.list-pane-note { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: var(--muted-text); }
+.list-rule-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface); }
+.list-match-count { flex: 1; min-width: 0; font-size: 13px; }
+.list-match-count strong { font-variant-numeric: tabular-nums; }
+.list-sql { display: flex; flex-direction: column; gap: 8px; }
+.list-sql-head { display: flex; align-items: flex-start; gap: 12px; }
+.list-sql-head p { margin: 0; flex: 1; }
+.list-sql .code-wrap-toggle { margin-right: 0; }
+
+.list-records { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.list-records > :not(.list-tabs) { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 24px; }
+.list-section-title { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+
+/* members */
+.list-members { display: flex; flex-direction: column; gap: 12px; }
+.list-members-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.list-bar-gap { flex: 1; }
+.list-search { display: flex; align-items: center; gap: 8px; width: min(320px, 100%); padding: 0 10px; height: 34px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--page-background); color: var(--muted-text); }
+.list-search:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft, rgba(29, 78, 216, 0.15)); }
+.list-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; padding: 0; height: 100%; color: var(--text); font: inherit; font-size: 14px; }
+.list-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.list-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.list-table th { position: sticky; top: 0; text-align: left; font-size: 12px; font-weight: 600; color: var(--muted-text); padding: 9px 12px; background: var(--surface); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.list-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.list-table tbody tr:last-child td { border-bottom: 0; }
+.list-table tbody tr:hover td { background: var(--surface); }
+.list-table tr.picked td { background: var(--primary-soft, rgba(29, 78, 216, 0.08)); }
+.list-table .list-name a { font-weight: 500; color: var(--text); text-decoration: none; }
+.list-table .list-name a:hover { color: var(--primary); text-decoration: underline; }
+.list-table .list-added { text-align: right; }
+.list-table .list-pick { width: 36px; padding-right: 0; }
+/* row picking stays a real checkbox, like the tables (table.css .pick-cell) */
+.list-table .list-pick input[type='checkbox'] { appearance: auto; -webkit-appearance: checkbox; display: block; width: 15px; min-width: 15px; height: 15px; margin: 0; border-radius: 0; background: none;
+  cursor: pointer; accent-color: var(--primary); transition: none; }
+.list-table .list-pick input[type='checkbox']::before { content: none; }
+.list-more { align-self: center; }
+.list-empty { padding: 28px 4px; color: var(--muted-text); max-width: 60ch; }
+.list-empty p { margin: 0; line-height: 1.5; }
+
+.list-add { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); max-width: 520px; }
+.list-add-search { display: flex; align-items: center; gap: 8px; }
+.list-add-search input { flex: 1; min-width: 0; }
+.list-add-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.list-add-results li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.list-add-results li:last-child { border-bottom: 0; }
+
+/* associations */
+.list-assoc { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.list-assoc p { margin: 0; }
+.list-assoc-items { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.list-assoc-items li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.list-assoc-items li:last-child { border-bottom: 0; }
+.list-assoc-items li > a { flex: 1; min-width: 0; color: var(--text); font-weight: 500; }
+.list-status-pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--muted-text); text-transform: capitalize; }
+.list-status-pill.sent { color: var(--money); }
+.list-status-pill.scheduled, .list-status-pill.sending { color: var(--primary); }
+.list-assoc-add { max-width: 360px; }
+
+/* history */
+.list-history ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-width: 760px; }
+.list-history li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto auto; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.list-change { font-size: 12px; font-weight: 600; }
+.list-change.joined { color: var(--money); }
+.list-change.left { color: var(--danger); }
+.list-change-at { text-align: right; }
+
+/* settings: Make static, the properties as in a record's left column, Delete list */
+.list-settings { display: flex; flex-direction: column; gap: 20px; max-width: 420px; }
+.list-setting-row { display: flex; align-items: center; gap: 12px; }
+.list-setting-row p { margin: 0; }
+.list-setting-row .btn { flex: none; }
+
+/* the filter changelog in the left pane */
+.list-changelog .history-filters { flex-wrap: wrap; }
+.list-rule-change { white-space: normal; }
+.list-ledger { max-width: 820px; }
+
+@media (max-width: 900px) {
+  .list-head { padding: 10px 16px; }
+  .list-head-sub { flex-direction: column; gap: 2px; }
+  .list-head-sub > span { white-space: normal; }
+  .list-head-sub .list-rule { margin-left: 0; text-align: left; }
+  .list-body { display: flex; flex-direction: column; overflow: auto; }
+  .list-rule-pane { border-right: 0; border-bottom: 1px solid var(--border); }
+  .list-rule-scroll, .list-records > :not(.list-tabs) { overflow: visible; }
+  .list-records > :not(.list-tabs) { padding: 16px; }
+  .list-history li { grid-template-columns: 56px minmax(0, 1fr); }
+}
+
+/* ---- the campaign's lists (EmailCampaignEditor) ---- */
+.campaign-lists { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.campaign-lists li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.campaign-lists li:last-child { border-bottom: 0; }
+.campaign-lists li > a { flex: 1; min-width: 0; }
+.campaign-add-list { max-width: 360px; }
+
+/* ---- the create form's explanation of static and dynamic lists ---- */
+.list-type-helps { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.list-type-help { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted-text); }
+.list-type-help.picked { color: var(--text); }
+
+/* a required field in a form */
+.required-mark { color: var(--danger, #b91c1c); }
+
+/* the SQL in the rule pane sits in a box of its own */
+.list-sql-code { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--page-background); overflow: hidden; }
+.list-sql-code > * { margin: 0; }
+
+/* the refresh status, schedule and Refresh now share one height */
+.list-head-row .select-face.list-schedule { height: 32px; min-height: 32px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
+.list-head-row > .btn { height: 32px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
+/* Edit columns, as on the object tables */
+.list-members-bar .table-columns { height: 32px; padding: 0 12px; }

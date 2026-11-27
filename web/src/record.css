@@ -51,19 +51,20 @@
 .record-page .record-archived-actions .danger-text { color: var(--danger); }
 
 /* ---- properties --------------------------------------------------------------- */
-.record-page .prop-section { border-color: var(--border); box-shadow: none; padding: 0 14px; margin-bottom: 10px; }
-.record-page .prop-section-head { gap: 6px; padding: 12px 0; border-radius: var(--radius-sm); }
-.record-page .prop-section-head h3 { font-size: 14px; }
-.record-page .prop-section-head:focus-visible { outline-offset: 0; }
+/* also the list page's Settings tab (pages/ListPage.tsx, .list-props) */
+:is(.record-page, .list-props) .prop-section { border-color: var(--border); box-shadow: none; padding: 0 14px; margin-bottom: 10px; }
+:is(.record-page, .list-props) .prop-section-head { gap: 6px; padding: 12px 0; border-radius: var(--radius-sm); }
+:is(.record-page, .list-props) .prop-section-head h3 { font-size: 14px; }
+:is(.record-page, .list-props) .prop-section-head:focus-visible { outline-offset: 0; }
 .prop-section-count {
   margin-left: auto; padding: 0 7px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 20px;
   color: var(--muted-text); background: var(--surface);
 }
-.record-page .prop-section-body { gap: 2px; padding-bottom: 10px; }
-.record-page .prop-row { padding: 7px 8px; margin: 0 -8px; border-radius: var(--radius); }
-.record-page .prop-row.editable:hover { background: var(--surface); }
-.record-page .prop-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; margin-bottom: 3px; }
-.record-page .prop-label > span { min-width: 0; overflow-wrap: anywhere; }
+:is(.record-page, .list-props) .prop-section-body { gap: 2px; padding-bottom: 10px; }
+:is(.record-page, .list-props) .prop-row { padding: 7px 8px; margin: 0 -8px; border-radius: var(--radius); }
+:is(.record-page, .list-props) .prop-row.editable:hover { background: var(--surface); }
+:is(.record-page, .list-props) .prop-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; margin-bottom: 3px; }
+:is(.record-page, .list-props) .prop-label > span { min-width: 0; overflow-wrap: anywhere; }
 .prop-tools, .prop-lock { flex: none; margin-left: auto; color: var(--muted-text); }
 .prop-tools + .prop-lock { margin-left: 0; }
 /* edit, history and copy, top right of a property on hover */
@@ -77,42 +78,42 @@
 .prop-tool:focus-visible { outline-offset: 0; }
 @media (hover: none) { .prop-tools { opacity: 0.7; } }
 .prop-lock { opacity: 0.55; }
-.record-page .prop-value { font-size: 14px; line-height: 1.45; }
-.record-page .prop-value .empty-value { opacity: 0.7; }
-.record-page .prop-edit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+:is(.record-page, .list-props) .prop-value { font-size: 14px; line-height: 1.45; }
+:is(.record-page, .list-props) .prop-value .empty-value { opacity: 0.7; }
+:is(.record-page, .list-props) .prop-edit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 /* the property being edited, framed like the kit's EditPanel */
-.record-page .prop-row.editing, .record-page .prop-row.editing:hover {
+:is(.record-page, .list-props) .prop-row.editing, :is(.record-page, .list-props) .prop-row.editing:hover {
   background: var(--page-background); cursor: default;
   box-shadow: 0 0 0 1px var(--primary-line), 0 0 0 4px var(--primary-soft);
   margin: 4px -8px; animation: panel-in 120ms ease-out;
 }
-.record-page .prop-edit .btn.small { align-self: flex-start; }
+:is(.record-page, .list-props) .prop-edit .btn.small { align-self: flex-start; }
 /* email and phone lists: the frame already marks the field, so the rows,
    "Add" and Cancel/Save sit close together */
-.record-page .prop-row.editing .mv-table.editing td { padding-block: 0; }
-.record-page .prop-row.editing .mv-table.editing :is(input:not([type='checkbox']), .select-face) { padding-block: 4px; }
+:is(.record-page, .list-props) .prop-row.editing .mv-table.editing td { padding-block: 0; }
+:is(.record-page, .list-props) .prop-row.editing .mv-table.editing :is(input:not([type='checkbox']), .select-face) { padding-block: 4px; }
 /* "Add email" and Cancel/Save share the last line: Add on the left, the
    buttons pinned to the right of it */
-.record-page .prop-row.editing .prop-edit:has(> .mv-editor) { position: relative; }
-.record-page .prop-row.editing .mv-add { height: 28px; padding-block: 0; margin-top: 6px; }
-.record-page .prop-label > .prop-edit-actions { flex: none; margin: -4px 0 -4px auto; }
-.record-page .prop-row.editing .mv-editor + .prop-edit-actions { position: absolute; right: 0; bottom: 0; height: 28px; margin: 0; align-items: center; }
+:is(.record-page, .list-props) .prop-row.editing .prop-edit:has(> .mv-editor) { position: relative; }
+:is(.record-page, .list-props) .prop-row.editing .mv-add { height: 28px; padding-block: 0; margin-top: 6px; }
+:is(.record-page, .list-props) .prop-label > .prop-edit-actions { flex: none; margin: -4px 0 -4px auto; }
+:is(.record-page, .list-props) .prop-row.editing .mv-editor + .prop-edit-actions { position: absolute; right: 0; bottom: 0; height: 28px; margin: 0; align-items: center; }
 /* live updates (lib/live.ts): a property someone else just changed fades from
    a light tint of the brand colour; a value changed while it is being edited
    says so under the box */
-.record-page .prop-row.live-changed { animation: live-changed 2.4s ease-out; }
+:is(.record-page, .list-props) .prop-row.live-changed { animation: live-changed 2.4s ease-out; }
 @keyframes live-changed {
   0%, 30% { background: color-mix(in srgb, var(--primary) 14%, transparent); }
   100% { background: transparent; }
 }
-.record-page .prop-conflict {
+:is(.record-page, .list-props) .prop-conflict {
   margin: 6px 0 0; padding: 6px 8px; border-radius: var(--radius); font-size: 12.5px; line-height: 1.4;
   background: color-mix(in srgb, var(--warn) 8%, var(--page-background));
   border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border));
   color: color-mix(in srgb, var(--warn) 70%, var(--text));
 }
-.record-page .file-upload-btn { margin-top: 6px; }
-.record-page .file-row { padding: 2px 0; }
+:is(.record-page, .list-props) .file-upload-btn { margin-top: 6px; }
+:is(.record-page, .list-props) .file-row { padding: 2px 0; }
 
 /* user records: the roles block sits on the grey panel like a section */
 .record-page .user-roles {

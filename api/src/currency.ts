@@ -28,6 +28,9 @@ const HOUR = 3600_000;
 const LOCK = 'select pg_try_advisory_xact_lock(hashtext($1)) as ok';
 const TODAY = `(now() at time zone 'utc')::date`;
 const CODE = /^[A-Z]{3}$/;
+// Lists show these first, then the rest by code (migration 0155 orders the
+// currency dropdowns the same way).
+const CURRENCY_ORDER = ['USD', 'AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP', 'INR', 'JPY', 'MXN'];
 
 interface Settings {
   mode: 'manual' | 'automatic';
@@ -272,7 +275,7 @@ function code(v: unknown, field: string): string {
 export async function currencyRoutes(app: FastifyInstance) {
   app.get('/v1/currencies', async (req) => {
     requireScope(req.principal!, 'read');
-    const { rows } = await pool.query(`select ${CURRENCY_COLS} from meta.pc_0007 order by is_base desc, code`);
+    const { rows } = await pool.query(`select ${CURRENCY_COLS} from meta.pc_0007 order by array_position($1::text[], code) nulls last, code`, [CURRENCY_ORDER]);
     return { results: rows };
   });
 

@@ -244,6 +244,57 @@ function landingPagePaths(): Record<string, Schema> {
 }
 
 // Live updates for record pages (live.ts)
+// Lists (pc_0064): records of one object, static or dynamic. The lists
+// themselves are records (/v1/objects/lists); these are about their members.
+function listPaths(): Record<string, Schema> {
+  const tags = ['Lists'];
+  const id = { name: 'id', in: 'path', required: true, description: 'The list\'s record id', schema: { type: 'string', pattern: '^[0-9a-f]{10}$' } };
+  const ids = { type: 'object', required: ['ids'], properties: { ids: { type: 'array', maxItems: 10000, items: { type: 'string' } } } };
+  const condition = {
+    type: 'object', required: ['property', 'operator'],
+    description: 'A search filter (the Filter schema: property, operator, value or values, case_sensitive, association), or a comparison with another property through compare_to.',
+    properties: {
+      property: { type: 'string' }, operator: { type: 'string' }, value: {}, values: { type: 'array', items: {} }, case_sensitive: { type: 'boolean' },
+      association: { type: 'object', properties: { object: { type: 'string' }, label_id: { type: 'string' } } },
+      compare_to: {
+        type: 'object', required: ['property'],
+        description: 'Compare with another property instead of a value: of this record (no association), of its linked records (association, with quantifier any or all; all needs at least one), or of the same linked record (the same association object as the condition). Operators eq, neq, lt, lte, gt, gte; text only eq and neq; both sides the same kind (number, date, text).',
+        properties: {
+          property: { type: 'string' },
+          association: { type: 'object', properties: { object: { type: 'string' }, label_id: { type: 'string' } } },
+          quantifier: { type: 'string', enum: ['any', 'all'], default: 'any' }
+        }
+      }
+    }
+  };
+  const definition = {
+    type: 'object',
+    description: 'A dynamic list\'s filters, stored as JSON text in its definition property. match "all": every group must match, and a group matches when any of its conditions does. match "any": any group, all conditions in it. No groups: every record.',
+    properties: { match: { type: 'string', enum: ['all', 'any'] }, groups: { type: 'array', maxItems: 10, items: { type: 'object', properties: { conditions: { type: 'array', minItems: 1, maxItems: 20, items: condition } } } } }
+  };
+  return {
+    '/v1/lists/{id}/records': {
+      get: { tags, summary: 'Records in a list', description: 'Read scope. The list\'s members that the caller may open, newest first, each with added_at. A dynamic list\'s members are as of its last refresh (last_refreshed_at).', operationId: 'list_records', parameters: [id, { name: 'properties', in: 'query', description: 'Comma-separated property api_names (default: all the caller may see)', schema: { type: 'string' } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 } }, { name: 'after', in: 'query', description: 'The previous page\'s next', schema: { type: 'string' } }, { name: 'q', in: 'query', description: 'Search the members, as the object\'s table search does (name, email, ...)', schema: { type: 'string' } }, { name: 'associations', in: 'query', description: 'Comma-separated objects (up to 10): each member gets its linked records of them, with their names (associations)', schema: { type: 'string' } }], responses: { 200: json({ type: 'object', properties: { list: { type: 'object' }, total: { type: 'integer' }, results: { type: 'array', items: { type: 'object' } }, next: { type: 'string', nullable: true } } }), ...errors } }
+    },
+    '/v1/lists/{id}/members': {
+      post: { tags, summary: 'Add records to a static list', description: 'Write scope. {ids} (records the caller may read; others come back in not_found) or {search} (a search request: query, status, filter_groups) for every record it matches. Dynamic lists refuse: their filters decide.', operationId: 'add_list_members', parameters: [id], requestBody: body({ type: 'object', properties: { ids: ids.properties.ids, search: { type: 'object', properties: { query: { type: 'string' }, status: { type: 'string', enum: ['active', 'archived'] }, filter_groups: { type: 'array', maxItems: 5, items: { type: 'object', properties: { filters: { type: 'array', items: ref('Filter') } } } } } } } }), responses: { 200: json({ type: 'object', properties: { added: { type: 'integer' }, members: { type: 'integer' }, not_found: { type: 'array', items: { type: 'string' } } } }), ...errors } },
+      delete: { tags, summary: 'Remove records from a static list', description: 'Write scope.', operationId: 'remove_list_members', parameters: [id], requestBody: body(ids), responses: { 200: json({ type: 'object', properties: { removed: { type: 'integer' }, members: { type: 'integer' } } }), ...errors } }
+    },
+    '/v1/lists/{id}/refresh': {
+      post: { tags, summary: 'Refresh a list from its filters', description: 'Write scope and edit access to the list. Works out its members from its definition (at most 60 s) and logs who joined and left. A dynamic list refreshes now instead of waiting for its schedule; a static list with a saved definition is filled once with the records it matches, replacing its members, and then stays as it is.', operationId: 'refresh_list', parameters: [id], responses: { 200: json({ type: 'object', properties: { added: { type: 'integer' }, removed: { type: 'integer' }, members: { type: 'integer' } } }), ...errors } }
+    },
+    '/v1/lists/{id}/changes': {
+      get: { tags, summary: 'Who joined and left a list', description: 'Read scope. Newest first, for members the caller may open. Page with before = the previous answer\'s next_before.', operationId: 'list_member_changes', parameters: [id, { name: 'limit', in: 'query', schema: { type: 'integer', maximum: 200 } }, { name: 'before', in: 'query', schema: { type: 'integer' } }], responses: { 200: json({ type: 'object' }), ...errors } }
+    },
+    '/v1/lists/{id}/sql': {
+      get: { tags, summary: 'The SQL that picks a list\'s members', description: 'Read scope. For reading only: values are written into the text.', operationId: 'list_sql', parameters: [id], responses: { 200: json({ type: 'object', properties: { sql: { type: 'string' } } }), ...errors } }
+    },
+    '/v1/lists/preview': {
+      post: { tags, summary: 'Try a list definition', description: 'Read scope. How many records the filters match (every record, as a refresh would), up to five the caller may open, and the SQL.', operationId: 'preview_list', requestBody: body({ type: 'object', required: ['object'], properties: { object: { type: 'string', description: 'The listed object\'s api_name' }, definition: definition } }), responses: { 200: json({ type: 'object', properties: { count: { type: 'integer' }, sample: { type: 'array', items: { type: 'object' } }, sql: { type: 'string' } } }), ...errors } }
+    }
+  };
+}
+
 function livePaths(): Record<string, Schema> {
   return {
     '/v1/live/records': { get: {
@@ -620,7 +671,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     Filter: {
       type: 'object', required: ['property', 'operator'],
       properties: {
-        property: { type: 'string' },
+        property: { type: 'string', description: 'A property api_name, or "__list" for list membership: operator in (in any of the lists) or not_in (in none of them), values the ids of lists of the same object (lists, as of their last refresh)' },
         operator: { type: 'string', enum: [...OPERATORS] },
         value: { description: 'Single value (eq, neq, lt, lte, gt, gte, contains, not_contains, starts_with, ends_with; on dropdowns contains and not_contains search the option labels; a whole number of days for last_n_days, next_n_days, more_than_n_days_ago on dates)' },
         values: { type: 'array', items: {}, description: 'Several values (in, not_in, contains_all, between)' },
@@ -766,6 +817,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
     ...oauthPaths(),
     ...viewPaths(),
     ...landingPagePaths(),
+    ...listPaths(),
     ...webhookPaths(),
     ...notificationPaths(),
     ...livePaths(),

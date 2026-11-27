@@ -92,3 +92,17 @@
 .af-panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
 .af-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; font-weight: 600;
   background: var(--primary); color: #fff; }
+
+/* lists: how groups combine (match all / any) */
+.af-match { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.af-match > .select { min-width: 140px; }
+.af-panel-foot { flex-wrap: wrap; }
+.af-panel-foot > .muted { flex: 1 1 160px; }
+
+/* a group not being edited: its filters as sentences */
+.af-group.closed { cursor: pointer; }
+.af-group.closed:hover { border-color: var(--muted-text); }
+.af-summary { align-items: center; }
+.af-sentence { flex: 1; min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.af-sentence strong { font-weight: 600; }
+.af-muted-inline { color: var(--muted-text); }

@@ -85,6 +85,32 @@ begin
     raise exception 'soft bounce addresses are lower case';
   exception when check_violation then null;
   end;
+
+  -- 0157: subscription types are one shared list behind two dropdowns
+  select count(*) into v_n from meta.option_list_members m join meta.option_lists l on l.id = m.list_id
+  join meta.pc_0002 p on p.pc_0002_id = m.property_id
+  where l.api_name = 'email_subscription_types'
+    and ((p.object_type_id = 'pc_0010' and p.api_name = 'email_unsubscribed_topics') or (p.object_type_id = 'pc_0058' and p.api_name = 'subscription_type'));
+  if v_n <> 2 then raise exception 'both subscription type dropdowns share the list'; end if;
+  perform meta.add_option('contacts', 'email_unsubscribed_topics', 'newsletter', 'Newsletter', null, 'Monthly news');
+  perform meta.add_option('contacts', 'email_unsubscribed_topics', 'events', 'Events');
+  select count(*) into v_n from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+  where p.object_type_id = 'pc_0058' and p.api_name = 'subscription_type' and o.api_value in ('newsletter', 'events');
+  if v_n <> 2 then raise exception 'a type added on contacts reaches campaigns'; end if;
+  update crm.pc_0058 set subscription_type = '{newsletter}' where pc_0058_id = v_camp;
+  update crm.pc_0010 set email_unsubscribed_topics = '{newsletter,events}' where pc_0010_id = v_contact;
+  begin
+    update crm.pc_0058 set subscription_type = '{newsletter,events}' where pc_0058_id = v_camp;
+    raise exception 'a campaign has one subscription type';
+  exception when others then
+    if sqlerrm = 'a campaign has one subscription type' then raise; end if;
+  end;
+  begin
+    update crm.pc_0010 set email_unsubscribed_topics = '{nope}' where pc_0010_id = v_contact;
+    raise exception 'unknown subscription types are refused';
+  exception when others then
+    if sqlerrm = 'unknown subscription types are refused' then raise; end if;
+  end;
 end
 $t$;
 

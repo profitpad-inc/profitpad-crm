@@ -572,7 +572,9 @@ export function pageCsp(sameOrigin: boolean, draft: boolean): string {
 // - tells the shell the page's title (it sits in an iframe)
 // - links open in the whole window (not inside the frame) unless they point
 //   inside the page or name their own target; /p/... links go to the CRM's
-//   public pages, wherever the HTML is served from
+//   public pages, wherever the HTML is served from. mailto:, tel: and sms:
+//   go to the whole window too: the sandboxed frame may not open them itself
+//   (the browser shows an error page in the frame instead of the mail app)
 // - links carry the visitor's address params on (?utm_source=..., gclid,
 //   anything else; the shell passes them to the frame), set when clicked so
 //   links added later count too. A param the link already has keeps its own
@@ -615,7 +617,7 @@ document.addEventListener('click',function(e){
   if(!a||e.defaultPrevented||a.hasAttribute('download'))return;
   carry(a);
   var raw=a.getAttribute('href')||'';
-  if(raw.charAt(0)==='#'||/^(javascript|mailto|tel|sms):/i.test(raw))return;
+  if(raw.charAt(0)==='#'||/^javascript:/i.test(raw))return;
   if(UI&&raw.charAt(0)==='/'&&raw.charAt(1)!=='/'&&/^\\/p\\//.test(raw))a.setAttribute('href',UI+raw);
   if(!a.target)a.target='_top';
 },true);

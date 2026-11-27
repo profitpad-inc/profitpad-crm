@@ -8,6 +8,7 @@ const { readUnsubscribeToken, unsubscribeToken, newReplyToken, REPLY_TOKEN_RE } 
 const { eventKey } = await import('./events.js');
 const { fromHeader, marketingSender, replyToFor } = await import('./settings.js');
 const { renderCampaignEmail, transactionalLayout } = await import('./render.js');
+const { topicValue } = await import('./topics.js');
 
 test('unsubscribe tokens round-trip and refuse tampering', () => {
   const t = unsubscribeToken('00000000aa', '00000000bb')!;
@@ -40,7 +41,10 @@ const settings = {
   enabled: true, token: 't', token_hint: null, from_name: 'Acme', from_address: 'n@acme.com', marketing_from_name: null, marketing_from_address: null, reply_domain: null, replies_enabled: false, default_reply_to: null,
   fallback_address: null, mailing_address: '1 Main St\nTown', broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
 };
-const campaign = { id: '00000000bb', name: 'Nov', subject: null, preheader: 'Short', from_name: null, from_address: null, audience: null, status: 'draft', scheduled_at: null };
+const campaign = {
+  id: '00000000bb', name: 'Nov', subject: null, preheader: 'Short', from_name: null, from_address: null, audience: null, status: 'draft', scheduled_at: null,
+  subscription_type: null, subscription_type_label: null
+};
 const who = { contact: { first_name: 'Ann & Co' }, company: null, owner: null, email: 'ann@x.com' };
 
 test('campaign emails get the contact, a footer and a plain-text subject', async () => {
@@ -57,6 +61,33 @@ test('a template that places the unsubscribe link gets no second footer', async 
   const out = await renderCampaignEmail(campaign, { id: 't', name: 'T', subject: 'Hi', body: '<html><body><a href="{{ unsubscribe_url }}">Leave</a></body></html>' }, who, settings, 'https://x/unsub');
   assert.equal(out.html.match(/https:\/\/x\/unsub/g)?.length, 1);
   assert.doesNotMatch(out.html, /1 Main St/);
+});
+
+test('a campaign with a subscription type names it in the footer and links to the preferences', async () => {
+  const typed = { ...campaign, subscription_type: 'newsletter', subscription_type_label: 'Monthly <news>' };
+  const out = await renderCampaignEmail(typed, { id: 't', name: 'T', subject: 'Hi', body: '<p>{{ campaign.subscription_type }}</p>' }, who, settings, 'https://x/unsub');
+  assert.match(out.html, /You are getting this as Monthly &lt;news&gt; email\./);
+  assert.match(out.html, /Unsubscribe or choose what you get/);
+  assert.match(out.html, /<p>Monthly &lt;news&gt;<\/p>/);
+});
+
+test('subscription type values come from the name and never repeat', () => {
+  assert.equal(topicValue('Product updates', new Set()), 'product_updates');
+  assert.equal(topicValue('Product updates', new Set(['product_updates'])), 'product_updates_2');
+  assert.equal(topicValue('Événements & webinars!', new Set()), 'evenements_webinars');
+  assert.equal(topicValue('***', new Set()), 'type');
+  assert.match(topicValue('x'.repeat(80), new Set()), /^[A-Za-z0-9._]{1,63}$/);
+});
+
+test('opting contacts back in to marketing email needs a written reason', async () => {
+  const { checkBulkOptIn } = await import('./campaigns.js');
+  const code = (fn: () => void) => { try { fn(); return null; } catch (e) { return (e as { code?: string }).code; } };
+  assert.equal(code(() => checkBulkOptIn({ email_opt_out: 'false' })), 'opt_in_reason_required');
+  assert.equal(code(() => checkBulkOptIn({ email_opt_out: ['false'], email_opt_in_reason: '   ' })), 'opt_in_reason_required');
+  assert.equal(code(() => checkBulkOptIn({ email_opt_out: null })), 'opt_in_reason_required');
+  assert.equal(code(() => checkBulkOptIn({ email_opt_out: 'false', email_opt_in_reason: 'Asked at the booth' })), null);
+  assert.equal(code(() => checkBulkOptIn({ email_opt_out: ['true'] })), null);
+  assert.equal(code(() => checkBulkOptIn({ first_name: 'Ann' })), null);
 });
 
 test('marketing email comes from the campaign, else the marketing default, else the one-to-one sender', () => {

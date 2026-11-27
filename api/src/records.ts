@@ -54,7 +54,7 @@ export function visibleProperties(obj: ObjectDef, principal: Principal, requeste
   });
 }
 
-function selectList(obj: ObjectDef, props: PropertyDef[]): string {
+export function selectList(obj: ObjectDef, props: PropertyDef[]): string {
   const cols = new Set([obj.id_column, 'record_status', 'merged_into_id', ...props.map((p) => p.api_name)]);
   return [...cols].map((c) => `t.${quoteIdent(c)}`).join(', ');
 }
@@ -121,7 +121,7 @@ function validateSpecs(specs: unknown): AssociationSpec[] {
 // associated records the caller may read are returned; hidden properties are
 // never included. Records with more than `limit` links per object get the
 // oldest `limit` links.
-async function attachAssociations(db: Db, obj: ObjectDef, principal: Principal, records: RecordOut[], specs: AssociationSpec[]): Promise<void> {
+export async function attachAssociations(db: Db, obj: ObjectDef, principal: Principal, records: RecordOut[], specs: AssociationSpec[]): Promise<void> {
   if (specs.length === 0 || records.length === 0) return;
   const ids = records.map((r) => r.id);
   for (const spec of specs) {
@@ -272,6 +272,12 @@ export async function batchReadRecords(
 export async function filterAssociationContext(obj: ObjectDef, groups: FilterGroup[] | undefined, principal: Principal | null): Promise<AssociationFilterContext | undefined> {
   const names = filterAssociationObjects(groups);
   if (names.length === 0) return undefined;
+  return associationContext(obj, names, principal);
+}
+
+// The same for any set of linked objects (by api_name): lists name theirs in
+// their definition (lists/compile.ts).
+export async function associationContext(obj: ObjectDef, names: string[], principal: Principal | null): Promise<AssociationFilterContext> {
   const objects = new Map<string, ObjectDef>();
   for (const name of names) {
     const other = await getObject(name).catch(() => null);

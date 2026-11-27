@@ -5,6 +5,7 @@ import { requireObjectPermission, requireScope, userPrincipal, type Principal, t
 import { getObject, type ObjectDef } from './registry.js';
 import { assertAccessible, BULK_MAX, bulkUpdateRecords, drainCalcQueue, matchingIdsSql, objectForWrite, type MultiMode } from './records.js';
 import type { SearchRequest } from './search.js';
+import { checkBulkOptIn } from './email/campaigns.js';
 
 // Bulk edits and deletes: up to BULK_MAX records at once (the /bulk/* routes
 // in routes/records.ts), or any number as a job the server works through in
@@ -27,6 +28,7 @@ export function requireBulkAction(p: Principal, obj: ObjectDef, action: BulkActi
   if (action === 'update') {
     requireObjectPermission(p, obj, 'edit');
     if (Object.keys(changes.properties ?? {}).length === 0) throw badRequest('properties must name at least one property');
+    if (obj.api_name === 'contacts') checkBulkOptIn(changes.properties ?? {});
   } else {
     requireObjectPermission(p, obj, 'delete');
   }

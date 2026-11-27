@@ -319,6 +319,41 @@
         "--strictPort"
       ],
       "port": 5181
+    },
+    {
+      "name": "api-lists-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PGHOST=127.0.0.1",
+        "PGPORT=5492",
+        "PGUSER=pc_migrator",
+        "PGDATABASE=profitpad_crm_db",
+        "PORT=3051",
+        "UI_URL=http://localhost:5205",
+        "DOCS_PUBLIC=true",
+        "npm",
+        "--prefix",
+        "api",
+        "start"
+      ],
+      "port": 3051
+    },
+    {
+      "name": "web-lists-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3051",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5205",
+        "--strictPort"
+      ],
+      "port": 5205
     }
   ]
 }

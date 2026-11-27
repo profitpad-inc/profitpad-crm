@@ -26,6 +26,27 @@ export interface Filter {
 // The association filter's property for the number of linked records (real
 // property names start with a letter, so it never clashes).
 export const ASSOCIATION_COUNT = '__count';
+
+// The filter "property" for list membership (lists, migration 0154): in
+// matches records in any of the given lists (values: list ids), not_in
+// records in none of them. Only lists of the same object count, as record
+// ids are unique within an object only. A dynamic list's members are as of
+// its last refresh. With association, it filters on linked records instead
+// ("contacts whose company is in list X").
+export const LIST_MEMBERSHIP = '__list';
+
+function compileListMembership(obj: ObjectDef, f: Filter, params: unknown[], alias: string): string {
+  if (f.operator !== 'in' && f.operator !== 'not_in') throw badRequest('list membership ("__list") takes in or not_in');
+  const vals = f.values ?? (Array.isArray(f.value) ? f.value : undefined);
+  if (!Array.isArray(vals) || vals.length === 0 || !vals.every((v) => typeof v === 'string' && v)) {
+    throw badRequest('list membership ("__list") needs values: [list ids]');
+  }
+  params.push(vals, obj.api_name);
+  const exists = `exists (select 1 from meta.list_members lm join crm.pc_0064 l on l.pc_0064_id = lm.list_id`
+    + ` where lm.list_id = any ($${params.length - 1}::text[]) and l.list_object = $${params.length}::text and l.record_status = 'active'`
+    + ` and lm.record_id = ${alias}.${quoteIdent(obj.id_column)})`;
+  return f.operator === 'in' ? exists : `not ${exists}`;
+}
 const COUNT_OPERATORS = ['has_property', 'not_has_property', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between'];
 
 // What compiling filters on associated records needs: the linked objects
@@ -76,13 +97,13 @@ export const OPERATORS = [
   'last_n_days', 'next_n_days', 'more_than_n_days_ago'
 ] as const;
 
-function valueType(prop: PropertyDef): string {
+export function valueType(prop: PropertyDef): string {
   if (prop.type === 'calculation') return prop.calc_output_type ?? 'text';
   if (prop.type === 'id' || prop.type === 'id_list' || prop.type === 'actor') return 'text';
   return prop.type;
 }
 
-const CAST: Record<string, string> = { text: 'text', number: 'numeric', date: 'date', datetime: 'timestamptz', dropdown: 'text', file: 'text' };
+export const CAST: Record<string, string> = { text: 'text', number: 'numeric', date: 'date', datetime: 'timestamptz', dropdown: 'text', file: 'text' };
 
 function coerceScalar(prop: PropertyDef, v: unknown): unknown {
   const t = valueType(prop);
@@ -125,10 +146,11 @@ function phoneDigits(v: string): string | null {
   return d.length >= 3 ? d : null;
 }
 
-function compileFilter(
+export function compileFilter(
   obj: ObjectDef, f: Filter, params: unknown[], isHidden: (p: PropertyDef) => boolean, alias = 't', assoc?: AssociationFilterContext
 ): string {
   if (f.association !== undefined) return compileAssociationFilter(obj, f, params, alias, assoc);
+  if (f.property === LIST_MEMBERSHIP) return compileListMembership(obj, f, params, alias);
   const prop = getProperty(obj, f.property);
   if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
   if (!(OPERATORS as readonly string[]).includes(f.operator)) throw badRequest(`unknown operator "${f.operator}"`);
@@ -262,11 +284,22 @@ function compileFilter(
   throw badRequest(`unsupported operator "${f.operator}"`);
 }
 
-// A condition on linked records: exists (a link to an active, readable
-// record of the other object that meets the condition).
-function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], alias: string, assoc?: AssociationFilterContext): string {
+// Linked records of another object, for conditions on them: the other
+// object, plus SQL builders over its active links that the caller may read.
+//   anyLinked(extra)  "exists a linked record (meeting extra)"
+//   linked(way)       one direction's "from ... where ..." and the record's alias
+// Each call takes fresh aliases, so several can sit side by side.
+export interface LinkedRecords {
+  other: ObjectDef;
+  ways: ('forward' | 'reverse')[];
+  linked: (way: 'forward' | 'reverse') => { sql: string; o: string };
+  anyLinked: (extra?: (o: string) => string) => string;
+}
+
+export function linkedRecords(
+  obj: ObjectDef, a: { object: string; label_id?: string } | undefined, params: unknown[], alias: string, assoc?: AssociationFilterContext
+): LinkedRecords {
   if (!assoc) throw badRequest('filters on associated records are not supported here');
-  const a = f.association;
   if (!a || typeof a.object !== 'string') throw badRequest('association must be { object, label_id? }');
   const other = assoc.objects.get(a.object);
   if (!other || !obj.links_to.includes(other.api_name)) throw badRequest(`${obj.api_name} records cannot be associated with "${a.object}"`);
@@ -297,7 +330,7 @@ function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], 
     const sql = `from crm.pc_0005 ${link} join crm.${quoteIdent(other.object_type_id)} ${o} on ${o}.${quoteIdent(other.id_column)} = ${link}.${theirs}`
       + ` where ${link}.${mineType} = ${from} and ${link}.${mine} = ${alias}.${quoteIdent(obj.id_column)} and ${link}.${theirsType} = ${to}`
       + (labelParam ? ` and ${link}.label_id = ${labelParam}` : '')
-      + ` and ${o}.record_status = 'active' and ${access}`;
+      + ` and ${o}.record_status = 'active'` + (access === 'true' ? '' : ` and ${access}`);
     return { sql, o };
   };
   const anyLinked = (extra?: (o: string) => string) => {
@@ -307,6 +340,13 @@ function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], 
     });
     return parts.length === 1 ? parts[0] : `(${parts.join(' or ')})`;
   };
+  return { other, ways, linked, anyLinked };
+}
+
+// A condition on linked records: exists (a link to an active, readable
+// record of the other object that meets the condition).
+function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], alias: string, assoc?: AssociationFilterContext): string {
+  const { other, ways, linked, anyLinked } = linkedRecords(obj, f.association, params, alias, assoc);
 
   if (f.property === ASSOCIATION_COUNT) {
     if (!COUNT_OPERATORS.includes(f.operator)) throw badRequest(`operator "${f.operator}" does not apply to the number of associated ${other.label_plural.toLowerCase()}`);
@@ -332,7 +372,7 @@ function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], 
     return `${total} ${ops[f.operator]} ${count(f.value)}`;
   }
 
-  return anyLinked((o) => compileFilter(other, { property: f.property, operator: f.operator, value: f.value, values: f.values, case_sensitive: f.case_sensitive }, params, assoc.isHidden, o));
+  return anyLinked((o) => compileFilter(other, { property: f.property, operator: f.operator, value: f.value, values: f.values, case_sensitive: f.case_sensitive }, params, assoc!.isHidden, o));
 }
 
 // filter_groups -> "((a and b) or (c))" on the given table alias, or null

@@ -4,8 +4,8 @@ import { Boxes, Calendar, CalendarClock, ChevronLeft, ChevronRight, Copy, Hash, 
 import { Select } from './Select';
 import { DatePicker } from './DatePicker';
 import {
-  FIELD_TYPE_LABELS, MAX_FILTERS, MAX_GROUPS, daysSuffix, filterKey, newFilter, operatorOf, operatorsFor, withOperator, withProperty,
-  type Filter, type FilterField, type FilterFieldType, type FilterGroup
+  FIELD_TYPE_LABELS, MAX_FILTERS, MAX_GROUPS, compareKey, compareKind, compareOperatorsFor, daysSuffix, filterComplete, filterKey, filterParts, newFilter,
+  operatorOf, operatorsFor, withCompare, withOperator, withProperty, type Filter, type FilterField, type FilterFieldType, type FilterGroup
 } from '../lib/filters';
 import '../advanced-filters.css';
 
@@ -18,6 +18,11 @@ import '../advanced-filters.css';
 // completeGroups / toSearchGroups from lib/filters before searching). Used by
 // the object tables (pages/ObjectTable.tsx) and by custom views
 // (view-runtime/kit.tsx, kit: inputs get the frame's classes).
+//
+// Lists (pages/ListPage.tsx) pass match, which flips the logic ("all":
+// AND between groups, OR inside) and shows a menu to choose it, and
+// allowCompare, which lets a condition compare with another property (of the
+// record or of its linked records) instead of a value.
 
 const TYPE_ICONS: Record<FilterFieldType, typeof Type> = {
   text: Type, number: Hash, date: Calendar, datetime: CalendarClock, dropdown: ListChecks, email: Mail, phone: Phone, other: Paperclip
@@ -47,9 +52,21 @@ export interface AdvancedFiltersProps {
   associationLabels?: (object: string) => { value: string; label: string }[];
   // inside a custom view's frame
   kit?: boolean;
+  // lists: how groups combine, with a menu to change it (see the header)
+  match?: 'all' | 'any';
+  onMatchChange?: (m: 'all' | 'any') => void;
+  // lists: conditions may compare with another property
+  allowCompare?: boolean;
+  maxGroups?: number;
+  maxFilters?: number;
 }
 
-export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 'Search properties', objectLabel, onPickerOpen, fieldsLoading, objectIcon, pinnedObjects, associationLabels, kit }: AdvancedFiltersProps) {
+export function AdvancedFilters({
+  fields, groups, onChange, searchPlaceholder = 'Search properties', objectLabel, onPickerOpen, fieldsLoading, objectIcon, pinnedObjects, associationLabels, kit,
+  match, onMatchChange, allowCompare, maxGroups = MAX_GROUPS, maxFilters = MAX_FILTERS
+}: AdvancedFiltersProps) {
+  const between = match === 'all' ? 'and' : 'or';
+  const inside = match === 'all' ? 'or' : 'and';
   const byKey = new Map(fields.map((f) => [f.key, f]));
   const picker = { fields, placeholder: searchPlaceholder, objectLabel, onOpen: onPickerOpen, loading: fieldsLoading, objectIcon, pinnedObjects };
   const cls = { input: kit ? 'v-input' : undefined, select: kit ? 'v-input v-select' : undefined };
@@ -59,19 +76,49 @@ export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 
     if (g && g.filters.length > 0) next[gi] = g;
     else next.splice(gi, 1);
     onChange(next);
+    if (!g || g.filters.length === 0) setActive(null);
   }
 
+  // The group being edited shows its filters' menus and boxes; the others
+  // read as sentences ("Stage is any of Won or Lost") until clicked. A group
+  // with a half-made filter stays open. Clicking outside the filters (menus
+  // and pickers drawn on <body> count as inside) closes them all.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<number | null>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (!t || !t.isConnected || rootRef.current?.contains(t)) return;
+      if (t.closest?.('.select-menu, .af-picker, .flatpickr-calendar, .overlay, .menu')) return;
+      setActive(null);
+    };
+    // capture: decided before the group's own handler redraws it (the
+    // clicked sentence is replaced by the editors and leaves the page)
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, []);
+  const open = (gi: number, g: FilterGroup) => active === gi || g.filters.some((f) => !filterComplete(f, byKey.get(filterKey(f))));
+
   return (
-    <div className="af">
+    <div className="af" ref={rootRef}>
+      {match && onMatchChange && (
+        <div className="af-match">
+          <span>Records must match</span>
+          <Select className={cls.select} value={match} aria-label="How groups combine" onChange={(v) => onMatchChange(v === 'any' ? 'any' : 'all')}
+            options={[{ value: 'all', label: 'every group' }, { value: 'any', label: 'any group' }]} />
+          <span className="af-muted">{match === 'all' ? 'A group matches when any of its filters does.' : 'A group matches when all of its filters do.'}</span>
+        </div>
+      )}
       {groups.map((g, gi) => (
         <div key={gi} className="af-group-wrap">
-          {gi > 0 && <div className="af-or"><span>or</span></div>}
-          <section className="af-group" aria-label={`Group ${gi + 1}`}>
+          {gi > 0 && <div className="af-or"><span>{between}</span></div>}
+          <section className={`af-group${open(gi, g) ? ' open' : ' closed'}`} aria-label={`Group ${gi + 1}`}
+            onMouseDown={() => setActive(gi)} onFocus={() => setActive(gi)}>
             <header className="af-group-head">
               <h3>Group {gi + 1}</h3>
               <div className="af-group-actions">
                 <button type="button" className="af-icon" aria-label={`Duplicate group ${gi + 1}`} title="Duplicate group"
-                  disabled={groups.length >= MAX_GROUPS}
+                  disabled={groups.length >= maxGroups}
                   onClick={() => onChange([...groups.slice(0, gi + 1), structuredClone(g), ...groups.slice(gi + 1)])}>
                   <Copy size={15} />
                 </button>
@@ -82,8 +129,13 @@ export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 
             </header>
             {g.filters.map((f, fi) => (
               <div key={fi}>
-                {fi > 0 && <div className="af-and">and</div>}
-                <Condition
+                {fi > 0 && <div className="af-and">{inside}</div>}
+                {!open(gi, g) ? (
+                  <ConditionSummary fields={fields} field={byKey.get(filterKey(f))} filter={f}
+                    label={f.association?.label_id ? associationLabels?.(f.association.object).find((l) => l.value === f.association!.label_id)?.label : undefined}
+                    onRemove={() => setGroup(gi, { filters: g.filters.filter((_, j) => j !== fi) })} />
+                ) : <Condition
+                  allowCompare={allowCompare}
                   fields={fields}
                   field={byKey.get(filterKey(f))}
                   filter={f}
@@ -91,36 +143,60 @@ export function AdvancedFilters({ fields, groups, onChange, searchPlaceholder = 
                   labels={f.association ? associationLabels?.(f.association.object) : undefined}
                   onChange={(nf) => setGroup(gi, { filters: g.filters.map((x, j) => (j === fi ? nf : x)) })}
                   onRemove={() => setGroup(gi, { filters: g.filters.filter((_, j) => j !== fi) })}
-                />
+                />}
               </div>
             ))}
-            {g.filters.length < MAX_FILTERS && (
+            {g.filters.length < maxFilters && (
               <AddFilterButton {...picker} label="Add filter" small
-                onPick={(field) => setGroup(gi, { filters: [...g.filters, newFilter(field)] })} />
+                onPick={(field) => { setGroup(gi, { filters: [...g.filters, newFilter(field)] }); setActive(gi); }} />
             )}
           </section>
         </div>
       ))}
       {groups.length === 0 ? (
         <AddFilterButton {...picker} label="Add filter"
-          onPick={(field) => onChange([{ filters: [newFilter(field)] }])} />
-      ) : groups.length < MAX_GROUPS && (
+          onPick={(field) => { onChange([{ filters: [newFilter(field)] }]); setActive(0); }} />
+      ) : groups.length < maxGroups && (
         <>
-          <div className="af-or"><span>or</span></div>
+          <div className="af-or"><span>{between}</span></div>
           <AddFilterButton {...picker} label="Add filter group"
-            onPick={(field) => onChange([...groups, { filters: [newFilter(field)] }])} />
+            onPick={(field) => { onChange([...groups, { filters: [newFilter(field)] }]); setActive(groups.length); }} />
         </>
       )}
     </div>
   );
 }
 
-function Condition({ fields, field, filter, cls, labels, onChange, onRemove }: {
-  fields: FilterField[]; field: FilterField | undefined; filter: Filter; cls: { input?: string; select?: string };
-  labels?: { value: string; label: string }[]; onChange: (f: Filter) => void; onRemove: () => void;
+// A filter of a group not being edited: one line that reads as a sentence,
+// the property and the value in bold. Clicking it opens the group.
+function ConditionSummary({ fields, field, filter, label, onRemove }: {
+  fields: FilterField[]; field: FilterField | undefined; filter: Filter; label?: string; onRemove: () => void;
 }) {
-  const ops = field ? operatorsFor(field) : [];
-  const op = operatorOf(field, filter.operator);
+  const { subject, verb, value } = filterParts(filter, field, fields);
+  const linked = filter.association && !field?.count
+    ? `Associated ${(field?.group ?? filter.association.object).toLowerCase()}${label ? ` (${label})` : ''}: ` : '';
+  return (
+    <div className={`af-cond af-summary${field ? '' : ' missing'}`}>
+      <span className="af-sentence">
+        {linked && <span className="af-muted-inline">{linked}</span>}
+        <strong>{subject}</strong> {verb}{value && <> <strong>{value}</strong></>}
+      </span>
+      <button type="button" className="af-icon af-remove" aria-label="Remove filter" title="Remove filter"
+        onMouseDown={(e) => e.stopPropagation()} onClick={onRemove}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
+function Condition({ fields, field, filter, cls, labels, onChange, onRemove, allowCompare }: {
+  fields: FilterField[]; field: FilterField | undefined; filter: Filter; cls: { input?: string; select?: string };
+  labels?: { value: string; label: string }[]; onChange: (f: Filter) => void; onRemove: () => void; allowCompare?: boolean;
+}) {
+  const comparing = !!filter.compare_to;
+  const canCompare = !!allowCompare && !!field && compareKind(field) !== null;
+  const ops = field ? (comparing ? compareOperatorsFor(field) : operatorsFor(field)) : [];
+  const op = operatorOf(field, filter.operator, comparing);
   const key = filterKey(filter);
   // the property menu lists the same object's properties (the picker switches objects)
   const group = field?.group ?? (filter.association ? filter.association.object : undefined);
@@ -148,15 +224,33 @@ function Condition({ fields, field, filter, cls, labels, onChange, onRemove }: {
         {filter.association && !field?.count && <div className="af-cond-object">Associated {(field?.group ?? filter.association.object).toLowerCase()}</div>}
         {!field?.count && labelMenu}
         <Select className={cls.select} value={key} aria-label="Property"
-          onChange={(v) => { const nf = fields.find((x) => x.key === v); if (nf) onChange(withProperty(field, nf, filter)); }}
+          onChange={(v) => {
+            const nf = fields.find((x) => x.key === v);
+            if (!nf) return;
+            // a comparison stays one while the new property can compare
+            if (comparing && allowCompare && compareKind(nf) !== null) {
+              const next = withCompare(nf, newFilter(nf), true);
+              const target = fields.find((x) => x.key === compareKey(filter.compare_to!));
+              const keep = target && compareKind(target) === compareKind(nf);
+              onChange(keep ? { ...next, compare_to: filter.compare_to } : next);
+            } else {
+              onChange(withProperty(field, nf, filter));
+            }
+          }}
           options={options} />
         {field?.count && labelMenu}
         {field && (
           <Select className={cls.select} value={filter.operator} aria-label="Condition" search
-            onChange={(v) => onChange(withOperator(field, filter, v))}
+            onChange={(v) => onChange(comparing ? { ...filter, operator: v } : withOperator(field, filter, v))}
             options={ops.map((o) => ({ value: o.value, label: o.label }))} />
         )}
-        {field && op && <ValueEditor field={field} filter={filter} input={op.input} cls={cls} onChange={onChange} />}
+        {canCompare && (
+          <Select className={cls.select} value={comparing ? 'property' : 'value'} aria-label="Compare with"
+            onChange={(v) => onChange(withCompare(field!, filter, v === 'property'))}
+            options={[{ value: 'value', label: 'a value' }, { value: 'property', label: 'another property' }]} />
+        )}
+        {field && comparing && <CompareEditor fields={fields} field={field} filter={filter} cls={cls} onChange={onChange} />}
+        {field && op && !comparing && <ValueEditor field={field} filter={filter} input={op.input} cls={cls} onChange={onChange} />}
         {op?.text && (
           <label className="af-case">
             <input type="checkbox" checked={filter.case_sensitive === true} onChange={(e) => onChange({ ...filter, case_sensitive: e.target.checked })} />
@@ -168,6 +262,47 @@ function Condition({ fields, field, filter, cls, labels, onChange, onRemove }: {
         <X size={16} />
       </button>
     </div>
+  );
+}
+
+// The other side of a comparison: a property of the same kind, of the record
+// itself or of its linked records (a condition already on linked records:
+// the record's own properties, or another property of that linked record),
+// and, when linked records are involved, whether any or every one must meet it.
+function CompareEditor({ fields, field, filter, cls, onChange }: {
+  fields: FilterField[]; field: FilterField; filter: Filter; cls: { input?: string; select?: string }; onChange: (f: Filter) => void;
+}) {
+  const kind = compareKind(field);
+  const to = filter.compare_to!;
+  const ownObject = filter.association?.object;
+  const targets = fields.filter((x) => x.key !== filterKey(filter) && compareKind(x) === kind
+    && (!x.association || !ownObject || x.association.object === ownObject));
+  const key = to.property ? compareKey(to) : '';
+  const options = [
+    { value: '', label: 'Pick a property' },
+    ...targets.map((x) => ({ value: x.key, label: x.group ? `${x.group}: ${x.label}` : x.label })),
+    ...(key && !targets.some((x) => x.key === key) ? [{ value: key, label: `${to.property} (not available)` }] : [])
+  ];
+  const linked = filter.association?.object ?? to.association?.object;
+  const linkedGroup = linked ? (fields.find((x) => x.association?.object === linked)?.group ?? linked).toLowerCase() : '';
+  return (
+    <>
+      <Select className={cls.select} value={key} aria-label="Compared with" search
+        onChange={(v) => {
+          const t = fields.find((x) => x.key === v);
+          if (!t) return;
+          const next = t.association
+            ? { property: t.property ?? t.key, association: { object: t.association.object }, quantifier: to.quantifier ?? 'any' as const }
+            : { property: t.key, ...(filter.association ? { quantifier: to.quantifier ?? 'any' as const } : {}) };
+          onChange({ ...filter, compare_to: next });
+        }}
+        options={options} />
+      {linked && to.property && (
+        <Select className={cls.select} value={to.quantifier ?? 'any'} aria-label="How many linked records"
+          onChange={(v) => onChange({ ...filter, compare_to: { ...to, quantifier: v === 'all' ? 'all' : 'any' } })}
+          options={[{ value: 'any', label: `for any associated ${linkedGroup}` }, { value: 'all', label: `for every associated ${linkedGroup}` }]} />
+      )}
+    </>
   );
 }
 
@@ -358,37 +493,31 @@ function PropertyPicker({ anchor, button, fields: allFields, placeholder: basePl
 
   const q = query.trim().toLowerCase();
   const matches = (f: FilterField) => (type === ALL || f.type === type) && (!q || f.label.toLowerCase().includes(q) || f.key.toLowerCase().includes(q));
-  // the fields in view: one object's, or (searching from the top) every object's
-  const scope = object ? allFields.filter((f) => f.group === object) : q ? allFields : allFields.filter((f) => !f.group);
+  // the fields in view, and the only ones a search looks through: the
+  // associated object opened, else the record's own (the Associated objects
+  // tab searches the objects' names)
+  const scope = object ? allFields.filter((f) => f.group === object) : tab === 'own' ? allFields.filter((f) => !f.group) : [];
   const types = [...new Set(scope.map((f) => f.type))].sort((a, b) => FIELD_TYPE_LABELS[a].localeCompare(FIELD_TYPE_LABELS[b]));
 
   const rows: PickerRow[] = [];
   if (object) {
     for (const f of scope) if (matches(f)) rows.push({ kind: 'field', field: f });
+  } else if (tab === 'own' || !hasLinked) {
+    for (const f of scope) if (matches(f)) rows.push({ kind: 'field', field: f });
   } else {
-    const own = q || tab === 'own' ? allFields.filter((f) => !f.group && matches(f)) : [];
-    const linkedHits = q ? objectGroups.map((g) => ({ g, hits: allFields.filter((f) => f.group === g && matches(f)) })).filter((x) => x.hits.length) : [];
-    if (own.length && linkedHits.length) rows.push({ kind: 'header', label: `${objectLabel} properties` });
-    for (const f of own) rows.push({ kind: 'field', field: f });
-    for (const { g, hits } of linkedHits) {
-      rows.push({ kind: 'header', label: `${g} properties` });
-      for (const f of hits) rows.push({ kind: 'field', field: f });
-    }
-    if (hasLinked && type === ALL && (q || tab === 'linked')) {
-      const objects = objectGroups.filter((g) => !q || plural(g).toLowerCase().includes(q) || g.toLowerCase().includes(q));
-      if (q && objects.length) rows.push({ kind: 'header', label: 'Associated objects' });
-      for (const g of objects) rows.push({ kind: 'object', group: g });
-      if (loading && !q) rows.push({ kind: 'loading' });
-    }
+    const objects = objectGroups.filter((g) => !q || plural(g).toLowerCase().includes(q) || g.toLowerCase().includes(q));
+    for (const g of objects) rows.push({ kind: 'object', group: g });
+    if (loading && !q) rows.push({ kind: 'loading' });
   }
   const pickable = rows.flatMap((r, i) => (r.kind === 'field' || r.kind === 'object' ? [i] : []));
-  const placeholder = object ? `Search ${object.toLowerCase()} properties` : hasLinked ? 'Search all properties' : basePlaceholder;
+  const placeholder = object ? `Search ${object.toLowerCase()} properties`
+    : hasLinked ? (tab === 'linked' ? 'Search associated objects' : `Search ${objectLabel!.toLowerCase()} properties`) : basePlaceholder;
   // a linked object's icon, from its api name (fields carry it), else a generic one
   const iconFor = (group: string): ObjectIconType => {
     const name = allFields.find((f) => f.group === group)?.association?.object;
     return (name && objectIcon?.(name)) || Boxes;
   };
-  const showTabs = hasLinked && !object && !q;
+  const showTabs = hasLinked && !object;
 
   function open(group: string) {
     // back from an object returns to the list of objects
@@ -513,7 +642,9 @@ function PropertyPicker({ anchor, button, fields: allFields, placeholder: basePl
             </button>
           );
         })}
-        {pickable.length === 0 && !(loading && !q && !object) && <p className="af-muted af-picker-none">No properties match.</p>}
+        {pickable.length === 0 && !(loading && !q && !object) && (
+          <p className="af-muted af-picker-none">{!object && tab === 'linked' && hasLinked ? 'No associated objects match.' : 'No properties match.'}</p>
+        )}
       </div>
     </div>,
     document.body

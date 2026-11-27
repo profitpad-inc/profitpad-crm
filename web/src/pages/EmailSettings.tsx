@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CopyField, SaveBar, SavedSecret, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { confirmDialog } from '../components/confirm';
+import { EmailSubscriptionTypes } from '../components/EmailSubscriptionTypes';
 import { CheckCircle2, Circle } from 'lucide-react';
 import '../email.css';
 
@@ -192,6 +193,8 @@ export function EmailSettings() {
           <textarea id="pm-mailing" rows={3} value={draft.mailing_address} onChange={set('mailing_address')} />
         </SettingRow>
       </SettingsSection>
+
+      <EmailSubscriptionTypes />
 
       <SettingsSection title="Replies" description="Whether replies to campaigns and tracked email come back into the CRM, where they show on the contact's timeline and in the campaign's Replied count.">
         <SettingRow label="Bring replies into the CRM" hint={draft.replies_enabled ? 'Replies come back through Postmark.' : 'Off: replies go to the default reply-to below, like any email, and the CRM does not see them.'}>

@@ -46,6 +46,14 @@ begin
 
   -- a new rate today: open deals follow, past ones stay
   update meta.pc_0007 set rate_to_base = 1.50 where code = 'EUR';
+  if exists (select 1 from meta.calc_queue where object_type_id = 'pc_0012' and record_id = v_open) then
+    raise exception 'a rate change leaves a note instead of queueing records itself';
+  end if;
+  if meta.expand_currency_calcs() < 2 then raise exception 'the note queues the EUR deals'; end if;
+  if exists (select 1 from meta.calc_queue where object_type_id = 'pc_0012' and record_id = v_none) then
+    raise exception 'a deal in another currency is not queued for a EUR rate';
+  end if;
+  if exists (select 1 from meta.currency_calc_notes) then raise exception 'expanding takes the notes'; end if;
   while meta.process_calc_queue(1000) > 0 loop end loop;
   if (select amount_base from crm.pc_0012 where pc_0012_id = v_open) <> 150 then raise exception 'open deals follow a new rate'; end if;
   if (select amount_base from crm.pc_0012 where pc_0012_id = v_past) <> 100 then raise exception 'past deals keep their rate'; end if;
@@ -54,6 +62,23 @@ begin
   update crm.pc_0012 set currency = array['USD'] where pc_0012_id = v_open;
   while meta.process_calc_queue(1000) > 0 loop end loop;
   if (select amount_base from crm.pc_0012 where pc_0012_id = v_open) <> 100 then raise exception 'the base currency converts to itself'; end if;
+
+  -- history rows in a currency only touch that currency; from the base, all
+  insert into meta.currency_rates (rate_date, from_code, to_code, rate, source, provider)
+  values (v_today - 1, 'EUR', 'USD', 1.40, 'provider', 'test');
+  if (select codes from meta.currency_calc_notes order by id desc limit 1) is distinct from array['EUR'] then
+    raise exception 'a EUR history row notes EUR';
+  end if;
+  insert into meta.currency_rates (rate_date, from_code, to_code, rate, source, provider)
+  values (v_today - 1, 'USD', 'EUR', 0.7, 'provider', 'test');
+  if (select codes from meta.currency_calc_notes order by id desc limit 1) is not null then
+    raise exception 'a history row from the base notes every currency';
+  end if;
+  perform meta.expand_currency_calcs();
+  if not exists (select 1 from meta.calc_queue where object_type_id = 'pc_0012' and record_id = v_none) then
+    raise exception 'a note for every currency queues every deal';
+  end if;
+  while meta.process_calc_queue(1000) > 0 loop end loop;
 
   -- a new base: the property shows in it
   select code into v_base from meta.pc_0007 where is_base;

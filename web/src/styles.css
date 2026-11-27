@@ -119,12 +119,12 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 /* a property being edited on a record page, or in the box over a table cell,
    is one field in one frame: the field itself has no box of its own and lines
    up with the label (or the cell's text) */
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, .select-face, .rich-box),
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, .select-face, .rich-box):focus {
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, .select-face, .rich-box),
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, .select-face, .rich-box):focus {
   border-color: transparent; background-color: transparent; box-shadow: none; outline: none; padding-left: 0;
 }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) :is(.rte, .code-editor, .ed-address, .hex-picker-input),
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) :is(.rte, .code-editor, .ed-address, .hex-picker-input):focus-within {
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) :is(.rte, .code-editor, .ed-address, .hex-picker-input),
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) :is(.rte, .code-editor, .ed-address, .hex-picker-input):focus-within {
   border-color: transparent; background-color: transparent; box-shadow: none; outline: none;
 }
 .muted { color: var(--muted-text); }
@@ -267,6 +267,8 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .modal.wide { width: min(860px, calc(100vw - 32px)); }
 .modal.discard-confirm { margin-top: 48px; }
 .confirm-message { margin: 0; white-space: pre-line; line-height: 1.5; }
+.prompt-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; font-size: 13px; font-weight: 600; }
+.prompt-field textarea { width: 100%; font-weight: 400; resize: vertical; }
 .confirm-details { margin-top: 12px; }
 .confirm-details .muted { margin: 0 0 6px; font-size: 13px; }
 .confirm-details ul { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius-sm); }
@@ -994,19 +996,19 @@ a.url-value { overflow-wrap: anywhere; }
 /* label column only as wide as its dropdown (wide layout; the narrow one
    below puts the label under the value) */
 @container (min-width: 321px) {
-  :is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-table.editing .mv-label { width: 1%; min-width: 0; padding-right: 8px; }
+  :is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-table.editing .mv-label { width: 1%; min-width: 0; padding-right: 8px; }
 }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-table.editing .mv-label :is(.select-face, input) {
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-table.editing .mv-label :is(.select-face, input) {
   width: auto; max-width: 100%; padding-block: 2px; font-size: 12px; color: var(--muted-text);
 }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-table.editing .mv-label .select-face { padding-right: 18px; background-position: right 2px center; }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .phone-input .phone-country { padding-right: 20px; background-position: right 4px center; }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-add { margin-left: -8px; }
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-table.editing .mv-label .select-face { padding-right: 18px; background-position: right 2px center; }
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .phone-input .phone-country { padding-right: 20px; background-position: right 4px center; }
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-add { margin-left: -8px; }
 /* a value too long for its box fades out on the side that is cut off
    (MultiValueEditor sets data-clip); boxed fields elsewhere show their edge */
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-value input[data-clip=right] { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-value input[data-clip=left] { mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
-:is(.record-page .prop-row.editing, .grid-editor, .scan-phone) .mv-value input[data-clip=both] { mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-value input[data-clip=right] { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-value input[data-clip=left] { mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
+:is(.record-page .prop-row.editing, .list-props .prop-row.editing, .grid-editor, .scan-phone) .mv-value input[data-clip=both] { mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 /* a narrow editor (the record page's property column, phones): the buttons
    sit beside the value and the label goes under it */
 @container (max-width: 320px) {

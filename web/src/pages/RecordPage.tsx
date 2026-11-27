@@ -67,7 +67,7 @@ interface Link_ {
 
 interface LinkLabel { label_id: string; label: string | null; side: 'from' | 'to' }
 
-interface Associated {
+export interface Associated {
   object: string;
   records: { record: CrmRecord; labels: (string | null)[]; links: LinkLabel[] }[];
 }
@@ -80,6 +80,8 @@ const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   booking_pages: ['calls'],
   // its email; the emails it sent are counted, not listed
   email_campaigns: ['email_templates'],
+  // the campaigns that send to it
+  lists: ['email_campaigns'],
   deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],
   // the parent has its own card (LineParentCard)
   lines: ['products'],
@@ -127,6 +129,17 @@ const PROP_SECTIONS: Record<string, { key: string; title: string; props: string[
     { key: 'notifications', title: 'Notifications', props: ['notify_mentions', 'notify_tasks'] },
     // automatic email logging (migration 0106)
     { key: 'email_logging', title: 'Email logging', props: ['email_autolog'] }
+  ],
+  // marketing email (migrations 0094, 0156, 0157): permission, subscription types and engagement dates, above System
+  contacts: [
+    {
+      key: 'email_marketing',
+      title: 'Email marketing',
+      props: [
+        'email_opt_out', 'email_opt_out_reason', 'email_opt_out_at', 'email_opt_in_reason',
+        'email_unsubscribed_topics', 'email_last_opened_at', 'email_last_clicked_at'
+      ]
+    }
   ]
 };
 
@@ -140,6 +153,8 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   files: ['public_token', 'storage_key'],
   views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries'],
   email_campaigns: ['audience'],
+  // the list page's member columns (pages/ListPage.tsx); its filters show as JSON
+  lists: ['member_columns'],
   // the Preview tab (EmailTemplateCard)
   email_templates: ['body'],
   emails: ['reply_token']
@@ -149,7 +164,9 @@ const ABOUT_ORDER: Record<string, string[]> = {
   booking_pages: [
     'name', 'public_name', 'description', 'status', 'host', 'rotation_id', 'max_guests', 'location_type', 'location_details',
     'min_notice_minutes', 'slot_step_minutes', 'buffer_before_minutes', 'buffer_after_minutes', 'max_days_ahead', 'daily_limit', 'email_settings'
-  ]
+  ],
+  // the list page's Settings tab (pages/ListPage.tsx)
+  lists: ['name', 'description', 'list_object', 'list_type', 'definition', 'refresh_schedule', 'member_count', 'last_refreshed_at', 'refresh_error']
 };
 function aboutOrder(object: string, list: Property[]): Property[] {
   const order = ABOUT_ORDER[object];
@@ -178,7 +195,7 @@ function recordLock(object: string, record: CrmRecord, associated: Associated[])
 
 // Every active record linked to one record, grouped by object, with the
 // name properties (and, for activities, the stream's properties).
-async function loadLinked(object: string, id: string, codeToName: Map<string, string>): Promise<Associated[]> {
+export async function loadLinked(object: string, id: string, codeToName: Map<string, string>): Promise<Associated[]> {
   const res = await api<{ results: Link_[] }>('GET', `/v1/objects/${object}/${id}/associations`);
   const byObject = new Map<string, Map<string, LinkLabel[]>>();
   for (const l of res.results) {
@@ -853,7 +870,7 @@ const HTML_HINTS: Record<string, string> = {
 };
 
 // flash: properties someone else just changed; changedBy: who changed each (live updates)
-function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy = {} }: {
+export function PropertyList({ schema, record, lock, onSaved, flash = null, changedBy = {} }: {
   schema: ObjectDef; record: CrmRecord; lock: RecordLock | null; onSaved: (r: CrmRecord) => void;
   flash?: Set<string> | null; changedBy?: Record<string, string | null>;
 }) {
@@ -2423,7 +2440,7 @@ function dayLabel(d: Date): string {
 }
 
 // Groups rows (already sorted newest first) under day headings.
-function byDay<T>(rows: T[], at: (row: T) => string | null | undefined): { day: string; rows: T[] }[] {
+export function byDay<T>(rows: T[], at: (row: T) => string | null | undefined): { day: string; rows: T[] }[] {
   const groups: { day: string; rows: T[] }[] = [];
   for (const row of rows) {
     const iso = at(row);
@@ -2434,7 +2451,7 @@ function byDay<T>(rows: T[], at: (row: T) => string | null | undefined): { day: 
   return groups;
 }
 
-function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
+export function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
   return (
     <>
       <div className="ledger-day">{day}</div>
@@ -2445,7 +2462,7 @@ function LedgerDay({ day, children }: { day: string; children: ReactNode }) {
 
 // ISO 8601 in the viewer's time zone, with its offset (2026-11-03T14:05:09-08:00),
 // so the time matches the day heading above it.
-function isoLocal(iso: string): string {
+export function isoLocal(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
   const offset = -d.getTimezoneOffset();
@@ -2523,7 +2540,12 @@ function actorName(h: HistoryRow): { name: string; key: boolean } {
 
 // fixedProperty: the history of that one property only (the property row's
 // history icon), without the property filter
-function ChangeHistory({ object, id, schema, fixedProperty }: { object: string; id: string; schema: ObjectDef; fixedProperty?: string }) {
+// renderValue: how a property's old and new values read (a list's filters as
+// a sentence); hideSettingsLink: no "Open in settings" for a fixed property.
+export function ChangeHistory({ object, id, schema, fixedProperty, renderValue, hideSettingsLink }: {
+  object: string; id: string; schema: ObjectDef; fixedProperty?: string;
+  renderValue?: (property: string, value: unknown) => ReactNode | undefined; hideSettingsLink?: boolean;
+}) {
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [facets, setFacets] = useState<HistoryFacets | null>(null);
   const [property, setProperty] = useState(fixedProperty ?? '');
@@ -2615,7 +2637,7 @@ function ChangeHistory({ object, id, schema, fixedProperty }: { object: string; 
             <option value="">Any way</option>
             {facets.via.map((v) => <option key={v} value={v}>{VIA_LABELS[v]}</option>)}
           </Select>
-          {fixedProperty && can(me, 'properties') && (
+          {fixedProperty && !hideSettingsLink && can(me, 'properties') && (
             <a
               className="history-settings-link push-right"
               href={`/settings/properties?object=${encodeURIComponent(object)}&s=${encodeURIComponent(fixedProperty)}`}
@@ -2694,9 +2716,9 @@ function ChangeHistory({ object, id, schema, fixedProperty }: { object: string; 
                         <div className="change-body">
                           <strong className="change-what">{propLabel(r.property)}</strong>
                           <div className="change-values">
-                            {r.old_value === null ? <span className="change-value old none">Empty</span> : <ShowMore className="change-value old">{historyValue(prop, r.old_value)}</ShowMore>}
+                            {r.old_value === null ? <span className="change-value old none">Empty</span> : <ShowMore className="change-value old">{renderValue?.(r.property, r.old_value) ?? historyValue(prop, r.old_value)}</ShowMore>}
                             <ArrowRight size={13} className="change-arrow" aria-label="to" />
-                            {r.new_value === null ? <span className="change-value none">Empty</span> : <ShowMore className="change-value">{historyValue(prop, r.new_value)}</ShowMore>}
+                            {r.new_value === null ? <span className="change-value none">Empty</span> : <ShowMore className="change-value">{renderValue?.(r.property, r.new_value) ?? historyValue(prop, r.new_value)}</ShowMore>}
                           </div>
                         </div>
                       </div>
@@ -2956,7 +2978,7 @@ function appliedChoices(links: LinkLabel[], labels: AssociationLabel[], sameObje
   return out;
 }
 
-function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, linked, onChanged }: {
+export function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, linked, onChanged }: {
   self: string; selfId: string; selfRecord: CrmRecord; other: string; items: { record: CrmRecord; labels: (string | null)[]; links: LinkLabel[] }[]; lineCount: number;
   // everything the page's record is linked to (a deal's companies and contacts, offered to a new quote)
   linked: Associated[];

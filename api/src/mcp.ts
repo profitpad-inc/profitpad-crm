@@ -40,6 +40,7 @@ import {
 import { findIcons, ICON_NAMES } from './icons.js';
 import { createOptionList, deleteOptionList, linkDropdown, listOptionLists, unlinkDropdown, updateOptionList } from './option-lists.js';
 import { registerEmailTools } from './email/mcp-tools.js';
+import { registerListTools } from './lists/mcp-tools.js';
 import { registerDisplayTools } from './display/mcp-tools.js';
 import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
@@ -88,6 +89,7 @@ Records are addressed by object api_name and record ID. You act as the signed-in
 get_record, create_record and update_record answer with url, the record's page in the CRM: whenever you create or change a record, or point the user to one, give them that url as a link (never a bare path or id).
 Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.
 To show the user a record or a list of records (they ask to see, show, open, pull up, list or browse contacts, companies, deals or any object), call show_record or show_records; for a chart, breakdown or trend of records (deals by stage, contacts per month, revenue by owner), call show_chart, which counts and adds up in the CRM itself. The CRM draws these cards in its own style and theme, so every answer looks the same. Never build your own visual, chart, widget, artifact or table of records, and do not repeat what the card shows. Use get_record and search_records when you need the data for yourself.
+Lists (object lists) are saved sets of records of one object, static or dynamic (filters, refreshed on a schedule); read lists_guide before making or changing one, and get_list_records gives the records in a list. Email campaigns go to the contact lists associated with them.
 Create tools take an optional client_request_id: send one, and if an answer is lost (502, timeout, dropped connection) call again with the same id and input to get the first result instead of a duplicate. Calls may run in parallel.`;
 
 // for connections whose user's roles let them read the knowledge base
@@ -145,7 +147,7 @@ const filterGroupsArg = z.array(z.object({
     association: z.object({ object: z.string(), label_id: z.string().optional() }).optional()
       .describe('Filter on linked records instead: property is a property of this other object (api_name), and the record matches when at least one linked record of it (that you can read; with label_id, linked under that label) meets the condition. E.g. deals whose company is in Canada: {"property": "address_country", "operator": "in", "values": ["CA"], "association": {"object": "companies"}}. property "__count" filters on how many linked records there are: has_property (any), not_has_property (none), or eq/neq/gt/gte/lt/lte/between a whole number. Search, exports and table views only.')
   }))
-})).optional().describe('Filters within a group are ANDed; groups are ORed. between uses values [low, high]; in/not_in use values.');
+})).optional().describe('Filters within a group are ANDed; groups are ORed. between uses values [low, high]; in/not_in use values. property "__list" filters on list membership: in (in any of these lists) or not_in (in none of them), values the list ids (object lists, of the same object; with association, the linked records\' lists).');
 
 export function buildServer(p: Principal, icons: { src: string; mimeType: string; sizes: string[] }[], req?: FastifyRequest): McpServer {
   const server = new McpServer(
@@ -669,6 +671,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
   }
 
   registerEmailTools(server, p);
+  registerListTools(server, p);
   registerDisplayTools(server, p, SERVER_TITLE);
   if (p.scopes.has('schema')) registerAdminTools(server, p, req);
   return server;

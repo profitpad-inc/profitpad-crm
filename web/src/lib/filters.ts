@@ -17,10 +17,30 @@ export interface Filter {
   // a property of linked records of this object (CRM tables only): matches
   // when at least one linked record meets the condition
   association?: { object: string; label_id?: string };
+  // lists only: compare with another property instead of a value (see
+  // CompareTo); the operator is then one of compareOperatorsFor
+  compare_to?: CompareTo;
 }
 
 export interface FilterGroup {
   filters: Filter[];
+}
+
+// The other side of a comparison (lists, api/src/lists/compile.ts): a
+// property of this record (no association), of its linked records (with
+// quantifier any or all), or of the same linked record as the condition.
+export interface CompareTo {
+  property: string;
+  association?: { object: string; label_id?: string };
+  quantifier?: 'any' | 'all';
+}
+
+// A dynamic list's filters (lists.definition): "all" ANDs the groups and ORs
+// the conditions inside each one; "any" ORs the groups and ANDs inside, like
+// a table's filters. No groups: every record.
+export interface ListDefinition {
+  match: 'all' | 'any';
+  groups: { conditions: Filter[] }[];
 }
 
 export type FilterFieldType = 'text' | 'number' | 'date' | 'datetime' | 'dropdown' | 'email' | 'phone' | 'other';
@@ -60,6 +80,9 @@ export interface OperatorDef {
 
 export const MAX_GROUPS = 5;
 export const MAX_FILTERS = 10;
+// lists allow more (api/src/lists/compile.ts)
+export const MAX_LIST_GROUPS = 10;
+export const MAX_LIST_CONDITIONS = 20;
 
 const KNOWN: OperatorDef[] = [
   { value: 'has_property', label: 'is known', input: 'none' },
@@ -136,7 +159,39 @@ const DROPDOWN_MULTI: OperatorDef[] = [
   ...KNOWN
 ];
 
+// ---- list membership (lists) --------------------------------------------------
+
+// The filter "property" for list membership (api/src/search.ts): in any of
+// the picked lists, or in none of them. Offered for the record's own object
+// and for linked objects, from the lists of that object.
+export const LIST_MEMBERSHIP = '__list';
+
+const LIST_OPS: OperatorDef[] = [
+  { value: 'in', label: 'is in any of these lists', input: 'option_list' },
+  { value: 'not_in', label: 'is in none of these lists', input: 'option_list' }
+];
+
+export const isListField = (field: FilterField) => (field.property ?? field.key) === LIST_MEMBERSHIP;
+
+export interface ListChoice { id: string; name: string; list_object: string }
+
+// The "List membership" field for an object's own records, or (association)
+// for its linked records of another object; null when that object has no
+// lists. exclude leaves one list out (a list can't name itself).
+export function listMembershipField(object: string, lists: ListChoice[], association?: { object: string; group: string; plural?: string }, exclude?: string): FilterField | null {
+  const target = association?.object ?? object;
+  const options = lists.filter((l) => l.list_object === target && l.id !== exclude).map((l) => ({ value: l.id, label: l.name }));
+  if (options.length === 0) return null;
+  return {
+    key: association ? `${association.object}.${LIST_MEMBERSHIP}` : LIST_MEMBERSHIP,
+    label: 'List membership', type: 'dropdown', options, multi: true,
+    description: 'Whether the record is in some lists (a dynamic list as of its last refresh)',
+    ...(association ? { property: LIST_MEMBERSHIP, association: { object: association.object }, group: association.group, groupPlural: association.plural } : {})
+  };
+}
+
 export function operatorsFor(field: FilterField): OperatorDef[] {
+  if (isListField(field)) return LIST_OPS;
   if (field.count) return COUNT;
   switch (field.type) {
     case 'text': return TEXT;
@@ -150,8 +205,73 @@ export function operatorsFor(field: FilterField): OperatorDef[] {
   }
 }
 
-export function operatorOf(field: FilterField | undefined, operator: string): OperatorDef | undefined {
-  return field ? operatorsFor(field).find((o) => o.value === operator) : undefined;
+export function operatorOf(field: FilterField | undefined, operator: string, compare = false): OperatorDef | undefined {
+  if (!field) return undefined;
+  return (compare ? compareOperatorsFor(field) : operatorsFor(field)).find((o) => o.value === operator);
+}
+
+// ---- comparing two properties (lists) ----------------------------------------
+
+// What kind of value a field compares as: only the same kinds compare, and
+// fields holding several values don't compare at all.
+export type CompareKind = 'number' | 'time' | 'text';
+export function compareKind(field: FilterField): CompareKind | null {
+  if (field.count || isListField(field)) return null;
+  switch (field.type) {
+    case 'number': return 'number';
+    case 'date': case 'datetime': return 'time';
+    case 'text': case 'email': case 'phone': return 'text';
+    case 'dropdown': return field.multi ? null : 'text';
+    default: return null;
+  }
+}
+
+const COMPARE_NUMBER: OperatorDef[] = [
+  { value: 'eq', label: 'is equal to', input: 'none' },
+  { value: 'neq', label: 'is not equal to', input: 'none' },
+  { value: 'gt', label: 'is greater than', input: 'none' },
+  { value: 'gte', label: 'is greater than or equal to', input: 'none' },
+  { value: 'lt', label: 'is less than', input: 'none' },
+  { value: 'lte', label: 'is less than or equal to', input: 'none' }
+];
+const COMPARE_TIME: OperatorDef[] = [
+  { value: 'gt', label: 'is after', input: 'none' },
+  { value: 'gte', label: 'is on or after', input: 'none' },
+  { value: 'lt', label: 'is before', input: 'none' },
+  { value: 'lte', label: 'is on or before', input: 'none' },
+  { value: 'eq', label: 'is the same as', input: 'none' },
+  { value: 'neq', label: 'is not the same as', input: 'none' }
+];
+const COMPARE_TEXT: OperatorDef[] = [
+  { value: 'eq', label: 'is equal to', input: 'none', text: true },
+  { value: 'neq', label: 'is not equal to', input: 'none', text: true }
+];
+
+export function compareOperatorsFor(field: FilterField): OperatorDef[] {
+  switch (compareKind(field)) {
+    case 'number': return COMPARE_NUMBER;
+    case 'time': return COMPARE_TIME;
+    case 'text': return field.type === 'email' || field.type === 'phone' ? COMPARE_TEXT.map(({ text: _t, ...o }) => o) : COMPARE_TEXT;
+    default: return [];
+  }
+}
+
+// The field a comparison points at, from its compare_to.
+export function compareKey(c: CompareTo): string {
+  return c.association ? `${c.association.object}.${c.property}` : c.property;
+}
+
+// The condition switched between comparing with a value and with another
+// property. Switching to a property keeps an operator that still applies.
+export function withCompare(field: FilterField, f: Filter, on: boolean): Filter {
+  const base: Filter = { property: f.property, operator: f.operator, ...(f.association ? { association: f.association } : {}) };
+  if (on) {
+    const ops = compareOperatorsFor(field);
+    const op = ops.find((o) => o.value === f.operator) ?? ops[0];
+    return { ...base, operator: op?.value ?? 'eq', compare_to: { property: '' }, ...(op?.text ? { case_sensitive: false } : {}) };
+  }
+  const fresh = newFilter(field);
+  return f.association?.label_id && fresh.association ? { ...fresh, association: { ...fresh.association, label_id: f.association.label_id } } : fresh;
 }
 
 // "days" after the number box: "is in the last 7 days", "is more than 30 days ago"
@@ -235,6 +355,7 @@ const filled = (v: unknown) => v !== undefined && v !== null && v !== '';
 
 // Whether the condition has everything its operator needs.
 export function filterComplete(f: Filter, field: FilterField | undefined): boolean {
+  if (f.compare_to) return !!f.compare_to.property && !!operatorOf(field, f.operator, true);
   const op = operatorOf(field, f.operator);
   if (!op) return false;
   switch (op.input) {
@@ -289,22 +410,46 @@ function orList(items: string[], word = 'or'): string {
   return items.length > 1 ? `${items.slice(0, -1).join(', ')} ${word} ${items[items.length - 1]}` : items.join('');
 }
 
-// "Name contains exactly "acme"", "Stage is any of Won or Lost"
-export function describeFilter(f: Filter, field: FilterField | undefined): string {
-  if (!field) return `${filterKey(f)} (not available)`;
+// A condition in three parts, for a sentence: what it looks at, how, and
+// against what ("Stage" "is any of" "Won or Lost"). value is empty for
+// operators that take none ("is known"); for a comparison it names the other
+// property ("Deal: Created at, for every associated deal").
+export function filterParts(f: Filter, field: FilterField | undefined, fields: FilterField[] = []): { subject: string; verb: string; value: string } {
+  if (!field) return { subject: filterKey(f), verb: '(not available)', value: '' };
+  if (f.compare_to) {
+    const op = operatorOf(field, f.operator, true);
+    const target = fields.find((x) => x.key === compareKey(f.compare_to!));
+    const linked = f.association?.object ?? f.compare_to.association?.object;
+    const group = linked ? (fields.find((x) => x.association?.object === linked)?.group ?? linked).toLowerCase() : '';
+    const name = target ? (target.group ? `${target.group}: ${target.label}` : target.label) : f.compare_to.property || 'another property';
+    return {
+      subject: field.label, verb: op?.label ?? f.operator,
+      value: `${name}${linked && f.compare_to.property ? `, for ${f.compare_to.quantifier === 'all' ? 'every' : 'any'} associated ${group}` : ''}`
+    };
+  }
   const op = operatorOf(field, f.operator);
-  if (!op) return `${field.label} ${f.operator}`;
+  if (!op) return { subject: field.label, verb: f.operator, value: '' };
   const quote = (v: unknown) => (field.type === 'number' || field.type === 'date' || field.type === 'datetime' ? String(v) : `"${String(v)}"`);
   const cs = op.text && f.case_sensitive ? ' (case sensitive)' : '';
+  const empty = (v: unknown) => v === undefined || v === null || v === '';
   switch (op.input) {
-    case 'none': return `${field.label} ${op.label}`;
-    case 'single': return `${field.label} ${op.label} ${quote(f.value)}${cs}`;
-    case 'days': return `${field.label} ${op.label} ${String(f.value)} ${daysSuffix(f.operator)}`;
-    case 'range': return `${field.label} ${op.label} ${String(f.values?.[0])} and ${String(f.values?.[1])}`;
+    case 'none': return { subject: field.label, verb: op.label, value: '' };
+    case 'single': return { subject: field.label, verb: op.label, value: empty(f.value) ? '…' : `${quote(f.value)}${cs}` };
+    case 'days': return { subject: field.label, verb: op.label, value: `${empty(f.value) ? '…' : String(f.value)} ${daysSuffix(f.operator)}` };
+    case 'range': return { subject: field.label, verb: op.label, value: `${String(f.values?.[0] ?? '…')} and ${String(f.values?.[1] ?? '…')}` };
     case 'text_list':
-    case 'number_list': return `${field.label} ${op.label} ${orList((f.values ?? []).map(quote))}${cs}`;
-    default: return `${field.label} ${op.label} ${orList((f.values ?? []).map((v) => optionText(field, v)), f.operator === 'contains_all' ? 'and' : 'or')}`;
+    case 'number_list': return { subject: field.label, verb: op.label, value: f.values?.length ? `${orList(f.values.map(quote))}${cs}` : '…' };
+    default: return {
+      subject: field.label, verb: op.label,
+      value: f.values?.length ? orList(f.values.map((v) => optionText(field, v)), f.operator === 'contains_all' ? 'and' : 'or') : '…'
+    };
   }
+}
+
+// "Name contains exactly "acme"", "Stage is any of Won or Lost"
+export function describeFilter(f: Filter, field: FilterField | undefined): string {
+  const { subject, verb, value } = filterParts(f, field);
+  return [subject, verb, value].filter(Boolean).join(' ');
 }
 
 // ---- for the search API ----------------------------------------------------
@@ -321,7 +466,7 @@ export function toSearchGroups(groups: FilterGroup[], fields: FilterField[]): Fi
   return completeGroups(groups, fields).map((g) => ({
     filters: g.filters.map((f) => {
       const field = byKey.get(filterKey(f));
-      if (field?.type !== 'datetime') return f;
+      if (field?.type !== 'datetime' || f.compare_to) return f;
       const start = (v: unknown) => localDay(String(v)).toISOString();
       const end = (v: unknown) => new Date(localDay(String(v), 1).getTime() - 1).toISOString();
       const base = { property: f.property, ...(f.association ? { association: f.association } : {}) };
@@ -334,6 +479,77 @@ export function toSearchGroups(groups: FilterGroup[], fields: FilterField[]): Fi
       }
     })
   }));
+}
+
+// toSearchGroups backwards, for groups saved in their search form (an email
+// campaign's audience): datetime conditions on whole local days go back to
+// days ("is on Nov 3"). Anything else, exact times included, stays as it is.
+export function fromSearchGroups(groups: FilterGroup[], fields: FilterField[]): FilterGroup[] {
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+  const dayOfStart = (v: unknown): string | null => {
+    const d = new Date(String(v));
+    if (Number.isNaN(d.getTime())) return null;
+    const day = dayOf(d, 'datetime');
+    return day && localDay(day).getTime() === d.getTime() ? day : null;
+  };
+  const dayOfEnd = (v: unknown): string | null => {
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? null : dayOfStart(new Date(d.getTime() + 1).toISOString());
+  };
+  const prevDay = (day: string) => dayOf(localDay(day, -1), 'datetime')!;
+  return groups.map((g) => ({
+    filters: g.filters.map((f) => {
+      if (byKey.get(filterKey(f))?.type !== 'datetime' || f.compare_to) return f;
+      const base = { property: f.property, ...(f.association ? { association: f.association } : {}) };
+      if (f.operator === 'lt') {
+        const day = dayOfStart(f.value);
+        return day ? { ...base, operator: 'lt', value: day } : f;
+      }
+      if (f.operator === 'gt') {
+        const next = dayOfEnd(f.value);
+        return next ? { ...base, operator: 'gt', value: prevDay(next) } : f;
+      }
+      if (f.operator === 'between' && f.values?.length === 2) {
+        const from = dayOfStart(f.values[0]);
+        const next = dayOfEnd(f.values[1]);
+        if (!from || !next) return f;
+        const to = prevDay(next);
+        return from === to ? { ...base, operator: 'eq', value: from } : { ...base, operator: 'between', values: [from, to] };
+      }
+      return f;
+    })
+  }));
+}
+
+// A list's definition as the filter editor's groups and back: a group's
+// conditions are its filters.
+export function definitionGroups(def: ListDefinition): FilterGroup[] {
+  return def.groups.map((g) => ({ filters: g.conditions }));
+}
+
+export function groupsDefinition(match: 'all' | 'any', groups: FilterGroup[]): ListDefinition {
+  return { match, groups: groups.map((g) => ({ conditions: g.filters })) };
+}
+
+// The definition as saved: finished conditions only, datetime days as exact
+// times (toSearchGroups), and back for the editor.
+export function toSearchDefinition(def: ListDefinition, fields: FilterField[]): ListDefinition {
+  return groupsDefinition(def.match, toSearchGroups(definitionGroups(def), fields));
+}
+
+export function fromSearchDefinition(def: ListDefinition, fields: FilterField[]): ListDefinition {
+  return groupsDefinition(def.match, fromSearchGroups(definitionGroups(def), fields));
+}
+
+// The stored text of lists.definition, read loosely (the API checks it).
+export function parseDefinitionText(v: unknown): ListDefinition {
+  if (typeof v !== 'string' || !v.trim()) return { match: 'all', groups: [] };
+  try {
+    const d = JSON.parse(v) as Partial<ListDefinition>;
+    return { match: d.match === 'any' ? 'any' : 'all', groups: Array.isArray(d.groups) ? d.groups.filter((g) => Array.isArray(g?.conditions)) : [] };
+  } catch {
+    return { match: 'all', groups: [] };
+  }
 }
 
 // An object's properties as filter fields (CRM schema shape, typed loosely so

@@ -4,6 +4,7 @@ import { useApp } from '../lib/app-context';
 import { Modal, PropertyInput, fromInput, isEditable } from './ui';
 import { Select } from './Select';
 import { loadTemplateChoices, templateOptions, TEMPLATE_OBJECTS, type TemplateChoice } from '../lib/templates';
+import '../lists.css';
 
 // New quotes expire this many days from today unless the user picks a date.
 const QUOTE_EXPIRY_DAYS = 30;
@@ -35,7 +36,14 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   copyLinks?: { label: string; groups: { object: string; singular: string; plural: string; records: { id: string; name: string }[] }[] };
   startWith?: Record<string, unknown>;
 }) {
-  const { me } = useApp();
+  const { me, objects } = useApp();
+  // a list's object is picked from the objects a list can hold: the main CRM
+  // objects first, then the rest A to Z
+  const LIST_FIRST = ['contacts', 'companies', 'deals', 'tickets'];
+  const rank = (o: { api_name: string }) => { const i = LIST_FIRST.indexOf(o.api_name); return i < 0 ? LIST_FIRST.length : i; };
+  const listObjects = objects.filter((o) => o.kind !== 'system' && o.api_name !== 'lists')
+    .sort((x, y) => rank(x) - rank(y) || x.label_plural.localeCompare(y.label_plural))
+    .map((o) => ({ value: o.api_name, label: o.label_plural }));
   const editable = object.properties.filter((p) => isEditable(p) && p.api_name !== 'created_at');
   const form = object.create_form;
   const fields = form.fields.map((n) => editable.find((p) => p.api_name === n)).filter((p): p is NonNullable<typeof p> => !!p);
@@ -46,6 +54,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       if (p.dropdown_options?.some((o) => o.api_value === me.user!.id && o.record_status === 'active')) defaults[p.api_name] = me.user.id;
     }
     if (object.api_name === 'quotes' && fields.some((p) => p.api_name === 'expiration_date')) defaults.expiration_date = daysFromToday(QUOTE_EXPIRY_DAYS);
+    if (object.api_name === 'lists') defaults.list_type = 'dynamic';
     return defaults;
   });
   // property: shown under that field when the API says which one failed
@@ -62,6 +71,11 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   // default changes still apply
   const [templates, setTemplates] = useState<TemplateChoice[]>([]);
   const [template, setTemplate] = useState('');
+  // lists: a name and an object before Create; a static list has no refresh schedule
+  const isList = object.api_name === 'lists';
+  const required = isList ? ['name', 'list_object'] : [];
+  const missing = required.some((n) => !String(values[n] ?? '').trim());
+  const listStatic = isList && values.list_type === 'static';
 
   useEffect(() => {
     if (!TEMPLATE_OBJECTS.includes(object.api_name)) return;
@@ -125,17 +139,26 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Creating…' : created ? 'Try copying again' : 'Create'}</button>
+          <button className="btn primary" onClick={save} disabled={busy || missing} title={missing ? 'Give the list a name and pick its object first' : undefined}>
+            {busy ? 'Creating…' : created ? 'Try copying again' : 'Create'}
+          </button>
         </>
       }
     >
       <div className="form">
-        {fields.map((p, i) => (
+        {fields.filter((p) => !(listStatic && p.api_name === 'refresh_schedule')).map((p, i) => (
           <label key={p.api_name} className="field">
-            <span title={p.description || undefined}>{p.label}</span>
-            <PropertyInput property={p} object={object.api_name} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))}
-              onFill={(v) => { setValues((s) => ({ ...s, ...v })); setFilled((f) => new Set([...f, ...Object.keys(v)])); }}
-            />
+            <span title={p.description || undefined}>{p.label}{required.includes(p.api_name) && <span className="required-mark" aria-label="required"> *</span>}</span>
+            {object.api_name === 'lists' && p.api_name === 'list_object' ? (
+              <Select value={String(values[p.api_name] ?? '')} aria-label={p.label} search
+                onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))}
+                options={[{ value: '', label: 'Pick an object' }, ...listObjects]} />
+            ) : (
+              <PropertyInput property={p} object={object.api_name} value={values[p.api_name] ?? ''} autoFocus={i === 0} onChange={(v) => setValues((s) => ({ ...s, [p.api_name]: v }))}
+                onFill={(v) => { setValues((s) => ({ ...s, ...v })); setFilled((f) => new Set([...f, ...Object.keys(v)])); }}
+              />
+            )}
+            {isList && p.api_name === 'list_type' && <ListTypeHelp type={listStatic ? 'static' : 'dynamic'} />}
             {error?.property === p.api_name && <div className="error prop-error" role="alert">{error.message}</div>}
           </label>
         ))}
@@ -163,4 +186,11 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
       </div>
     </Modal>
   );
+}
+
+// What the two kinds of list are, under the Type menu: the picked one first.
+function ListTypeHelp({ type }: { type: 'static' | 'dynamic' }) {
+  const dynamic = <p key="d" className={`list-type-help${type === 'dynamic' ? ' picked' : ''}`}><strong>Dynamic:</strong> the records that match the filters you set on the list, worked out again on a schedule (every 15 minutes to daily), so records join and leave by themselves. For groups that change, like contacts in Toronto or deals closing this month. A list can switch type later.</p>;
+  const fixed = <p key="s" className={`list-type-help${type === 'static' ? ' picked' : ''}`}><strong>Static:</strong> the records you add, by hand, with Add to list from a table, or once from filters. Nothing joins or leaves unless someone changes it. For a fixed group, like the guests of one event.</p>;
+  return <div className="list-type-helps">{type === 'dynamic' ? [dynamic, fixed] : [fixed, dynamic]}</div>;
 }

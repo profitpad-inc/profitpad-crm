@@ -52,6 +52,8 @@ import { startNotificationEmailWorker } from './notifications/emails.js';
 import { emailRoutes } from './routes/email.js';
 import { startEmailWorker } from './email/campaigns.js';
 import { bulkJobRoutes, startBulkJobWorker } from './bulk-jobs.js';
+import { listRoutes } from './routes/lists.js';
+import { startListWorker } from './lists/worker.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -265,11 +267,14 @@ export async function buildApp() {
   await app.register(notificationRoutes);
   await app.register(emailRoutes);
   await app.register(bulkJobRoutes);
+  await app.register(listRoutes);
   return app;
 }
 
 // Calculations are recomputed from meta.calc_queue in the background, and
 // every 30 s the running record counts fold their changes in (migration 0147).
+// Exchange rate changes only leave a note; each tick first turns waiting
+// notes into queued records (migration 0158).
 function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
   let running = false;
   let ticks = 0;
@@ -277,6 +282,7 @@ function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
     if (running) return;
     running = true;
     try {
+      await pool.query('select meta.expand_currency_calcs()');
       await drainCalcQueue(20);
       if (++ticks % 15 === 0) await pool.query('select meta.compact_record_counts()');
     } catch (err) {
@@ -300,6 +306,7 @@ const stopCalendars = startCalendarWorker(app.log);
 const stopNotificationEmails = startNotificationEmailWorker(app.log);
 const stopEmail = startEmailWorker(app.log);
 const stopBulkJobs = startBulkJobWorker(app.log);
+const stopLists = startListWorker(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
@@ -313,6 +320,7 @@ const shutdown = async () => {
   stopNotificationEmails();
   stopEmail();
   stopBulkJobs();
+  stopLists();
   await app.close();
   await pool.end();
   process.exit(0);

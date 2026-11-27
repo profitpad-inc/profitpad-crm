@@ -29,8 +29,9 @@ export function moveTo<T>(list: T[], from: number, to: number): T[] {
 
 const key = (c: Column) => (c.type === 'property' ? `p:${c.property}` : `a:${c.object}:${c.label_id ?? ''}`);
 
-export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
-  schema: ObjectDef; labels: AssociationLabel[]; columns: Column[]; onClose: () => void; onSave: (c: Column[]) => void;
+// propertiesOnly: no association columns (a list's members table)
+export function ColumnPicker({ schema, labels, columns, onClose, onSave, propertiesOnly }: {
+  schema: ObjectDef; labels: AssociationLabel[]; columns: Column[]; onClose: () => void; onSave: (c: Column[]) => void; propertiesOnly?: boolean;
 }) {
   const { objects, objectByName } = useApp();
   const [selected, setSelected] = useState<Column[]>(columns);
@@ -43,7 +44,7 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
       .filter((p) => p.record_status === 'active' && p.api_name !== 'object_type_id' && p.api_name !== 'merged_ids')
       .map((p) => ({ column: { type: 'property', property: p.api_name } as Column, label: p.label, group: 'Properties' }));
     const assoc: { column: Column; label: string; group: string }[] = [];
-    for (const other of objects) {
+    for (const other of propertiesOnly ? [] : objects) {
       if (!schema.links_to.includes(other.api_name)) continue;
       assoc.push({ column: { type: 'association', object: other.api_name, label_id: null }, label: `${other.label_plural} (all)`, group: 'Associations' });
       for (const l of labels) {
@@ -56,7 +57,7 @@ export function ColumnPicker({ schema, labels, columns, onClose, onSave }: {
       }
     }
     return [...props, ...assoc];
-  }, [schema, labels, objects, objectByName]);
+  }, [schema, labels, objects, objectByName, propertiesOnly]);
 
   const chosen = new Set(selected.map(key));
   const labelOf = (c: Column) => available.find((a) => key(a.column) === key(c))?.label ?? key(c);

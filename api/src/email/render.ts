@@ -14,7 +14,8 @@ import type { EmailSettings } from './settings.js';
 // Fields a template can use:
 //   {{ contact.first_name }}, {{ contact.email }}, ... (any contact property)
 //   {{ company.name }}, {{ owner.first_name }}, {{ owner.email }}
-//   {{ campaign.name }}, {{ unsubscribe_url }}, {{ mailing_address }}, {{ today }}
+//   {{ campaign.name }}, {{ campaign.subscription_type }} (its label),
+//   {{ unsubscribe_url }}, {{ mailing_address }}, {{ today }}
 
 export interface CampaignRow {
   id: string;
@@ -26,6 +27,9 @@ export interface CampaignRow {
   audience: string | null;
   status: string | null;
   scheduled_at: Date | null;
+  // email subscription type (0157): its value and label
+  subscription_type: string | null;
+  subscription_type_label: string | null;
 }
 
 export interface TemplateParts {
@@ -37,8 +41,11 @@ export interface TemplateParts {
 
 export async function loadCampaign(id: string): Promise<CampaignRow | null> {
   const { rows } = await pool.query(
-    `select pc_0058_id as id, name, subject, preheader, from_name, from_address, audience, status[1] as status, scheduled_at
-     from crm.pc_0058 where pc_0058_id = $1 and record_status = 'active'`,
+    `select k.pc_0058_id as id, k.name, k.subject, k.preheader, k.from_name, k.from_address, k.audience, k.status[1] as status, k.scheduled_at,
+            k.subscription_type[1] as subscription_type,
+            (select o.label from meta.pc_0003 o join meta.pc_0002 p on p.pc_0002_id = o.property_id
+             where p.object_type_id = 'pc_0058' and p.api_name = 'subscription_type' and o.api_value = k.subscription_type[1]) as subscription_type_label
+     from crm.pc_0058 k where k.pc_0058_id = $1 and k.record_status = 'active'`,
     [id]
   );
   return rows[0] ?? null;
@@ -94,10 +101,16 @@ export async function contactData(ids: string[]): Promise<Map<string, ContactDat
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
-function footer(mailingAddress: string | null, unsubscribeUrl: string | null): string {
+// With a subscription type the footer says which one, and the link opens the
+// preference page (unsubscribe from this type, choose others, or leave all).
+function footer(mailingAddress: string | null, unsubscribeUrl: string | null, topicLabel: string | null = null): string {
   const parts: string[] = [];
   if (mailingAddress) parts.push(escapeHtml(mailingAddress).replace(/\r?\n/g, '<br>'));
-  if (unsubscribeUrl) parts.push(`<a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline">Unsubscribe</a>`);
+  if (unsubscribeUrl && topicLabel) {
+    parts.push(`You are getting this as ${escapeHtml(topicLabel)} email. <a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline">Unsubscribe or choose what you get</a>`);
+  } else if (unsubscribeUrl) {
+    parts.push(`<a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline">Unsubscribe</a>`);
+  }
   if (!parts.length) return '';
   return `<div style="margin:32px auto 0;max-width:600px;padding:16px;text-align:center;font:12px/1.5 Arial,Helvetica,sans-serif;color:#6b7280">${parts.join('<br>')}</div>`;
 }
@@ -142,7 +155,7 @@ export async function renderCampaignEmail(
     contact: who.contact,
     company: who.company,
     owner: who.owner,
-    campaign: { id: campaign.id, name: campaign.name },
+    campaign: { id: campaign.id, name: campaign.name, subscription_type: campaign.subscription_type_label ?? '' },
     unsubscribe_url: unsubscribeUrl ?? '',
     mailing_address: settings.mailing_address ?? '',
     today: new Date().toISOString().slice(0, 10),
@@ -159,7 +172,7 @@ export async function renderCampaignEmail(
   const html = placeBody(
     body,
     campaign.preheader ? preheaderHtml(campaign.preheader) : '',
-    placesLink ? '' : footer(settings.mailing_address, unsubscribeUrl)
+    placesLink ? '' : footer(settings.mailing_address, unsubscribeUrl, campaign.subscription_type_label)
   );
   return { subject, html };
 }

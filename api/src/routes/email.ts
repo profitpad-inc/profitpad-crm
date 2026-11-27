@@ -10,15 +10,17 @@ import { sendEmail } from '../email/send.js';
 import { handleEvent, handleInbound, optOut } from '../email/events.js';
 import { readUnsubscribeToken, unsubscribePageUrl, unsubscribeToken } from '../email/links.js';
 import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout } from '../email/render.js';
-import { cancelCampaign, checkCampaign, countAudience, refreshCounts, sampleAudience, startCampaign } from '../email/campaigns.js';
+import { campaignLists, cancelCampaign, checkCampaign, countAudience, listIds, refreshCounts, sampleAudience, startCampaign } from '../email/campaigns.js';
 import { EMAIL_ACTOR } from '../email/send.js';
+import { addTopic, contactTopics, leaveTopic, listTopics, setContactTopics, topicCounts, updateTopic } from '../email/topics.js';
 
 // Email through Postmark (api/src/email/*):
 //   Settings → Email                 GET/PUT /v1/email/settings, POST /v1/email/test
+//   subscription types               GET/POST /v1/email/subscription-types, PATCH .../:value
 //   campaigns                        /v1/email/campaigns/:id/{check,preview,test,send,cancel}
-//   audience size while editing      POST /v1/email/audience
+//   audience size of some lists      POST /v1/email/audience {list_ids, subscription_type}
 //   Postmark's calls                 POST /v1/postmark/webhook, /v1/postmark/inbound (basic auth)
-//   the unsubscribe page             GET/POST /v1/public/unsubscribe/:token
+//   the preference page              GET/POST /v1/public/unsubscribe/:token
 
 const ID = /^[0-9a-f]{10}$/;
 
@@ -53,7 +55,7 @@ export async function previewCampaign(id: string, contactId: unknown) {
   let cid = typeof contactId === 'string' && ID.test(contactId) ? contactId : null;
   if (!cid) {
     try {
-      cid = (await sampleAudience(campaign.audience, 1))[0]?.id ?? null;
+      cid = (await sampleAudience((await campaignLists(pool, id)).map((l) => l.id), 1, campaign.subscription_type))[0]?.id ?? null;
     } catch {
       cid = null;
     }
@@ -108,12 +110,42 @@ export async function emailRoutes(app: FastifyInstance) {
     return { sent_to: to, message_id: res.message_id };
   });
 
+  // ---- subscription types (topics contacts can leave one at a time) ----
+
+  // Anyone who can read campaigns sees the types (the campaign editor picks
+  // one); only email admins change them.
+  app.get<{ Querystring: { include_archived?: string } }>('/v1/email/subscription-types', async (req) => {
+    const p = req.principal!;
+    requireScope(p, 'read');
+    const all = req.query.include_archived === 'true' || req.query.include_archived === '1';
+    if (all) requireAdminUser(p);
+    const [types, counts] = await Promise.all([listTopics({ includeArchived: all }), all ? topicCounts() : Promise.resolve(null)]);
+    return { subscription_types: types.map((t) => (counts ? { ...t, unsubscribed_count: counts[t.value] ?? 0 } : t)) };
+  });
+
+  app.post<{ Body: { label?: unknown; description?: unknown } }>('/v1/email/subscription-types', async (req, reply) => {
+    const p = req.principal!;
+    requireAdminUser(p);
+    requireScope(p, 'write');
+    reply.code(201);
+    return addTopic(p, req.body ?? {});
+  });
+
+  app.patch<{ Params: { value: string }; Body: { label?: unknown; description?: unknown; status?: unknown } }>('/v1/email/subscription-types/:value', async (req) => {
+    const p = req.principal!;
+    requireAdminUser(p);
+    requireScope(p, 'write');
+    return updateTopic(p, req.params.value, req.body ?? {});
+  });
+
   // ---- campaigns ----
 
-  app.post<{ Body: { audience?: unknown } }>('/v1/email/audience', async (req) => {
+  // how many contacts some lists reach (the campaign editor, while its lists change)
+  app.post<{ Body: { list_ids?: unknown; subscription_type?: unknown } }>('/v1/email/audience', async (req) => {
     await requireCampaignEdit(req.principal!);
-    const audience = req.body?.audience;
-    const [count, sample] = await Promise.all([countAudience(audience), sampleAudience(audience, 5)]);
+    const { list_ids, subscription_type: topic } = req.body ?? {};
+    const ids = listIds(list_ids);
+    const [count, sample] = await Promise.all([countAudience(ids, topic), sampleAudience(ids, 5, topic)]);
     return { count, sample };
   });
 
@@ -208,30 +240,78 @@ export async function emailRoutes(app: FastifyInstance) {
     const t = readUnsubscribeToken(token);
     if (!t) throw notFound('This unsubscribe link is not valid.');
     const { rows } = await pool.query(
-      `select pc_0010_id as id, email -> 0 ->> 'value' as email, email_opt_out[1] = 'true' as opted_out from crm.pc_0010 where pc_0010_id = $1 and record_status = 'active'`,
+      `select pc_0010_id as id, email -> 0 ->> 'value' as email, email_opt_out[1] = 'true' as opted_out, email_opt_out_reason[1] as reason
+       from crm.pc_0010 where pc_0010_id = $1 and record_status = 'active'`,
       [t.contactId]
     );
     if (!rows[0]) throw notFound('This unsubscribe link is not valid.');
-    return { ...t, email: rows[0].email as string | null, opted_out: rows[0].opted_out === true };
+    // the subscription type of the campaign the link came in, while it is an active type
+    let topic: string | null = null;
+    if (t.campaignId) {
+      const { rows: k } = await pool.query('select subscription_type[1] as t from crm.pc_0058 where pc_0058_id = $1', [t.campaignId]);
+      topic = k[0]?.t ?? null;
+    }
+    return { ...t, email: rows[0].email as string | null, opted_out: rows[0].opted_out === true, reason: rows[0].reason as string | null, topic };
+  }
+
+  type TokenContact = Awaited<ReturnType<typeof tokenContact>>;
+
+  // What the preference page shows: every active type with whether the
+  // contact still gets it, and whether they left all marketing email. Only
+  // someone who unsubscribed themselves can come back here; bounces, spam
+  // complaints and opt-outs set by hand stay as they are.
+  async function pageState(c: TokenContact) {
+    const [topics, left] = await Promise.all([listTopics(), contactTopics(pool, c.contactId)]);
+    const s = await loadEmailSettings();
+    return {
+      email: mask(c.email),
+      opted_out: c.opted_out,
+      can_resubscribe: c.opted_out && c.reason === 'unsubscribed',
+      sender: s.marketing_from_name || s.from_name,
+      campaign_topic: topics.some((t) => t.value === c.topic) ? c.topic : null,
+      topics: topics.map((t) => ({ value: t.value, label: t.label, description: t.description, subscribed: !left.includes(t.value) }))
+    };
   }
 
   app.get<{ Params: { token: string } }>('/v1/public/unsubscribe/:token', async (req) => {
     rateLimit(req, 'unsubscribe', 60);
     const c = await tokenContact(req.params.token);
-    const s = await loadEmailSettings();
     const { rows } = await pool.query("select value from ui.settings where key = 'theme'");
-    return { email: mask(c.email), opted_out: c.opted_out, sender: s.marketing_from_name || s.from_name, theme: rows[0]?.value ?? {} };
+    return { ...(await pageState(c)), theme: rows[0]?.value ?? {} };
   });
 
-  // The page's button, and mail apps' one-click unsubscribe (RFC 8058),
+  // The preference page and mail apps' one-click unsubscribe (RFC 8058),
   // which posts "List-Unsubscribe=One-Click" as a form (the app already
-  // parses form posts, for OAuth). The body is not needed: the token says who.
-  app.post<{ Params: { token: string } }>('/v1/public/unsubscribe/:token', { bodyLimit: 4096 }, async (req) => {
+  // parses form posts, for OAuth). The page sends JSON:
+  //   {"action": "unsubscribe_all"}                     leave all marketing email
+  //   {"action": "save", "unsubscribed": [types...],
+  //    "resubscribe": true}                             the types they do not want
+  //                                                     (and back to marketing email)
+  // Anything else is the one-click button: it leaves the campaign's type, or
+  // all marketing email when the campaign has no type.
+  app.post<{ Params: { token: string } }>('/v1/public/unsubscribe/:token', { bodyLimit: 8192 }, async (req) => {
     rateLimit(req, 'unsubscribe', 30);
     const c = await tokenContact(req.params.token);
-    if (!c.opted_out) {
-      await withTx({ ...EMAIL_ACTOR, source: 'unsubscribe' }, (client) => optOut(client, [c.contactId], 'unsubscribed', c.campaignId));
-    }
-    return { email: mask(c.email), opted_out: true };
+    const b = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    const topics = await listTopics();
+    const campaignTopic = c.topic && topics.some((t) => t.value === c.topic) ? c.topic : null;
+    await withTx({ ...EMAIL_ACTOR, source: 'unsubscribe' }, async (client) => {
+      if (b.action === 'save') {
+        await setContactTopics(client, c.contactId, b.unsubscribed, c.campaignId ? { id: c.campaignId, topic: campaignTopic } : null);
+        if (b.resubscribe === true && c.opted_out && c.reason === 'unsubscribed') {
+          await client.query(
+            // the person chose it themselves: that is the legal reason (0156)
+            `update crm.pc_0010 set email_opt_out = '{false}', email_opt_out_reason = null, email_opt_out_at = null,
+               email_opt_in_reason = 'Subscribed again themselves on the email preference page' where pc_0010_id = $1`,
+            [c.contactId]
+          );
+        }
+      } else if (b.action === 'unsubscribe_all' || !campaignTopic) {
+        if (!c.opted_out) await optOut(client, [c.contactId], 'unsubscribed', c.campaignId);
+      } else {
+        await leaveTopic(client, c.contactId, campaignTopic, c.campaignId);
+      }
+    });
+    return pageState(await tokenContact(req.params.token));
   });
 }
