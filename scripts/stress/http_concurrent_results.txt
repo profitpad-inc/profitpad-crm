@@ -1,0 +1,33 @@
+users=5 duration=109s actions=49 (0.4/s) errors=8 p50=1775ms p95=10722ms max=25990ms
+  companies_table_default_view     n=   5 p50=   1193 p95=   1775
+  contacts_search_smith            n=   4 p50=  20799 p95=  20799 errors=[504]x3
+  contacts_table_default_view      n=   4 p50=   8185 p95=  10605
+  contacts_table_newest            n=   8 p50=  10016 p95=  10722
+  deals_table_default_view         n=   4 p50=   1677 p95=   3127
+  global_search_sarah              n=   6 p50=  25990 p95=  25990 errors=[504]x5
+  home_counts                      n=   4 p50=   5556 p95=   6149
+  record_page_company              n=   6 p50=    243 p95=   4906
+  record_page_contact              n=   8 p50=    272 p95=    332
+
+users=10 duration=124s actions=63 (0.5/s) errors=10 p50=10775ms p95=25337ms max=36092ms
+  companies_table_default_view     n=   1 p50=   9834 p95=   9834
+  contacts_search_smith            n=   7 p50=  36092 p95=  36092 errors=[504]x6
+  contacts_table_default_view      n=   9 p50=  17977 p95=  25337
+  contacts_table_newest            n=  13 p50=  15283 p95=  23794
+  deals_table_default_view         n=  11 p50=   5010 p95=  11195
+  global_search_sarah              n=   4 p50=      0 p95=      0 errors=[504]x4
+  home_counts                      n=   4 p50=  10382 p95=  18838
+  record_page_company              n=   8 p50=   9841 p95=  25638
+  record_page_contact              n=   6 p50=   5924 p95=  14266
+
+users=20 duration=127s actions=69 (0.5/s) errors=15 p50=24363ms p95=55700ms max=55878ms
+  companies_table_default_view     n=   3 p50=  24363 p95=  27969
+  contacts_search_smith            n=   6 p50=      0 p95=      0 errors=[504]x6
+  contacts_table_default_view      n=   4 p50=  24807 p95=  30432
+  contacts_table_newest            n=  14 p50=  24371 p95=  30435
+  deals_table_default_view         n=   9 p50=  12858 p95=  26140
+  global_search_sarah              n=   9 p50=      0 p95=      0 errors=[504]x9
+  home_counts                      n=   3 p50=  24025 p95=  31360
+  record_page_company              n=   6 p50=  55531 p95=  55748
+  record_page_contact              n=  15 p50=  27904 p95=  55818
+

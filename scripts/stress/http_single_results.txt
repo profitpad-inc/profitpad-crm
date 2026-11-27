@@ -1,0 +1,15 @@
+me                               median       46 ms  min      41  max     144
+home_counts                      median     1122 ms  min    1051  max    1181
+contacts_table_default_view      median     2012 ms  min    1793  max    2177
+contacts_table_newest            median     1640 ms  min    1587  max    1888
+contacts_table_page_100          median     1727 ms  min    1561  max    3080
+contacts_search_smith            median    10626 ms  min   10506  max   10895
+contacts_search_rare             median     9583 ms  min    9335  max    9669
+contacts_filter_owner_stage      median      988 ms  min     853  max    1131
+companies_table_default_view     median      352 ms  min     319  max     468
+companies_search_acme            median      472 ms  min     422  max     650
+deals_table_default_view         median      527 ms  min     468  max     580
+global_search_acme               median    11426 ms  min   11289  max   15769
+global_search_sarah              median     7373 ms  min    7030  max   11412
+record_page_contact              median      152 ms  min     145  max     243
+record_page_company              median      154 ms  min     139  max     241
