@@ -20,6 +20,7 @@ import { ViewCode } from '../components/ViewCode';
 import { LandingPageCard } from '../components/LandingPageCard';
 import { QuotePreview } from '../components/QuotePreview';
 import { DocumentTemplateEditor } from '../components/DocumentTemplateEditor';
+import { EmailTemplateCard } from '../components/EmailTemplateCard';
 import { EmailCampaignEditor } from '../components/EmailCampaignEditor';
 import { EmailTracking } from '../components/EmailTracking';
 import { ViewIconAvatar } from '../components/IconPicker';
@@ -139,6 +140,8 @@ const HIDDEN_PROPS: Record<string, string[]> = {
   files: ['public_token', 'storage_key'],
   views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries'],
   email_campaigns: ['audience'],
+  // the Preview tab (EmailTemplateCard)
+  email_templates: ['body'],
   emails: ['reply_token']
 };
 // "About this ..." order: these first, in this order, then the rest as before
@@ -577,12 +580,19 @@ export function RecordPage() {
       <Comments object={object} id={record.id} readOnly={record.record_status === 'archived'} highlight={new URLSearchParams(location.search).get('comment')} />
     </div>
   );
-  // Landing pages and quotes lead their middle column with a Preview tab (the page,
-  // or the quote as the customer sees it), then Activity and Changes
+  // Landing pages, document and email templates and quotes lead their middle column
+  // with a Preview tab (the page, the template, the email, or the quote as the
+  // customer sees it), then Activity and Changes
   const preview = object === 'landing_pages'
     ? (record.record_status === 'archived'
       ? <div className="card muted">Archived landing pages do not open. Restore this page to see it.</div>
       : <LandingPageCard record={record} onChanged={setRecord} />)
+    : object === 'document_templates'
+      ? (record.record_status === 'archived'
+        ? <div className="card muted">Archived templates are not used. Restore this template to see its code.</div>
+        : <DocumentTemplateEditor record={record} onChanged={setRecord} />)
+    : object === 'email_templates'
+      ? <EmailTemplateCard record={record} canEdit={schema.permissions.edit && record.can_edit !== false && record.record_status !== 'archived'} onChanged={setRecord} />
     : object === 'quotes' ? <QuotePreview record={record} /> : undefined;
   const streamProps = { preview, linksLoaded, object, id, record, associated, onChanged: loadAssociations, schema, compose, onComposeDirty, canSend, onCompose: (o: ComposeObject | null, mode?: 'send') => { if (o) void startCompose(o, mode); else { composeDirty.current = false; setCompose(null); } } };
   const propertyList = <PropertyList schema={schema} record={record} lock={recordLock(object, record, associated)} onSaved={saved} flash={flash} changedBy={changedBy} />;
@@ -639,14 +649,8 @@ export function RecordPage() {
         ? archivedNote('campaigns are not sent', 'campaign to work on it')
         : <EmailCampaignEditor record={record} onChanged={setRecord} />
     }
-    : object === 'document_templates' ? {
-      label: 'Template',
-      content: record.record_status === 'archived'
-        ? archivedNote('templates are not used', 'template to see its code')
-        : <DocumentTemplateEditor record={record} onChanged={setRecord} />
-    }
     : null;
-  const phoneTabbed = mobile && !tabbed && !isView && (isUser || !!editorPanel || object === 'landing_pages');
+  const phoneTabbed = mobile && !tabbed && !isView && (isUser || !!editorPanel || object === 'landing_pages' || object === 'document_templates');
   const phonePanels: StreamPanel[] = phoneTabbed ? [
     { key: 'properties', label: 'Properties', content: <>{userRoles}<div className="record-right record-tab-panel">{ownCards}</div>{propertyList}</> },
     ...(editorPanel ? [{ key: 'editor' as const, ...editorPanel }] : []),
@@ -795,13 +799,6 @@ export function RecordPage() {
               record.record_status === 'archived'
                 ? <div className="card muted">Archived campaigns are not sent. Restore this campaign to work on it.</div>
                 : <EmailCampaignEditor record={record} onChanged={setRecord} />
-            ) : object === 'document_templates' ? (
-              <>
-                {record.record_status === 'archived'
-                  ? <div className="card muted">Archived templates are not used. Restore this template to see its code.</div>
-                  : <DocumentTemplateEditor record={record} onChanged={setRecord} />}
-                <ActivityStream {...streamProps} />
-              </>
             ) : isView ? (
               <ActivityStream {...streamProps} panels={viewPanels} bare />
             ) : (

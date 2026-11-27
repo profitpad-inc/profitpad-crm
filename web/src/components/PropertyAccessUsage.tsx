@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, type View } from '../lib/api';
+import { filterParam } from '../lib/filters';
 import { Select } from './Select';
 import { Loading } from './Loading';
 
@@ -138,6 +139,22 @@ export function UsageTab({ object, property, label, objectLabel }: { object: str
       .catch((e) => setError((e as Error).message));
   }, [object, property]);
 
+  // Review opens the object's default "All ..." view (the first shared view
+  // made, so renaming or reordering it doesn't matter) filtered to records
+  // that have this property, which also adds the property as a column there
+  const [allViewId, setAllViewId] = useState<number | null>(null);
+  useEffect(() => {
+    api<{ results: View[] }>('GET', `/v1/ui/views?object=${object}`)
+      .then((r) => {
+        const shared = r.results.filter((v) => v.owner === null).sort((a, b) => a.id - b.id);
+        setAllViewId(shared[0]?.id ?? null);
+      })
+      .catch(() => undefined);
+  }, [object]);
+  const reviewParams = new URLSearchParams();
+  if (allViewId !== null) reviewParams.set('view', String(allViewId));
+  reviewParams.set('filters', filterParam([{ filters: [{ property, operator: 'has_property' }] }]));
+
   if (error) return <div className="error">{error}</div>;
   if (!usage) return <Loading />;
   const places = usage.groups.reduce((n, g) => n + g.items.length, 0);
@@ -159,7 +176,7 @@ export function UsageTab({ object, property, label, objectLabel }: { object: str
             <span className="muted small"> {usage.fill.filled.toLocaleString()} out of {usage.fill.total.toLocaleString()}</span>
           </div>
         </div>
-        <Link className="link-btn" to={`/objects/${object}`} target="_blank">Review {objectLabel} <ExternalLink size={13} /></Link>
+        <Link className="link-btn" to={`/objects/${object}?${reviewParams}`} target="_blank">Review {objectLabel} <ExternalLink size={13} /></Link>
       </div>
       {places === 0 && <p className="muted">Nothing else in the CRM uses this property yet: no views, templates, forms, calculations, webhooks or sharing rules.</p>}
       {usage.groups.map((g) => {

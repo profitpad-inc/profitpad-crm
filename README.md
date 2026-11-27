@@ -15,7 +15,8 @@ Everything runs in Docker from published images: there is nothing to clone or bu
 
 **You need:**
 
-- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 GB of memory ([sizing](#server-size))
+- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 CPU cores, 4 GB of memory and 50 GB of storage ([sizing](#server-size))
+- A reverse proxy on the server that does HTTPS, such as nginx with certbot ([details](#https-and-ports))
 - Docker with the compose plugin (`curl -fsSL https://get.docker.com | sudo sh`)
 - A DNS record (an A record) for your address, e.g. `crm.example.com`, pointing at the server
 - A Google OAuth client or a Microsoft Entra app registration for sign-in, with the redirect URI `https://crm.example.com/v1/auth/google/callback` or `https://crm.example.com/v1/auth/microsoft/callback` ([details](docs/self-hosting.md#2-sign-in-apps))
@@ -28,7 +29,7 @@ sudo curl -fsSLO --retry 6 --retry-delay 5 https://github.com/profitpad-inc/prof
 sudo bash install.sh
 ```
 
-The installer asks for your address, which sign-in to use (Google, Microsoft or both) and the first admin's email. It writes `.env` and `db.env` with new random passwords and keys, pulls the images and starts everything; HTTPS certificates are handled for you. Open your address and sign in with the admin's Google or Microsoft account.
+The installer asks for your address, which sign-in to use (Google, Microsoft or both) and the first admin's email. It writes `.env` and `db.env` with new random passwords and keys, pulls the images and starts everything. The CRM listens on `127.0.0.1:8080`; point your reverse proxy at it ([HTTPS and ports](#https-and-ports)). Open your address and sign in with the admin's Google or Microsoft account.
 
 **Back up `.env` and `db.env`.** The keys in them cannot be recovered from the server's data.
 
@@ -38,8 +39,7 @@ Pick the row that covers both your record count and how many people use the CRM 
 
 | Level | vCPU | Memory | Disk | Total records, up to | Concurrent users, up to |
 |---|---|---|---|---|---|
-| Minimum | 1 | 2 GB | 20 GB | 25,000 | 10 |
-| Small | 2 | 4 GB | 40 GB | 250,000 | 50 |
+| Minimum | 2 | 4 GB | 50 GB | 250,000 | 50 |
 | **Base (tested)** | **2** | **8 GB** | **100 GB** | **1,500,000** | **50** |
 | Medium | 4 | 16 GB | 100 GB | 1,500,000 | 100 |
 | Large | 8 | 32 GB | 200 GB | 3,000,000 | 150 |
@@ -52,11 +52,10 @@ Pick the row that covers both your record count and how many people use the CRM 
 - **Disk:** plan on about 4.5 GB per million records (record history is most of it), plus room for backups and file uploads.
 - **Sharing a server** with other apps means sizing for all of them together.
 
-**Postgres memory.** The installer sets these in `.env` on a new install, from the server's memory. When other ProfitPad installs already run on the server, it splits the memory evenly between them. Existing installs keep what their `.env` has; without these lines Postgres uses the Minimum row's values. To size for a different amount (other apps on the server, say), run the first install with `PCRM_PG_MEMORY_MB=4096`, or edit `.env` and run `sudo docker compose up -d`.
+**Postgres memory.** The installer sets these in `.env` on a new install, from the server's memory. When other ProfitPad installs already run on the server, it splits the memory evenly between them. Existing installs keep what their `.env` has; without these lines Postgres uses the small defaults in `docker-compose.yml`. To size for a different amount (other apps on the server, say), run the first install with `PCRM_PG_MEMORY_MB=4096`, or edit `.env` and run `sudo docker compose up -d`.
 
 | Memory for this install | `PCRM_PG_SHARED_BUFFERS` | `PCRM_PG_EFFECTIVE_CACHE_SIZE` | `PCRM_PG_WORK_MEM` | `PCRM_PG_MAINTENANCE_WORK_MEM` |
 |---|---|---|---|---|
-| 2 GB | 256MB | 1536MB | 16MB | 128MB |
 | 4 GB | 1GB | 3GB | 16MB | 256MB |
 | 8 GB | 2GB | 6GB | 32MB | 512MB |
 | 16 GB | 4GB | 12GB | 32MB | 1GB |
@@ -65,17 +64,17 @@ Pick the row that covers both your record count and how many people use the CRM 
 
 Two installs on one 8 GB server each use the 4 GB row. `PCRM_PG_RANDOM_PAGE_COST` stays at 1.1, which suits SSD disks.
 
-### Already running nginx or another web server?
+### HTTPS and ports
 
-Let it keep ports 80 and 443 and forward your address to the CRM:
+The installer leaves ports 80 and 443 free for anything else on the server. The CRM listens on `127.0.0.1:8080` (or the next free port; the installer says which), and your own reverse proxy serves your address over HTTPS and forwards it there. For nginx, [`deploy/install/nginx-proxy.conf`](deploy/install/nginx-proxy.conf) is a ready site: set your address and port, enable it, and run `certbot --nginx`. To start from another port: `sudo PCRM_BEHIND_PROXY=8090 bash install.sh`.
+
+No reverse proxy, and nothing else on the server? Let the CRM take ports 80 and 443 and get its HTTPS certificate itself:
 
 ```bash
-sudo PCRM_BEHIND_PROXY=8080 bash install.sh
+sudo PCRM_BEHIND_PROXY=off bash install.sh
 ```
 
-The CRM then listens on `127.0.0.1:8080` (or the next free port; the installer says which). For nginx, [`deploy/install/nginx-proxy.conf`](deploy/install/nginx-proxy.conf) is a ready site: set your address and port, enable it, and run `certbot --nginx`.
-
-A second install on the same server (a demo, say) goes in its own folder with a name: `sudo PCRM_INSTANCE=demo PCRM_BEHIND_PROXY=8082 bash install.sh`. See [several installs on one server](docs/self-hosting.md#several-installs-on-one-server).
+A second install on the same server (a demo, say) goes in its own folder with a name, and gets the next free port: `sudo PCRM_INSTANCE=demo bash install.sh`. See [several installs on one server](docs/self-hosting.md#several-installs-on-one-server).
 
 ### Updating
 

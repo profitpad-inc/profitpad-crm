@@ -293,6 +293,32 @@
         "--strictPort"
       ],
       "port": 5195
+    },
+    {
+      "name": "api-secrets-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "MASTER_ENCRYPTION_KEY=$(cat /private/tmp/claude-501/-Users-riipen-Desktop-profitpad-crm/94959741-8df9-45f7-add8-51094f08a43a/scratchpad/master.key) PGHOST=127.0.0.1 PGPORT=5489 PGUSER=pc_migrator PGDATABASE=profitpad_crm_db PORT=3011 UI_URL=http://localhost:5181 CORS_ORIGINS=http://localhost:5181 npm --prefix api start"
+      ],
+      "port": 3011
+    },
+    {
+      "name": "web-secrets-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_URL=http://127.0.0.1:3011",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5181",
+        "--strictPort"
+      ],
+      "port": 5181
     }
   ]
 }

@@ -16,6 +16,7 @@ import { isWritable } from './values.js';
 import { addComment, deleteComment, editComment, listComments } from './comments.js';
 import { mentionableUsers } from './snippets.js';
 import { brandIcons } from './brand.js';
+import { recordUrl } from './record-url.js';
 import {
   addOption, createProperty, setPropertyArchived, testCalculation, updateOption, updateProperty
 } from './routes/schema.js';
@@ -84,6 +85,7 @@ const SERVER_ABOUT = process.env.MCP_SERVER_ABOUT?.trim();
 const INSTRUCTIONS = `${SERVER_TITLE}: records (contacts, companies, deals, tickets, quotes and more) organised as objects with typed properties, connected to each other by associations.${SERVER_ABOUT ? `\n${SERVER_ABOUT}` : ''}
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
 Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.
+get_record, create_record and update_record answer with url, the record's page in the CRM: whenever you create or change a record, or point the user to one, give them that url as a link (never a bare path or id).
 Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.
 To show the user a record or a list of records (they ask to see, show, open, pull up, list or browse contacts, companies, deals or any object), call show_record or show_records; for a chart, breakdown or trend of records (deals by stage, contacts per month, revenue by owner), call show_chart, which counts and adds up in the CRM itself. The CRM draws these cards in its own style and theme, so every answer looks the same. Never build your own visual, chart, widget, artifact or table of records, and do not repeat what the card shows. Use get_record and search_records when you need the data for yourself.
 Create tools take an optional client_request_id: send one, and if an answer is lost (502, timeout, dropped connection) call again with the same id and input to get the first result instead of a duplicate. Calls may run in parallel.`;
@@ -291,7 +293,8 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     requireScope(p, 'read');
     // getRecord checks the role, and lets an @mentioned user read that one record (via_mention)
     const obj = await objectForWrite(object);
-    return getRecord(pool, obj, p, id, properties, (associations ?? []).map((a) => ({ object: a })));
+    const rec = await getRecord(pool, obj, p, id, properties, (associations ?? []).map((a) => ({ object: a })));
+    return { ...rec, url: recordUrl(obj.api_name, id) };
   }));
 
   server.registerTool('create_record', {
@@ -313,7 +316,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     return once(p, 'create_record', client_request_id, async () => {
       const id = await withTx({ principal: p, source: 'mcp' }, (c) => createRecord(c, obj, p, properties, associations ?? []));
       await drainCalcQueue();
-      return getRecord(pool, obj, p, id);
+      return { ...(await getRecord(pool, obj, p, id)), url: recordUrl(obj.api_name, id) };
     });
   }));
 
@@ -328,7 +331,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
     const obj = await objectForWrite(object);
     await withTx({ principal: p, source: 'mcp' }, (c) => updateRecord(c, obj, p, id, properties));
     await drainCalcQueue();
-    return getRecord(pool, obj, p, id);
+    return { ...(await getRecord(pool, obj, p, id)), url: recordUrl(obj.api_name, id) };
   }));
 
   server.registerTool('list_owner_rotations', {

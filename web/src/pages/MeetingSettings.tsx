@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { CopyField, EmptyState, GoogleDelegationLink, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { CopyField, EmptyState, GoogleDelegationLink, SavedSecret, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
 
@@ -197,6 +197,7 @@ function ZoomSection({ state, busy, setBusy, setState, setError }: {
   const [account, setAccount] = useState(m.zoom_account_id ?? '');
   const [client, setClient] = useState(m.zoom_client_id ?? '');
   const [secret, setSecret] = useState('');
+  const [replacing, setReplacing] = useState(false);
   const [test, setTest] = useState<{ ok: boolean; users?: number; error?: string } | null>(null);
   useEffect(() => {
     setAccount(m.zoom_account_id ?? '');
@@ -208,7 +209,7 @@ function ZoomSection({ state, busy, setBusy, setState, setError }: {
     setError(null);
     try {
       setState(await api<State>('PUT', '/v1/meetings/settings/zoom', body));
-      if ('zoom_client_secret' in body) setSecret('');
+      if ('zoom_client_secret' in body) { setSecret(''); setReplacing(false); }
       setTest(null);
       toast(done);
     } catch (err) {
@@ -255,10 +256,19 @@ function ZoomSection({ state, busy, setBusy, setState, setError }: {
       <SettingRow label="Client ID" htmlFor="zoom-client">
         <input id="zoom-client" value={client} spellCheck={false} autoComplete="off" onChange={(e) => setClient(e.target.value)} />
       </SettingRow>
-      <SettingRow label="Client secret" htmlFor="zoom-secret" hint={m.has_zoom_secret ? `A secret ending in ${m.zoom_secret_hint} is saved. It is never shown again.` : 'Stored encrypted.'}>
-        {state.secrets_ready
-          ? <input id="zoom-secret" type="password" autoComplete="off" value={secret} placeholder={m.has_zoom_secret ? 'Paste a new secret to replace it' : ''} onChange={(e) => setSecret(e.target.value)} />
-          : <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>}
+      <SettingRow label="Client secret" htmlFor="zoom-secret" hint={m.has_zoom_secret ? (replacing ? 'Saved when you save the app.' : 'Stored encrypted. It is never shown again, only its last four characters.') : 'Stored encrypted.'}>
+        {!state.secrets_ready
+          ? <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>
+          : m.has_zoom_secret && !replacing
+            ? <SavedSecret noun="Secret" last={m.zoom_secret_hint} busy={busy} onReplace={() => setReplacing(true)} onRemove={async () => {
+                if (await confirmDialog('Remove the Zoom client secret? Booking pages set to Zoom stop taking bookings until one is saved again.', { confirmLabel: 'Remove', danger: true })) save({ zoom_client_secret: null, zoom_enabled: false }, 'Zoom secret removed.');
+              }} />
+            : replacing
+              ? <>
+                  <input id="zoom-secret" type="password" autoComplete="off" autoFocus={replacing} value={secret} placeholder={m.has_zoom_secret ? 'Paste the new secret' : ''} onChange={(e) => setSecret(e.target.value)} />
+                  <div className="key-row"><button className="btn ghost" disabled={busy} onClick={() => { setReplacing(false); setSecret(''); }}>Cancel</button></div>
+                </>
+              : <input id="zoom-secret" type="password" autoComplete="off" autoFocus={replacing} value={secret} placeholder={m.has_zoom_secret ? 'Paste the new secret' : ''} onChange={(e) => setSecret(e.target.value)} />}
       </SettingRow>
       <SettingRow label="Scopes for the Zoom app" hint="Add these on the app's Scopes page, then activate the app.">
         <CopyField value={state.zoom_scopes.join(', ')} label="Zoom scopes" />
@@ -268,11 +278,6 @@ function ZoomSection({ state, busy, setBusy, setState, setError }: {
           zoom_account_id: account.trim(), zoom_client_id: client.trim(), ...(secret.trim() ? { zoom_client_secret: secret.trim() } : {})
         }, 'Zoom app saved.')}>Save app</button>
         {complete && <button className="btn" disabled={busy} onClick={runTest}>{busy ? 'Testing…' : 'Test'}</button>}
-        {m.has_zoom_secret && (
-          <button className="btn ghost danger-text" disabled={busy} onClick={async () => {
-            if (await confirmDialog('Remove the Zoom client secret? Booking pages set to Zoom stop taking bookings until one is saved again.', { confirmLabel: 'Remove', danger: true })) save({ zoom_client_secret: null, zoom_enabled: false }, 'Zoom secret removed.');
-          }}>Remove secret</button>
-        )}
       </div>
       {test && (test.ok ? <div className="callout success">Zoom answered: {test.users} active user{test.users === 1 ? '' : 's'} in the account.</div> : <div className="callout warn">{test.error}</div>)}
     </SettingsSection>

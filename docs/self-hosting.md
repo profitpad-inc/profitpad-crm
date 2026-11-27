@@ -8,7 +8,7 @@ Everything runs in Docker, from `docker-compose.yml`:
 
 | Service | What it is |
 |---|---|
-| `web` | Caddy: HTTPS (it gets and renews the certificate itself), the UI, and every API path, all on one address such as `https://crm.example.com` |
+| `web` | Caddy: the UI and every API path, all on one address such as `https://crm.example.com`, on `127.0.0.1:8080` behind your reverse proxy (or on 80 and 443 with its own HTTPS certificate, see [HTTPS and ports](#https-and-ports)) |
 | `api` | the API (Node) |
 | `migrate` | sets up the database and applies new migrations on every start, then exits; the API waits for it |
 | `db` | Postgres 15, reachable only inside Docker |
@@ -20,7 +20,8 @@ There is no password sign-in. People sign in with Google or Microsoft, and only 
 
 ## 1. Before you start
 
-- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 GB of memory (the renderer is capped at 1 GB; the API and Postgres need room beside it). [Server size](../README.md#server-size) lists what larger installs need.
+- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 CPU cores, 4 GB of memory and 50 GB of storage (the renderer is capped at 1 GB; the API and Postgres need room beside it).
+- A reverse proxy on the server that does HTTPS for your address, such as nginx with certbot ([HTTPS and ports](#https-and-ports)). Without one, install with `PCRM_BEHIND_PROXY=off` and the CRM takes ports 80 and 443 itself. [Server size](../README.md#server-size) lists what larger installs need.
 - Docker with the compose plugin: `curl -fsSL https://get.docker.com | sudo sh`
 - One DNS record (an A record) pointing your address, e.g. `crm.example.com`, at the server. Use your own name throughout.
 - A Google Cloud project or a Microsoft Entra tenant for sign-in (step 2).
@@ -47,10 +48,10 @@ The installer:
 
 1. downloads the release's `docker-compose.yml`;
 2. asks for your address and sign-in keys, and writes `.env` and `db.env` with new random passwords and keys (both `chmod 600`);
-3. pulls the images and starts everything; the database is set up on first start;
+3. pulls the images and starts everything on `127.0.0.1:8080` (or the next free port; it says which); the database is set up on first start;
 4. asks for the first admin's email and name.
 
-Open `https://crm.example.com` once the certificate is issued (usually within a minute) and sign in with the Google or Microsoft account that uses the admin's email. Add everyone else under Settings → Users, and give each a role (Settings → Roles); a user with no role can sign in but sees nothing.
+Point your reverse proxy at that port ([HTTPS and ports](#https-and-ports)), open `https://crm.example.com` and sign in with the Google or Microsoft account that uses the admin's email. Add everyone else under Settings → Users, and give each a role (Settings → Roles); a user with no role can sign in but sees nothing.
 
 **Back up `.env` and `db.env` somewhere safe.** The database password and the two keys in `.env` cannot be recovered from the server's data. Changing `FILES_URL_KEY` breaks file links already shared; changing `MASTER_ENCRYPTION_KEY` makes every stored secret unreadable (calendar connections, integration and webhook secrets, API keys saved in Settings).
 
@@ -127,17 +128,17 @@ Make the dump with the container's own `pg_dump` as above: a newer `pg_dump` wri
 
 To restore onto a fresh install: run the installer (it creates the roles), stop the API (`sudo docker compose stop api`), then `sudo docker compose exec -T db pg_restore -U postgres -d profitpad_crm_db --clean --if-exists < profitpad_crm_db_YYYYMMDD.dump` and `sudo docker compose up -d`.
 
-## Behind your own reverse proxy
+## HTTPS and ports
 
-If the server already runs nginx, Traefik or another proxy on ports 80 and 443, let it do HTTPS and forward to Caddy over plain HTTP. Install with:
+By default the installer leaves ports 80 and 443 free for anything else on the server: your own reverse proxy (nginx, Traefik, Caddy) does HTTPS and forwards to the CRM over plain HTTP. It sets `PCRM_SITE_ADDRESS=:80` in `.env` and writes a `docker-compose.override.yml` that publishes the web container on `127.0.0.1:8080` (or the next free port, if something already uses 8080; the installer says which). To start from another port, install with `sudo PCRM_BEHIND_PROXY=8090 bash install.sh`. Then forward your address to that port. For nginx, `deploy/install/nginx-proxy.conf` in the repo is a ready site (then `certbot --nginx`). For any other proxy: set `X-Forwarded-For` and `X-Forwarded-Proto`, no request buffering for uploads, no response buffering for `/v1/live/` and `/mcp` (Server-Sent Events), a body limit of at least 40 MB, and HTTP/2 on (each open record page holds a live-update connection, and HTTP/1.1 allows only 6 per browser).
+
+**No reverse proxy?** On a server with nothing else on ports 80 and 443, the CRM can take them and get and renew its own HTTPS certificate. Point the DNS record at the server first, then install with:
 
 ```bash
-sudo PCRM_BEHIND_PROXY=8080 bash install.sh
+sudo PCRM_BEHIND_PROXY=off bash install.sh
 ```
 
-That sets `PCRM_SITE_ADDRESS=:80` in `.env` and writes a `docker-compose.override.yml` that publishes the web container on `127.0.0.1:8080` instead of ports 80 and 443 (or the next free port, if something already uses 8080; the installer says which). Then forward your address to that port. For nginx, `deploy/install/nginx-proxy.conf` in the repo is a ready site (then `certbot --nginx`). For any other proxy: set `X-Forwarded-For` and `X-Forwarded-Proto`, no request buffering for uploads, no response buffering for `/v1/live/` and `/mcp` (Server-Sent Events), a body limit of at least 40 MB, and HTTP/2 on (each open record page holds a live-update connection, and HTTP/1.1 allows only 6 per browser).
-
-To switch an existing install, set `PCRM_SITE_ADDRESS=:80` in `.env`, write the override by hand:
+To move an existing install that holds ports 80 and 443 behind a proxy, set `PCRM_SITE_ADDRESS=:80` in `.env`, write the override by hand:
 
 ```yaml
 services:
@@ -155,10 +156,10 @@ A second copy (a demo, a staging copy) runs beside the first, in its own folder,
 ```bash
 sudo mkdir -p /opt/profitpad-crm-demo && cd /opt/profitpad-crm-demo
 sudo curl -fsSLO --retry 6 --retry-delay 5 https://github.com/profitpad-inc/profitpad-crm/releases/latest/download/install.sh
-sudo PCRM_INSTANCE=demo PCRM_BEHIND_PROXY=8082 bash install.sh
+sudo PCRM_INSTANCE=demo bash install.sh
 ```
 
-Only one install can hold ports 80 and 443, so the second one always runs behind a reverse proxy (see above), on its own address with its own DNS record and sign-in redirect URIs. The name is saved in `.env` as `PCRM_INSTANCE` and can never change afterwards. Each install updates on its own: run `install.sh` in its folder. Each can follow its own release (`PCRM_VERSION`), but they share the server's memory: plan on about 2 GB per install.
+It gets the next free port after the first install's (8081, say) and runs behind your reverse proxy like the first, on its own address with its own DNS record and sign-in redirect URIs. The name is saved in `.env` as `PCRM_INSTANCE` and can never change afterwards. Each install updates on its own: run `install.sh` in its folder. Each can follow its own release (`PCRM_VERSION`), but they share the server's memory: plan on about 4 GB per install.
 
 The installer refuses to start a new install whose names are already used on the server, so a second install run without a name cannot take over the first one's data.
 

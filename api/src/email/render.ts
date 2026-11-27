@@ -102,6 +102,18 @@ function footer(mailingAddress: string | null, unsubscribeUrl: string | null): s
   return `<div style="margin:32px auto 0;max-width:600px;padding:16px;text-align:center;font:12px/1.5 Arial,Helvetica,sans-serif;color:#6b7280">${parts.join('<br>')}</div>`;
 }
 
+// A transactional email (a test, a sign-in link, a notice): the CRM logo on
+// top, the body, and the same footer as marketing email (the mailing address;
+// no unsubscribe link, these are not marketing). The logo is the PNG the API
+// serves (brand.ts): mail apps do not show SVG.
+export function transactionalLayout(bodyHtml: string, opts: { logoUrl: string | null; mailingAddress: string | null }): string {
+  const logo = opts.logoUrl
+    ? `<div style="padding:0 0 24px"><img src="${escapeHtml(opts.logoUrl)}" width="40" height="40" alt="CRM" style="display:block;border:0;width:40px;height:40px"></div>`
+    : '';
+  const card = `<div style="margin:0 auto;max-width:600px;padding:32px 24px;font:15px/1.6 Arial,Helvetica,sans-serif;color:#111827">${logo}${bodyHtml}</div>`;
+  return placeBody(card, '', footer(opts.mailingAddress, null));
+}
+
 // The hidden first line mail apps show after the subject.
 const preheaderHtml = (text: string) =>
   `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all">${escapeHtml(text)}${'&nbsp;&zwnj;'.repeat(40)}</div>`;

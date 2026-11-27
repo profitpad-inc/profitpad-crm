@@ -61,6 +61,11 @@
 .table-toolbar .table-filters-btn { height: 32px; padding: 0 12px; }
 .table-toolbar .table-filters-btn.icon-only { width: 32px; padding: 0; justify-content: center; }
 .table-filters-btn svg { color: var(--muted-text); }
+.table-filters { display: inline-flex; }
+.table-filters.has-clear .table-filters-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.table-toolbar .table-filters-clear { height: 32px; width: 32px; padding: 0; justify-content: center; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.table-filters-clear svg { color: var(--muted-text); }
+.table-filters-clear:hover:not(:disabled) svg { color: var(--text); }
 .table-toolbar .table-more { height: 32px; width: 32px; padding: 0; justify-content: center; }
 .table-more svg { color: var(--muted-text); }
 .table-archived-chip {
@@ -81,6 +86,17 @@
 .selection-bar .btn.ghost.danger-text { color: var(--danger); }
 .selection-bar .btn.ghost.danger-text:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, var(--page-background)); color: var(--danger); }
 .selection-bar .selection-clear { margin-left: auto; color: var(--muted-text); }
+/* a bulk change running on the server (Select all), with its progress */
+.bulk-job {
+  display: flex; align-items: center; gap: 10px; min-height: 38px; margin: 12px 0 0; padding: 0 4px 0 12px;
+  border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--surface); font-size: 13px;
+}
+.bulk-job .app-loading.inline { flex: none; }
+.bulk-job-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-job-meter { flex: 1; min-width: 60px; max-width: 240px; height: 6px; margin-left: auto; border-radius: 3px; background: var(--primary-soft); overflow: hidden; }
+.bulk-job-meter > span { display: block; height: 100%; background: var(--primary); transition: width 400ms ease; }
+.bulk-job.failed { border-color: var(--danger); color: var(--danger); }
+.bulk-job.failed .icon-btn { margin-left: auto; }
 @keyframes selection-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 
 /* the frame: fills the rest of the window, scrolls both ways inside itself */

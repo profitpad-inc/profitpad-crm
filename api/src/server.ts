@@ -51,6 +51,7 @@ import { notificationRoutes } from './notifications/routes.js';
 import { startNotificationEmailWorker } from './notifications/emails.js';
 import { emailRoutes } from './routes/email.js';
 import { startEmailWorker } from './email/campaigns.js';
+import { bulkJobRoutes, startBulkJobWorker } from './bulk-jobs.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -263,6 +264,7 @@ export async function buildApp() {
   await app.register(mailboxRoutes);
   await app.register(notificationRoutes);
   await app.register(emailRoutes);
+  await app.register(bulkJobRoutes);
   return app;
 }
 
@@ -297,6 +299,7 @@ const stopMailSync = startMailSyncWorker(app.log);
 const stopCalendars = startCalendarWorker(app.log);
 const stopNotificationEmails = startNotificationEmailWorker(app.log);
 const stopEmail = startEmailWorker(app.log);
+const stopBulkJobs = startBulkJobWorker(app.log);
 const shutdown = async () => {
   clearInterval(worker);
   stopFileSweeper();
@@ -309,6 +312,7 @@ const shutdown = async () => {
   stopCalendars();
   stopNotificationEmails();
   stopEmail();
+  stopBulkJobs();
   await app.close();
   await pool.end();
   process.exit(0);

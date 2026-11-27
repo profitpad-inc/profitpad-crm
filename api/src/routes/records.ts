@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
-import { pool, quoteIdent, withTx } from '../db.js';
+import { pool, withTx } from '../db.js';
 import { badRequest, notFound } from '../errors.js';
 import { requireObjectPermission, requireScope } from '../auth.js';
 import {
-  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, bulkUpdateRecords, canEditRecord, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite, upsertProperties,
+  assertAccessible, assertUserLinkable, batchReadRecords, BULK_MAX, canEditRecord, createRecord, drainCalcQueue, findIdByUnique, getRecord, objectForWrite, upsertProperties,
   parseAssociationQuery, searchRecords, updateRecord, type AssociationSpec, type MultiMode
 } from '../records.js';
 import type { SearchRequest } from '../search.js';
+import { applyBulk } from '../bulk-jobs.js';
 
 type ObjParams = { object: string };
 type RecParams = { object: string; id: string };
@@ -277,72 +278,35 @@ export async function recordRoutes(app: FastifyInstance) {
 
   // The same values on up to 500 records, all or nothing. modes picks append,
   // remove or replace (default) per multi-choice dropdown; unique properties
-  // are refused.
+  // are refused. More than 500: POST /v1/objects/:object/bulk-jobs.
   app.post<{ Params: ObjParams; Body: { ids?: string[]; properties?: Record<string, unknown>; modes?: Record<string, MultiMode> } }>(
     '/v1/objects/:object/bulk/update',
     async (req) => {
-      const p = req.principal!;
-      requireScope(p, 'write');
       const obj = await objectForWrite(req.params.object);
       const ids = bulkIds(req.body?.ids);
-      const properties = req.body?.properties ?? {};
-      if (Object.keys(properties).length === 0) throw badRequest('properties must name at least one property');
-      await withTx({ principal: p }, (c) => bulkUpdateRecords(c, obj, p, ids, properties, req.body?.modes ?? {}));
-      await drainCalcQueue(5);
+      await applyBulk(obj, req.principal!, 'update', ids, { properties: req.body?.properties ?? {}, modes: req.body?.modes ?? {} });
       return { updated: ids.length };
     }
   );
 
   // Archives up to 500 records (recycle bin), all or nothing.
   app.post<{ Params: ObjParams; Body: { ids?: string[] } }>('/v1/objects/:object/bulk/archive', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
-    requireObjectPermission(p, obj, 'delete');
-    const ids = bulkIds(req.body?.ids);
-    await assertAccessible(pool, obj, p, ids, 'delete');
-    const n = await withTx({ principal: p }, async (c) => {
-      const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, ids, 'archived']);
-      return rows[0].n as number;
-    });
-    await drainCalcQueue(5);
-    return { archived: n };
+    return { archived: await applyBulk(obj, req.principal!, 'archive', bulkIds(req.body?.ids), {}) };
   });
 
   // Restores up to 500 archived records, all or nothing.
   app.post<{ Params: ObjParams; Body: { ids?: string[] } }>('/v1/objects/:object/bulk/restore', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'write');
     const obj = await objectForWrite(req.params.object);
-    requireObjectPermission(p, obj, 'delete');
-    const ids = bulkIds(req.body?.ids);
-    await assertAccessible(pool, obj, p, ids, 'delete');
-    const n = await withTx({ principal: p }, async (c) => {
-      const { rows } = await c.query('select meta.set_record_status($1, $2, $3) as n', [obj.object_type_id, ids, 'active']);
-      return rows[0].n as number;
-    });
-    await drainCalcQueue(5);
-    return { restored: n };
+    return { restored: await applyBulk(obj, req.principal!, 'restore', bulkIds(req.body?.ids), {}) };
   });
 
   // Permanently deletes up to 500 archived records, all or nothing: like
   // /:id/permanently-delete (every value and the history wiped, only the id
   // kept), but only for records already in the recycle bin. Admin only.
   app.post<{ Params: ObjParams; Body: { ids?: string[] } }>('/v1/objects/:object/bulk/permanently-delete', async (req) => {
-    const p = req.principal!;
-    requireScope(p, 'admin');
     const obj = await objectForWrite(req.params.object);
-    const ids = [...new Set(bulkIds(req.body?.ids))];
-    const n = await withTx({ principal: p }, async (c) => {
-      const { rows } = await c.query(
-        `select count(*)::int as n from crm.${quoteIdent(obj.object_type_id)} where ${quoteIdent(obj.id_column)} = any ($1) and record_status = 'archived'`,
-        [ids]
-      );
-      if (rows[0].n !== ids.length) throw badRequest('only archived records can be permanently deleted here; nothing was changed');
-      for (const id of ids) await c.query('select meta.delete_record($1, $2)', [obj.object_type_id, id]);
-      return ids.length;
-    });
-    return { deleted: n };
+    return { deleted: await applyBulk(obj, req.principal!, 'permanently_delete', bulkIds(req.body?.ids), {}) };
   });
 
   // Copies another record's active line items onto this one (a deal's lines

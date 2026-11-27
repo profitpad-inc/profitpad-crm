@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, KeyRound } from 'lucide-react';
 
 // Building blocks shared by every Settings page (styles in settings.css). A page is a header (title, description,
 // main action top right) and a body of sections; settings themselves are label/control rows, lists are framed
@@ -96,6 +96,26 @@ export function TableSkeleton({ rows = 3 }: { rows?: number }) {
   return (
     <div className="table-skeleton" aria-busy="true" aria-label="Loading">
       {Array.from({ length: rows }, (_, i) => <span key={i} />)}
+    </div>
+  );
+}
+
+// A key, token or secret that is stored sealed: shows that one is saved and its last characters, with Replace
+// (the page then shows its input) and, where allowed, Remove.
+export function SavedSecret({ noun = 'Token', last, detail, busy, onReplace, onRemove }: {
+  noun?: string; last?: string | null; detail?: ReactNode; busy?: boolean; onReplace: () => void; onRemove?: () => void;
+}) {
+  return (
+    <div className="saved-secret">
+      <span className="saved-secret-icon"><KeyRound size={16} /></span>
+      <span className="saved-secret-text">
+        <span className="saved-secret-title">{noun} saved</span>
+        {detail ?? <code>{'\u2022'.repeat(8)}{last ?? ''}</code>}
+      </span>
+      <span className="saved-secret-actions">
+        <button type="button" className="btn" disabled={busy} onClick={onReplace}>Replace</button>
+        {onRemove && <button type="button" className="btn ghost danger-text" disabled={busy} onClick={onRemove}>Remove</button>}
+      </span>
     </div>
   );
 }

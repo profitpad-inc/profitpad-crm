@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { CopyField, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { CopyField, SaveBar, SavedSecret, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { confirmDialog } from '../components/confirm';
 import { CheckCircle2, Circle } from 'lucide-react';
 import '../email.css';
@@ -48,6 +48,7 @@ export function EmailSettings() {
   const [state, setState] = useState<State | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [token, setToken] = useState('');
+  const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -65,6 +66,7 @@ export function EmailSettings() {
       setState(s);
       setDraft(draftOf(s));
       setToken('');
+      setReplacing(false);
       toast(done);
     } catch (err) {
       setError((err as Error).message);
@@ -91,6 +93,13 @@ export function EmailSettings() {
       title: 'New webhook password', confirmLabel: 'Make a new password'
     });
     if (ok) await put({ new_webhook_secret: true }, 'New webhook password made. Update both addresses in Postmark.');
+  }
+
+  async function removeToken() {
+    const ok = await confirmDialog('Email stops until a new token is saved. Remove the Postmark token?', {
+      title: 'Remove token', confirmLabel: 'Remove token', danger: true
+    });
+    if (ok) await put({ server_token: null, enabled: false }, 'Postmark token removed. Email is off.');
   }
 
   const description = 'Email goes out through Postmark: marketing campaigns on its broadcast stream, and one-to-one email (tests, sign-in links, notices) on its transactional stream. Deliveries, opens, clicks, bounces, unsubscribes and replies come back to the CRM.';
@@ -120,26 +129,43 @@ export function EmailSettings() {
         <SettingRow
           label="Server API token"
           htmlFor="pm-token"
-          hint={state.has_token ? `A token ending in ${state.token_hint} is saved. It is never shown again.` : 'Checked with Postmark before it is saved, then stored encrypted.'}
+          hint={state.has_token
+            ? 'Stored encrypted. It is never shown again, only its last four characters.'
+            : 'Checked with Postmark before it is saved, then stored encrypted.'}
         >
           {!state.secrets_ready ? (
             <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>
           ) : (
-            <div className="key-row">
-              <input id="pm-token" type="password" autoComplete="off" value={token}
-                placeholder={state.has_token ? 'Paste a new token to replace it' : 'Server API token'}
-                onChange={(e) => setToken(e.target.value)} />
-              <button className="btn primary" disabled={busy || !token.trim()} onClick={() => put({ server_token: token.trim() }, 'Postmark token saved.')}>
-                {busy ? 'Checking…' : state.has_token ? 'Replace token' : 'Save token'}
-              </button>
-              {state.has_token && (
-                <button className="btn ghost danger-text" disabled={busy} onClick={() => put({ server_token: null, enabled: false }, 'Postmark token removed. Email is off.')}>Remove</button>
-              )}
-            </div>
+            state.has_token && !replacing ? (
+              <SavedSecret last={state.token_hint} busy={busy} onReplace={() => setReplacing(true)} onRemove={removeToken} />
+            ) : (
+              replacing ? (
+                <>
+                  <input id="pm-token" type="password" autoComplete="off" value={token} autoFocus={replacing}
+                    placeholder={state.has_token ? 'Paste the new token' : 'Server API token'}
+                    onChange={(e) => setToken(e.target.value)} />
+                  <div className="key-row">
+                    <button className="btn primary" disabled={busy || !token.trim()} onClick={() => put({ server_token: token.trim() }, 'Postmark token saved.')}>
+                      {busy ? 'Checking…' : state.has_token ? 'Replace token' : 'Save token'}
+                    </button>
+                    <button className="btn ghost" disabled={busy} onClick={() => { setReplacing(false); setToken(''); }}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <div className="key-row">
+                  <input id="pm-token" type="password" autoComplete="off" value={token} autoFocus={replacing}
+                    placeholder={state.has_token ? 'Paste the new token' : 'Server API token'}
+                    onChange={(e) => setToken(e.target.value)} />
+                  <button className="btn primary" disabled={busy || !token.trim()} onClick={() => put({ server_token: token.trim() }, 'Postmark token saved.')}>
+                    {busy ? 'Checking…' : state.has_token ? 'Replace token' : 'Save token'}
+                  </button>
+                </div>
+              )
+            )
           )}
         </SettingRow>
         <SettingRow label="Send email" hint={state.has_token ? 'Turn off to stop all email (campaigns wait) without removing the token.' : 'Add a token and a from address first.'}>
-          <label><input type="checkbox" role="switch" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> {draft.enabled ? 'On' : 'Off'}</label>
+          <label className="toggle"><input type="checkbox" role="switch" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> {draft.enabled ? 'On' : 'Off'}</label>
         </SettingRow>
         <SettingRow label="Broadcast stream ID" htmlFor="pm-broadcast" hint="The stream campaigns use, as Postmark shows it. Set its unsubscribe handling to none: the CRM adds its own link.">
           <input id="pm-broadcast" value={draft.broadcast_stream} onChange={set('broadcast_stream')} />
@@ -169,7 +195,7 @@ export function EmailSettings() {
 
       <SettingsSection title="Replies" description="Whether replies to campaigns and tracked email come back into the CRM, where they show on the contact's timeline and in the campaign's Replied count.">
         <SettingRow label="Bring replies into the CRM" hint={draft.replies_enabled ? 'Replies come back through Postmark.' : 'Off: replies go to the default reply-to below, like any email, and the CRM does not see them.'}>
-          <label><input type="checkbox" role="switch" checked={draft.replies_enabled} onChange={(e) => setDraft({ ...draft, replies_enabled: e.target.checked })} /> {draft.replies_enabled ? 'On' : 'Off'}</label>
+          <label className="toggle"><input type="checkbox" role="switch" checked={draft.replies_enabled} onChange={(e) => setDraft({ ...draft, replies_enabled: e.target.checked })} /> {draft.replies_enabled ? 'On' : 'Off'}</label>
         </SettingRow>
         <div className="callout">
           <strong>{draft.replies_enabled ? 'What this costs' : 'Why this is off'}</strong>

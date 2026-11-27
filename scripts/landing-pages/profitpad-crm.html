@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProfitPad CRM | The free, open-source CRM you shape with AI</title>
+<meta name="description" content="ProfitPad CRM is free and open source. No licence or per-seat fees, just your server. Ask AI for the exact views your team needs. We only make money if you hire us to set it up.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0a1422;--navy-deep:#08111f;--ceramic:#e5e9ee;--blue:#0062ff;--link:#0050d6;
+  --orange:#ff8b2d;--alt:#f5f7fb;--line:#dde3ec;--ink-muted:#4a5568;--muted-dark:#9fb0c4;
+  --guarantee:#e0ebff;--dark-line:rgba(229,233,238,.12);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#fff;color:#333;font-family:Inter,"Trebuchet MS",sans-serif;font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+img,svg{display:block;max-width:100%}
+a{color:var(--link)}
+h1,h2,h3{font-family:Montserrat,"Helvetica Neue",Arial,sans-serif;font-weight:400;margin:0;color:var(--navy)}
+h1{font-size:clamp(36px,5.2vw,58px);line-height:1.08;letter-spacing:-.02em}
+h2{font-size:clamp(28px,3.6vw,40px);line-height:1.14;letter-spacing:-.02em}
+h3{font-size:21px;line-height:1.3;letter-spacing:-.01em}
+p{margin:0}
+.wrap{max-width:1160px;margin:0 auto}
+.section{padding:96px 24px}
+.alt{background:var(--alt)}
+.dark{background:var(--navy);color:var(--ceramic)}
+.dark h2,.dark h3{color:#fff}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--orange);margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:14px;height:10px;background:var(--orange);transform:skewX(-20deg);border-radius:1px}
+.center .eyebrow{justify-content:center}
+.head{max-width:760px;margin-bottom:48px}
+.head p{margin-top:16px;font-size:18px;color:var(--ink-muted)}
+.dark .head p{color:var(--muted-dark)}
+.btn{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-weight:600;text-decoration:none;font-size:18px;padding:16px 24px;transition:transform .15s ease,background .15s ease}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover{background:#0050d6}
+.btn-light{background:#fff;color:var(--navy)}
+.go{font-weight:600;text-decoration:none;color:var(--link)}
+.go:hover{text-decoration:underline}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:10;background:var(--navy);border-bottom:1px solid var(--dark-line)}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 24px;max-width:1208px}
+.logo img{height:84px;width:auto;margin:-21px 0 -21px -27px}
+.nav-links{display:flex;gap:28px;align-items:center}
+.nav-links a{color:var(--ceramic);text-decoration:none;font-size:15px}
+.nav-links a:hover{color:#fff}
+.nav .btn{font-size:15px;padding:10px 20px}
+
+/* hero */
+.hero{background:var(--navy);padding:96px 24px 0;text-align:center;overflow:hidden}
+.hero h1{color:#fff;max-width:900px;margin:0 auto}
+.hero .sub{color:var(--ceramic);font-size:19px;max-width:640px;margin:22px auto 0}
+.ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:34px}
+.hero .fine{color:var(--muted-dark);font-size:15px;margin-top:18px}
+
+.mock{position:relative;max-width:1000px;margin:64px auto 0;display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:22px;align-items:center;text-align:left;padding:28px;border:1px solid var(--dark-line);border-bottom:0;border-radius:6px 6px 0 0;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0))}
+.src{display:flex;flex-direction:column;gap:14px}
+.chip{border:1px solid var(--dark-line);border-radius:6px;padding:12px 14px;color:var(--ceramic);font-size:13.5px;background:rgba(10,20,34,.6)}
+.chip b{display:block;color:#fff;font-weight:600;font-size:14px;margin-bottom:2px}
+.chip span{color:var(--muted-dark)}
+.rec{background:#fff;border-radius:6px;color:var(--navy);padding:22px;box-shadow:0 24px 48px rgba(0,0,0,.35)}
+.rec-top{display:flex;justify-content:space-between;align-items:center;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-muted);font-weight:600}
+.live{color:#16a34a;display:flex;align-items:center;gap:6px;letter-spacing:0;text-transform:none;font-size:13px}
+.live::before{content:"";width:7px;height:7px;border-radius:50%;background:#16a34a;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.rec h3{font-size:24px;margin:10px 0 2px}
+.rec .who{color:var(--ink-muted);font-size:14px}
+.rows{margin-top:16px;border-top:1px solid var(--line)}
+.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.row span:first-child{color:var(--ink-muted)}
+.row code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--alt);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--link)}
+.row.new{animation:flash 3.5s ease 1.2s both}
+@keyframes flash{0%{background:transparent}15%{background:#e0ebff}100%{background:transparent}}
+.ask{margin-top:14px;font-size:13px;color:var(--ink-muted);background:var(--alt);border-radius:6px;padding:10px 12px}
+.ask b{color:var(--navy);font-weight:600}
+
+/* trust row */
+.trust{background:var(--navy-deep);padding:22px 24px}
+.trust ul{list-style:none;margin:0 auto;padding:0;max-width:1160px;display:flex;flex-wrap:wrap;justify-content:center;gap:12px 36px}
+.trust li{color:var(--ceramic);font-size:14.5px;display:flex;align-items:center;gap:8px}
+.trust li::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
+
+/* they say / we find */
+.find{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.find-row{display:grid;grid-template-columns:1fr 1.25fr;gap:32px;padding:24px 28px;border-top:1px solid var(--line)}
+.find-hd{background:var(--navy);color:#c3cbd6;font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:18px 28px;border:0}
+.find-q{font-size:18px;color:var(--navy);line-height:1.45}
+.find-a{font-size:16.5px;color:var(--ink-muted)}
+.lbl{display:none;font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--link);margin-bottom:6px}
+
+/* features */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:6px;padding:26px}
+.ico{width:36px;height:36px;border-radius:6px;background:var(--guarantee);display:grid;place-items:center;margin-bottom:18px}
+.ico svg{width:20px;height:20px;stroke:var(--link);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.card h3{margin-bottom:8px}
+.card p{color:var(--ink-muted);font-size:15.5px}
+
+/* AI section */
+.ai{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
+.ai ul{list-style:none;padding:0;margin:28px 0 0;display:grid;gap:16px}
+.ai li{padding-left:28px;position:relative;color:var(--ceramic);font-size:16.5px}
+.ai li::before{content:"";position:absolute;left:0;top:7px;width:12px;height:12px;border-radius:3px;background:var(--blue)}
+.chat{background:var(--navy-deep);border:1px solid var(--dark-line);border-radius:6px;padding:22px;display:grid;gap:14px;font-size:15px}
+.msg{border-radius:6px;padding:12px 14px;max-width:88%}
+.msg.you{background:var(--blue);color:#fff;justify-self:end}
+.msg.ai-m{background:rgba(229,233,238,.08);color:var(--ceramic);border:1px solid var(--dark-line)}
+.msg small{display:block;color:var(--muted-dark);font-size:12px;margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.msg.you small{color:#cfe0ff}
+.msg code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:#9cc0ff}
+
+/* proof stat */
+.stat{display:grid;grid-template-columns:auto 1fr;gap:40px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:36px}
+.num{font-family:Montserrat,sans-serif;font-size:56px;line-height:1;color:var(--navy);letter-spacing:-.02em}
+.num small{display:block;font-family:Inter,sans-serif;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);font-weight:600;margin-top:10px}
+.stat p{font-size:17px;color:var(--navy)}
+.stat .note{font-size:13px;color:var(--ink-muted);margin-top:12px}
+
+/* cost */
+.cost{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.price{font-family:Montserrat,sans-serif;font-size:48px;line-height:1;color:var(--navy);letter-spacing:-.02em;margin:6px 0 14px}
+.price small{font-family:Inter,sans-serif;font-size:15px;color:var(--ink-muted);letter-spacing:0;margin-left:4px}
+.cost .tag{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--link)}
+.cost p{color:var(--ink-muted);font-size:15.5px}
+.money{margin-top:20px;display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center;background:var(--navy);color:var(--ceramic);border-radius:6px;padding:28px 32px}
+.money h3{color:#fff;font-size:24px}
+.money p{font-size:16.5px;color:var(--ceramic)}
+
+/* why free */
+.why{display:grid;grid-template-columns:1fr 1.4fr;gap:56px;align-items:start}
+.why blockquote{margin:0;font-family:Montserrat,sans-serif;font-size:clamp(22px,2.4vw,28px);line-height:1.35;color:var(--navy);letter-spacing:-.01em;border-left:3px solid var(--orange);padding-left:24px}
+.why .body p{font-size:17.5px;color:var(--ink-muted);margin-bottom:18px}
+.why .body p strong{color:var(--navy);font-weight:600}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:40px 20px;counter-reset:s}
+.step{border-top:2px solid var(--navy);padding-top:22px}
+.step .n{font-family:Montserrat,sans-serif;font-size:40px;color:var(--blue);line-height:1}
+.step .tag{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);margin:14px 0 6px}
+.step p{color:var(--ink-muted);margin-top:8px;font-size:15.5px}
+.guar{margin-top:40px;background:var(--guarantee);border-radius:6px;padding:22px 26px;color:var(--navy);font-size:16.5px}
+.not{margin-top:18px;color:var(--ink-muted);font-size:15px}
+
+/* closing */
+.close{text-align:center}
+.close h2{color:#fff}
+.close p{color:var(--muted-dark);font-size:18px;max-width:600px;margin:18px auto 0}
+
+/* footer */
+footer{background:var(--navy-deep);color:var(--muted-dark);padding:56px 24px 40px;font-size:14px}
+footer .wrap{display:flex;justify-content:space-between;align-items:flex-end;gap:32px;flex-wrap:wrap}
+footer .logo img{height:60px;margin:-13px 0 -13px -19px}
+footer nav{display:flex;gap:24px;flex-wrap:wrap}
+footer a{color:var(--ceramic);text-decoration:none}
+footer a:hover{color:#fff}
+.copy{width:100%;border-top:1px solid var(--dark-line);padding-top:20px;margin-top:8px}
+
+@media (max-width:960px){
+  .nav-links a.hide-sm{display:none}
+  .mock{grid-template-columns:1fr;max-width:460px}
+  .src{flex-direction:row;flex-wrap:wrap}
+  .src .chip{flex:1 1 140px}
+  .src.right{order:3}
+  .grid{grid-template-columns:repeat(2,1fr)}
+  .ai{grid-template-columns:1fr;gap:40px}
+  .cost{grid-template-columns:1fr}
+  .why{grid-template-columns:1fr;gap:32px}
+}
+@media (max-width:680px){
+  .section{padding:56px 16px}
+  .hero{padding:64px 16px 0}
+  .nav .wrap{padding:12px 16px}
+  .nav-links{gap:0}
+  .nav-links a:not(.btn){display:none}
+  .logo img{height:66px;margin:-16px 0 -16px -21px}
+  .nav .btn{font-size:14px;padding:9px 16px}
+  .btn{font-size:16px;width:100%}
+  .ctas{flex-direction:column}
+  .hero .sub{font-size:17px}
+  .mock{padding:16px;margin-top:44px}
+  .grid,.steps{grid-template-columns:1fr}
+  .find-row{grid-template-columns:1fr;gap:10px;padding:20px}
+  .find-hd{display:none}
+  .lbl{display:block}
+  .stat{grid-template-columns:1fr;gap:20px;padding:24px}
+  .money{grid-template-columns:1fr;gap:12px;padding:24px}
+  .trust{padding:18px 16px}
+  .trust ul{justify-content:flex-start;flex-direction:column}
+  footer{padding:44px 16px 32px}
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="logo" href="https://profitpad.com" aria-label="ProfitPad"><img src="https://cdn.prod.website-files.com/68d51f2167ed23bd5c319b15/6aca9cb73e8004f4afd72562_Full_Stack_-_White_-_Motion_v2.svg" alt="ProfitPad"></a>
+    <div class="nav-links">
+      <a class="hide-sm" href="#cost">Cost</a>
+      <a class="hide-sm" href="#views">Custom views</a>
+      <a class="hide-sm" href="#why">Why it’s free</a>
+      <a class="hide-sm" href="#own">Run it</a>
+      <a class="btn btn-primary" href="https://github.com/profitpad-inc/profitpad-crm" target="_blank" rel="noopener">Get it free</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="eyebrow" style="justify-content:center">Free and open source</div>
+  <h1>A full CRM for free. Shaped by AI into exactly what your team needs.</h1>
+  <p class="sub">No licence. No per-seat fees. You pay for your own server, and you ask AI for the exact screens, reports and buttons you want.</p>
+  <div class="ctas">
+    <a class="btn btn-primary" href="https://github.com/profitpad-inc/profitpad-crm" target="_blank" rel="noopener">Get it free on GitHub</a>
+    <a class="btn btn-light" href="https://profitpad.com/contact">Hire us to set it up</a>
+  </div>
+  <p class="fine">MIT licensed. The software is free. Setting it up well is what we sell.</p>
+
+  <div class="mock" aria-hidden="true">
+    <div class="src">
+      <div class="chip"><b>Forms and booking</b><span>Leads land as contacts</span></div>
+      <div class="chip"><b>Email</b><span>Mailbox and templates</span></div>
+      <div class="chip"><b>Quotes</b><span>PDFs and public pages</span></div>
+    </div>
+    <div class="rec">
+      <div class="rec-top"><span>Deal record</span><span class="live">Live</span></div>
+      <h3>Ridgeline Supply</h3>
+      <div class="who">Reorder, 3 lines</div>
+      <div class="rows">
+        <div class="row"><span>Amount</span><span>numeric column</span></div>
+        <div class="row"><span>Stage</span><span>dropdown, stored in the DB</span></div>
+        <div class="row"><span>Company</span><span>association</span></div>
+        <div class="row new"><span>Renewal date</span><code>renewal_date date</code></div>
+      </div>
+      <div class="ask"><b>Asked the AI:</b> add a renewal date to deals</div>
+    </div>
+    <div class="src right">
+      <div class="chip"><b>Reporting</b><span>Read-only SQL schema</span></div>
+      <div class="chip"><b>Your AI assistant</b><span>Built-in MCP server</span></div>
+      <div class="chip"><b>API and webhooks</b><span>OpenAPI from the live schema</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="trust">
+  <ul>
+    <li>Free and open source (MIT)</li>
+    <li>No per-seat fees</li>
+    <li>Custom views written by AI</li>
+    <li>Runs on your own server</li>
+  </ul>
+</div>
+
+<section class="section" id="cost">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">What it costs</div>
+      <h2>The software is free. You only pay to run it.</h2>
+      <p>No licence, no seats, no tiers. Every feature is in the free version, because there is no other version.</p>
+    </div>
+    <div class="cost">
+      <div class="card">
+        <div class="tag">The CRM</div>
+        <div class="price">$0</div>
+        <p>Download it, run it and change it. MIT licensed, with the full source on GitHub.</p>
+      </div>
+      <div class="card">
+        <div class="tag">Your server</div>
+        <div class="price">~$100<small>/ month</small></div>
+        <p>A typical cloud server to host it. That is the main running cost, with no per-seat fees on top.</p>
+      </div>
+      <div class="card">
+        <div class="tag">Marketing email, optional</div>
+        <div class="price">~$15<small>/ month</small></div>
+        <p>Postmark, for about 10,000 emails a month. Only needed if you send marketing email.</p>
+      </div>
+    </div>
+    <div class="money">
+      <h3>So how do we make money?</h3>
+      <p>Only if you hire us to implement it. You never pay us for the software, just for a person who sits with your team and sets it up properly.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="why">
+  <div class="wrap why">
+    <div>
+      <div class="eyebrow">Why it’s free</div>
+      <blockquote>We don’t think people will pay for software much longer. If we didn’t give this away, someone else would.</blockquote>
+    </div>
+    <div class="body">
+      <p>With AI, anyone can rebuild the core of their favourite tool in a weekend. We put far more than a weekend into this one, because we wanted a complete, fully working CRM, not a demo. We think paying a monthly fee for software is going to fade fast over the next couple of years.</p>
+      <p>So we’re giving it away. Our goal is simple: a great CRM that people are happy to use, at no cost.</p>
+      <p><strong>What still needs a person is the setup.</strong> Knowing which reports managers need, what reps should see first, and how marketing and admins should work takes real conversations with your team. That is the part worth paying for, and it’s the only part we charge for.</p>
+      <p>We’re also open to feedback on the base CRM. Tell us what should change.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">How it’s built</div>
+      <h2>Built on what we learned running other CRMs.</h2>
+      <p>ProfitPad builds CRM setups, integrations and reporting for owner-led teams. This CRM fixes the problems we kept working around.</p>
+    </div>
+    <div class="find">
+      <div class="find-row find-hd"><div>What we kept running into</div><div>What ProfitPad CRM does instead</div></div>
+      <div class="find-row">
+        <div class="find-q">Reporting needs a sync job and a second database.</div>
+        <div class="find-a"><div class="lbl">Instead</div>The CRM is the database. Every property is one real, typed Postgres column, and reporting gets its own read-only schema.</div>
+      </div>
+      <div class="find-row">
+        <div class="find-q">Every new field or object is an afternoon of clicking.</div>
+        <div class="find-a"><div class="lbl">Instead</div>Ask an AI assistant. New objects, properties, calculations and permissions go through rules the database itself enforces.</div>
+      </div>
+      <div class="find-row">
+        <div class="find-q">Linked records are hard to query and easy to duplicate.</div>
+        <div class="find-a"><div class="lbl">Instead</div>One association table, each link stored once, with labels. Merges and deletes are explicit.</div>
+      </div>
+      <div class="find-row">
+        <div class="find-q">The data lives on someone else’s platform.</div>
+        <div class="find-a"><div class="lbl">Instead</div>Run it on your own Linux server from published images. The code is MIT licensed and public.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="features">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">What’s in it</div>
+      <h2>The CRM your team works in, not around.</h2>
+      <p>The parts owner-led sales teams use every day, on one data model.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg></div>
+        <h3>Your own objects</h3>
+        <p>Contacts, companies, deals, tickets and quotes, plus custom objects with typed properties, dropdowns and calculations.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg></div>
+        <h3>Quotes and invoices</h3>
+        <p>Quotes print to PDF and open on public pages your customers can view without an account.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg></div>
+        <h3>Forms, booking and landing pages</h3>
+        <p>Public forms that fill contact properties, booking pages tied to a host’s calendar, and landing pages like this one.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div>
+        <h3>Email</h3>
+        <p>Connected mailboxes, templates and campaigns, logged against the records they belong to.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 20c0-2 1-3.5 3-4"/></svg></div>
+        <h3>Owner rotation</h3>
+        <p>Round-robin assignment for new leads, with a log of who got what and why.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="16" r="3"/></svg></div>
+        <h3>Custom views</h3>
+        <p>Pages built from React and read-only SQL, such as dashboards, kanban boards and record layouts, with no deploy.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section dark" id="views">
+  <div class="wrap ai">
+    <div>
+      <div class="eyebrow">Custom views</div>
+      <h2>Describe the screen you want. AI builds it.</h2>
+      <p style="margin-top:16px;font-size:18px;color:var(--muted-dark)">Every team gets views made for how it works, with exactly the reports and buttons it needs. Nothing extra, nothing missing. No developer, no deploy.</p>
+      <ul>
+        <li>AI writes the view’s code, and it queries the database directly, so it’s fast.</li>
+        <li>It looks exactly how you want: dashboards, kanban boards, record layouts.</li>
+        <li>You decide what a click does: open a side panel, open the record, or something else.</li>
+        <li>The sidebar is yours too. Put each team’s views where they’ll use them.</li>
+      </ul>
+    </div>
+    <div class="chat" aria-hidden="true">
+      <div class="msg you"><small>You</small>Make my reps a view of their open deals as a kanban by stage, with a button to log a call.</div>
+      <div class="msg ai-m"><small>Assistant</small>Done. “My pipeline” is in the sidebar. Clicking a card opens the deal in a side panel.</div>
+      <div class="msg you"><small>You</small>Add a bar chart of deals closing this month at the top.</div>
+      <div class="msg ai-m"><small>Assistant</small>Added. Want the same view for managers, showing every rep?</div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Tested, not guessed</div>
+      <h2>Fast on a small server.</h2>
+    </div>
+    <div class="stat">
+      <div class="num">190 ms<small>Median page response</small></div>
+      <div>
+        <p>Load tested with 1 million contacts, 200,000 companies, 300,000 deals and 1.6 million associations on a 2 vCPU, 8 GB Google Cloud server, at the activity of about 65 people. No errors.</p>
+        <p class="note">Measured 2026-11-27 on v0.2.44, on a server shared with another CRM install, ERPNext and n8n. 95% of pages answered within 2 seconds.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="own">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Run it</div>
+      <h2>Your server, your data, in six steps.</h2>
+      <p>Everything runs in Docker from published images. Nothing to clone or build.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <div class="tag">Set up the server</div>
+        <h3>Any Linux server</h3>
+        <p>With Docker, at least 2 CPU cores, 4 GB of memory and 50 GB of storage.</p>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <div class="tag">Create the sign-in apps</div>
+        <h3>Google or Microsoft</h3>
+        <p>An OAuth client for signing in, and a service account so the CRM can send email from your team’s mailboxes.</p>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <div class="tag">Point DNS</div>
+        <h3>One DNS record</h3>
+        <p>Point an address like crm.yourcompany.com at the server, and have your reverse proxy serve it over HTTPS.</p>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <div class="tag">Install it</div>
+        <h3>One command</h3>
+        <p>The installer asks for your address, sign-in keys and first admin, then starts the CRM on port 8080, leaving 80 and 443 free.</p>
+      </div>
+      <div class="step">
+        <div class="n">5</div>
+        <div class="tag">Sign in</div>
+        <h3>No passwords</h3>
+        <p>Sign in with Google or Microsoft. Only people with a user record get in, and admins add the rest.</p>
+      </div>
+      <div class="step">
+        <div class="n">6</div>
+        <div class="tag">Set it up</div>
+        <h3>Make it yours</h3>
+        <p>Add your objects, properties, pipelines and views, by hand or by asking AI. Or hire us to do it with your team.</p>
+      </div>
+    </div>
+    <div class="guar">Want it done for you? Hire ProfitPad to set it up, move your data in and build your team’s views. That is the only thing we charge for.</div>
+  </div>
+</section>
+
+<section class="section dark close">
+  <div class="wrap">
+    <div class="eyebrow" style="justify-content:center">Next step</div>
+    <h2>Free to download. Worth setting up right.</h2>
+    <p>Grab the code and run it yourself, or book a free 30-minute review and we’ll tell you what it would take to move your team over.</p>
+    <div class="ctas">
+      <a class="btn btn-primary" href="https://profitpad.com/contact">Book a free 30-minute review</a>
+      <a class="btn btn-light" href="https://github.com/profitpad-inc/profitpad-crm" target="_blank" rel="noopener">Get it free on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="logo" href="https://profitpad.com" aria-label="ProfitPad"><img src="https://cdn.prod.website-files.com/68d51f2167ed23bd5c319b15/6aca9cb73e8004f4afd72562_Full_Stack_-_White_-_Motion_v2.svg" alt="ProfitPad"></a>
+    </div>
+    <nav>
+      <a href="#cost">Cost</a>
+      <a href="#views">Custom views</a>
+      <a href="#why">Why it’s free</a>
+      <a href="#own">Run it</a>
+      <a href="https://github.com/profitpad-inc/profitpad-crm" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://profitpad.com/contact">Contact</a>
+    </nav>
+    <div class="copy">© 2026 ProfitPad. All rights reserved.</div>
+  </div>
+</footer>
+
+</body>
+</html>
+

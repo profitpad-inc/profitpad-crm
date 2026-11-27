@@ -14,14 +14,17 @@
 #
 # PCRM_VERSION=1.4.0 bash install.sh   pins a release (also saved in .env);
 #                                      main follows every push to main
-# PCRM_BEHIND_PROXY=8080 bash install.sh
-#                                      first run only: for a server whose own
-#                                      reverse proxy (nginx, Traefik) already
-#                                      does HTTPS on 80 and 443. Caddy serves
-#                                      plain HTTP on 127.0.0.1:<port> instead
-#                                      (the next free port if that one is
-#                                      taken), written to
-#                                      docker-compose.override.yml
+# By default (first run) Caddy serves plain HTTP on 127.0.0.1:8080 (the
+# next free port if that one is taken, written to
+# docker-compose.override.yml), and this server's own reverse proxy (nginx,
+# Traefik) does HTTPS on 80 and 443, so those ports stay free for anything
+# else on the server.
+# PCRM_BEHIND_PROXY=8090 bash install.sh
+#                                      first run only: start from another port
+# PCRM_BEHIND_PROXY=off bash install.sh
+#                                      first run only: no reverse proxy; Caddy
+#                                      takes ports 80 and 443 and gets the
+#                                      HTTPS certificate itself
 # PCRM_INSTANCE=demo bash install.sh   first run only: a second install on a
 #                                      server that already has one, in its
 #                                      own folder. Names its containers
@@ -125,7 +128,7 @@ if [[ ! -f .env ]]; then
   db_volume="pcrm${instance:+_$instance}_db_data"
   if docker volume inspect "$db_volume" >/dev/null 2>&1 || docker container inspect "pc${instance:+-$instance}-db" >/dev/null 2>&1; then
     if [[ -z "$instance" ]]; then
-      die "another ProfitPad install on this server already uses the default names. Run this in the folder of that install to update it, or start a second one with: sudo PCRM_INSTANCE=demo PCRM_BEHIND_PROXY=8082 bash install.sh"
+      die "another ProfitPad install on this server already uses the default names. Run this in the folder of that install to update it, or start a second one with: sudo PCRM_INSTANCE=demo bash install.sh"
     fi
     die "an install named '$instance' already exists on this server (volume $db_volume). Run this in its folder, or pick another name"
   fi
@@ -142,8 +145,10 @@ else
 fi
 # testing an unreleased compose file: PCRM_COMPOSE_URL=file:///path/docker-compose.yml
 compose_url="${PCRM_COMPOSE_URL:-$compose_url}"
-proxy_port="${PCRM_BEHIND_PROXY:-}"
-[[ -z "$proxy_port" || "$proxy_port" =~ ^[0-9]+$ ]] || die "PCRM_BEHIND_PROXY must be a port number"
+# behind this server's reverse proxy on 8080 unless told otherwise
+proxy_port="${PCRM_BEHIND_PROXY:-8080}"
+[[ "$proxy_port" == off ]] && proxy_port=""
+[[ -z "$proxy_port" || "$proxy_port" =~ ^[0-9]+$ ]] || die "PCRM_BEHIND_PROXY must be a port number or off"
 echo "fetching docker-compose.yml"
 # --retry: GitHub's downloads sometimes time out (502, 503, 504) for a while
 curl -fsSL --retry 6 --retry-delay 5 "$compose_url" -o docker-compose.yml.new \
@@ -161,7 +166,7 @@ if [[ ! -f .env ]]; then
     [[ "$proxy_port" == "$wanted" ]] || echo "port $wanted is in use on this server; using $proxy_port instead"
   else
     for p in 80 443; do
-      port_taken "$p" && die "port $p is already in use (another web server?). To run behind it, start again with: sudo PCRM_BEHIND_PROXY=8080 bash install.sh"
+      port_taken "$p" && die "port $p is already in use (another web server?). To run behind it, start again without PCRM_BEHIND_PROXY=off: sudo bash install.sh"
     done
   fi
 

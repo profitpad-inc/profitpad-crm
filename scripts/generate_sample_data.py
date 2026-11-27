@@ -2,7 +2,10 @@
 """Fills a ProfitPad CRM tenant with sample records for every native object,
 plus associations between them, using only the public API.
 
-Run it, paste an API key (scopes "read" and "write", or "admin"), done:
+Also adds and publishes the landing pages in scripts/landing-pages/ (see
+LANDING_PAGES), which needs the "schema" scope.
+
+Run it, paste an API key (scopes "read", "write" and "schema", or "admin"), done:
   /usr/bin/python3 scripts/generate_sample_data.py
 
 The API must be running (cd api && npm run dev). Set PCRM_API_URL to point
@@ -47,6 +50,18 @@ COUNTS = {
     "form_submissions": 30, "marketing_events": 6, "marketing_event_participations": 50, "object_events": 5,
     "object_event_occurrences": 40,
 }
+
+# Landing pages made from HTML files in scripts/landing-pages/, created and
+# published. Slugs are unique, so a page whose slug already exists is skipped.
+LANDING_PAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "landing-pages")
+LANDING_PAGES = [
+    {"file": "profitpad-crm.html", "name": "ProfitPad CRM", "slug": "profitpad-crm",
+     "description": "Landing page about ProfitPad CRM: free and open source, what it costs, how ProfitPad makes money, "
+                    "why it is free, and custom views. Styled after profitpad.com.",
+     "meta_title": "ProfitPad CRM | The free, open-source CRM you shape with AI",
+     "meta_description": "ProfitPad CRM is free and open source. No licence or per-seat fees, just your server. "
+                         "Ask AI for the exact views your team needs. We only make money if you hire us to set it up."},
+]
 
 
 # a number the CRM accepts (it checks phone numbers; 555 numbers are refused)
@@ -411,7 +426,24 @@ class Generator:
             self.link("object_event_occurrences", oid, "contacts", random.choice(self.ids["contacts"]))
             self.link("object_event_occurrences", oid, "object_events", random.choice(self.ids["object_events"]))
 
+        self.landing_pages()
         self.associate_all()
+
+    def landing_pages(self):
+        existing = {p["slug"] for p in self.call("GET", "/v1/landing-pages")["results"]}
+        ids = []
+        for page in LANDING_PAGES:
+            if page["slug"] in existing:
+                print("  landing page %-19s skipped, slug already exists" % page["slug"])
+                continue
+            with open(os.path.join(LANDING_PAGES_DIR, page["file"]), encoding="utf-8") as f:
+                html = f.read()
+            body = {k: v for k, v in page.items() if k != "file"}
+            body["html"] = html
+            ids.append(self.call("POST", "/v1/landing-pages", body)["id"])
+            self.call("POST", "/v1/landing-pages/%s/publish" % page["slug"])
+        self.ids["landing_pages"] = ids
+        print("  %-32s %4d records (published)" % ("landing_pages", len(ids)))
 
     def associate_all(self):
         print("Creating %d associations" % len(self.links))

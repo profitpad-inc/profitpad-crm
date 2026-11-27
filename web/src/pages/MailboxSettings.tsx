@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { History, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { CopyField, EmptyState, GoogleDelegationLink, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { CopyField, EmptyState, GoogleDelegationLink, SavedSecret, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { Modal } from '../components/ui';
 import { SaveHint } from '../components/SaveHint';
@@ -211,6 +211,7 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
   const [tenant, setTenant] = useState(p.ms_tenant_id ?? '');
   const [client, setClient] = useState(p.ms_client_id ?? '');
   const [secret, setSecret] = useState('');
+  const [replacing, setReplacing] = useState(false);
   const [testAddress, setTestAddress] = useState('');
   const [test, setTest] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -230,6 +231,7 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
       // only what was saved: a key or secret pasted but not saved yet stays
       if ('google_key' in body) setKey('');
       if ('ms_client_secret' in body) setSecret('');
+      if ('google_key' in body || 'ms_client_secret' in body) setReplacing(false);
       setTest(null);
       toast(done);
     } catch (err) {
@@ -284,21 +286,21 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
           <SettingRow
             label="Service account key"
             htmlFor="google-sa-key"
-            hint={p.has_google_key ? `A key for ${p.google_client_email} is saved. It is never shown again.` : 'Paste the whole JSON file Google gave you. It is stored encrypted.'}
+            hint={p.has_google_key ? 'Stored encrypted. It is never shown again.' : 'Paste the whole JSON file Google gave you. It is stored encrypted.'}
           >
-            {canStore && (
+            {canStore && (p.has_google_key && !replacing ? (
+              <SavedSecret noun="Key" detail={<span className="saved-secret-detail">{p.google_client_email}</span>} busy={busy} onReplace={() => setReplacing(true)} onRemove={async () => {
+                if (await confirmDialog('Remove the service account key? Nobody can send through Google until a key is saved again.', { confirmLabel: 'Remove', danger: true })) put({ google_key: null }, 'Service account key removed.');
+              }} />
+            ) : (
               <>
-                <textarea id="google-sa-key" className="mono" rows={4} spellCheck={false} autoComplete="off" placeholder={p.has_google_key ? 'Paste a new key to replace it' : '{ "type": "service_account", ... }'} value={key} onChange={(e) => setKey(e.target.value)} />
+                <textarea id="google-sa-key" className="mono" rows={4} spellCheck={false} autoComplete="off" autoFocus={replacing} placeholder={p.has_google_key ? 'Paste the new key' : '{ "type": "service_account", ... }'} value={key} onChange={(e) => setKey(e.target.value)} />
                 <div className="key-row">
                   <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ google_key: key.trim() }, 'Service account key saved.')}>{p.has_google_key ? 'Replace key' : 'Save key'}</button>
-                  {p.has_google_key && (
-                    <button className="btn ghost danger-text" disabled={busy} onClick={async () => {
-                      if (await confirmDialog('Remove the service account key? Nobody can send through Google until a key is saved again.', { confirmLabel: 'Remove', danger: true })) put({ google_key: null }, 'Service account key removed.');
-                    }}>Remove</button>
-                  )}
+                  {replacing && <button className="btn ghost" disabled={busy} onClick={() => { setReplacing(false); setKey(''); }}>Cancel</button>}
                 </div>
               </>
-            )}
+            ))}
           </SettingRow>
           {p.google_client_id && (
             <SettingRow label="Client ID for Google Admin" hint={<>Add this under <GoogleDelegationLink />.</>}>
@@ -317,8 +319,19 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
           <SettingRow label="Client ID" htmlFor="ms-client" hint="Application (client) ID.">
             <input id="ms-client" value={client} spellCheck={false} placeholder="00000000-0000-0000-0000-000000000000" onChange={(e) => setClient(e.target.value)} />
           </SettingRow>
-          <SettingRow label="Client secret" htmlFor="ms-secret" hint={p.has_ms_client_secret ? `A secret ending in ${p.secret_hint} is saved. Microsoft secrets expire: paste a new one before it does.` : 'The secret\'s Value (not its ID). Stored encrypted.'}>
-            {canStore && <input id="ms-secret" type="password" autoComplete="off" value={secret} placeholder={p.has_ms_client_secret ? 'Paste a new secret to replace it' : ''} onChange={(e) => setSecret(e.target.value)} />}
+          <SettingRow label="Client secret" htmlFor="ms-secret" hint={p.has_ms_client_secret ? (replacing ? 'Saved when you save the app.' : 'Microsoft secrets expire: replace it before it does.') : 'The secret\'s Value (not its ID). Stored encrypted.'}>
+            {canStore && (p.has_ms_client_secret && !replacing ? (
+              <SavedSecret noun="Secret" last={p.secret_hint} busy={busy} onReplace={() => setReplacing(true)} onRemove={async () => {
+                if (await confirmDialog('Remove the client secret? Nobody can send through Microsoft until one is saved again.', { confirmLabel: 'Remove', danger: true })) put({ ms_client_secret: null }, 'Client secret removed.');
+              }} />
+            ) : (
+              replacing
+                ? <>
+                    <input id="ms-secret" type="password" autoComplete="off" autoFocus={replacing} value={secret} placeholder={p.has_ms_client_secret ? 'Paste the new secret' : ''} onChange={(e) => setSecret(e.target.value)} />
+                    <div className="key-row"><button className="btn ghost" disabled={busy} onClick={() => { setReplacing(false); setSecret(''); }}>Cancel</button></div>
+                  </>
+                : <input id="ms-secret" type="password" autoComplete="off" autoFocus={replacing} value={secret} placeholder={p.has_ms_client_secret ? 'Paste the new secret' : ''} onChange={(e) => setSecret(e.target.value)} />
+            ))}
           </SettingRow>
           <SettingRow label="Application permissions" hint="Microsoft Graph, Application type, with admin consent.">
             <CopyField value={p.scopes.join(', ')} label="Permissions" />
@@ -327,11 +340,6 @@ function ProviderCard({ p, canStore, onSaved }: { p: ProviderState; canStore: bo
             <button className="btn primary" disabled={busy || !msDirty} onClick={() => put({
               ms_tenant_id: tenant.trim(), ms_client_id: client.trim(), ...(secret.trim() ? { ms_client_secret: secret.trim() } : {})
             }, 'Microsoft app saved.')}>Save app</button>
-            {p.has_ms_client_secret && (
-              <button className="btn ghost danger-text" disabled={busy} onClick={async () => {
-                if (await confirmDialog('Remove the client secret? Nobody can send through Microsoft until one is saved again.', { confirmLabel: 'Remove', danger: true })) put({ ms_client_secret: null }, 'Client secret removed.');
-              }}>Remove secret</button>
-            )}
           </div>
           <SettingRow label="Send from aliases" hint="Lets people pick one of their other addresses as the From. Only works once Exchange Online allows sending from aliases (SendFromAliasesEnabled); otherwise Microsoft sends from the main address or refuses.">
             <label><input type="checkbox" role="switch" checked={p.ms_send_from_aliases} disabled={busy} onChange={(e) => put({ ms_send_from_aliases: e.target.checked }, e.target.checked ? 'Aliases turned on.' : 'Aliases turned off.')} /> {p.ms_send_from_aliases ? 'On' : 'Off'}</label>

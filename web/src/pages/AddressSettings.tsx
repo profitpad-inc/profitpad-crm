@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api, getSchema, type ObjectDef, type Property } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { EmptyState, SaveBar, SettingRow, SettingsPage, SettingsSection, TableSkeleton } from '../components/settings';
+import { confirmDialog } from '../components/confirm';
+import { EmptyState, SaveBar, SavedSecret, SettingRow, SettingsPage, SettingsSection, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 import { reloadAddressConfig, type AddressGroup } from '../components/AddressInput';
 
@@ -51,6 +52,7 @@ export function AddressSettings() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [schemas, setSchemas] = useState<Record<string, ObjectDef>>({});
   const [key, setKey] = useState('');
+  const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -77,6 +79,7 @@ export function AddressSettings() {
       setState(s);
       setDraft(draftOf(s));
       setKey('');
+      setReplacing(false);
       reloadAddressConfig();
       toast(done);
     } catch (err) {
@@ -84,6 +87,10 @@ export function AddressSettings() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function removeKey() {
+    if (await confirmDialog('Address boxes stop suggesting addresses until a new key is saved. Remove the Google Maps API key?', { title: 'Remove key', confirmLabel: 'Remove key', danger: true })) put({ google_key: null }, 'API key removed. Street boxes no longer suggest addresses.');
   }
 
   const description = 'Address boxes suggest places from Google Maps as people type. Picking a street fills in the rest of the address. The city, state or province, postal code and country boxes suggest places of their own kind, or any address when you type one. Picking a place fills in what it knows at its level and broader: an address fills everything, a postal code the state or province and the country. Street 2 stays a plain box.';
@@ -109,28 +116,50 @@ export function AddressSettings() {
         <SettingRow
           label="Google Maps API key"
           htmlFor="google-key"
-          hint={state.has_key ? `A key ending in ${state.key_hint} is saved. It is never shown again.` : 'Checked with Google before it is saved, then stored encrypted.'}
+          hint={state.has_key ? 'Stored encrypted. It is never shown again, only its last four characters.' : 'Checked with Google before it is saved, then stored encrypted.'}
         >
           {state.key_unreadable && <div className="error">The saved key can't be opened on this server (its encryption key changed). Save the API key again.</div>}
           {!state.can_store_secrets ? (
             <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>
           ) : (
-            <div className="key-row">
-              <input
-                id="google-key"
-                type="password"
-                autoComplete="off"
-                placeholder={state.has_key ? 'Paste a new key to replace it' : 'AIza...'}
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-              />
-              <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ google_key: key.trim() }, 'API key saved.')}>
-                {busy ? 'Checking…' : state.has_key ? 'Replace key' : 'Save key'}
-              </button>
-              {state.has_key && (
-                <button className="btn ghost danger-text" disabled={busy} onClick={() => put({ google_key: null }, 'API key removed. Street boxes no longer suggest addresses.')}>Remove</button>
-              )}
-            </div>
+            state.has_key && !replacing ? (
+              <SavedSecret noun="Key" last={state.key_hint} busy={busy} onReplace={() => setReplacing(true)} onRemove={removeKey} />
+            ) : (
+              replacing ? (
+                <>
+                  <input
+                    id="google-key"
+                    type="password"
+                    autoComplete="off"
+                    autoFocus={replacing}
+                    placeholder={state.has_key ? 'Paste the new key' : 'AIza...'}
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                  />
+                  <div className="key-row">
+                    <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ google_key: key.trim() }, 'API key saved.')}>
+                      {busy ? 'Checking…' : state.has_key ? 'Replace key' : 'Save key'}
+                    </button>
+                    <button className="btn ghost" disabled={busy} onClick={() => { setReplacing(false); setKey(''); }}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <div className="key-row">
+                  <input
+                    id="google-key"
+                    type="password"
+                    autoComplete="off"
+                    autoFocus={replacing}
+                    placeholder={state.has_key ? 'Paste the new key' : 'AIza...'}
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                  />
+                  <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ google_key: key.trim() }, 'API key saved.')}>
+                    {busy ? 'Checking…' : state.has_key ? 'Replace key' : 'Save key'}
+                  </button>
+                </div>
+              )
+            )
           )}
         </SettingRow>
         <SettingRow label="Suggest addresses" hint={state.has_key ? 'Turn off to stop suggestions without removing the key.' : 'Add a key first.'}>

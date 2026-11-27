@@ -719,14 +719,14 @@ export function CustomView() {
         />
       )}
       {bulk?.kind === 'edit' && (
-        <BulkEditModal object={bulk.object} schema={bulk.schema} ids={bulk.ids}
+        <BulkEditModal object={bulk.object} schema={bulk.schema} target={{ ids: bulk.ids }}
           onClose={() => { bulkRef.current?.resolve(0); setBulk(null); }}
-          onDone={(n) => { bulkRef.current?.resolve(n); setBulk(null); toast(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`); }} />
+          onDone={({ length: n }) => { bulkRef.current?.resolve(n); setBulk(null); toast(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`); }} />
       )}
       {bulk?.kind === 'delete' && (
-        <BulkDeleteModal object={bulk.object} schema={bulk.schema} ids={bulk.ids}
+        <BulkDeleteModal object={bulk.object} schema={bulk.schema} target={{ ids: bulk.ids }}
           onClose={() => { bulkRef.current?.resolve(0); setBulk(null); }}
-          onDone={(n) => { bulkRef.current?.resolve(n); setBulk(null); toast(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`); }} />
+          onDone={({ length: n }) => { bulkRef.current?.resolve(n); setBulk(null); toast(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`); }} />
       )}
       {blockedOpen && (
         <Modal

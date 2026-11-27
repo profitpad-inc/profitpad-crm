@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { pool, withTx } from '../db.js';
 import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
-import { hasPermission, requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
+import { apiBaseUrl, hasPermission, requireObjectPermission, requireRecentSignIn, requireScope, type Principal } from '../auth.js';
 import { canApprove } from '../approval.js';
 import { getObject } from '../registry.js';
 import { rateLimit } from './public.js';
@@ -9,7 +9,7 @@ import { loadEmailSettings, marketingSender, saveEmailSettings, settingsOut, web
 import { sendEmail } from '../email/send.js';
 import { handleEvent, handleInbound, optOut } from '../email/events.js';
 import { readUnsubscribeToken, unsubscribePageUrl, unsubscribeToken } from '../email/links.js';
-import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail } from '../email/render.js';
+import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout } from '../email/render.js';
 import { cancelCampaign, checkCampaign, countAudience, refreshCounts, sampleAudience, startCampaign } from '../email/campaigns.js';
 import { EMAIL_ACTOR } from '../email/send.js';
 
@@ -94,10 +94,14 @@ export async function emailRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireAdminUser(p);
     const to = await myEmail(p);
+    const s = await loadEmailSettings();
     const res = await sendEmail({
       to,
       subject: 'Test email from the CRM',
-      html: '<p>This test came from the CRM through Postmark. If you are reading it, transactional email works.</p>',
+      html: transactionalLayout(
+        '<p style="margin:0">This test came from the CRM through Postmark. If you are reading it, transactional email works.</p>',
+        { logoUrl: `${apiBaseUrl(req)}/icon-512.png`, mailingAddress: s.mailing_address }
+      ),
       text: 'This test came from the CRM through Postmark. If you are reading it, transactional email works.',
       tag: 'test'
     });
@@ -132,7 +136,7 @@ export async function emailRoutes(app: FastifyInstance) {
     await requireCampaignEdit(p);
     const to = await myEmail(p);
     const out = await previewCampaign(campaignId(req.params.id), req.body?.contact_id);
-    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test', from: out.from ?? undefined });
+    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
     return { sent_to: to, drawn_for: out.contact_id, message_id: res.message_id };
   });
 

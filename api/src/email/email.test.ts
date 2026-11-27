@@ -7,7 +7,7 @@ process.env.MASTER_ENCRYPTION_KEY ||= randomBytes(32).toString('base64');
 const { readUnsubscribeToken, unsubscribeToken, newReplyToken, REPLY_TOKEN_RE } = await import('./links.js');
 const { eventKey } = await import('./events.js');
 const { fromHeader, marketingSender, replyToFor } = await import('./settings.js');
-const { renderCampaignEmail } = await import('./render.js');
+const { renderCampaignEmail, transactionalLayout } = await import('./render.js');
 
 test('unsubscribe tokens round-trip and refuse tampering', () => {
   const t = unsubscribeToken('00000000aa', '00000000bb')!;
@@ -74,4 +74,13 @@ test('Reply-To: the tracked address only while replies are on, else the default 
   assert.equal(replyToFor({ ...off, default_reply_to: null }, 'tok'), null);
   assert.equal(replyToFor({ ...off, replies_enabled: true }, 'tok'), 'reply+tok@reply.acme.com');
   assert.equal(replyToFor({ ...off, replies_enabled: true }, null), 'team@acme.com');
+});
+
+test('transactional emails get the CRM logo and the mailing address footer, no unsubscribe link', () => {
+  const html = transactionalLayout('<p>Hi</p>', { logoUrl: 'https://api.acme.com/icon-512.png', mailingAddress: '1 Main St\nTown' });
+  assert.match(html, /<img src="https:\/\/api\.acme\.com\/icon-512\.png"/);
+  assert.match(html, /<p>Hi<\/p>/);
+  assert.match(html, /1 Main St<br>Town/);
+  assert.doesNotMatch(html, /Unsubscribe/);
+  assert.match(html, /^<!doctype html>/);
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, CheckCheck, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
   api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type FilterGroup, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
@@ -122,6 +122,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const selecting = useRef(false);
   // records ticked in the checkbox column, for Edit all and Delete all
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  // "Select all": every record the search matches, not just the rows loaded
+  const [allMatching, setAllMatching] = useState(false);
   const lastPicked = useRef<number | null>(null);
   const [bulk, setBulk] = useState<null | 'edit' | 'delete' | 'remove'>(null);
   // phones: tapping a card picks it instead of opening it (the Select button or a long press)
@@ -168,10 +170,12 @@ function ObjectTableFor({ object }: { object: string }) {
   // the active view's columns and sorts become the working copy
   useEffect(() => {
     if (!activeView) return;
-    setColumns(activeView.columns);
     setSorts(activeView.sorts);
-    // a link's ?filters= wins over the view's own (applied, not saved)
-    setFilterGroups(parseFilterParam(searchParams.get('filters')) ?? activeView.filter_groups ?? []);
+    // a link's ?filters= wins over the view's own (applied, not saved), and
+    // its new conditions on this object's properties show as columns too
+    const linked = parseFilterParam(searchParams.get('filters'));
+    setColumns(linked ? withFilterColumns(activeView.columns, linked, activeView.filter_groups ?? []) : activeView.columns);
+    setFilterGroups(linked ?? activeView.filter_groups ?? []);
     setAppliedViewId(activeView.id);
     setDirty(false);
   }, [activeView?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -296,6 +300,7 @@ function ObjectTableFor({ object }: { object: string }) {
   // a new search, sort, view or the recycle bin shows different records, so start over
   useEffect(() => {
     setPicked(new Set());
+    setAllMatching(false);
     setSelectMode(false);
     lastPicked.current = null;
   }, [debounced, archived, quickFilters, searchGroups, sorts, activeViewId]);
@@ -304,8 +309,85 @@ function ObjectTableFor({ object }: { object: string }) {
   const pickedCount = shown.filter((r) => picked.has(r.id)).length;
   const allPicked = shown.length > 0 && pickedCount === shown.length;
   const picking = isMobile && (selectMode || picked.size > 0);
+  const total = data?.total ?? 0;
+  // how many records an action would change
+  const pickedTotal = allMatching ? total : picked.size;
+
+  // what the bulk actions work on: the ticked rows, or after "Select all"
+  // the table's search, which the server runs as a job
+  const pickedTarget: BulkTarget = allMatching
+    ? {
+      count: total,
+      search: {
+        query: debounced || undefined,
+        status: archived ? 'archived' : undefined,
+        filter_groups: searchGroups.length
+          ? searchGroups.map((g) => ({ filters: [...quickFilters, ...g.filters] }))
+          : quickFilters.length ? [{ filters: quickFilters }] : undefined
+      }
+    }
+    : { ids: [...picked] };
+
+  // bulk jobs running on the server for this object (started here, or still
+  // going from before), checked every 2 s until they finish
+  const [jobs, setJobs] = useState<BulkJob[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setJobs([]);
+    api<{ results: BulkJob[] }>('GET', `/v1/bulk-jobs?object=${object}&open=1`)
+      .then((r) => !cancelled && setJobs(r.results))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [object]);
+  const openJobs = jobs.filter((j) => JOB_OPEN.includes(j.status)).map((j) => j.id).join(',');
+  useEffect(() => {
+    if (!openJobs) return;
+    const timer = setInterval(async () => {
+      const latest = (await Promise.all(openJobs.split(',').map((id) => api<BulkJob>('GET', `/v1/bulk-jobs/${id}`).catch(() => null))))
+        .filter((j): j is BulkJob => !!j);
+      // finished jobs leave the bar, except a failure, which stays until dismissed
+      setJobs((prev) => prev
+        .map((j) => latest.find((l) => l.id === j.id) ?? j)
+        .filter((j) => JOB_OPEN.includes(j.status) || j.status === 'failed'));
+      for (const j of latest) if (!JOB_OPEN.includes(j.status)) jobFinished(j);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [openJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function jobStarted(job: BulkJob) {
+    setBulk(null);
+    clearPicked();
+    setJobs((prev) => [job, ...prev.filter((j) => j.id !== job.id)]);
+  }
+
+  // each finished job is reported once (the poll and Stop can both see it end)
+  const jobsReported = useRef(new Set<string>());
+  function jobFinished(job: BulkJob) {
+    if (jobsReported.current.has(job.id)) return;
+    jobsReported.current.add(job.id);
+    const noun = (n: number) => `${n.toLocaleString()} ${(n === 1 ? schema?.label_singular : schema?.label_plural)?.toLowerCase() ?? 'records'}`;
+    const skipped = job.skipped ? `, ${job.skipped.toLocaleString()} skipped` : '';
+    if (job.status === 'completed') toast(`${noun(job.done)} ${JOB_DONE[job.action]}${skipped}`);
+    else if (job.status === 'cancelled') toast(`Stopped after ${noun(job.done)} ${JOB_DONE[job.action]}`);
+    fetchPage();
+  }
+
+  async function cancelJob(job: BulkJob) {
+    const ok = await confirmDialog(`The ${job.done.toLocaleString()} records already changed stay changed.`, { title: 'Stop this change?', confirmLabel: 'Stop' });
+    if (!ok) return;
+    try {
+      const j = await api<BulkJob>('POST', `/v1/bulk-jobs/${job.id}/cancel`);
+      setJobs((prev) => prev.filter((p) => p.id !== j.id));
+      jobFinished(j);
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
 
   function togglePick(id: string) {
+    setAllMatching(false);
     setPicked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -316,6 +398,7 @@ function ObjectTableFor({ object }: { object: string }) {
 
   function clearPicked() {
     setPicked(new Set());
+    setAllMatching(false);
     setSelectMode(false);
   }
 
@@ -343,12 +426,14 @@ function ObjectTableFor({ object }: { object: string }) {
 
   function pickAll() {
     setPicked(allPicked ? new Set() : new Set(shown.map((r) => r.id)));
+    setAllMatching(false);
     lastPicked.current = null;
   }
 
   // shift-click ticks or unticks every row between this one and the last one clicked
   function pickRow(e: React.MouseEvent<HTMLInputElement>, row: number) {
     const on = e.currentTarget.checked;
+    setAllMatching(false);
     const from = e.shiftKey && lastPicked.current !== null ? Math.min(lastPicked.current, row) : row;
     const to = e.shiftKey && lastPicked.current !== null ? Math.max(lastPicked.current, row) : row;
     setPicked((prev) => {
@@ -364,11 +449,12 @@ function ObjectTableFor({ object }: { object: string }) {
 
   const [restoring, setRestoring] = useState(false);
   async function restorePicked() {
-    const ids = [...picked];
     setRestoring(true);
     setError(null);
     try {
-      await inChunks(ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/restore`, { ids: chunk }));
+      const res = await runBulk(object, pickedTarget, 'restore', {}, true);
+      if ('job' in res) return jobStarted(res.job);
+      const ids = res.ids;
       bulkDone(ids.length === 1 ? 'Restored' : `${ids.length.toLocaleString()} restored`, true);
     } catch (err) {
       setError((err as Error).message);
@@ -423,11 +509,26 @@ function ObjectTableFor({ object }: { object: string }) {
       .map((l) => ({ value: l.id, label: associationColumnLabel({ object: otherName, label_id: l.id }, other, labels, schema.api_name, objectByName) }));
   }
 
+  // A finished condition on one of this object's own properties (not a
+  // linked object's) that wasn't in the filters before adds that property as
+  // a column, unless the table already shows it.
+  function withFilterColumns(cols: Column[], groups: FilterGroup[], before: FilterGroup[]): Column[] {
+    const own = (gs: FilterGroup[]) => gs.flatMap((g) => g.filters.filter((f) => !f.association).map((f) => f.property));
+    const had = new Set(own(before));
+    const shown = new Set(cols.flatMap((c) => (c.type === 'property' ? [c.property] : [])));
+    const add = [...new Set(own(groups))]
+      .filter((p) => !had.has(p) && !shown.has(p) && !!schema?.properties.some((x) => x.api_name === p));
+    return add.length ? [...cols, ...add.map((property) => ({ type: 'property' as const, property }))] : cols;
+  }
+
   // the panel's edits apply at once; finished conditions are saved with the view
   function changeFilters(next: FilterGroup[]) {
     setFilterGroups(next);
     const done = completeGroups(next, filterFields);
-    if (JSON.stringify(done) !== JSON.stringify(completeGroups(filterGroups, filterFields))) changeView({ filter_groups: done });
+    const before = completeGroups(filterGroups, filterFields);
+    if (JSON.stringify(done) === JSON.stringify(before)) return;
+    const cols = withFilterColumns(columns, done, before);
+    changeView(cols === columns ? { filter_groups: done } : { filter_groups: done, columns: cols });
   }
 
   // The finished filters also live in ?filters=, so a refresh, a copied link
@@ -456,7 +557,9 @@ function ObjectTableFor({ object }: { object: string }) {
   useEffect(() => {
     if (urlFilters === syncedFilters.current || !activeView) return;
     syncedFilters.current = urlFilters;
-    setFilterGroups(parseFilterParam(urlFilters) ?? activeView.filter_groups ?? []);
+    const linked = parseFilterParam(urlFilters);
+    if (linked) setColumns((cols) => withFilterColumns(cols, linked, filterGroups));
+    setFilterGroups(linked ?? activeView.filter_groups ?? []);
   }, [urlFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Drag a header's right edge to resize; the width is saved on mouse up.
@@ -833,26 +936,60 @@ function ObjectTableFor({ object }: { object: string }) {
         </button>
       </nav>
 
+      {jobs.map((job) => {
+        const pct = job.total ? Math.floor((job.done + job.skipped) / job.total * 100) : 0;
+        const label = schema.label_plural.toLowerCase();
+        return (
+          <div key={job.id} className={`bulk-job${job.status === 'failed' ? ' failed' : ''}`} role="status">
+            {job.status === 'failed' ? (
+              <>
+                <span className="bulk-job-text">
+                  {JOB_VERB[job.action]} {label} stopped after {job.done.toLocaleString()} of {job.total.toLocaleString()}: {job.error}
+                </span>
+                <button className="icon-btn" aria-label="Dismiss" onClick={() => setJobs((prev) => prev.filter((p) => p.id !== job.id))}><X size={14} /></button>
+              </>
+            ) : (
+              <>
+                <Loading inline label={`${JOB_VERB[job.action]} ${label}`} />
+                <span className="bulk-job-text">
+                  {job.status === 'running'
+                    ? `${JOB_VERB[job.action]} ${label}: ${(job.done + job.skipped).toLocaleString()} of ${job.total.toLocaleString()}`
+                    : `${JOB_VERB[job.action]} ${label}: finding the records…`}
+                  {job.skipped > 0 && <span className="muted"> ({job.skipped.toLocaleString()} skipped)</span>}
+                </span>
+                <span className="bulk-job-meter" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
+                <button className="btn small ghost" onClick={() => cancelJob(job)}>Stop</button>
+              </>
+            )}
+          </div>
+        );
+      })}
+
       {picked.size > 0 || picking ? (
         <div className="table-toolbar selection-bar" role="region" aria-label="Selected records">
-          <span className="selection-count" role="status">{picked.size.toLocaleString()} selected</span>
+          <span className="selection-count" role="status">{allMatching ? `All ${total.toLocaleString()}` : picked.size.toLocaleString()} selected</span>
+          {!allMatching && allPicked && total > picked.size && (
+            <button className="btn small ghost" onClick={() => setAllMatching(true)}>
+              <CheckCheck size={14} /> Select all {total.toLocaleString()}
+            </button>
+          )}
           {archived && schema?.permissions.delete && (
-            <button className="btn small ghost" onClick={restorePicked} disabled={restoring || picked.size === 0}>
+            <button className="btn small ghost" onClick={restorePicked} disabled={restoring || pickedTotal === 0}>
               <RotateCcw size={14} /> {restoring ? 'Restoring…' : 'Restore all'}
             </button>
           )}
           {archived && me?.is_admin && (
-            <button className="btn small ghost danger-text" onClick={() => setBulk('remove')} disabled={picked.size === 0}>
+            <button className="btn small ghost danger-text" onClick={() => setBulk('remove')} disabled={pickedTotal === 0}>
               <Trash2 size={14} /> Delete permanently
             </button>
           )}
           {!archived && schema?.permissions.edit && (
-            <button className="btn small ghost" onClick={() => setBulk('edit')} disabled={picked.size === 0}>
+            <button className="btn small ghost" onClick={() => setBulk('edit')} disabled={pickedTotal === 0}>
               <Pencil size={14} /> Edit all
             </button>
           )}
           {!archived && schema?.permissions.delete && (
-            <button className="btn small ghost danger-text" onClick={() => setBulk('delete')} disabled={picked.size === 0}>
+            <button className="btn small ghost danger-text" onClick={() => setBulk('delete')} disabled={pickedTotal === 0}>
               <Trash2 size={14} /> Delete all
             </button>
           )}
@@ -890,11 +1027,20 @@ function ObjectTableFor({ object }: { object: string }) {
                 ]} />
             );
           })}
-          <button type="button" className={`btn${isMobile ? ' icon-only' : ''} table-filters-btn`} onClick={() => setShowFilters(true)}
-            aria-label={isMobile ? `Filters${filterCount ? ` (${filterCount})` : ''}` : undefined} aria-expanded={showFilters}>
-            <ListFilter size={14} />{!isMobile && ' Filters'}
-            {filterCount > 0 && <span className="af-count">{filterCount}</span>}
-          </button>
+          {/* the button opens and closes the panel; the x beside it clears the filters */}
+          <span className={`table-filters${filterCount > 0 ? ' has-clear' : ''}`}>
+            <button type="button" className={`btn${isMobile ? ' icon-only' : ''} table-filters-btn`} onClick={() => setShowFilters((v) => !v)}
+              aria-label={isMobile ? `Filters${filterCount ? ` (${filterCount})` : ''}` : undefined} aria-expanded={showFilters}>
+              <ListFilter size={14} />{!isMobile && ' Filters'}
+              {filterCount > 0 && <span className="af-count">{filterCount}</span>}
+            </button>
+            {filterCount > 0 && (
+              <button type="button" className="btn table-filters-clear" onClick={() => changeFilters([])}
+                title="Clear filters" aria-label="Clear filters">
+                <X size={14} />
+              </button>
+            )}
+          </span>
           {archived && (
             <button type="button" className="table-archived-chip" onClick={() => showArchived(false)} title={`Back to active ${plural}`}>
               <Archive size={13} /> Archived only <X size={13} />
@@ -1167,10 +1313,11 @@ function ObjectTableFor({ object }: { object: string }) {
         <BulkEditModal
           object={object}
           schema={schema}
-          ids={[...picked]}
+          target={pickedTarget}
+          onStarted={jobStarted}
           onClose={() => setBulk(null)}
-          onDone={(n, property) => {
-            const ids = [...picked];
+          onDone={(ids, property) => {
+            const n = ids.length;
             bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} updated`, false);
             if (AMOUNT_FIELDS.includes(property)) void offerForLines(ids);
           }}
@@ -1180,19 +1327,21 @@ function ObjectTableFor({ object }: { object: string }) {
         <BulkRemoveModal
           object={object}
           schema={schema}
-          ids={[...picked]}
+          target={pickedTarget}
+          onStarted={jobStarted}
           onClose={() => setBulk(null)}
-          onDone={(n) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} permanently deleted`, true)}
+          onDone={({ length: n }) => bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} permanently deleted`, true)}
         />
       )}
       {bulk === 'delete' && (
         <BulkDeleteModal
           object={object}
           schema={schema}
-          ids={[...picked]}
+          target={pickedTarget}
+          onStarted={jobStarted}
           onClose={() => setBulk(null)}
-          onDone={(n) => {
-            const ids = [...picked];
+          onDone={(ids) => {
+            const n = ids.length;
             bulkDone(`${n.toLocaleString()} ${n === 1 ? 'record' : 'records'} deleted`, true);
             void offerForLines(ids);
           }}
@@ -1491,6 +1640,44 @@ function CellEditor({ object, record, property, rect, onClose, onSaved }: {
 
 type MultiMode = 'append' | 'remove' | 'replace';
 
+// What the bulk actions work on: ticked records, or after "Select all" the
+// table's search (every record it matches, count of them).
+export type BulkTarget = { ids: string[] } | { search: Record<string, unknown>; count: number };
+export const targetCount = (t: BulkTarget) => ('ids' in t ? t.ids.length : t.count);
+
+// A bulk change the server works through in the background (api/src/bulk-jobs.ts).
+export type BulkAction = 'update' | 'archive' | 'restore' | 'permanently_delete';
+export interface BulkJob {
+  id: string;
+  object: string;
+  action: BulkAction;
+  status: 'queued' | 'collecting' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total: number;
+  done: number;
+  skipped: number;
+  errors: { id: string; error: string }[];
+  error: string | null;
+}
+const JOB_OPEN: BulkJob['status'][] = ['queued', 'collecting', 'running'];
+const JOB_VERB: Record<BulkAction, string> = { update: 'Updating', archive: 'Deleting', restore: 'Restoring', permanently_delete: 'Permanently deleting' };
+const JOB_DONE: Record<BulkAction, string> = { update: 'updated', archive: 'deleted', restore: 'restored', permanently_delete: 'permanently deleted' };
+const BULK_PATH: Record<BulkAction, string> = { update: 'update', archive: 'archive', restore: 'restore', permanently_delete: 'permanently-delete' };
+
+// Up to 500 ticked records change at once. More, or "Select all", start a
+// job on the server when the caller can follow one (asJob); otherwise the
+// ids go 500 at a time from here.
+async function runBulk(
+  object: string, target: BulkTarget, action: BulkAction, body: Record<string, unknown>, asJob: boolean
+): Promise<{ ids: string[] } | { job: BulkJob }> {
+  if (asJob && ('search' in target || target.ids.length > BULK_CHUNK)) {
+    const job = await api<BulkJob>('POST', `/v1/objects/${object}/bulk-jobs`, { action, ...body, ...('search' in target ? { search: target.search } : { ids: target.ids }) });
+    return { job };
+  }
+  if (!('ids' in target)) throw new Error('select the records again');
+  await inChunks(target.ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/${BULK_PATH[action]}`, { ids: chunk, ...body }));
+  return { ids: target.ids };
+}
+
 // Sends ids to a bulk endpoint 500 at a time. Each call is all or nothing, so
 // an error partway leaves the earlier calls' records changed; the message
 // says how many.
@@ -1508,8 +1695,9 @@ async function inChunks(ids: string[], send: (chunk: string[]) => Promise<unknow
 // Sets one property on every ticked record. Unique properties are left out
 // (one value can't be on two records), as are ones nobody can edit.
 // Multi-choice dropdowns can add choices, take them away or replace them.
-export function BulkEditModal({ object, schema, ids, onClose, onDone }: {
-  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number, property: string) => void;
+// onStarted: the caller follows a server job; without it every change is made from here.
+export function BulkEditModal({ object, schema, target, onClose, onDone, onStarted }: {
+  object: string; schema: ObjectDef; target: BulkTarget; onClose: () => void; onDone: (ids: string[], property: string) => void; onStarted?: (job: BulkJob) => void;
 }) {
   const properties = useMemo(
     () => schema.properties.filter((p) => isEditable(p) && p.options.unique !== true && p.type !== 'email' && p.type !== 'phone').sort((a, b) => a.label.localeCompare(b.label)),
@@ -1524,21 +1712,20 @@ export function BulkEditModal({ object, schema, ids, onClose, onDone }: {
   const multi = property?.type === 'dropdown' && property.options.single_value !== true;
   const value = property ? fromInput(property, draft) : null;
   const ready = !!property && !saving && (!multi || mode === 'replace' || value !== null);
-  const noun = ids.length === 1 ? 'record' : 'records';
+  const count = targetCount(target);
+  const noun = count === 1 ? 'record' : 'records';
 
   async function save() {
     if (!property || !ready) return;
     setSaving(true);
     setError(null);
     try {
-      await inChunks(ids, (chunk) =>
-        api('POST', `/v1/objects/${object}/bulk/update`, {
-          ids: chunk,
-          properties: { [property.api_name]: value },
-          ...(multi ? { modes: { [property.api_name]: mode } } : {})
-        })
-      );
-      onDone(ids.length, property.api_name);
+      const res = await runBulk(object, target, 'update', {
+        properties: { [property.api_name]: value },
+        ...(multi ? { modes: { [property.api_name]: mode } } : {})
+      }, !!onStarted);
+      if ('job' in res) onStarted!(res.job);
+      else onDone(res.ids, property.api_name);
     } catch (err) {
       setSaving(false);
       setError((err as Error).message);
@@ -1547,13 +1734,13 @@ export function BulkEditModal({ object, schema, ids, onClose, onDone }: {
 
   return (
     <Modal
-      title={`Edit ${ids.length.toLocaleString()} ${noun}`}
+      title={`Edit ${count.toLocaleString()} ${noun}`}
       onClose={onClose}
       footer={
         <>
           <SaveHint missing={[!property && 'a property']} />
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save} disabled={!ready}>{saving ? 'Saving…' : `Update ${ids.length.toLocaleString()} ${noun}`}</button>
+          <button className="btn primary" onClick={save} disabled={!ready}>{saving ? 'Saving…' : `Update ${count.toLocaleString()} ${noun}`}</button>
         </>
       }
     >
@@ -1595,19 +1782,21 @@ export function BulkEditModal({ object, schema, ids, onClose, onDone }: {
 
 // Deleting from the table archives, like the record page: the records go to
 // the recycle bin rather than being removed for good.
-export function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
-  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
+export function BulkDeleteModal({ object, schema, target, onClose, onDone, onStarted }: {
+  object: string; schema: ObjectDef; target: BulkTarget; onClose: () => void; onDone: (ids: string[]) => void; onStarted?: (job: BulkJob) => void;
 }) {
+  const count = targetCount(target);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const label = (ids.length === 1 ? schema.label_singular : schema.label_plural).toLowerCase();
+  const label = (count === 1 ? schema.label_singular : schema.label_plural).toLowerCase();
 
   async function remove() {
     setSaving(true);
     setError(null);
     try {
-      await inChunks(ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/archive`, { ids: chunk }));
-      onDone(ids.length);
+      const res = await runBulk(object, target, 'archive', {}, !!onStarted);
+      if ('job' in res) onStarted!(res.job);
+      else onDone(res.ids);
     } catch (err) {
       setSaving(false);
       setError((err as Error).message);
@@ -1616,12 +1805,12 @@ export function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
 
   return (
     <Modal
-      title={`Delete ${ids.length.toLocaleString()} ${label}?`}
+      title={`Delete ${count.toLocaleString()} ${label}?`}
       onClose={onClose}
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn danger" onClick={remove} disabled={saving}>{saving ? 'Deleting…' : `Delete ${ids.length.toLocaleString()} ${label}`}</button>
+          <button className="btn danger" onClick={remove} disabled={saving}>{saving ? 'Deleting…' : `Delete ${count.toLocaleString()} ${label}`}</button>
         </>
       }
     >
@@ -1633,19 +1822,21 @@ export function BulkDeleteModal({ object, schema, ids, onClose, onDone }: {
 
 // "Delete permanently" in the archived list (admins only): every value and
 // the history are wiped, only the record IDs are kept.
-function BulkRemoveModal({ object, schema, ids, onClose, onDone }: {
-  object: string; schema: ObjectDef; ids: string[]; onClose: () => void; onDone: (n: number) => void;
+function BulkRemoveModal({ object, schema, target, onClose, onDone, onStarted }: {
+  object: string; schema: ObjectDef; target: BulkTarget; onClose: () => void; onDone: (ids: string[]) => void; onStarted?: (job: BulkJob) => void;
 }) {
+  const count = targetCount(target);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const label = (ids.length === 1 ? schema.label_singular : schema.label_plural).toLowerCase();
+  const label = (count === 1 ? schema.label_singular : schema.label_plural).toLowerCase();
 
   async function remove() {
     setSaving(true);
     setError(null);
     try {
-      await inChunks(ids, (chunk) => api('POST', `/v1/objects/${object}/bulk/permanently-delete`, { ids: chunk }));
-      onDone(ids.length);
+      const res = await runBulk(object, target, 'permanently_delete', {}, !!onStarted);
+      if ('job' in res) onStarted!(res.job);
+      else onDone(res.ids);
     } catch (err) {
       setSaving(false);
       setError((err as Error).message);
@@ -1654,12 +1845,12 @@ function BulkRemoveModal({ object, schema, ids, onClose, onDone }: {
 
   return (
     <Modal
-      title={`Permanently delete ${ids.length.toLocaleString()} ${label}?`}
+      title={`Permanently delete ${count.toLocaleString()} ${label}?`}
       onClose={onClose}
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn danger" onClick={remove} disabled={saving}>{saving ? 'Deleting…' : `Delete ${ids.length.toLocaleString()} ${label} permanently`}</button>
+          <button className="btn danger" onClick={remove} disabled={saving}>{saving ? 'Deleting…' : `Delete ${count.toLocaleString()} ${label} permanently`}</button>
         </>
       }
     >

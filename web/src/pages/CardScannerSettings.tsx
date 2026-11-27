@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import { SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
+import { confirmDialog } from '../components/confirm';
+import { SaveBar, SavedSecret, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { Select } from '../components/Select';
 
 // Settings -> Card scanner (admins): how the business card scanner reads
@@ -24,6 +25,7 @@ export function CardScannerSettings() {
   const [state, setState] = useState<State | null>(null);
   const [draft, setDraft] = useState<{ reader: State['reader'] } | null>(null);
   const [key, setKey] = useState('');
+  const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -41,12 +43,17 @@ export function CardScannerSettings() {
       setState(s);
       setDraft({ reader: s.reader });
       setKey('');
+      setReplacing(false);
       toast(done);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function removeKey() {
+    if (await confirmDialog('Cards are read with Tesseract until a new key is saved. Remove the Anthropic API key?', { title: 'Remove key', confirmLabel: 'Remove key', danger: true })) put({ anthropic_key: null }, 'API key removed. Cards are read with Tesseract.');
   }
 
   const description = (
@@ -91,28 +98,50 @@ export function CardScannerSettings() {
         <SettingRow
           label="Anthropic API key"
           htmlFor="anthropic-key"
-          hint={state.has_key ? `A key ending in ${state.key_hint} is saved. It is never shown again.` : 'Checked with Anthropic before it is saved, then stored encrypted.'}
+          hint={state.has_key ? 'Stored encrypted. It is never shown again, only its last four characters.' : 'Checked with Anthropic before it is saved, then stored encrypted.'}
         >
           {state.key_unreadable && <div className="error">The saved key can't be opened on this server (its encryption key changed). Save the API key again.</div>}
           {!state.can_store_secrets ? (
             <div className="callout warn">This server can't store secrets yet (MASTER_ENCRYPTION_KEY is not set).</div>
           ) : (
-            <div className="key-row">
-              <input
-                id="anthropic-key"
-                type="password"
-                autoComplete="off"
-                placeholder={state.has_key ? 'Paste a new key to replace it' : 'sk-ant-...'}
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-              />
-              <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ anthropic_key: key.trim() }, 'API key saved.')}>
-                {busy ? 'Checking…' : state.has_key ? 'Replace key' : 'Save key'}
-              </button>
-              {state.has_key && (
-                <button className="btn ghost danger-text" disabled={busy} onClick={() => put({ anthropic_key: null }, 'API key removed. Cards are read with Tesseract.')}>Remove</button>
-              )}
-            </div>
+            state.has_key && !replacing ? (
+              <SavedSecret noun="Key" last={state.key_hint} busy={busy} onReplace={() => setReplacing(true)} onRemove={removeKey} />
+            ) : (
+              replacing ? (
+                <>
+                  <input
+                    id="anthropic-key"
+                    type="password"
+                    autoComplete="off"
+                    autoFocus={replacing}
+                    placeholder={state.has_key ? 'Paste the new key' : 'sk-ant-...'}
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                  />
+                  <div className="key-row">
+                    <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ anthropic_key: key.trim() }, 'API key saved.')}>
+                      {busy ? 'Checking…' : state.has_key ? 'Replace key' : 'Save key'}
+                    </button>
+                    <button className="btn ghost" disabled={busy} onClick={() => { setReplacing(false); setKey(''); }}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <div className="key-row">
+                  <input
+                    id="anthropic-key"
+                    type="password"
+                    autoComplete="off"
+                    autoFocus={replacing}
+                    placeholder={state.has_key ? 'Paste the new key' : 'sk-ant-...'}
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                  />
+                  <button className="btn primary" disabled={busy || !key.trim()} onClick={() => put({ anthropic_key: key.trim() }, 'API key saved.')}>
+                    {busy ? 'Checking…' : state.has_key ? 'Replace key' : 'Save key'}
+                  </button>
+                </div>
+              )
+            )
           )}
         </SettingRow>
       </SettingsSection>

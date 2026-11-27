@@ -359,6 +359,18 @@ export async function searchRecords(obj: ObjectDef, principal: Principal, req: S
   };
 }
 
+// The ids of every record a search matches and the principal may change
+// (mode), as SQL selecting "id": a bulk job's "select all" (bulk-jobs.ts).
+// Only the search's query, status and filters count; sorts and paging don't.
+export async function matchingIdsSql(obj: ObjectDef, principal: Principal, req: SearchRequest, params: unknown[], mode: AccessMode): Promise<string> {
+  requireObjectPermission(principal, obj, 'read');
+  const hidden = (p: PropertyDef) => propertyAccess(principal, p) === 'hidden';
+  const search: SearchRequest = { query: req.query, status: req.status, filter_groups: req.filter_groups };
+  const q = compileSearch(obj, search, params, hidden, await filterAssociationContext(obj, req.filter_groups, principal));
+  const access = recordFilter(principal, obj, params, 't', mode);
+  return `select t.${quoteIdent(obj.id_column)} as id from crm.${quoteIdent(obj.object_type_id)} t where ${q.where} and ${access}`;
+}
+
 // Checks file ids newly placed in a file property (files.ts registers it):
 // each must be a ready file the caller can already open, so linking a file
 // to a record never grants access to it.

@@ -17,6 +17,10 @@ import { CodeTextarea } from './CodeTextarea';
 const PREVIEW_STYLE = `html, body { margin: 0; } body { padding: 12px 14px; font: 14px/1.5 Inter, system-ui, sans-serif; color: #1f2328; background: #fff; overflow-wrap: anywhere; }
   img { max-width: 100%; } pre { white-space: pre-wrap; }`;
 
+// The page an HTML value is drawn in (links open in a new tab)
+export const htmlPreviewDoc = (html: string) =>
+  `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>${PREVIEW_STYLE}</style></head><body>${html}</body></html>`;
+
 // No scripts, forms or plugins. allow-same-origin (without allow-scripts) only
 // lets this page read the frame's height; links open in a new tab.
 export function HtmlPreview({ html, title = 'HTML preview', minHeight = 40, maxHeight }: { html: string; title?: string; minHeight?: number; maxHeight?: number }) {
@@ -33,7 +37,7 @@ export function HtmlPreview({ html, title = 'HTML preview', minHeight = 40, maxH
     fit();
     frame.current?.contentDocument?.querySelectorAll('img').forEach((img) => img.addEventListener('load', fit));
   };
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>${PREVIEW_STYLE}</style></head><body>${html}</body></html>`;
+  const doc = htmlPreviewDoc(html);
   return (
     <iframe ref={frame} className="html-preview" title={title} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       srcDoc={doc} style={{ height }} onLoad={onLoad} />

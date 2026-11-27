@@ -57,7 +57,9 @@ export interface TransactionalEmail {
   contactId?: string | null;
   // keep an `emails` record even without a contact (default: only with one)
   record?: boolean;
-  // replies come back to the CRM (needs a reply domain)
+  // someone may answer it: it gets a Reply-To (the CRM's reply address when
+  // replies are on, else the default reply-to). Off: no Reply-To, replies go
+  // to the From address (a noreply sender for tests and sign-in links).
   replyable?: boolean;
   ownerUserId?: string | null;
   tag?: string;
@@ -85,7 +87,7 @@ export async function sendEmail(m: TransactionalEmail): Promise<{ email_id: stri
       Subject: m.subject,
       HtmlBody: m.html,
       ...(m.text ? { TextBody: m.text } : {}),
-      ...((r) => (r ? { ReplyTo: r } : {}))(replyToFor(s, replyToken)),
+      ...((r) => (r ? { ReplyTo: r } : {}))(m.replyable ? replyToFor(s, replyToken) : null),
       ...(m.tag ? { Tag: m.tag } : {}),
       TrackOpens: false,
       TrackLinks: 'None',
