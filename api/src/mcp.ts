@@ -39,6 +39,7 @@ import {
 import { findIcons, ICON_NAMES } from './icons.js';
 import { createOptionList, deleteOptionList, linkDropdown, listOptionLists, unlinkDropdown, updateOptionList } from './option-lists.js';
 import { registerEmailTools } from './email/mcp-tools.js';
+import { registerDisplayTools } from './display/mcp-tools.js';
 import {
   auditIntegration, createIntegration, listIntegrations, maskUrl, testIntegration, testIntegrationUrl, updateIntegration, type AdminIntegration
 } from './integrations.js';
@@ -84,6 +85,7 @@ const INSTRUCTIONS = `${SERVER_TITLE}: records (contacts, companies, deals, tick
 Start with list_objects, then describe_object to learn an object's property api_names and dropdown values before searching or writing.
 Records are addressed by object api_name and record ID. You act as the signed-in user and see only what they may see.
 Calls, emails, notes, tasks, form submissions, marketing event participations and object event occurrences can have comments: use list_comments, add_comment, update_comment and delete_comment (not create_record). To tag (mention) someone in a comment or a note body, find their user id with find_users_to_mention and write @[Their Name](<user id>) in the text; they see it in their Mentions and may then view that record.
+To show the user a record or a list of records (they ask to see, show, open, pull up, list or browse contacts, companies, deals or any object), call show_record or show_records: the CRM draws the card itself, in its own style and theme, so every answer looks the same. Never build your own visual, widget, artifact or table of records, and do not repeat what the card shows. Use get_record and search_records when you need the data for yourself.
 Create tools take an optional client_request_id: send one, and if an answer is lost (502, timeout, dropped connection) call again with the same id and input to get the first result instead of a duplicate. Calls may run in parallel.`;
 
 // for connections whose user's roles let them read the knowledge base
@@ -664,6 +666,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
   }
 
   registerEmailTools(server, p);
+  registerDisplayTools(server, p, SERVER_TITLE);
   if (p.scopes.has('schema')) registerAdminTools(server, p, req);
   return server;
 }

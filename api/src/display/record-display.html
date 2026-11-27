@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProfitPad CRM record</title>
+<!-- Record cards for AI chats (MCP Apps). Served by the MCP server as
+     ui://profitpad-crm/record-display.html and drawn by the chat host for the
+     show_record and show_records tools (api/src/display/cards.ts builds the
+     data). It mirrors the CRM's record header and table (web/src/styles.css)
+     and takes its colours from the tenant theme sent with each result. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --primary: #1d4ed8;
+    --page-background: #ffffff;
+    --surface: #eef1f5;
+    --text: #0b1220;
+    --muted-text: #475467;
+    --border: #cfd6df;
+    --money: #1e7a4c;
+    --radius-sm: 4px;
+    --radius: 6px;
+    --radius-lg: 10px;
+    --shadow-card: 0 1px 2px rgba(24, 32, 43, 0.06), 0 4px 12px rgba(24, 32, 43, 0.07);
+    color-scheme: light;
+  }
+  :root[data-mode='dark'] {
+    --primary: #3b76ef;
+    --page-background: #161b26;
+    --surface: #0f131c;
+    --text: #e6eaf0;
+    --muted-text: #9aa4b4;
+    --border: #2e3646;
+    --money: #3fbf7f;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.25);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    padding: 2px 2px 6px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+  svg.icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .muted { color: var(--muted-text); }
+  .empty-value { color: var(--muted-text); }
+
+  /* the card: the CRM's record header tile */
+  .card {
+    container-type: inline-size;
+    background: var(--page-background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+  .bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 13px; color: var(--muted-text);
+  }
+  .bar .kind { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; min-width: 0; }
+  .bar .kind span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .count { white-space: nowrap; }
+  .bar .open { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-weight: 500; white-space: nowrap; }
+  .bar .open svg.icon { width: 13px; height: 13px; }
+
+  /* record: avatar and name, as on the record page */
+  .identity { display: flex; align-items: center; gap: 12px; padding: 14px 16px 16px; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--primary); color: #fff; font-size: 14px; font-weight: 600; letter-spacing: 0.01em;
+  }
+  .identity h1 { margin: 0; font-size: 18px; line-height: 1.25; font-weight: 600; overflow-wrap: anywhere; }
+  .identity h1 a { color: var(--text); }
+  .identity h1 a:hover { color: var(--primary); text-decoration: none; }
+  .identity p { margin: 2px 0 0; overflow-wrap: anywhere; }
+  .tag { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 18px; vertical-align: 2px;
+    border: 1px solid var(--border); color: var(--muted-text); background: var(--surface); }
+
+  /* properties: label above value */
+  .fields { margin: 0; padding: 0 16px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 20px; }
+  .field { min-width: 0; }
+  .field dt { font-size: 13px; color: var(--muted-text); margin-bottom: 2px; }
+  .field dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .money { color: var(--money); font-weight: 500; }
+  .btn-link {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--page-background); color: var(--text); font-size: 13px; font-weight: 500;
+  }
+  .btn-link:hover { border-color: var(--primary); color: var(--primary); text-decoration: none; }
+
+  /* dropdown colours (web/src/styles.css .color-pill, .color-dot) */
+  .pill-list { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .color-pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap;
+    background: color-mix(in srgb, var(--pill) 16%, var(--page-background)); color: color-mix(in srgb, var(--pill) 55%, var(--text)); border: 1px solid color-mix(in srgb, var(--pill) 35%, transparent); }
+  .color-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--pill); }
+  .color-dot-value { display: inline-flex; align-items: center; gap: 8px; }
+  .color-dot { width: 12px; height: 12px; flex: none; border-radius: 50%; background: var(--pill); }
+
+  /* linked records */
+  .links { border-top: 1px solid var(--border); padding: 12px 16px 14px; display: grid; gap: 10px; }
+  .group h2 { margin: 0 0 6px; font-size: 13px; font-weight: 500; color: var(--muted-text); display: flex; align-items: center; gap: 6px; }
+  .group h2 svg.icon { width: 14px; height: 14px; }
+  .group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .group li { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  .group li .more { font-size: 13px; }
+  .mini { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 10px; font-weight: 600;
+    background: color-mix(in srgb, var(--primary) 14%, var(--page-background)); color: color-mix(in srgb, var(--primary) 70%, var(--text)); }
+  .group a { font-weight: 500; color: var(--text); }
+  .group a:hover { color: var(--primary); }
+
+  /* the rest of the properties, closed */
+  details.rest { border-top: 1px solid var(--border); }
+  details.rest summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 11px 16px; font-size: 13px; font-weight: 500; color: var(--muted-text); }
+  details.rest summary::-webkit-details-marker { display: none; }
+  details.rest summary svg.icon { width: 14px; height: 14px; transition: transform 0.15s ease; }
+  details.rest[open] summary svg.icon { transform: rotate(90deg); }
+  details.rest summary:hover { color: var(--text); }
+  details.rest .fields { padding-top: 2px; }
+  .foot { border-top: 1px solid var(--border); padding: 8px 16px; font-size: 12px; color: var(--muted-text); background: var(--surface); }
+  .foot.stamps { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; }
+
+  /* list: the CRM's table (.grid) */
+  .scroll { overflow-x: auto; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  .grid th, .grid td { padding: 8px 12px; height: 36px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .grid th { background: var(--surface); font-weight: 500; font-size: 13px; color: var(--muted-text); }
+  .grid tbody tr:last-child td { border-bottom: 0; }
+  .grid tbody tr:hover td { background: color-mix(in srgb, var(--surface) 55%, var(--page-background)); }
+  .grid .num { text-align: right; }
+  .grid td.name .nm { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; color: var(--text); max-width: 100%; }
+  .grid td.name .nm span { overflow: hidden; text-overflow: ellipsis; }
+  .grid td.name a.nm:hover { color: var(--primary); text-decoration: none; }
+  /* sorting (web/src/table.css .dg-sort, .sort-option) */
+  .th-sort { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 0; border: 0; border-radius: var(--radius-sm);
+    background: none; color: inherit; font: inherit; font-weight: 500; cursor: pointer; }
+  .th-sort:hover { color: var(--text); }
+  .th-sort .th-label { overflow: hidden; text-overflow: ellipsis; }
+  .th-sort svg.icon { width: 13px; height: 13px; }
+  .grid th.sorted { color: var(--text); }
+  .grid th.sorted .th-sort svg.icon { color: var(--primary); }
+  .th-sort .idle { visibility: hidden; opacity: 0.7; }
+  .grid th:hover .idle, .th-sort:focus-visible .idle { visibility: visible; }
+  .th-sort:focus-visible, .sort-btn:focus-visible, .sort-sheet button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  .sort-btn { display: none; width: 28px; height: 28px; margin: -4px -6px -4px 0; place-items: center; border: 0; border-radius: var(--radius-sm);
+    background: none; color: var(--muted-text); cursor: pointer; }
+  .sort-btn:hover, .sort-btn[aria-expanded='true'] { background: var(--surface); color: var(--text); }
+  .sort-sheet { display: none; padding: 4px; border-bottom: 1px solid var(--border); }
+  .sort-sheet[hidden] { display: none !important; }
+  .sheet-label { padding: 6px 10px 4px; font-size: 12px; font-weight: 500; color: var(--muted-text); }
+  .sort-sheet button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--radius-sm);
+    background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .sort-sheet button:hover { background: var(--surface); }
+  .sort-sheet .sort-current { color: var(--primary); font-weight: 500; }
+  .sort-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sort-option-dir { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; }
+  .sort-option-dir svg.icon { width: 13px; height: 13px; }
+  .card.busy tbody, .card.busy .stack { opacity: 0.5; transition: opacity 0.15s; }
+  .stack { display: none; list-style: none; margin: 0; padding: 0; }
+  .stack li { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .stack li:last-child { border-bottom: 0; }
+  .stack .who { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+  .stack .who a { color: var(--text); }
+  .stack dl { margin: 6px 0 0 30px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+  .stack dt { color: var(--muted-text); }
+  .stack dd { margin: 0; overflow-wrap: anywhere; }
+  .none { padding: 18px 16px; color: var(--muted-text); }
+  @container (max-width: 520px) {
+    .scroll { display: none; }
+    .stack { display: block; }
+    .sort-btn { display: grid; }
+    .sort-sheet { display: block; }
+    .fields { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  }
+  @container (max-width: 340px) {
+    .fields { grid-template-columns: 1fr; }
+    .bar .count { display: none; }
+  }
+
+  /* while the result is on its way (components/Loading.tsx) */
+  .loading { display: flex; align-items: center; gap: 10px; padding: 16px; color: var(--muted-text); font-size: 13px; }
+  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--primary); animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 2.4s; }
+    details.rest summary svg.icon { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite"><div class="card"><div class="loading"><span class="spinner" aria-hidden="true"></span>Loading from the CRM…</div></div></main>
+<script>
+(function () {
+  'use strict';
+  var app = document.getElementById('app');
+  var data = null;
+  var hostTheme = null;
+  var nextId = 1;
+  var pending = {};
+  var inHost = window.parent && window.parent !== window;
+
+  // ---- talking to the chat host (MCP Apps, JSON-RPC over postMessage) ----
+  function send(msg) { if (inHost) window.parent.postMessage(Object.assign({ jsonrpc: '2.0' }, msg), '*'); }
+  function request(method, params) {
+    var id = nextId++;
+    send({ id: id, method: method, params: params || {} });
+    return new Promise(function (resolve, reject) { pending[id] = { resolve: resolve, reject: reject }; });
+  }
+  function notify(method, params) { send({ method: method, params: params || {} }); }
+
+  window.addEventListener('message', function (e) {
+    if (inHost && e.source !== window.parent) return;
+    var m = e.data;
+    if (!m || m.jsonrpc !== '2.0') return;
+    if (m.id !== undefined && !m.method && pending[m.id]) {
+      var p = pending[m.id];
+      delete pending[m.id];
+      if (m.error) p.reject(m.error); else p.resolve(m.result);
+      return;
+    }
+    switch (m.method) {
+      case 'ui/notifications/tool-result':
+        if (m.params && m.params.structuredContent) show(m.params.structuredContent);
+        else if (m.params && m.params.isError) showError(m.params);
+        break;
+      case 'ui/notifications/host-context-changed':
+        if (m.params && m.params.theme) { hostTheme = m.params.theme; applyTheme(); }
+        break;
+      case 'ui/resource-teardown':
+      case 'ping':
+        if (m.id !== undefined) send({ id: m.id, result: {} });
+        break;
+      default:
+        if (m.id !== undefined && m.method) send({ id: m.id, error: { code: -32601, message: 'Method not found' } });
+    }
+  });
+
+  // ---- theme: the CRM's light or dark palette, whichever the chat is in ----
+  var KEYS = ['primary', 'page_background', 'surface', 'text', 'muted_text', 'border'];
+  var HEX = /^#[0-9a-f]{6}$/i;
+  function mode() {
+    if (hostTheme === 'dark' || hostTheme === 'light') return hostTheme;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function applyTheme() {
+    var m = mode();
+    var root = document.documentElement;
+    root.setAttribute('data-mode', m);
+    var palette = data && data.theme && data.theme[m];
+    KEYS.forEach(function (k) {
+      var v = palette && palette[k];
+      if (typeof v === 'string' && HEX.test(v)) root.style.setProperty('--' + k.replace(/_/g, '-'), v);
+      else root.style.removeProperty('--' + k.replace(/_/g, '-'));
+    });
+  }
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+  // ---- building blocks ----
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k === 'style') Object.keys(v).forEach(function (s) { el.style.setProperty(s, v[s]); });
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    (kids || []).forEach(function (c) {
+      if (c === null || c === undefined || c === false) return;
+      el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return el;
+  }
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  // icon children come from the CRM (lucide shapes), parsed as SVG, never as HTML
+  function icon(children) {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+    if (children) {
+      var doc = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + children + '</svg>', 'image/svg+xml');
+      var root = doc.documentElement;
+      if (root && root.nodeName === 'svg') Array.prototype.slice.call(root.childNodes).forEach(function (n) {
+        if (n.nodeType === 1 && /^(path|circle|rect|line|polyline|polygon|ellipse)$/.test(n.nodeName)) svg.appendChild(document.importNode(n, false));
+      });
+    }
+    return svg;
+  }
+  var EXTERNAL = '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>';
+  var CHEVRON = '<path d="m9 18 6-6-6-6"/>';
+  var SAFE_HREF = /^(https?:|mailto:|tel:)/i;
+  function link(href, kids, cls) {
+    if (!href || !SAFE_HREF.test(href)) return h('span', { class: cls }, kids);
+    return h('a', { href: href, class: cls, target: '_blank', rel: 'noopener noreferrer', 'data-open': '' }, kids);
+  }
+  var dateTime = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  // one value as the CRM shows it; blank is a muted --
+  function value(c) {
+    if (!c) return h('span', { class: 'empty-value', text: '--' });
+    if (c.pills && c.pills.length) {
+      return h('span', { class: 'pill-list' }, c.pills.map(function (p) {
+        if (!p.color || !HEX.test(p.color)) return h('span', { text: p.label });
+        return c.pill_style === 'dot'
+          ? h('span', { class: 'color-dot-value' }, [h('span', { class: 'color-dot', style: { '--pill': p.color } }), p.label])
+          : h('span', { class: 'color-pill', style: { '--pill': p.color }, text: p.label });
+      }));
+    }
+    var text = c.iso ? dateTime.format(new Date(c.iso)) : c.text;
+    if (c.button) return link(c.href, [text], 'btn-link');
+    if (c.href) return link(c.href, [text]);
+    return h('span', { class: c.tone === 'money' ? 'money' : c.tone === 'muted' ? 'muted' : null, text: text });
+  }
+
+  function bar(kindIcon, label, extra, href, hrefLabel) {
+    return h('div', { class: 'bar' }, [
+      h('span', { class: 'kind' }, [icon(kindIcon), h('span', { text: label })]),
+      extra,
+      href ? link(href, [hrefLabel, icon(EXTERNAL)], 'open') : null
+    ]);
+  }
+
+  function fields(list) {
+    return h('dl', { class: 'fields' }, list.map(function (f) {
+      return h('div', { class: 'field' }, [h('dt', { text: f.label }), h('dd', null, [value(f.value)])]);
+    }));
+  }
+
+  // ---- a record ----
+  function recordCard(d) {
+    var r = d.record;
+    var kids = [
+      bar(d.object.icon, d.object.label, null, r.url, 'Open in CRM'),
+      h('div', { class: 'identity' }, [
+        h('span', { class: 'avatar', 'aria-hidden': 'true', text: r.initials }),
+        h('div', null, [
+          h('h1', null, [r.url ? link(r.url, [r.name]) : r.name, r.archived ? h('span', { class: 'tag', text: 'Archived' }) : null]),
+          r.subtitle ? h('p', { class: 'muted', text: r.subtitle }) : null
+        ])
+      ])
+    ];
+    if (r.highlights.length) kids.push(fields(r.highlights));
+    if (r.associations.length) {
+      kids.push(h('div', { class: 'links' }, r.associations.map(function (g) {
+        var items = g.records.map(function (x) {
+          return h('li', null, [h('span', { class: 'mini', 'aria-hidden': 'true', text: x.initials }), x.url ? link(x.url, [x.name]) : h('span', { text: x.name })]);
+        });
+        if (g.more) items.push(h('li', null, [r.url ? link(r.url, ['More in the CRM'], 'more') : h('span', { class: 'more muted', text: 'and more' })]));
+        return h('section', { class: 'group' }, [h('h2', null, [icon(g.icon), g.label]), h('ul', null, items)]);
+      })));
+    }
+    if (r.details.length) {
+      kids.push(h('details', { class: 'rest' }, [
+        h('summary', null, [icon(CHEVRON), 'All properties (' + r.details.length + ' more)']),
+        fields(r.details)
+      ]));
+    }
+    if (r.created || r.updated) {
+      kids.push(h('div', { class: 'foot stamps' }, [
+        r.created ? h('span', null, ['Created ', value(r.created)]) : null,
+        r.updated ? h('span', null, ['Last updated ', value(r.updated)]) : null
+      ]));
+    }
+    return h('article', { class: 'card', 'aria-label': d.object.label + ': ' + r.name }, kids);
+  }
+
+  // ---- a list ----
+  function listCard(d) {
+    var plural = d.object.label_plural.toLowerCase();
+    var one = d.object.label.toLowerCase();
+    var shown = d.rows.length;
+    var count = shown < d.total ? shown + ' of ' + d.total.toLocaleString() : d.total.toLocaleString() + ' ' + (d.total === 1 ? one : plural);
+    var kids = [bar(d.object.icon, d.title, h('span', { class: 'count', text: count }), d.list_url, 'Open in CRM')];
+    if (!shown) {
+      kids.push(h('div', { class: 'none', text: 'No ' + plural + ' match.' }));
+      return h('article', { class: 'card' }, kids);
+    }
+    var nameCell = function (r) {
+      var inner = [h('span', { class: 'mini', 'aria-hidden': 'true', text: r.initials }), h('span', { text: r.name })];
+      return r.url ? link(r.url, inner, 'nm') : h('span', { class: 'nm' }, inner);
+    };
+    var sorts = sortable(d);
+    var header = function (s, label, numeric) {
+      if (!s) return h('th', { scope: 'col', class: numeric ? 'num' : null, text: label });
+      var dir = currentDir(d, s);
+      return h('th', { scope: 'col', class: (numeric ? 'num' : '') + (dir ? ' sorted' : ''), 'aria-sort': dir ? (dir === 'asc' ? 'ascending' : 'descending') : null }, [
+        h('button', { type: 'button', class: 'th-sort', 'data-sort': s.index, title: dir ? directionWords(s.kind, dir) : 'Sort by ' + label }, [
+          h('span', { class: 'th-label', text: label }),
+          dir === 'asc' ? icon(ARROW_UP) : dir === 'desc' ? icon(ARROW_DOWN) : sortIdle()
+        ])
+      ]);
+    };
+    var table = h('table', { class: 'grid' }, [
+      h('thead', null, [h('tr', null, [header(sorts[0], 'Name', false)].concat(d.columns.map(function (c, i) {
+        return header(sorts[i + 1], c.label, c.numeric);
+      })))]),
+      h('tbody', null, d.rows.map(function (r) {
+        return h('tr', null, [h('td', { class: 'name' }, [nameCell(r)])].concat(r.cells.map(function (c, i) {
+          return h('td', { class: d.columns[i].numeric ? 'num' : null }, [value(c)]);
+        })));
+      }))
+    ]);
+    // phones and narrow chats sort from a list under the bar, like the CRM's phone table
+    var usable = sorts.filter(Boolean);
+    if (usable.length) {
+      kids[0].appendChild(h('button', { type: 'button', class: 'sort-btn', 'aria-label': 'Sort', title: 'Sort', 'aria-expanded': sortOpen ? 'true' : 'false', 'aria-controls': 'sort-sheet' }, [icon(ARROW_UP_DOWN)]));
+      var sheet = h('div', { class: 'sort-sheet', id: 'sort-sheet', role: 'menu', hidden: !sortOpen }, [h('div', { class: 'sheet-label', text: 'Sort by' })].concat(usable.map(function (s) {
+        var dir = currentDir(d, s);
+        var label = s.index === 0 ? 'Name' : d.columns[s.index - 1].label;
+        return h('button', { type: 'button', role: 'menuitem', class: dir ? 'sort-current' : null, 'data-sort': s.index }, [
+          h('span', { class: 'sort-option-label', text: label }),
+          dir ? h('span', { class: 'sort-option-dir' }, [icon(dir === 'asc' ? ARROW_UP : ARROW_DOWN), directionWords(s.kind, dir)]) : null
+        ]);
+      })));
+      kids.push(sheet);
+    }
+    kids.push(h('div', { class: 'scroll' }, [table]));
+    // phones and narrow chats: one record per row, its values under the name
+    kids.push(h('ul', { class: 'stack' }, d.rows.map(function (r) {
+      var pairs = [];
+      r.cells.forEach(function (c, i) { if (c && i < 4) { pairs.push(h('dt', { text: d.columns[i].label })); pairs.push(h('dd', null, [value(c)])); } });
+      return h('li', null, [
+        h('div', { class: 'who' }, [h('span', { class: 'mini', 'aria-hidden': 'true', text: r.initials }), r.url ? link(r.url, [r.name]) : h('span', { text: r.name })]),
+        pairs.length ? h('dl', null, pairs) : null
+      ]);
+    })));
+    if (d.sorted_here_only) {
+      kids.push(h('div', { class: 'foot', text: 'Sorted the ' + shown + ' shown here. Open in CRM to sort all ' + d.total.toLocaleString() + '.' }));
+    }
+    return h('article', { class: 'card' + (sortBusy ? ' busy' : ''), 'aria-label': d.title, 'aria-busy': sortBusy ? 'true' : null }, kids);
+  }
+
+  // ---- sorting a list ----
+  // Every record on the card: sort them here, at once. Only some: ask the CRM
+  // for the list again in the new order (the host passes the call to the
+  // server), so the top rows are the real top ones; if the host cannot, sort
+  // the rows shown here and say so.
+  var sortOpen = false;
+  var sortBusy = false;
+  var ARROW_UP = '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>';
+  var ARROW_DOWN = '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>';
+  var ARROW_UP_DOWN = '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>';
+  function sortIdle() { var s = icon(ARROW_UP_DOWN); s.setAttribute('class', 'icon idle'); return s; }
+  function complete(d) { return d.rows.length >= d.total; }
+  // per column (Name first): { index, property, kind }, or null when it cannot sort
+  function sortable(d) {
+    var all = complete(d);
+    var name = d.name_sort || (all ? '#name' : null);
+    return [name ? { index: 0, property: name, kind: 'text' } : null].concat(d.columns.map(function (c, i) {
+      return c.sort ? { index: i + 1, property: c.api_name, kind: c.sort } : null;
+    }));
+  }
+  function currentDir(d, s) { return d.sort && d.sort.property === s.property ? d.sort.direction : null; }
+  function directionWords(kind, dir) {
+    if (kind === 'number') return dir === 'asc' ? 'Low to high' : 'High to low';
+    if (kind === 'date') return dir === 'asc' ? 'Oldest first' : 'Newest first';
+    return dir === 'asc' ? 'A to Z' : 'Z to A';
+  }
+  var collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  // blanks last either way, as in the CRM; ties keep their order
+  function sortHere(d, s, dir) {
+    var rows = d.rows.map(function (r, i) { return { r: r, i: i }; });
+    rows.sort(function (a, b) {
+      var x = a.r.keys ? a.r.keys[s.index] : null;
+      var y = b.r.keys ? b.r.keys[s.index] : null;
+      if (x === null || x === undefined) return y === null || y === undefined ? a.i - b.i : 1;
+      if (y === null || y === undefined) return -1;
+      var c = typeof x === 'number' && typeof y === 'number' ? x - y : collator.compare(String(x), String(y));
+      if (dir === 'desc') c = -c;
+      return c || a.i - b.i;
+    });
+    return Object.assign({}, d, {
+      rows: rows.map(function (x) { return x.r; }),
+      sort: { property: s.property, direction: dir },
+      sorted_here_only: !complete(d)
+    });
+  }
+  function sortBy(index) {
+    var d = data;
+    if (!d || d.view !== 'records' || sortBusy) return;
+    var s = sortable(d)[index];
+    if (!s) return;
+    var now = currentDir(d, s);
+    var dir = now ? (now === 'asc' ? 'desc' : 'asc') : (s.kind === 'text' ? 'asc' : 'desc');
+    sortOpen = false;
+    if (complete(d) || !inHost || !d.request || s.property.charAt(0) === '#') { show(sortHere(d, s, dir)); refocus(index); return; }
+    sortBusy = true;
+    show(d);
+    refocus(index);
+    var args = Object.assign({}, d.request, { sorts: [{ property: s.property, direction: dir }] });
+    request('tools/call', { name: 'show_records', arguments: args }).then(function (res) {
+      sortBusy = false;
+      if (res && !res.isError && res.structuredContent && res.structuredContent.view === 'records') show(res.structuredContent);
+      else show(sortHere(d, s, dir));
+      refocus(index);
+    }, function () {
+      sortBusy = false;
+      show(sortHere(d, s, dir));
+      refocus(index);
+    });
+  }
+  // the card is drawn again after a sort: keep keyboard focus where it was
+  function refocus(index) {
+    var b = document.querySelector('th [data-sort="' + index + '"]');
+    if (b && b.offsetParent) { b.focus({ preventScroll: true }); return; }
+    var s = document.querySelector('.sort-btn');
+    if (s && s.offsetParent) s.focus({ preventScroll: true });
+  }
+
+  function show(d) {
+    if (!d || (d.view !== 'record' && d.view !== 'records')) return;
+    data = d;
+    applyTheme();
+    app.replaceChildren(d.view === 'record' ? recordCard(d) : listCard(d));
+  }
+  function showError(result) {
+    var text = 'The CRM could not load this.';
+    try {
+      var body = JSON.parse(result.content[0].text);
+      if (body && body.message) text = body.message.charAt(0).toUpperCase() + body.message.slice(1) + '.';
+    } catch (e) { /* keep the general message */ }
+    app.replaceChildren(h('div', { class: 'card' }, [h('div', { class: 'none', text: text })]));
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target : e.target.parentElement;
+    var pick = t && t.closest('[data-sort]');
+    if (pick) { sortBy(Number(pick.getAttribute('data-sort'))); return; }
+    if (t && t.closest('.sort-btn')) {
+      sortOpen = !sortOpen;
+      var sheet = document.getElementById('sort-sheet');
+      if (sheet) sheet.hidden = !sortOpen;
+      t.closest('.sort-btn').setAttribute('aria-expanded', sortOpen ? 'true' : 'false');
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && sortOpen) {
+      sortOpen = false;
+      var sheet = document.getElementById('sort-sheet');
+      if (sheet) sheet.hidden = true;
+      var btn = document.querySelector('.sort-btn');
+      if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+    }
+  });
+
+  // links open in the user's browser through the host (the frame cannot navigate)
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-open]');
+    if (!a || !inHost) return;
+    e.preventDefault();
+    request('ui/open-link', { url: a.href }).catch(function () { window.open(a.href, '_blank', 'noopener'); });
+  });
+
+  // tell the host how tall the card is
+  var lastHeight = 0;
+  function reportSize() {
+    var height = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (height !== lastHeight) { lastHeight = height; notify('ui/notifications/size-changed', { height: height }); }
+  }
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.documentElement);
+
+  applyTheme();
+  if (inHost) {
+    request('ui/initialize', {
+      protocolVersion: '2026-01-26',
+      appInfo: { name: 'profitpad-crm-record-display', version: '1.0.0' },
+      appCapabilities: {}
+    }).then(function (res) {
+      if (res && res.hostContext && res.hostContext.theme) { hostTheme = res.hostContext.theme; applyTheme(); }
+      notify('ui/notifications/initialized');
+      reportSize();
+    }).catch(function () { /* not an MCP Apps host */ });
+  }
+  // hosts that hand the result over directly (OpenAI Apps SDK)
+  if (window.openai && window.openai.toolOutput) show(window.openai.toolOutput);
+  window.addEventListener('openai:set_globals', function () { if (window.openai && window.openai.toolOutput) show(window.openai.toolOutput); });
+})();
+</script>
+</body>
+</html>
