@@ -336,6 +336,15 @@ export async function searchRecords(obj: ObjectDef, principal: Principal, req: S
       rows = (await pool.query(page, params)).rows;
     }
     n = (await countP).rows[0].n as number;
+  } else if (access === 'true') {
+    // the whole table, which the caller may read in full: the running count
+    // (migration 0147) instead of counting every row
+    const [p, c] = await Promise.all([
+      pool.query(page, params),
+      pool.query('select meta.record_count($1, $2)::int as n', [obj.object_type_id, req.status ?? 'active'])
+    ]);
+    rows = p.rows;
+    n = c.rows[0].n as number;
   } else {
     const [p, c] = await Promise.all([pool.query(page, params), pool.query(counted, params)]);
     rows = p.rows;

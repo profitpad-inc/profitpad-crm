@@ -266,14 +266,17 @@ export async function buildApp() {
   return app;
 }
 
-// Calculations are recomputed from meta.calc_queue in the background.
+// Calculations are recomputed from meta.calc_queue in the background, and
+// every 30 s the running record counts fold their changes in (migration 0147).
 function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
   let running = false;
+  let ticks = 0;
   return setInterval(async () => {
     if (running) return;
     running = true;
     try {
       await drainCalcQueue(20);
+      if (++ticks % 15 === 0) await pool.query('select meta.compact_record_counts()');
     } catch (err) {
       log.error(err, 'calculation worker failed');
     } finally {
