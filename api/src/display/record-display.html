@@ -427,7 +427,7 @@
     if (r.created || r.updated) {
       kids.push(h('div', { class: 'foot stamps' }, [
         r.created ? h('span', null, ['Created ', value(r.created)]) : null,
-        r.updated ? h('span', null, ['Last updated ', value(r.updated)]) : null
+        r.updated ? h('span', null, ['Updated ', value(r.updated)]) : null
       ]));
     }
     return h('article', { class: 'card', 'aria-label': d.object.label + ': ' + r.name }, kids);

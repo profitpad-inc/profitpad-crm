@@ -63,11 +63,11 @@ test('a template that places the unsubscribe link gets no second footer', async 
   assert.doesNotMatch(out.html, /1 Main St/);
 });
 
-test('a campaign with a subscription type names it in the footer and links to the preferences', async () => {
+test('a campaign with a subscription type gets a plain Unsubscribe link and the type in Liquid', async () => {
   const typed = { ...campaign, subscription_type: 'newsletter', subscription_type_label: 'Monthly <news>' };
   const out = await renderCampaignEmail(typed, { id: 't', name: 'T', subject: 'Hi', body: '<p>{{ campaign.subscription_type }}</p>' }, who, settings, 'https://x/unsub');
-  assert.match(out.html, /You are getting this as Monthly &lt;news&gt; email\./);
-  assert.match(out.html, /Unsubscribe or choose what you get/);
+  assert.doesNotMatch(out.html, /You are getting this as/);
+  assert.match(out.html, /href="https:\/\/x\/unsub"[^>]*>Unsubscribe<\/a>/);
   assert.match(out.html, /<p>Monthly &lt;news&gt;<\/p>/);
 });
 

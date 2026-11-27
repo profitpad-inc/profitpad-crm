@@ -102,14 +102,12 @@ export async function contactData(ids: string[]): Promise<Map<string, ContactDat
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
-// With a subscription type the footer says which one, and the link opens the
-// preference page (unsubscribe from this type, choose others, or leave all).
-function footer(mailingAddress: string | null, unsubscribeUrl: string | null, topicLabel: string | null = null): string {
+// The link opens the preference page (unsubscribe from the campaign's
+// subscription type, choose others, or leave all).
+function footer(mailingAddress: string | null, unsubscribeUrl: string | null): string {
   const parts: string[] = [];
   if (mailingAddress) parts.push(escapeHtml(mailingAddress).replace(/\r?\n/g, '<br>'));
-  if (unsubscribeUrl && topicLabel) {
-    parts.push(`You are getting this as ${escapeHtml(topicLabel)} email. <a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline">Unsubscribe or choose what you get</a>`);
-  } else if (unsubscribeUrl) {
+  if (unsubscribeUrl) {
     parts.push(`<a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline">Unsubscribe</a>`);
   }
   if (!parts.length) return '';
@@ -173,7 +171,7 @@ export async function renderCampaignEmail(
   const html = placeBody(
     body,
     campaign.preheader ? preheaderHtml(campaign.preheader) : '',
-    placesLink ? '' : footer(settings.mailing_address, unsubscribeUrl, campaign.subscription_type_label)
+    placesLink ? '' : footer(settings.mailing_address, unsubscribeUrl)
   );
   return { subject, html };
 }

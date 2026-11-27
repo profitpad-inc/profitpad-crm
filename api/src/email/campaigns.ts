@@ -352,9 +352,10 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
         replyToken = e[0]?.reply_token ?? null;
       } else {
         replyToken = replyDomain(s) ? newReplyToken() : null;
-        // the body is the campaign's template, so it is not copied onto each record
+        // the rendered HTML is kept on the record, like one-to-one email, so the
+        // timeline shows what this contact got
         emailId = await insertEmailRecord(c, {
-          subject: rendered.subject, body: null, from: marketingSender(s, campaign).address, to: who.email,
+          subject: rendered.subject, body: rendered.html, from: marketingSender(s, campaign).address, to: who.email,
           stream: 'broadcast', replyToken, ownerUserId: null
         }, [{ object: 'pc_0010', id: row.contact_id }, { object: 'pc_0058', id: campaignId }]);
         await c.query('update auth.email_outbox set email_id = $2 where id = $1', [row.id, emailId]);

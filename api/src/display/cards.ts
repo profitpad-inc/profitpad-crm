@@ -460,7 +460,7 @@ export function recordMarkdown(card: RecordCard): string {
   const rows = [...r.highlights, ...r.details];
   if (rows.length) lines.push('| Property | Value |', '| --- | --- |', ...rows.map((f) => `| ${md(f.label)} | ${mdCell(f.value)} |`), '');
   for (const g of r.associations) lines.push(`**${md(g.label)}:** ${g.records.map((x) => mdName(x.name, x.url, x.id)).join(', ')}${g.more ? ' and more' : ''}`);
-  const stamps = [r.created ? `Created ${md(r.created.text)}` : null, r.updated ? `Last updated ${md(r.updated.text)}` : null].filter(Boolean);
+  const stamps = [r.created ? `Created ${md(r.created.text)}` : null, r.updated ? `Updated ${md(r.updated.text)}` : null].filter(Boolean);
   if (stamps.length) lines.push('', `_${stamps.join('. ')}_`);
   return lines.join('\n').trim();
 }

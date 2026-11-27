@@ -2017,7 +2017,12 @@ function HtmlBody({ html }: { html: string }) {
     const doc = frame.current?.contentDocument;
     if (doc) setHeight(Math.max(40, doc.documentElement.scrollHeight));
   };
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>
+  // a whole document (a campaign email as sent) is shown as it is, with links
+  // still opening in a new tab; a fragment gets the reading styles
+  const whole = /^\s*(<!doctype|<html)/i.test(html);
+  const doc = whole
+    ? (/<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, (m) => `${m}<base target="_blank">`) : `<base target="_blank">${html}`)
+    : `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>
     html, body { margin: 0; } body { padding: 14px 16px; font: 14px/1.55 Inter, system-ui, sans-serif; color: #1f2328; background: #fff; overflow-wrap: anywhere; }
     img { max-width: 100%; height: auto; } table { max-width: 100%; } pre { white-space: pre-wrap; }
   </style></head><body>${html}</body></html>`;
