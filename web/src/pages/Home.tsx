@@ -15,7 +15,7 @@ export function Home() {
 
   useEffect(() => {
     objects.forEach((o) =>
-      api<SearchResult>('POST', `/v1/objects/${o}/search`, { limit: 1, properties: ['name'] })
+      api<SearchResult>('POST', `/v1/objects/${o}/search`, { limit: 1, properties: ['name'], exact_total: true })
         .then((r) => setCounts((c) => ({ ...c, [o]: r.total })))
         .catch(() => undefined)
     );

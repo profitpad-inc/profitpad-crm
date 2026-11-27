@@ -128,9 +128,13 @@ export async function updateProperty(
 export async function setPropertyArchived(p: Principal, objectKey: string, name: string, archived: boolean, source?: string) {
   requirePropertyChange(p);
   const [obj, prop] = await findProperty(objectKey, name);
-  await withTx({ principal: p, source }, (c) =>
-    c.query(archived ? 'select meta.archive_property($1, $2)' : 'select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name])
-  );
+  await withTx({ principal: p, source }, async (c) => {
+    // a searched property rebuilds the search column, which rewrites the table (0144)
+    if (obj.search_properties.includes(prop.api_name) || ['first_name', 'last_name'].includes(prop.api_name)) {
+      await c.query("set local statement_timeout = '15min'");
+    }
+    await c.query(archived ? 'select meta.archive_property($1, $2)' : 'select meta.unarchive_property($1, $2)', [obj.object_type_id, prop.api_name]);
+  });
   return propertyOut((await findProperty(obj.object_type_id, prop.api_name))[1]);
 }
 
@@ -254,7 +258,11 @@ export async function schemaRoutes(app: FastifyInstance) {
     const p = req.principal!;
     requireScope(p, 'schema');
     const obj = await getObject(req.params.object);
-    await withTx({ principal: p }, (c) => c.query('select meta.set_search_properties($1, $2)', [obj.object_type_id, req.body?.search_properties ?? null]));
+    // rebuilding the search column rewrites the table: minutes for a million records
+    await withTx({ principal: p }, async (c) => {
+      await c.query("set local statement_timeout = '15min'");
+      await c.query('select meta.set_search_properties($1, $2)', [obj.object_type_id, req.body?.search_properties ?? null]);
+    });
     return objectOut(await getObject(obj.object_type_id));
   });
 

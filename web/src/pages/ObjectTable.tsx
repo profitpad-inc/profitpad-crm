@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
-  api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type FilterGroup, type ObjectDef,
+  api, can, getSchema, totalText, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type FilterGroup, type ObjectDef,
   type Property, type SearchResult, type Sort, type View
 } from '../lib/api';
 import { AdvancedFilters } from '../components/AdvancedFilters';
@@ -764,7 +764,7 @@ function ObjectTableFor({ object }: { object: string }) {
         <div className="table-title">
           <Icon size={20} strokeWidth={1.75} aria-hidden />
           <h1>{schema.label_plural}</h1>
-          {data && <span className="table-count">{data.total.toLocaleString()} {data.total === 1 ? 'record' : 'records'}</span>}
+          {data && <span className="table-count">{totalText(data)} {data.total === 1 && !data.total_capped ? 'record' : 'records'}</span>}
         </div>
         <div className="table-head-actions">
           {object === 'contacts' && <Link className="btn" to="/scan"><IdCard size={16} /> Scan card</Link>}
@@ -1115,7 +1115,7 @@ function ObjectTableFor({ object }: { object: string }) {
         )}
         {data && data.results.length > 0 && (loading || data.next) && (
           <div className="table-foot">
-            <span>{data.results.length.toLocaleString()} of {data.total.toLocaleString()} shown</span>
+            <span>{data.results.length.toLocaleString()} of {totalText(data)} shown</span>
             {loading ? (
               <Loading inline className="table-foot-loading" />
             ) : (
@@ -1210,6 +1210,7 @@ function ObjectTableFor({ object }: { object: string }) {
             // property columns in the order shown
             properties: [...new Set(columns.flatMap((c) => (c.type === 'property' && schema.properties.some((p) => p.api_name === c.property) ? [c.property] : [])))],
             total: data?.total ?? null,
+            totalCapped: data?.total_capped === true,
             picked: shown.filter((r) => picked.has(r.id)).map((r) => r.id)
           }}
         />

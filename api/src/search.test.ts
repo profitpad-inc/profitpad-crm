@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ObjectDef, PropertyDef } from './registry.js';
-import { compileFilterGroups, type AssociationFilterContext, type Filter } from './search.js';
+import { compileFilterGroups, compileSearch, type AssociationFilterContext, type Filter } from './search.js';
 
 const prop = (api_name: string, type: string): PropertyDef => ({
   api_name, label: api_name, type, options: {}, record_status: 'active', dropdown_options: []
@@ -83,4 +83,44 @@ test('property __count on an association filters on how many linked records ther
     { sql: `(((select count(distinct ar1."pc_0101_id") ${linked}) >= $3::integer))`, params: ['pc_0100', 'pc_0101', 2] });
   assert.throws(() => run({ property: '__count', operator: 'contains', value: 'x', association: { object: 'companies' } }), /does not apply/);
   assert.throws(() => run({ property: '__count', operator: 'eq', value: -1, association: { object: 'companies' } }), /whole number/);
+});
+
+const contactProps = [prop('name', 'text'), prop('first_name', 'text'), prop('last_name', 'text'), prop('email', 'email'), prop('phone', 'phone'),
+  prop('created_at', 'datetime'), prop('updated_at', 'datetime')];
+const contacts = (built: string[] | null) => ({
+  api_name: 'contacts', object_type_id: 'pc_0010', id_column: 'pc_0010_id', links_to: [], properties: contactProps,
+  byName: new Map(contactProps.map((p) => [p.api_name, p])),
+  search_properties: ['name', 'first_name', 'last_name', 'email', 'phone'], search_text_properties: built
+} as unknown as ObjectDef);
+const all = ['name', 'first_name', 'last_name', 'email', 'phone'];
+
+test('search uses the row_search_text column when it holds every searched property', () => {
+  const params: unknown[] = [];
+  const q = compileSearch(contacts(all), { query: 'Smith' }, params, () => false);
+  assert.match(q.where, /^t\.record_status = \$1 and t\.row_search_text ilike \$2$/);
+  assert.deepEqual(params, ['active', '%Smith%']);
+  // phone digits are matched too
+  const p2: unknown[] = [];
+  const q2 = compileSearch(contacts(all), { query: '(613) 555' }, p2, () => false);
+  assert.match(q2.where, /\(t\.row_search_text ilike \$2 or t\.row_search_text like \$3\)/);
+  assert.deepEqual(p2, ['active', '%(613) 555%', '%613555%']);
+});
+
+test('search matches each property when the column is missing, stale or holds a hidden property', () => {
+  for (const [built, hidden] of [[null, ''], [['name', 'email'], ''], [all, 'email']] as const) {
+    const params: unknown[] = [];
+    const q = compileSearch(contacts(built as string[] | null), { query: 'smith' }, params, (p) => p.api_name === hidden);
+    assert.doesNotMatch(q.where, /row_search_text/);
+    assert.match(q.where, /t\."name" ilike \$2/);
+    assert.equal(q.where.includes('t."email"'), hidden !== 'email');
+  }
+});
+
+test('created_at, updated_at and the record id sort without nulls last, so their indexes serve the sort', () => {
+  const order = (property: string, direction: 'asc' | 'desc') =>
+    compileSearch(contacts(all), { sorts: [{ property, direction }] }, [], () => false).orderBy;
+  assert.equal(order('created_at', 'desc'), 't."created_at" desc, t."pc_0010_id" asc');
+  assert.equal(order('updated_at', 'desc'), 't."row_updated_at" desc, t."pc_0010_id" asc');
+  assert.equal(order('name', 'desc'), 't."name" desc nulls last, t."pc_0010_id" asc');
+  assert.equal(order('email', 'asc'), '(t."email" -> 0 ->> \'value\') asc nulls last, t."pc_0010_id" asc');
 });

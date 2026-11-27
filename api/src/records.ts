@@ -286,6 +286,8 @@ export async function filterAssociationContext(groups: FilterGroup[] | undefined
   };
 }
 
+export const TOTAL_CAP = 10000;
+
 export async function searchRecords(obj: ObjectDef, principal: Principal, req: SearchRequest) {
   requireObjectPermission(principal, obj, 'read');
   const props = visibleProperties(obj, principal, req.properties);
@@ -294,17 +296,26 @@ export async function searchRecords(obj: ObjectDef, principal: Principal, req: S
   const q = compileSearch(obj, req, params, hidden, await filterAssociationContext(req.filter_groups, principal));
   const access = recordFilter(principal, obj, params);
   const table = `crm.${quoteIdent(obj.object_type_id)}`;
+  // The count stops at TOTAL_CAP (searches page up to 10,000 results anyway),
+  // so a search matching a million records doesn't read them all just to
+  // count them. exact_total asks for the real number (the home page).
+  const counted = req.exact_total
+    ? `select count(*)::int as n from ${table} t where ${q.where} and ${access}`
+    : `select count(*)::int as n from (select 1 from ${table} t where ${q.where} and ${access} limit ${TOTAL_CAP + 1}) c`;
   const [{ rows }, count] = await Promise.all([
     pool.query(
       `select ${selectList(obj, props)} from ${table} t where ${q.where} and ${access} order by ${q.orderBy} limit ${q.limit} offset ${q.offset}`,
       params
     ),
-    pool.query(`select count(*)::int as n from ${table} t where ${q.where} and ${access}`, params)
+    pool.query(counted, params)
   ]);
   const results = rows.map((r) => serialize(obj, props, r));
   await attachAssociations(pool, obj, principal, results, validateSpecs(req.associations));
+  const n = count.rows[0].n as number;
+  const capped = !req.exact_total && n > TOTAL_CAP;
   return {
-    total: count.rows[0].n as number,
+    total: capped ? TOTAL_CAP : n,
+    total_capped: capped,
     results,
     next: nextCursor(q.offset, q.limit, rows.length)
   };

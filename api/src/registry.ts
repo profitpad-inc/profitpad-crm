@@ -10,6 +10,10 @@ export interface ObjectDef {
   description: string | null;
   record_status: string;
   search_properties: string[];
+  // the search properties the row_search_text column holds (0144); null when
+  // the table has none. Search uses the column only when this matches what
+  // the caller may search.
+  search_text_properties?: string[] | null;
   // objects this one may be linked to (meta.association_allowed), and those
   // among them that only the system links (meta.association_system_only)
   links_to: string[];
@@ -78,7 +82,7 @@ export async function getRegistry(): Promise<Registry> {
 
   // user renames reach the registry through sync_user_options, which logs a schema change
   const [objects, properties, options, users, lists] = await Promise.all([
-    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties, o.aliases, o.icon,
+    pool.query(`select o.object_type_id, o.api_name, o.label_singular, o.label_plural, o.kind, o.description, o.record_status, o.search_properties, o.search_text_properties, o.aliases, o.icon,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'
                                and meta.association_allowed(o.object_type_id, x.object_type_id) order by x.object_type_id) as links_to,
                        array(select x.api_name from meta.pc_0001 x where x.schema_name = 'crm' and x.object_type_id <> 'pc_0005'

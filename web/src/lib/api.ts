@@ -161,9 +161,17 @@ export type { Filter, FilterGroup } from './filters';
 import type { FilterGroup } from './filters';
 
 export interface SearchResult {
+  // counted up to 10,000 unless exact_total was asked for
   total: number;
+  // more than 10,000 match: total is then 10,000
+  total_capped?: boolean;
   results: CrmRecord[];
   next: string | null;
+}
+
+// "1,234", or "10,000+" when the count stopped at its cap
+export function totalText(r: Pick<SearchResult, 'total' | 'total_capped'>): string {
+  return r.total.toLocaleString() + (r.total_capped ? '+' : '');
 }
 
 export interface AssociationLabel {

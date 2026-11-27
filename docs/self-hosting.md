@@ -20,7 +20,7 @@ There is no password sign-in. People sign in with Google or Microsoft, and only 
 
 ## 1. Before you start
 
-- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 GB of memory (the renderer is capped at 1 GB; the API and Postgres need room beside it).
+- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 GB of memory (the renderer is capped at 1 GB; the API and Postgres need room beside it). [Server size](../README.md#server-size) lists what larger installs need.
 - Docker with the compose plugin: `curl -fsSL https://get.docker.com | sudo sh`
 - One DNS record (an A record) pointing your address, e.g. `crm.example.com`, at the server. Use your own name throughout.
 - A Google Cloud project or a Microsoft Entra tenant for sign-in (step 2).
@@ -88,8 +88,9 @@ Optional:
 | `MCP_SERVER_NAME`, `MCP_SERVER_ABOUT` | what the MCP server calls itself (default ProfitPad CRM) and one sentence on what it holds, for AI clients connected to more than one CRM |
 | `FILES_MAX_BYTES` | largest upload (default 5 GB) |
 | `PCRM_FILES_DIR` | a host folder for uploads instead of the `pcrm_files` volume (owned by uid 1000) |
-| `PGPOOL_MAX` | database connections the API keeps (default 10) |
+| `PGPOOL_MAX` | database connections the API keeps (default 20) |
 | `LOG_LEVEL` | API log level (default `info`) |
+| `PCRM_PG_SHARED_BUFFERS`, `PCRM_PG_EFFECTIVE_CACHE_SIZE`, `PCRM_PG_WORK_MEM`, `PCRM_PG_MAINTENANCE_WORK_MEM`, `PCRM_PG_RANDOM_PAGE_COST` | Postgres memory and planner settings (defaults `256MB`, `1GB`, `16MB`, `128MB`, `1.1`, for a 2 to 4 GB server). On a bigger server set shared buffers to about a quarter of memory and the cache size to about half: 8 GB, `2GB` and `4GB`; 16 GB, `4GB` and `8GB`. A larger `PCRM_PG_WORK_MEM` (32MB or 64MB) helps big sorts and reports |
 
 After changing `.env`: `sudo docker compose up -d`.
 

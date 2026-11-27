@@ -14,7 +14,7 @@ const config: pg.ClientConfig = {
   database: process.env.PGDATABASE ?? 'profitpad_crm_db',
   options: "-c role=pc_api -c statement_timeout=30000 -c timezone=UTC"
 };
-export const pool = new pg.Pool({ ...config, max: Number(process.env.PGPOOL_MAX ?? 10) });
+export const pool = new pg.Pool({ ...config, max: Number(process.env.PGPOOL_MAX ?? 20) });
 
 // A connection of its own, outside the pool, for LISTEN (the webhook worker).
 export const newClient = () => new pg.Client(config);

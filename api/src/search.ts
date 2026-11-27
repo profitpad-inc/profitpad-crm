@@ -64,6 +64,8 @@ export interface SearchRequest {
   after?: string;
   status?: 'active' | 'archived';
   associations?: { object: string; properties?: string[]; limit?: number }[];
+  // count every match instead of stopping at 10,000 (slower on big tables)
+  exact_total?: boolean;
 }
 
 export const OPERATORS = [
@@ -317,6 +319,15 @@ export interface CompiledSearch {
   offset: number;
 }
 
+// Whether the row_search_text column holds exactly the properties this
+// caller searches. When one is hidden from them or archived since, or the
+// table has no such column, each property is matched on its own instead.
+function usesSearchText(obj: ObjectDef, searched: PropertyDef[]): boolean {
+  const built = obj.search_text_properties;
+  if (!built || built.length === 0 || built.length !== searched.length) return false;
+  return searched.every((p) => built.includes(p.api_name));
+}
+
 export function compileSearch(
   obj: ObjectDef, req: SearchRequest, params: unknown[], isHidden: (p: PropertyDef) => boolean, assoc?: AssociationFilterContext
 ): CompiledSearch {
@@ -340,16 +351,22 @@ export function compileSearch(
       }
       return `$${digitsAt}`;
     };
-    const cols = obj.search_properties
+    const searched = obj.search_properties
       .map((name) => getProperty(obj, name))
-      .filter((p): p is PropertyDef => !!p && p.record_status === 'active' && !isHidden(p))
-      .map((p) => isMultiType(p)
+      .filter((p): p is PropertyDef => !!p && p.record_status === 'active' && !isHidden(p));
+    if (usesSearchText(obj, searched)) {
+      // one trigram-indexed column holding all of them (migration 0144)
+      const d = searched.some((p) => p.type === 'phone') ? digitsParam() : undefined;
+      clauses.push(d ? `(t.row_search_text ilike $${n} or t.row_search_text like ${d})` : `t.row_search_text ilike $${n}`);
+    } else {
+      const cols = searched.map((p) => isMultiType(p)
         ? multiMatch(`t.${quoteIdent(p.api_name)}`, 'like', `$${n}`, p.type === 'phone' ? digitsParam() : undefined)
         : `t.${quoteIdent(p.api_name)} ilike $${n}`);
-    if (getProperty(obj, 'first_name') && getProperty(obj, 'last_name') && obj.search_properties.includes('first_name')) {
-      cols.push(`concat_ws(' ', t."first_name", t."last_name") ilike $${n}`);
+      if (getProperty(obj, 'first_name') && getProperty(obj, 'last_name') && obj.search_properties.includes('first_name')) {
+        cols.push(`concat_ws(' ', t."first_name", t."last_name") ilike $${n}`);
+      }
+      clauses.push('(' + (cols.length ? cols.join(' or ') : `t.name ilike $${n}`) + ')');
     }
-    clauses.push('(' + (cols.length ? cols.join(' or ') : `t.name ilike $${n}`) + ')');
   }
   const groups = compileFilterGroups(obj, req.filter_groups ?? [], params, isHidden, 't', assoc);
   if (groups) clauses.push(groups);
@@ -359,6 +376,14 @@ export function compileSearch(
     if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown sort property "${s.property}"`);
     if ((prop.type === 'dropdown' && !isSingleValue(prop)) || prop.type === 'file' || prop.type === 'id_list') {
       throw badRequest(`cannot sort by multi-value property "${s.property}"`);
+    }
+    // Columns that are never empty sort without "nulls last", so an index on
+    // them can be read in order instead of sorting every row (a plain index
+    // read backwards puts nulls first). updated_at sorts by row_updated_at,
+    // the same value, which has the index.
+    if (prop.api_name === 'created_at' || prop.api_name === obj.id_column || prop.api_name === 'updated_at') {
+      const col = prop.api_name === 'updated_at' ? 'row_updated_at' : prop.api_name;
+      return `t.${quoteIdent(col)} ${s.direction === 'desc' ? 'desc' : 'asc'}`;
     }
     // email and phone lists sort by their primary entry
     const expr = prop.type === 'dropdown' ? `t.${quoteIdent(prop.api_name)}[1]`

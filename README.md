@@ -15,7 +15,7 @@ Everything runs in Docker from published images: there is nothing to clone or bu
 
 **You need:**
 
-- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 GB of memory
+- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 GB of memory ([sizing](#server-size))
 - Docker with the compose plugin (`curl -fsSL https://get.docker.com | sudo sh`)
 - A DNS record (an A record) for your address, e.g. `crm.example.com`, pointing at the server
 - A Google OAuth client or a Microsoft Entra app registration for sign-in, with the redirect URI `https://crm.example.com/v1/auth/google/callback` or `https://crm.example.com/v1/auth/microsoft/callback` ([details](docs/self-hosting.md#2-sign-in-apps))
@@ -31,6 +31,26 @@ sudo bash install.sh
 The installer asks for your address, which sign-in to use (Google, Microsoft or both) and the first admin's email. It writes `.env` and `db.env` with new random passwords and keys, pulls the images and starts everything; HTTPS certificates are handled for you. Open your address and sign in with the admin's Google or Microsoft account.
 
 **Back up `.env` and `db.env`.** The keys in them cannot be recovered from the server's data.
+
+### Server size
+
+Pick the row that covers both your record count and how many people use the CRM at the same time.
+
+| Level | vCPU | Memory | Disk | Total records, up to | Concurrent users, up to |
+|---|---|---|---|---|---|
+| Minimum | 1 | 2 GB | 20 GB | 25,000 | 3 |
+| Small | 2 | 4 GB | 40 GB | 250,000 | 15 |
+| **Base (tested)** | **2** | **8 GB** | **100 GB** | **1,500,000** | **5** |
+| Medium | 4 | 16 GB | 100 GB | 1,500,000 | 10 |
+| Large | 8 | 32 GB | 200 GB | 3,000,000 | 10 |
+| Extra large | 16 | 64 GB | 400 GB | 3,000,000 | 25 |
+
+- **Base** was measured: 1M contacts, 200k companies, 300k deals and 1.6M associations on a Google Cloud e2-standard-2 (2 vCPU, 8 GB). Every other row is an estimate scaled from that test, not a measurement.
+- **Total records** counts every record (contacts, companies, deals, tickets and so on). The work behind searching and opening tables grows with the number of records, so more records means fewer users on the same hardware.
+- **Concurrent users** means people actively working at the same moment, each opening a page or running a search every 15 seconds or so. The number of people with accounts can be several times higher.
+- **Memory** is mostly database cache. Once the database is larger than memory, tables and searches slow down sharply.
+- **Disk:** plan on about 4.5 GB per million records (record history is most of it), plus room for backups and file uploads.
+- **Sharing a server** with other apps means sizing for all of them together.
 
 ### Already running nginx or another web server?
 

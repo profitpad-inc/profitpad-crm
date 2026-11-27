@@ -4,7 +4,7 @@ import { Search } from 'lucide-react';
 import { useIsMobile } from '../lib/use-mobile';
 import { useLockPageScroll } from '../lib/pin-editor';
 import { useApp } from '../lib/app-context';
-import { api, getSchema, type SearchResult } from '../lib/api';
+import { api, getSchema, totalText, type SearchResult } from '../lib/api';
 import { nameProperties, objectIcon, recordName } from '../lib/display';
 
 // Searches the objects people look things up in most, five results each.
@@ -83,7 +83,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
             return (
               <div key={object} className="palette-group">
                 <div className="palette-group-head">
-                  {objectByName.get(object)?.label_plural} <span className="muted">{result.total}</span>
+                  {objectByName.get(object)?.label_plural} <span className="muted">{totalText(result)}</span>
                 </div>
                 {result.results.map((r) => (
                   <button key={r.id} className="palette-row" onClick={() => go(`/objects/${object}/${r.id}`)}>
@@ -93,7 +93,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
                 ))}
                 {result.total > result.results.length && (
                   <button className="palette-more" onClick={() => go(`/objects/${object}?s=${encodeURIComponent(q.trim())}`)}>
-                    See all {result.total}
+                    See all {totalText(result)}
                   </button>
                 )}
               </div>
