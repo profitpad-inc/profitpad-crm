@@ -212,10 +212,11 @@ export function completeGroups(groups: FilterGroup[], fields: FilterField[]): Fi
     .filter((g) => g.filters.length > 0);
 }
 
-// ?filters= in an address: the finished conditions as JSON. parseFilterParam
-// takes only the expected shape (anything else gives null: ignored).
+// ?filters= in an address: the finished conditions as JSON, one array per
+// group: [[{...}, {...}], [{...}]]. parseFilterParam takes only that shape
+// (anything else gives null: ignored).
 export function filterParam(groups: FilterGroup[]): string {
-  return JSON.stringify(groups.map((g) => ({ filters: g.filters })));
+  return JSON.stringify(groups.map((g) => g.filters));
 }
 
 export function parseFilterParam(raw: string | null): FilterGroup[] | null {
@@ -223,10 +224,10 @@ export function parseFilterParam(raw: string | null): FilterGroup[] | null {
   try {
     const v: unknown = JSON.parse(raw);
     if (!Array.isArray(v) || v.length > MAX_GROUPS) return null;
-    const ok = v.every((g) => g && Array.isArray(g.filters) && g.filters.length <= MAX_FILTERS
-      && g.filters.every((f: unknown) => !!f && typeof (f as Filter).property === 'string' && typeof (f as Filter).operator === 'string'
+    const ok = v.every((fs) => Array.isArray(fs) && fs.length <= MAX_FILTERS
+      && fs.every((f: unknown) => !!f && typeof (f as Filter).property === 'string' && typeof (f as Filter).operator === 'string'
         && ((f as Filter).association === undefined || typeof (f as Filter).association?.object === 'string')));
-    return ok ? (v as FilterGroup[]) : null;
+    return ok ? v.map((filters) => ({ filters: filters as Filter[] })) : null;
   } catch {
     return null;
   }
