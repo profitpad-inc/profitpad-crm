@@ -314,7 +314,7 @@ function RecordPicker({ object, schema, exclude, picked, onPick }: {
     let cancelled = false;
     setResults(null);
     const t = window.setTimeout(() => {
-      api<SearchResult>('POST', `/v1/objects/${object}/search`, { query: q.trim() || undefined, limit: 11, properties: props })
+      api<SearchResult>('QUERY', `/v1/objects/${object}/search`, { query: q.trim() || undefined, limit: 11, properties: props })
         .then((res) => { if (!cancelled) setResults(res.results.filter((r) => r.id !== exclude).slice(0, 10)); })
         .catch(() => { if (!cancelled) setResults([]); });
     }, 200);

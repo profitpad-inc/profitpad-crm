@@ -103,6 +103,20 @@ Send a credential in the \`Authorization\` header: \`Authorization: Bearer <cred
 
 **MCP server.** AI clients such as Claude connect to \`<API URL>/mcp\` (Streamable HTTP, MCP 2026-07-28 and 2025 clients). It needs an OAuth token issued for that address; a request without one gets \`401\` with a \`WWW-Authenticate\` header pointing at \`/.well-known/oauth-protected-resource/mcp\`, from which clients start the OAuth flow by themselves. Tools: list_objects, describe_object, search_records, get_record, create_record, update_record and associate_records (the last three need the write scope).`;
 
+const SEARCH_GUIDE = `## Searching
+
+Record searches (\`/v1/objects/{object}/search\`) use the HTTP \`QUERY\` method by default: a read-only method that carries a JSON body, so a search is safe to retry. The CRM web app searches this way.
+
+\`\`\`
+QUERY /v1/objects/contacts/search
+Authorization: Bearer <credential>
+Content-Type: application/json
+
+{"query": "smith", "limit": 20, "properties": ["name", "email"]}
+\`\`\`
+
+**POST fallback.** Some tools cannot send \`QUERY\` (several HTTP clients, low-code tools and SDK generators only offer the common methods). Send the same request with \`POST\` instead: same path, same body, same result. \`POST\` stays supported, but use \`QUERY\` where your tool allows it.`;
+
 // OAuth server, connection management and the MCP endpoint (src/oauth.ts, src/mcp.ts).
 function oauthPaths(): Record<string, unknown> {
   const tags = ['OAuth and MCP'];
@@ -417,8 +431,19 @@ function recordPaths(o: ObjectDef): Record<string, Schema> {
         responses: { 201: json(rec, 'Created'), ...errors }
       }
     },
+    // QUERY is the default (see SEARCH_GUIDE); POST keeps operationId
+    // search_<object> so clients generated before QUERY keep their names.
     [`${base}/search`]: {
-      post: { tags: [tag], summary: `Search ${o.label_plural.toLowerCase()}`, operationId: `search_${o.api_name}`, requestBody: body(ref('SearchRequest')), responses: { 200: json(list), ...errors } }
+      query: {
+        tags: [tag], summary: `Search ${o.label_plural.toLowerCase()}`, operationId: `search_${o.api_name}_query`,
+        description: 'The default way to search. QUERY is a read-only HTTP method that carries a body, so it is safe to retry. If your tool cannot send QUERY, use POST on the same path, which takes the same body and returns the same result.',
+        requestBody: body(ref('SearchRequest')), responses: { 200: json(list), ...errors }
+      },
+      post: {
+        tags: [tag], summary: `Search ${o.label_plural.toLowerCase()} (POST fallback)`, operationId: `search_${o.api_name}`,
+        description: 'For tools that cannot send QUERY. Same body and result as QUERY on this path; prefer QUERY where you can.',
+        requestBody: body(ref('SearchRequest')), responses: { 200: json(list), ...errors }
+      }
     },
     [`${base}/batch`]: {
       post: {
@@ -755,7 +780,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       description:
         'Object-based CRM API. Objects, properties and options come from the live registry, so this document changes as the schema does. ' +
         'Record IDs are 10-character lowercase hex strings, unique within an object.\n\n' +
-        AUTH_GUIDE
+        AUTH_GUIDE + '\n\n' + SEARCH_GUIDE
     },
     servers: [{ url: serverUrl }],
     // either credential works: an API key or an OAuth access token (alternatives)

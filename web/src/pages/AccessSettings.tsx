@@ -151,7 +151,7 @@ function useAccessData() {
   }, []);
 
   const reloadUsers = useCallback(async () => {
-    const r = await api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email', 'status'], sorts: [{ property: 'name', direction: 'asc' }] });
+    const r = await api<SearchResult>('QUERY', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email', 'status'], sorts: [{ property: 'name', direction: 'asc' }] });
     setUsers(r.results.map((u) => ({
       id: u.id,
       name: displayName(u.properties, u.id),

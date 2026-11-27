@@ -993,7 +993,7 @@ function NavSettings() {
       return;
     }
     loadMenus().then((r) => { showMenu(menuFor(target, r.results, r.groups)); setLoaded(true); });
-    api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
+    api<SearchResult>('QUERY', '/v1/objects/users/search', { limit: 200, properties: ['name', 'first_name', 'last_name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
       .then((r) => setUsers(r.results.map((u) => ({ id: u.id, name: displayName(u.properties, u.id) }))))
       .catch(() => undefined);
   }, []);

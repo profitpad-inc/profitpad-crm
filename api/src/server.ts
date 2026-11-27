@@ -81,7 +81,8 @@ export async function buildApp() {
     origin: browserOrigins.length ? browserOrigins : false,
     // the UI sends its session cookie
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    // QUERY: record searches (routes/records.ts)
+    methods: ['GET', 'QUERY', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['authorization', 'content-type'],
     maxAge: 600
   };

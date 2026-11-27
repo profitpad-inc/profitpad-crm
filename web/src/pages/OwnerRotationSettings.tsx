@@ -301,7 +301,7 @@ function People({ r, busy, run, onChange }: { r: Rotation; busy: boolean; run: R
   };
 
   useEffect(() => {
-    api<SearchResult>('POST', '/v1/objects/users/search', { limit: 200, properties: ['name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
+    api<SearchResult>('QUERY', '/v1/objects/users/search', { limit: 200, properties: ['name', 'email'], sorts: [{ property: 'name', direction: 'asc' }] })
       .then((res) => setUsers(res.results.map((u) => ({ id: u.id, name: String(u.properties.name || u.properties.email || `User ${u.id}`) }))))
       .catch(() => setUsers([]));
   }, []);

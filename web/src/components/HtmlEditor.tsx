@@ -227,7 +227,7 @@ function FilePanel({ onPick, onCancel }: { onPick: (f: FileRow) => void; onCance
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const res = await api<SearchResult>('POST', '/v1/objects/files/search', {
+        const res = await api<SearchResult>('QUERY', '/v1/objects/files/search', {
           query: query.trim() || undefined,
           limit: 20,
           properties: ['name', 'mime_type'],

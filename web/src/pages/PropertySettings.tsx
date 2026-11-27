@@ -994,7 +994,7 @@ function CalcTester({ object, sql, outputType }: { object: string; sql: string; 
     const h = setTimeout(async () => {
       try {
         const s = await getSchema(object);
-        const res = await api<SearchResult>('POST', `/v1/objects/${object}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
+        const res = await api<SearchResult>('QUERY', `/v1/objects/${object}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
         setResults(res.results.map((r) => ({ id: r.id, name: recordName(r) })));
       } catch (e) {
         setError((e as Error).message);

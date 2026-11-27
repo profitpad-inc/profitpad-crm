@@ -2305,7 +2305,7 @@ function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string
     const h = setTimeout(async () => {
       try {
         const s = await getSchema(only);
-        const res = await api<SearchResult>('POST', `/v1/objects/${only}/search`, { query: search.trim() || undefined, limit: 20, properties: nameProperties(s.properties) });
+        const res = await api<SearchResult>('QUERY', `/v1/objects/${only}/search`, { query: search.trim() || undefined, limit: 20, properties: nameProperties(s.properties) });
         if (!cancelled) setResults(res.results);
       } catch (err) {
         if (!cancelled) setError((err as Error).message);
@@ -3011,7 +3011,7 @@ function AssociationCard({ self, selfId, selfRecord, other, items, lineCount, li
     const h = setTimeout(async () => {
       try {
         const s = await getSchema(other);
-        const res = await api<SearchResult>('POST', `/v1/objects/${other}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
+        const res = await api<SearchResult>('QUERY', `/v1/objects/${other}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
         setResults(res.results.filter((r) => !items.some((i) => i.record.id === r.id) && !(other === self && r.id === selfId)));
       } catch (err) {
         setError((err as Error).message);
@@ -3256,7 +3256,7 @@ function FormBookingPagesCard({ formId }: { formId: string }) {
   useEffect(() => {
     let live = true;
     setPages(null);
-    api<SearchResult>('POST', '/v1/objects/booking_pages/search', {
+    api<SearchResult>('QUERY', '/v1/objects/booking_pages/search', {
       limit: 100,
       properties: ['name', 'form_before_id', 'form_after_id'],
       filter_groups: [
@@ -3361,7 +3361,7 @@ function LineParentCard({ selfId, associated, saves, onChanged }: { selfId: stri
     const h = setTimeout(async () => {
       try {
         const s = await getSchema(target);
-        const res = await api<SearchResult>('POST', `/v1/objects/${target}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
+        const res = await api<SearchResult>('QUERY', `/v1/objects/${target}/search`, { query: q.trim() || undefined, limit: 8, properties: nameProperties(s.properties) });
         setResults(res.results);
       } catch (err) {
         setError((err as Error).message);

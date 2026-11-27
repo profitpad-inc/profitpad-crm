@@ -262,7 +262,7 @@ function ObjectTableFor({ object }: { object: string }) {
       const id = after ? lastSearch.current : ++lastSearch.current;
       if (!after) setReloading(true);
       try {
-        const res = await api<SearchResult>('POST', `/v1/objects/${object}/search`, {
+        const res = await api<SearchResult>('QUERY', `/v1/objects/${object}/search`, {
           query: debounced || undefined,
           status: archived ? 'archived' : undefined,
           // quick filters apply on top of every filter group

@@ -49,7 +49,7 @@ export function AddLineModal({ parent, onClose, onCreated }: {
     if (mode !== 'product' || product) return;
     const h = setTimeout(async () => {
       try {
-        const res = await api<SearchResult>('POST', '/v1/objects/products/search', { query: q.trim() || undefined, limit: 8, properties: FROM_PRODUCT.map(([from]) => from) });
+        const res = await api<SearchResult>('QUERY', '/v1/objects/products/search', { query: q.trim() || undefined, limit: 8, properties: FROM_PRODUCT.map(([from]) => from) });
         setResults(res.results);
       } catch (err) {
         setError({ message: (err as Error).message });

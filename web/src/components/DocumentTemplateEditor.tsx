@@ -80,7 +80,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
   // records to preview with: the newest of the template's object
   useEffect(() => {
     if (!t) return;
-    api<SearchResult>('POST', `/v1/objects/${t.object}/search`, { limit: 25, properties: ['name'], sorts: [{ property: 'updated_at', direction: 'desc' }] })
+    api<SearchResult>('QUERY', `/v1/objects/${t.object}/search`, { limit: 25, properties: ['name'], sorts: [{ property: 'updated_at', direction: 'desc' }] })
       .then((r) => {
         const list = r.results.map((x) => ({ value: x.id, label: String(x.properties.name ?? `#${x.id}`) }));
         setRecords(list);

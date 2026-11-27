@@ -534,7 +534,7 @@ function ProductSearch({ product, onPick, cell, onEnter, invalid, id, autoFocus 
     let live = true;
     const h = setTimeout(async () => {
       try {
-        const res = await api<SearchResult>('POST', '/v1/objects/products/search', { query, limit: 8, properties: PRODUCT_PROPS });
+        const res = await api<SearchResult>('QUERY', '/v1/objects/products/search', { query, limit: 8, properties: PRODUCT_PROPS });
         if (!live) return;
         setResults(res.results.map(picked));
         setHi(0);

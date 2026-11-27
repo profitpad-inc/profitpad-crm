@@ -193,6 +193,8 @@ export async function authenticate(req: FastifyRequest): Promise<Principal> {
   };
 }
 
+// QUERY is left out like GET: it only reads, and a browser on another site
+// cannot send it without a CORS preflight, which only the CRM's origins pass.
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // A session acts as its user: users with an admin role get the admin scope,

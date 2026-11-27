@@ -63,10 +63,17 @@ export async function recordRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post<{ Params: ObjParams; Body: SearchRequest }>('/v1/objects/:object/search', async (req) => {
-    requireScope(req.principal!, 'read');
-    const obj = await objectForWrite(req.params.object);
-    return searchRecords(obj, req.principal!, req.body ?? {});
+  // QUERY (a safe, read-only method that carries a body) is the default; the
+  // web app and our own tools use it. POST stays as the fallback for outside
+  // callers whose tools cannot send QUERY. Both run the same handler.
+  app.route<{ Params: ObjParams; Body: SearchRequest }>({
+    method: ['QUERY', 'POST'],
+    url: '/v1/objects/:object/search',
+    handler: async (req) => {
+      requireScope(req.principal!, 'read');
+      const obj = await objectForWrite(req.params.object);
+      return searchRecords(obj, req.principal!, req.body ?? {});
+    }
   });
 
   // Up to 100 records by id, optionally with associations:

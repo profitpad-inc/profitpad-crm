@@ -42,7 +42,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         searchable.map(async (object) => {
           try {
             const schema = await getSchema(object);
-            const result = await api<SearchResult>('POST', `/v1/objects/${object}/search`, {
+            const result = await api<SearchResult>('QUERY', `/v1/objects/${object}/search`, {
               query, limit: 5, properties: nameProperties(schema.properties)
             });
             return { object, result };

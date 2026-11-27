@@ -11,7 +11,7 @@ const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);
 // The published templates for an object, by name. Quotes always have one
 // default among them (migration 0080).
 export async function loadTemplateChoices(object: string): Promise<TemplateChoice[]> {
-  const res = await api<SearchResult>('POST', '/v1/objects/document_templates/search', {
+  const res = await api<SearchResult>('QUERY', '/v1/objects/document_templates/search', {
     limit: 100,
     properties: ['name', 'is_default'],
     filter_groups: [{ filters: [{ property: 'object', operator: 'eq', value: object }, { property: 'status', operator: 'eq', value: 'published' }] }],
