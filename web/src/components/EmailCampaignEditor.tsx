@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Eye, Send, CalendarClock, Ban, RefreshCw, X } from 'lucide-react';
 import { api, type CrmRecord, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -7,13 +7,15 @@ import { DatePicker } from './DatePicker';
 import { StatusPill, type Tone } from './settings';
 import { confirmDialog } from './confirm';
 import { Select } from './Select';
+import { CampaignActivity, FILTER_PARAM } from './CampaignActivity';
 import '../email.css';
 import '../lists.css';
 
 // The middle of an email campaign's record page (api/src/email/campaigns.ts):
 // who gets it (the contact lists linked to it), a preview drawn for one
 // contact, a test to yourself, then send now or schedule. After it goes out,
-// the counts. The email itself is the linked email template (right column).
+// the counts (each opens the Activity card on those recipients) and who did
+// what (CampaignActivity). The email itself is the linked email template (right column).
 
 interface Check { ready: boolean; problems: string[]; recipients: number; can_send: boolean }
 interface Preview { contact_id: string; to: string | null; subject: string; html: string }
@@ -23,13 +25,16 @@ interface SubscriptionType { value: string; label: string; description: string |
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined;
 const TONES: Record<string, Tone> = { draft: 'off', scheduled: 'info', sending: 'pending', sent: 'on', canceled: 'warn' };
 
-const COUNTS: [string, string][] = [
-  ['recipient_count', 'Sent to'], ['delivered_count', 'Delivered'], ['opened_count', 'Opened'], ['clicked_count', 'Clicked'],
-  ['replied_count', 'Replied'], ['unsubscribed_count', 'Unsubscribed'], ['bounced_count', 'Bounced'], ['complained_count', 'Marked as spam']
+// each count, and the Activity filter that lists those recipients
+const COUNTS: [string, string, string][] = [
+  ['recipient_count', 'Sent to', 'all'], ['delivered_count', 'Delivered', 'delivered'], ['opened_count', 'Opened', 'opened'],
+  ['clicked_count', 'Clicked', 'clicked'], ['replied_count', 'Replied', 'replied'], ['unsubscribed_count', 'Unsubscribed', 'unsubscribed'],
+  ['bounced_count', 'Bounced', 'bounced'], ['complained_count', 'Marked as spam', 'complained']
 ];
 
 export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; onChanged: (r: CrmRecord) => void }) {
   const { toast } = useApp();
+  const [, setParams] = useSearchParams();
   const p = record.properties;
   const status = first(p.status) ?? 'draft';
   const editable = status === 'draft' || status === 'scheduled';
@@ -166,6 +171,17 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     await reload();
   });
 
+  // a count opens the Activity card on the recipients it counts
+  const showActivity = (filter: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (filter === 'all') next.delete(FILTER_PARAM);
+      else next.set(FILTER_PARAM, filter);
+      return next;
+    }, { replace: true });
+    document.getElementById('campaign-activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const fit = () => {
     const f = frame.current;
     if (f?.contentDocument?.body) f.style.height = `${Math.min(f.contentDocument.documentElement.scrollHeight + 8, 2400)}px`;
@@ -184,8 +200,10 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
         {sentCounts && (
           <>
             <div className="campaign-stats">
-              {COUNTS.map(([k, label]) => (
-                <div key={k} className="campaign-stat"><strong>{Number(p[k] ?? 0).toLocaleString()}</strong><span>{label}</span></div>
+              {COUNTS.map(([k, label, filter]) => (
+                <button key={k} type="button" className="campaign-stat" title={`Show who: ${label.toLowerCase()}`} onClick={() => showActivity(filter)}>
+                  <strong>{Number(p[k] ?? 0).toLocaleString()}</strong><span>{label}</span>
+                </button>
               ))}
             </div>
             <p className="small muted">Opens are a rough signal: some mail apps load images for the reader. Clicks and replies are the reliable ones.</p>
@@ -200,6 +218,8 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
         )}
         {error && <div className="error">{error}</div>}
       </div>
+
+      {sentCounts && <CampaignActivity campaignId={record.id} refreshKey={COUNTS.map(([k]) => String(p[k] ?? '')).join(',')} />}
 
       {editable && (
         <div className="card">

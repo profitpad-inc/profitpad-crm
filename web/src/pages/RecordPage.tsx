@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MapPin, MessageSquare, Mails, Paperclip, Pencil, Plus, Tag, Unlink, X } from 'lucide-react';
+import { Archive, ArrowDownLeft, ArrowRight, ArrowUpRight, AtSign, BellOff, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, EllipsisVertical, ExternalLink, File as FileIcon, History, Inbox, KeyRound, Link2, Lock, MapPin, MessageSquare, Mails, Paperclip, Pencil, Plus, Table2, Tag, Unlink, X } from 'lucide-react';
 import { fileInfo, formatBytes } from '../lib/files';
 import { api, ApiError, can, getAssociationLabels, getSchema, type AssociationLabel, type CrmRecord, type ObjectDef, type Property, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
@@ -40,6 +40,7 @@ import type { Attachable, Recipient } from '../components/EmailComposer';
 const EmailComposer = lazy(() => import('../components/EmailComposer').then((m) => ({ default: m.EmailComposer })));
 import { loadCanSend, type SendStatus } from '../lib/mailbox';
 import { SnippetRecordProvider, TextArea } from '../lib/snippets';
+import { filterParam } from '../lib/filters';
 import { MentionText } from '../components/MentionText';
 import { MENTION_TOKEN, encodeMentions, mentionsAsText, type MentionUser } from '../lib/text-complete';
 import { EmptyState, StatusPill, TableSkeleton, type Tone } from '../components/settings';
@@ -78,8 +79,8 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
   booking_pages: ['calls'],
-  // its email; the emails it sent are counted, not listed
-  email_campaigns: ['email_templates'],
+  // its email template, and the emails it sent (one per recipient)
+  email_campaigns: ['email_templates', 'emails'],
   // the campaigns that send to it
   lists: ['email_campaigns'],
   deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],
@@ -538,7 +539,9 @@ export function RecordPage() {
     // a form lists its submissions, a booking page its meetings and a booking's submission its meeting
     // as a card; elsewhere they are activities
     .filter((o) => !(ACTIVITY_OBJECTS as readonly string[]).includes(o) || (object === 'forms' && o === 'form_submissions')
-      || ((object === 'booking_pages' || object === 'form_submissions') && o === 'calls') || object === 'comments')
+      || ((object === 'booking_pages' || object === 'form_submissions') && o === 'calls') || object === 'comments'
+      // a campaign has no stream: the emails it sent are a card
+      || (object === 'email_campaigns' && o === 'emails'))
     // comments show in the thread on the record they are on
     .filter((o) => o !== 'comments')
     .filter((o) => object !== 'lines' || o === 'products')
@@ -641,7 +644,10 @@ export function RecordPage() {
   // (forms, views, ...) keep the stack.
   const streamOnly = !noRight && hasStream && object !== 'email_campaigns';
   const tabbed = mobile && streamOnly;
-  const assocTab = narrow && streamOnly;
+  // Email templates keep their linked records (the campaigns using them) in an
+  // Associations tab beside the preview on every screen, so the preview gets the room
+  const assocAlways = object === 'email_templates';
+  const assocTab = (narrow || assocAlways) && streamOnly;
   const linkedCount = cards.reduce((n, o) => n + (associated.find((a) => a.object === o)?.records.length ?? 0), 0);
   const associationsPanel: StreamPanel = { key: 'associations', label: 'Associations', count: linkedCount, content: <div className="record-right record-tab-panel">{linkCards}</div> };
   const panels: StreamPanel[] = tabbed ? [
@@ -694,7 +700,7 @@ export function RecordPage() {
   return (
     <LiveContext.Provider value={live}>
     <SnippetRecordProvider object={object} id={id}>
-    <div className={`record-page${noRight ? ' two-col' : ''}${propsInTab ? ' tabbed' : ''}`}>
+    <div className={`record-page${noRight || (assocAlways && !narrow) ? ' two-col' : ''}${propsInTab ? ' tabbed' : ''}`}>
       {merging && (
         <MergeRecordsModal
           object={object}
@@ -899,8 +905,11 @@ export function PropertyList({ schema, record, lock, onSaved, flash = null, chan
   useHoldTapsOutside(isMobile, editing, HOLD_KEEP);
   async function copyValue(p: Property) {
     const value = record.properties[p.api_name];
-    // HTML and code copy as written; everything else as it reads on the page
-    const text = typeof value === 'string' && (isHtml(p) || isCode(p)) ? value : formatValue(p, value);
+    // HTML and code copy as written; email and phone copy only the primary;
+    // everything else as it reads on the page
+    const text = isMultiType(p)
+      ? primaryValue(value) ?? ''
+      : typeof value === 'string' && (isHtml(p) || isCode(p)) ? value : formatValue(p, value);
     try {
       await navigator.clipboard.writeText(text);
       toast(`${p.label} copied`);
@@ -3015,9 +3024,16 @@ export function AssociationCard({ self, selfId, selfRecord, other, items, lineCo
   const otherCode = meta?.object_type_id ?? '';
   const choices = useMemo(() => labelChoices(labels, selfCode, otherCode), [labels, selfCode, otherCode]);
 
+  // a campaign's emails all share its subject: each row names its recipient and status
+  // instead, a page at a time (a campaign can send thousands)
+  const campaignEmails = self === 'email_campaigns' && other === 'emails';
+  const [shown, setShown] = useState(CAMPAIGN_EMAILS_PAGE);
+  const visible = campaignEmails ? items.slice(0, shown) : items;
+  const statusProp = campaignEmails ? otherSchema?.properties.find((p) => p.api_name === 'status') : undefined;
+
   useEffect(() => {
-    if (other === 'lines') getSchema(other).then(setOtherSchema).catch(() => undefined);
-  }, [other]);
+    if (other === 'lines' || campaignEmails) getSchema(other).then(setOtherSchema).catch(() => undefined);
+  }, [other, campaignEmails]);
 
   useEffect(() => {
     let live = true;
@@ -3123,6 +3139,13 @@ export function AssociationCard({ self, selfId, selfRecord, other, items, lineCo
         <span className="card-icon"><Icon size={15} strokeWidth={1.75} /></span>
         <h3>{meta.label_plural}</h3>
         <span className="card-count" aria-label={`${items.length} linked`}>{items.length}</span>
+        {/* the table cannot filter on links to its own object (companies to companies) */}
+        {items.length > 0 && selfCode && other !== self && (
+          <Link className="icon-btn assoc-open" to={associatedTableUrl(other, self, selfCode, selfId)}
+            aria-label={`Open these ${meta.label_plural.toLowerCase()} in a table`} title={`Open in the ${meta.label_plural} table`}>
+            <Table2 size={15} strokeWidth={1.75} />
+          </Link>
+        )}
         {editable && !full && !(other === 'lines' && self === 'products') && (
           canCreate && !adding ? (
             <Menu
@@ -3215,16 +3238,20 @@ export function AssociationCard({ self, selfId, selfRecord, other, items, lineCo
           No {meta.label_plural.toLowerCase()} yet.
         </div>
       )}
-      {items.map(({ record, labels: names, links }) => {
+      {visible.map(({ record, labels: names, links }) => {
         const applied = appliedChoices(links, labels, self === other);
+        const to = campaignEmails && typeof record.properties.to_addresses === 'string' ? record.properties.to_addresses : null;
         return (
         <div key={record.id} className="card-row">
           <div className="card-row-main">
             {/* a deal's (quote's, ...) lines open the line items dialog on that line, not the line's page */}
             {newLines && editable
               ? <button className="link-btn" onClick={() => openLines({ lineId: record.id, field: 'product' })}>{recordName(record)}</button>
-              : <Link to={`/objects/${other}/${record.id}`}>{recordName(record)}</Link>}
+              : <Link to={`/objects/${other}/${record.id}`}>{to || recordName(record)}</Link>}
             {names.some(Boolean) && <div className="small muted">{names.filter(Boolean).join(', ')}</div>}
+            {campaignEmails && record.properties.status != null && record.properties.status !== '' && (
+              <div className="small muted">{statusProp ? displayValue(statusProp, record.properties.status) : String(record.properties.status)}</div>
+            )}
           </div>
           {(fileUrls.get(record.id) ?? publishedUrl(other, record)) && (
             <PublishedLinkIcons url={(fileUrls.get(record.id) ?? publishedUrl(other, record))!} />
@@ -3263,8 +3290,26 @@ export function AssociationCard({ self, selfId, selfRecord, other, items, lineCo
         </div>
         );
       })}
+      {visible.length < items.length && (
+        <div className="card-empty">
+          <button className="link-btn" onClick={() => setShown((n) => n + CAMPAIGN_EMAILS_PAGE)}>
+            Show {Math.min(CAMPAIGN_EMAILS_PAGE, items.length - visible.length)} more of {items.length - visible.length}
+          </button>
+        </div>
+      )}
     </div>
   );
+}
+
+const CAMPAIGN_EMAILS_PAGE = 25;
+
+// The other object's table, filtered to the records linked to this one: a
+// condition on the linked records' Record ID (each object's id property is
+// "<code>_id"), which the table's Filters panel shows and can change.
+function associatedTableUrl(other: string, self: string, selfCode: string, selfId: string): string {
+  const q = new URLSearchParams();
+  q.set('filters', filterParam([{ filters: [{ property: `${selfCode}_id`, operator: 'eq', value: selfId, case_sensitive: false, association: { object: self } }] }]));
+  return `/objects/${other}?${q.toString()}`;
 }
 
 // A form's booking pages: the pages that ask it before or after the visitor picks

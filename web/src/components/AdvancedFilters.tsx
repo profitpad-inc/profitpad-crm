@@ -59,11 +59,15 @@ export interface AdvancedFiltersProps {
   allowCompare?: boolean;
   maxGroups?: number;
   maxFilters?: number;
+  // the name of the record a condition picks by its Record ID ("Associated deal:
+  // Record ID is 0000000012", from a record page's linked records card), once
+  // known: the condition then reads "Associated deal: Acme renewal"
+  recordName?: (f: Filter) => string | undefined;
 }
 
 export function AdvancedFilters({
   fields, groups, onChange, searchPlaceholder = 'Search properties', objectLabel, onPickerOpen, fieldsLoading, objectIcon, pinnedObjects, associationLabels, kit,
-  match, onMatchChange, allowCompare, maxGroups = MAX_GROUPS, maxFilters = MAX_FILTERS
+  match, onMatchChange, allowCompare, maxGroups = MAX_GROUPS, maxFilters = MAX_FILTERS, recordName
 }: AdvancedFiltersProps) {
   const between = match === 'all' ? 'and' : 'or';
   const inside = match === 'all' ? 'or' : 'and';
@@ -131,7 +135,7 @@ export function AdvancedFilters({
               <div key={fi}>
                 {fi > 0 && <div className="af-and">{inside}</div>}
                 {!open(gi, g) ? (
-                  <ConditionSummary fields={fields} field={byKey.get(filterKey(f))} filter={f}
+                  <ConditionSummary fields={fields} field={byKey.get(filterKey(f))} filter={f} named={recordName?.(f)}
                     label={f.association?.label_id ? associationLabels?.(f.association.object).find((l) => l.value === f.association!.label_id)?.label : undefined}
                     onRemove={() => setGroup(gi, { filters: g.filters.filter((_, j) => j !== fi) })} />
                 ) : <Condition
@@ -139,6 +143,7 @@ export function AdvancedFilters({
                   fields={fields}
                   field={byKey.get(filterKey(f))}
                   filter={f}
+                  named={recordName?.(f)}
                   cls={cls}
                   labels={f.association ? associationLabels?.(f.association.object) : undefined}
                   onChange={(nf) => setGroup(gi, { filters: g.filters.map((x, j) => (j === fi ? nf : x)) })}
@@ -169,8 +174,8 @@ export function AdvancedFilters({
 
 // A filter of a group not being edited: one line that reads as a sentence,
 // the property and the value in bold. Clicking it opens the group.
-function ConditionSummary({ fields, field, filter, label, onRemove }: {
-  fields: FilterField[]; field: FilterField | undefined; filter: Filter; label?: string; onRemove: () => void;
+function ConditionSummary({ fields, field, filter, label, named, onRemove }: {
+  fields: FilterField[]; field: FilterField | undefined; filter: Filter; label?: string; named?: string; onRemove: () => void;
 }) {
   const { subject, verb, value } = filterParts(filter, field, fields);
   const linked = filter.association && !field?.count
@@ -179,7 +184,7 @@ function ConditionSummary({ fields, field, filter, label, onRemove }: {
     <div className={`af-cond af-summary${field ? '' : ' missing'}`}>
       <span className="af-sentence">
         {linked && <span className="af-muted-inline">{linked}</span>}
-        <strong>{subject}</strong> {verb}{value && <> <strong>{value}</strong></>}
+        {named ? <strong>{named}</strong> : <><strong>{subject}</strong> {verb}{value && <> <strong>{value}</strong></>}</>}
       </span>
       <button type="button" className="af-icon af-remove" aria-label="Remove filter" title="Remove filter"
         onMouseDown={(e) => e.stopPropagation()} onClick={onRemove}>
@@ -189,8 +194,8 @@ function ConditionSummary({ fields, field, filter, label, onRemove }: {
   );
 }
 
-function Condition({ fields, field, filter, cls, labels, onChange, onRemove, allowCompare }: {
-  fields: FilterField[]; field: FilterField | undefined; filter: Filter; cls: { input?: string; select?: string };
+function Condition({ fields, field, filter, named, cls, labels, onChange, onRemove, allowCompare }: {
+  fields: FilterField[]; field: FilterField | undefined; filter: Filter; named?: string; cls: { input?: string; select?: string };
   labels?: { value: string; label: string }[]; onChange: (f: Filter) => void; onRemove: () => void; allowCompare?: boolean;
 }) {
   const comparing = !!filter.compare_to;
@@ -221,7 +226,7 @@ function Condition({ fields, field, filter, cls, labels, onChange, onRemove, all
   return (
     <div className={`af-cond${field ? '' : ' missing'}`}>
       <div className="af-cond-fields">
-        {filter.association && !field?.count && <div className="af-cond-object">Associated {(field?.group ?? filter.association.object).toLowerCase()}</div>}
+        {filter.association && !field?.count && <div className="af-cond-object">Associated {(field?.group ?? filter.association.object).toLowerCase()}{named && <>: <strong>{named}</strong></>}</div>}
         {!field?.count && labelMenu}
         <Select className={cls.select} value={key} aria-label="Property"
           onChange={(v) => {

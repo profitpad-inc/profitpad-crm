@@ -21,6 +21,7 @@ export const LISTS_GUIDE = `Lists (object lists) are named sets of records of on
   No groups: every record. At most 10 groups of 20 conditions.
 - A condition is a search_records filter: {"property", "operator", "value" or "values", "case_sensitive", "association": {"object", "label_id"}}, same operators.
 - Membership of other lists: {"property": "__list", "operator": "in" | "not_in", "values": [list ids]}: in any of those lists, or in none of them (lists of the same object; with "association", lists of the linked records). Uses each list's members as of its last refresh. A list can't name itself. The same works in search_records filters.
+- What contacts did with email campaigns (contacts, or linked contacts with "association"): {"property": "__campaign_<event>", "operator": ..., "values": [email campaign ids]}. Events: sent (received it), delivered, opened, clicked, replied, unsubscribed, bounced, complained (marked as spam); opens and clicks by security scanners don't count. Operators: in (did it for any of these campaigns), not_in (was sent one of them and did it for none; for sent: was sent none of them), has_property (for any campaign), not_has_property (was sent some campaign and never did it; for sent: never sent one), last_n_days with "value" n (for any campaign in the last n days). Example, got the launch email but didn't open it: {"property": "__campaign_opened", "operator": "not_in", "values": ["<campaign id>"]}. The same works in search_records filters on contacts.
 - Or it compares with another property instead of a value, through compare_to (operators eq, neq, lt, lte, gt, gte; text only eq and neq; both sides the same kind: number, date, or text):
   this record's own properties: {"property": "close_date", "operator": "lt", "compare_to": {"property": "created_at"}}
   against its linked records: contacts changed after any of their deals: {"property": "updated_at", "operator": "gt", "compare_to": {"property": "updated_at", "association": {"object": "deals"}, "quantifier": "any"}}
@@ -109,12 +110,15 @@ export function registerListTools(server: McpServer, p: Principal): void {
 
   server.registerTool('refresh_list', {
     title: 'Refresh list',
-    description: 'Works out a list\'s members from its definition now: a dynamic list instead of waiting for its schedule, a static list filled once with what its saved definition matches (replacing its members). Answers how many joined, left, and the total.',
-    inputSchema: z.object({ list: listArg }),
+    description: 'Works out a list\'s members from its definition now: a dynamic list instead of waiting for its schedule, a static list filled once with what its saved definition matches (replacing its members, or with keep_added_by_hand keeping the ones people added by hand). Answers how many joined, left, and the total.',
+    inputSchema: z.object({
+      list: listArg,
+      keep_added_by_hand: z.boolean().optional().describe('Static lists: keep members added by hand that the filters don\'t match (default false: replace every member)')
+    }),
     scopeChallenge: writeChallenge
-  }, async ({ list }) => run(async () => {
+  }, async ({ list, keep_added_by_hand }) => run(async () => {
     requireScope(p, 'write');
     const l = await listFor(p, list, 'edit');
-    return refreshList(l.id, p);
+    return refreshList(l.id, p, { keepAddedByHand: keep_added_by_hand === true });
   }));
 }

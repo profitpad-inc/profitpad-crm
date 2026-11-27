@@ -1043,3 +1043,9 @@ a.comment-author:hover { color: var(--primary); }
 .visit-page { display: flex; flex-direction: column; min-width: 0; }
 .visit-page .page-view-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-view-campaign { overflow-wrap: anywhere; }
+
+/* a linked records card's table link sits right, before its + (RecordPage AssociationCard) */
+.assoc-card > .card-head > .assoc-open { margin-left: auto; color: var(--muted-text); }
+.assoc-card > .card-head > .assoc-open:hover { color: var(--primary); }
+.assoc-card > .card-head > .assoc-open ~ .push-right,
+.assoc-card > .card-head > .assoc-open ~ .menu-anchor { margin-left: 0; }

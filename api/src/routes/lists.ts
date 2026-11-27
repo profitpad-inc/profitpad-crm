@@ -46,11 +46,11 @@ export async function listRoutes(app: FastifyInstance) {
     return removeMembers(p, listId(req.params.id), req.body?.ids);
   });
 
-  app.post<{ Params: { id: string } }>('/v1/lists/:id/refresh', async (req) => {
+  app.post<{ Params: { id: string }; Body: { keep_added_by_hand?: unknown } }>('/v1/lists/:id/refresh', async (req) => {
     const p = req.principal!;
     requireScope(p, 'write');
     const list = await listFor(p, listId(req.params.id), 'edit');
-    return refreshList(list.id, p);
+    return refreshList(list.id, p, { keepAddedByHand: req.body?.keep_added_by_hand === true });
   });
 
   app.get<{ Params: { id: string }; Querystring: { limit?: string; before?: string } }>('/v1/lists/:id/changes', async (req) => {

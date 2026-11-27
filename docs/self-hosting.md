@@ -178,9 +178,27 @@ opens a superuser shell on the server. To reach the database from your own compu
 - **AI assistants (MCP).** Nothing to install: connect a client to `https://crm.example.com/mcp`; the address is also on Settings → Connected apps.
 - **Business card scanning** works out of the box with Tesseract; an admin can add an Anthropic API key in Settings → Card scanner, for better results.
 - **Address autocomplete**: an admin adds a Google Maps key (Places API (New)) in Settings → Address autocomplete.
-- **Email (Postmark)**: marketing campaigns and one-to-one email go out through a Postmark server with a transactional and a broadcast stream, your sending domain confirmed there (DKIM, Return-Path), and for replies an inbound stream whose domain (e.g. `reply.example.com`) has an MX record to `inbound.postmarkapp.com`. An admin pastes the server token, sender, mailing address and reply domain in Settings → Email, then copies the two webhook addresses shown there into Postmark.
+- **Email (Postmark)**: marketing campaigns and one-to-one email go out through a Postmark server with a transactional and a broadcast stream, and your sending domain confirmed there (DKIM, Return-Path). An admin pastes the server token, senders and mailing address in Settings → Email, then copies the webhook address shown there into Postmark. Replies coming back into the CRM are optional (off by default, since Postmark bills each received email like a sent one): they need an inbound stream whose domain (e.g. `reply.example.com`) has an MX record to `inbound.postmarkapp.com`. Ask Postmark to let you manage unsubscribes yourself, or every campaign shows two unsubscribe links: see [Postmark and unsubscribes](#postmark-and-unsubscribes).
 - **Integrations and webhooks** (n8n, Zapier, your own services) are called over the internet: their addresses must be https on a public address, even when the service runs on the same server.
 - **Forms and booking on other websites**: add the website under Settings → Embed domains and paste the snippet shown there; it loads `https://crm.example.com/p/embed.js`.
+
+### Postmark and unsubscribes
+
+The CRM handles unsubscribes itself: every campaign has a visible link to its own preference page (all marketing email, or one subscription type at a time) and the one-click `List-Unsubscribe` and `List-Unsubscribe-Post` headers. Postmark, by default, also adds its own unsubscribe link and headers to everything on a broadcast stream, so recipients see two links and Postmark keeps a suppression list the CRM's preference page cannot change.
+
+Only Postmark support can turn theirs off. Send a request when you set up Postmark (Postmark's contact form, topic message streams; a title such as "Apply to manage unsubscribes on your own"). Once approved, open the broadcast stream's **Settings** tab and pick **Manage unsubscribes on your own**. Nothing changes in the CRM. Until then campaigns still work; someone who uses Postmark's link is opted out in the CRM too, through the webhook.
+
+A sample request (fill in the parts in brackets):
+
+> Hi, we run our own CRM (ProfitPad CRM) and send our newsletter and some transactional email through Postmark. We'd like to manage unsubscribes on our own for our broadcast stream, because right now each campaign shows two unsubscribe links: ours and Postmark's.
+>
+> How we handle unsubscribes:
+> - Our list is opt-in only: people join through our sign-up form ([link to your form]). We don't send cold email or use bought lists.
+> - Every marketing email includes a visible unsubscribe link to our own preference page, where people can leave all marketing email or individual subscription types.
+> - Every marketing email carries `List-Unsubscribe` (an https link) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers.
+> - Unsubscribes take effect immediately: those contacts are left out of every later send. Hard bounces and spam complaints are suppressed the same way.
+>
+> Our Postmark username is [username]. Please let us know if you need anything else.
 
 ## Running from a clone (development)
 

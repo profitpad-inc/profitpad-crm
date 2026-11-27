@@ -5,9 +5,9 @@ import { randomBytes } from 'node:crypto';
 process.env.MASTER_ENCRYPTION_KEY ||= randomBytes(32).toString('base64');
 
 const { readUnsubscribeToken, unsubscribeToken, newReplyToken, REPLY_TOKEN_RE } = await import('./links.js');
-const { eventKey } = await import('./events.js');
+const { eventKey, isMachineEvent } = await import('./events.js');
 const { fromHeader, marketingSender, replyToFor } = await import('./settings.js');
-const { renderCampaignEmail, transactionalLayout } = await import('./render.js');
+const { renderCampaignEmail, transactionalLayout, campaignText } = await import('./render.js');
 const { topicValue } = await import('./topics.js');
 
 test('unsubscribe tokens round-trip and refuse tampering', () => {
@@ -114,4 +114,28 @@ test('transactional emails get the CRM logo and the mailing address footer, no u
   assert.match(html, /1 Main St<br>Town/);
   assert.doesNotMatch(html, /Unsubscribe/);
   assert.match(html, /^<!doctype html>/);
+});
+
+test('opens and clicks within seconds of delivery (or of the send) are a scanner', () => {
+  const delivered = '2026-11-27T18:09:29Z';
+  assert.equal(isMachineEvent('2026-11-27T18:09:29Z', delivered, null), true);
+  assert.equal(isMachineEvent('2026-11-27T18:09:33Z', delivered, null), true);
+  assert.equal(isMachineEvent('2026-11-27T18:10:20Z', delivered, null), false);
+  // delivery not reported yet: measured from the send
+  assert.equal(isMachineEvent('2026-11-27T18:09:35Z', null, '2026-11-27T18:09:28Z'), true);
+  assert.equal(isMachineEvent('2026-11-27T18:09:45Z', null, '2026-11-27T18:09:28Z'), false);
+  assert.equal(isMachineEvent('2026-11-27T18:09:29Z', null, null), false);
+});
+
+test('the plain-text part leaves out styles and preview padding, and keeps links', () => {
+  const html = '<!doctype html><html><head><title>T</title><style>p{color:red}</style></head><body>'
+    + '<div style="display:none">Short&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div><h1>Hello Ann</h1><p>Read <a href="https://x.com/a">the post</a>.</p>'
+    + '<!-- note --><p><a href="https://x.com/unsub">Unsubscribe</a></p></body></html>';
+  const text = campaignText(html);
+  assert.doesNotMatch(text, /color:red|note|\u200c/);
+  assert.match(text, /Hello Ann/);
+  assert.match(text, /the post \(https:\/\/x\.com\/a\)/);
+  assert.match(text, /Unsubscribe \(https:\/\/x\.com\/unsub\)/);
+  assert.doesNotMatch(text, /\n{3,}/);
+  assert.match(campaignText('<td><span>ProfitPad</span><span style="padding-left:10px">Newsletter</span></td>'), /ProfitPad Newsletter/);
 });

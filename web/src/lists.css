@@ -148,4 +148,13 @@
 .list-head-row .select-face.list-schedule { height: 32px; min-height: 32px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
 .list-head-row > .btn { height: 32px; padding-top: 0; padding-bottom: 0; font-size: 13px; }
 /* Edit columns, as on the object tables */
-.list-members-bar .table-columns { height: 32px; padding: 0 12px; }
+/* Edit columns, as on the object tables, and the bar's other buttons
+   (Add, Remove) at the same height and size */
+.list-members-bar .table-columns,
+.list-members-bar > .btn.small { height: 32px; padding: 0 12px; font-size: inherit; }
+.list-members-bar > .btn.small svg { width: 16px; height: 16px; }
+
+/* Refresh now on a static list: keep the records added by hand, or start over */
+.list-fill-choices { display: flex; flex-direction: column; gap: 10px; }
+.list-fill-choices p { margin: 0; line-height: 1.45; }
+.list-change-many { margin: 2px 0 0; }

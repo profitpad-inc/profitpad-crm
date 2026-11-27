@@ -7,7 +7,7 @@ import { currentMembersSql, loadList, type ListRow } from '../lists/members.js';
 import { fromHeader, loadEmailSettings, marketingSender, missing, readySettings, replyDomain, replyToFor, type EmailSettings } from './settings.js';
 import { newReplyToken, oneClickUrl, unsubscribePageUrl, unsubscribeToken } from './links.js';
 import { BATCH_MAX, PostmarkError, sendBatch, type PostmarkMessage } from './postmark.js';
-import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, type CampaignRow, type TemplateParts } from './render.js';
+import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, type CampaignRow, type TemplateParts, campaignText } from './render.js';
 import { EMAIL_ACTOR, insertEmailRecord, markFailed, markSent } from './send.js';
 import { dirtyCampaigns, optOut } from './events.js';
 import { listTopics } from './topics.js';
@@ -269,6 +269,7 @@ function messageFor(s: EmailSettings, campaign: CampaignRow, to: string, subject
     To: to,
     Subject: subject,
     HtmlBody: html,
+    TextBody: campaignText(html),
     ...((r) => (r ? { ReplyTo: r } : {}))(replyToFor(s, replyToken)),
     Tag: `campaign-${campaign.id}`,
     Headers: oneClick

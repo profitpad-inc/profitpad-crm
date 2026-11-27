@@ -12,8 +12,9 @@ export function EmailTracking({ p }: { p: Record<string, unknown> }) {
   if (first(p.direction) !== 'outbound') return null;
   const pills: [Tone, string][] = [];
   // sent from a mailbox through the composer: only opens and clicks here
-  if (!first(p.stream)) {
-    if (first(p.logged_via) !== 'composer') return null;
+  const stream = first(p.stream);
+  if (!stream || stream === 'one_to_one') {
+    if (stream !== 'one_to_one' && first(p.logged_via) !== 'composer') return null;
     if (p.first_opened_at) pills.push(['info', Number(p.open_count) > 1 ? `Opened ${Number(p.open_count)}×` : 'Opened']);
     if (p.first_clicked_at) pills.push(['info', Number(p.click_count) > 1 ? `Clicked ${Number(p.click_count)}×` : 'Clicked']);
     return pills.length ? <div className="email-track">{pills.map(([tone, label]) => <StatusPill key={label} tone={tone}>{label}</StatusPill>)}</div> : null;

@@ -19,6 +19,8 @@ import { formatSql, renderSql } from './sql.js';
 export const LISTS_ACTOR = { actor: 'system:lists', source: 'lists' } as const;
 export const MAX_IDS = 10_000;
 const REFRESH_TIMEOUT = '60s';
+// a refresh that adds (or removes) more records than this logs one history row with the count
+export const MAX_LOGGED = 1000;
 const PREVIEW_TIMEOUT = '15s';
 
 export interface ListRow {
@@ -113,7 +115,11 @@ async function setStats(c: pg.PoolClient, id: string, sets: string, values: unkn
 //            matches then are its members until someone changes them
 // A failure working it out is kept on the list (refresh_error) and the next
 // try waits for its schedule; a refused request (ApiError) leaves it as is.
-export async function refreshList(id: string, by?: Principal): Promise<{ added: number; removed: number; members: number }> {
+//   keepAddedByHand  a static list keeps the members people added by hand
+//                    (added_by set) even when the filters don't match them;
+//                    otherwise every member is replaced by the matches, and
+//                    those that stay count as coming from the filters
+export async function refreshList(id: string, by?: Principal, opts: { keepAddedByHand?: boolean } = {}): Promise<{ added: number; removed: number; members: number }> {
   try {
     return await withTx(by ? { principal: by, source: 'lists' } : LISTS_ACTOR, async (c) => {
       const list = await loadList(c, id, true);
@@ -124,19 +130,35 @@ export async function refreshList(id: string, by?: Principal): Promise<{ added: 
         if (def.groups.length === 0) throw badRequest('Give the static list filters first: filling it adds the records they match, once.');
       }
       await c.query(`set local statement_timeout = '${REFRESH_TIMEOUT}'`);
-      const params: unknown[] = [id, by ? 'manual' : 'refresh', by?.userId ?? null];
+      // records the filters add have no added_by: added_by marks members added by hand
+      const keep = list.list_type === 'static' && opts.keepAddedByHand === true;
+      const params: unknown[] = [id, 'refresh', by?.userId ?? null, keep];
       const sql = await definitionSql(await listedObject(list.list_object), def, params);
       const { rows } = await c.query(
+        // Only records not already in the list are inserted (an insert that
+        // bounces off the primary key costs nearly as much as one that
+        // lands). A change of more than MAX_LOGGED records is one history
+        // row with its count (migration 0159), not a row per record.
         `with m as materialized (${sql}),
-         added as (insert into meta.list_members (list_id, record_id, added_by) select $1, m.id, $3::text from m on conflict do nothing returning record_id),
-         removed as (delete from meta.list_members lm where lm.list_id = $1 and not exists (select 1 from m where m.id = lm.record_id) returning record_id),
+         added as (insert into meta.list_members (list_id, record_id)
+           select $1, m.id from m where not exists (select 1 from meta.list_members x where x.list_id = $1 and x.record_id = m.id)
+           on conflict do nothing returning record_id),
+         removed as (delete from meta.list_members lm where lm.list_id = $1 and not exists (select 1 from m where m.id = lm.record_id)
+           and not ($4::boolean and lm.added_by is not null) returning record_id),
+         matched as (update meta.list_members lm set added_by = null where lm.list_id = $1 and not $4::boolean and lm.added_by is not null
+           and exists (select 1 from m where m.id = lm.record_id) returning 1),
+         counts as (select (select count(*) from added)::int as added, (select count(*) from removed)::int as removed),
          logged as (
-           insert into meta.list_member_changes (list_id, record_id, change, source, changed_by)
-           select $1, record_id, 'added', $2::text, $3::text from added
+           insert into meta.list_member_changes (list_id, record_id, record_count, change, source, changed_by)
+           select $1, record_id, null, 'added', $2::text, $3::text from added, counts where counts.added <= ${MAX_LOGGED}
            union all
-           select $1, record_id, 'removed', $2::text, $3::text from removed
+           select $1, null, counts.added, 'added', $2::text, $3::text from counts where counts.added > ${MAX_LOGGED}
+           union all
+           select $1, record_id, null, 'removed', $2::text, $3::text from removed, counts where counts.removed <= ${MAX_LOGGED}
+           union all
+           select $1, null, counts.removed, 'removed', $2::text, $3::text from counts where counts.removed > ${MAX_LOGGED}
          )
-         select (select count(*) from added)::int as added, (select count(*) from removed)::int as removed`,
+         select counts.added, counts.removed, (select count(*) from matched)::int as matched from counts`,
         params);
       await setStats(c, id, 'last_refreshed_at = now(), refresh_error = null', []);
       const { rows: n } = await c.query('select member_count::int as n from crm.pc_0064 where pc_0064_id = $1', [id]);
@@ -195,7 +217,8 @@ export async function addMembers(p: Principal, listId: string, input: { ids?: un
       source = `select t.${quoteIdent(obj.id_column)} as id from crm.${quoteIdent(obj.object_type_id)} t
                 where t.${quoteIdent(obj.id_column)} = any ($1::text[]) and t.record_status = 'active' and ${access}`;
     }
-    params.push(list.id, p.userId);
+    // who added them (a user id, or the API key when no user): added_by marks members added by hand
+    params.push(list.id, p.userId ?? p.actor);
     const L = `$${params.length - 1}::text`;
     const U = `$${params.length}::text`;
     const { rows } = await c.query(
@@ -278,10 +301,13 @@ export async function memberChanges(p: Principal, listId: string, limit = 50, be
   }
   const n = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const { rows } = await pool.query(
-    `select c.id, c.record_id, t.name, c.change, c.source, c.changed_by, u.name as changed_by_name, c.at
-     from meta.list_member_changes c join crm.${quoteIdent(obj.object_type_id)} t on t.${quoteIdent(obj.id_column)} = c.record_id
+    // a big change is one row with record_count and no record (migration 0159)
+    `select c.id, c.record_id, c.record_count, t.name, c.change, c.source, c.changed_by, u.name as changed_by_name, c.at
+     from meta.list_member_changes c left join crm.${quoteIdent(obj.object_type_id)} t on t.${quoteIdent(obj.id_column)} = c.record_id
      left join crm.pc_0000 u on u.pc_0000_id = c.changed_by
-     where c.list_id = $1${beforeSql} and ${access} order by c.id desc limit ${n}`, params);
+     where c.list_id = $1${beforeSql}
+       and (c.record_id is null or (t.${quoteIdent(obj.id_column)} is not null and ${access}))
+     order by c.id desc limit ${n}`, params);
   return { results: rows.map((r) => ({ ...r, id: Number(r.id) })), next_before: rows.length === n ? Number(rows[rows.length - 1].id) : null };
 }
 

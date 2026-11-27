@@ -4,6 +4,7 @@ import { getProperty, isSingleValue, type ObjectDef, type PropertyDef } from './
 import { toDb } from './values.js';
 import { checkPhone } from './phone.js';
 import { isMultiType } from './multi-values.js';
+import { compileCampaignActivity, isCampaignActivity } from './campaign-activity-filter.js';
 
 export interface Filter {
   property: string;
@@ -151,6 +152,8 @@ export function compileFilter(
 ): string {
   if (f.association !== undefined) return compileAssociationFilter(obj, f, params, alias, assoc);
   if (f.property === LIST_MEMBERSHIP) return compileListMembership(obj, f, params, alias);
+  // what a contact did with email campaigns (campaign-activity-filter.ts)
+  if (isCampaignActivity(f.property)) return compileCampaignActivity(obj.object_type_id, f, params, alias);
   const prop = getProperty(obj, f.property);
   if (!prop || prop.record_status !== 'active' || isHidden(prop)) throw badRequest(`unknown property "${f.property}"`);
   if (!(OPERATORS as readonly string[]).includes(f.operator)) throw badRequest(`unknown operator "${f.operator}"`);

@@ -122,3 +122,31 @@ test('list membership: in any of some lists, or none, of the same object only', 
   assert.throws(() => one({ property: '__list', operator: 'eq', value: 'x' }), /takes in or not_in/);
   assert.throws(() => one({ property: '__list', operator: 'in', values: [] }), /needs values/);
 });
+
+test('email campaign activity: did it for some campaigns, any campaign, or lately', () => {
+  const opened = one({ property: '__campaign_opened', operator: 'in', values: ['0000000002'] });
+  assert.deepEqual(opened.params, [['0000000002']]);
+  assert.match(opened.sql!, /o\.contact_id = t\.pc_0010_id and o\.status = 'sent' and o\.campaign_id = any \(\$1::text\[\]\) and e\.first_opened_at is not null/);
+  assert.match(opened.sql!, /o\.contact_id = any \(t\.merged_ids\)/);
+
+  const lately = one({ property: '__campaign_clicked', operator: 'last_n_days', value: 30 });
+  assert.deepEqual(lately.params, [30]);
+  assert.match(lately.sql!, /e\.first_clicked_at >= now\(\) - make_interval\(days => \$1::integer\)/);
+
+  // was sent one of them and never opened any
+  const notOpened = one({ property: '__campaign_opened', operator: 'not_in', values: ['0000000002'] }).sql!;
+  assert.match(notOpened, /^\(+exists .* and not \(exists .*e\.first_opened_at is not null/);
+
+  // never sent: a plain not
+  assert.match(one({ property: '__campaign_sent', operator: 'not_has_property' }).sql!, /^\(+not \(exists/);
+});
+
+test('email campaign activity refuses other objects, unknown events and bad values', () => {
+  assert.throws(() => one({ property: '__campaign_read', operator: 'has_property' }), /unknown campaign activity/);
+  assert.throws(() => one({ property: '__campaign_opened', operator: 'eq', value: 'x' }), /takes in, not_in/);
+  assert.throws(() => one({ property: '__campaign_opened', operator: 'in', values: ['nope'] }), /email campaign ids/);
+  assert.throws(() => one({ property: '__campaign_opened', operator: 'last_n_days', value: 0 }), /whole number of days/);
+  const params: unknown[] = [];
+  assert.throws(() => compileDefinition(deals, { match: 'all', groups: [{ conditions: [{ property: '__campaign_opened', operator: 'has_property' }] }] }, params, hidden, 't'),
+    /contacts only/);
+});

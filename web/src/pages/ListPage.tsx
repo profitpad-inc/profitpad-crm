@@ -5,15 +5,16 @@ import { api, getSchema, type AssociationLabel, type Column, type CrmRecord, typ
 import { useApp } from '../lib/app-context';
 import { displayName, displayValue, initials, objectIcon } from '../lib/display';
 import {
-  MAX_LIST_CONDITIONS, MAX_LIST_GROUPS, compareKey, definitionGroups, describeFilter, fieldsFromSchema, filterKey, fromSearchDefinition,
+  MAX_LIST_CONDITIONS, MAX_LIST_GROUPS, campaignActivityFields, compareKey, definitionGroups, describeFilter, fieldsFromSchema, filterKey, fromSearchDefinition,
   groupsDefinition, listMembershipField, operatorOf, parseDefinitionText, toSearchDefinition, type Filter, type FilterField, type ListDefinition
 } from '../lib/filters';
-import { useListChoices } from '../lib/lists';
+import { useCampaignChoices, useListChoices } from '../lib/lists';
 import { AdvancedFilters } from '../components/AdvancedFilters';
 import { CodeBlock } from '../components/CodeBlock';
 import { Loading } from '../components/Loading';
 import { Select } from '../components/Select';
 import { confirmDialog } from '../components/confirm';
+import { Modal } from '../components/ui';
 import { REFRESH_OPTIONS } from '../components/ListDialogs';
 import { ColumnPicker, associationColumnLabel } from '../components/ColumnPicker';
 import { AssociationCard, ChangeHistory, LedgerDay, PropertyList, byDay, isoLocal, loadLinked, type Associated } from './RecordPage';
@@ -39,7 +40,7 @@ const RIGHT_TABS: { key: RightTab; label: string }[] = [
 interface RuleState { sql: string | null; error: string | null; dirty: boolean; empty: boolean }
 interface Preview { count: number; sample: { id: string; name: string | null }[]; sql: string }
 interface Member extends CrmRecord { added_at: string }
-interface Change { id: number; record_id: string; name: string | null; change: 'added' | 'removed'; source: 'refresh' | 'manual'; changed_by: string | null; changed_by_name: string | null; at: string }
+interface Change { id: number; record_id: string | null; record_count: number | null; name: string | null; change: 'added' | 'removed'; source: 'refresh' | 'manual'; changed_by: string | null; changed_by_name: string | null; at: string }
 
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined;
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '');
@@ -93,6 +94,8 @@ export function ListPage() {
   const [ruleState, setRuleState] = useState<RuleState>({ sql: null, error: null, dirty: false, empty: true });
   // bumped when membership changes here, so the record lists load again
   const [version, setVersion] = useState(0);
+  // Refresh now on a static list: the dialog asking whether to keep records added by hand
+  const [askFill, setAskFill] = useState(false);
 
   const reload = useCallback(async () => {
     setRecord(await api<CrmRecord>('GET', `/v1/objects/lists/${id}`));
@@ -122,19 +125,22 @@ export function ListPage() {
 
   // other lists, for "List membership" conditions (never this list itself)
   const listChoices = useListChoices();
+  // sent campaigns, for "Email campaign: opened" and the like (contacts, or linked contacts)
+  const campaignChoices = useCampaignChoices(listObject === 'contacts' || linked.some((o) => o.api_name === 'contacts'));
   const fields = useMemo<FilterField[]>(() => {
     if (!schema) return [];
     const ownList = listMembershipField(schema.api_name, listChoices, undefined, id);
     return [
       ...fieldsFromSchema(schema.properties),
       ...(ownList ? [ownList] : []),
+      ...(schema.api_name === 'contacts' ? campaignActivityFields(campaignChoices) : []),
       ...linked.flatMap((o) => {
         const a = { object: o.api_name, group: o.label_singular, plural: o.label_plural };
         const listField = listMembershipField(schema.api_name, listChoices, a);
-        return [...fieldsFromSchema(o.properties, a), ...(listField ? [listField] : [])];
+        return [...fieldsFromSchema(o.properties, a), ...(listField ? [listField] : []), ...(o.api_name === 'contacts' ? campaignActivityFields(campaignChoices, a) : [])];
       })
     ];
-  }, [schema, linked, listChoices, id]);
+  }, [schema, linked, listChoices, campaignChoices, id]);
 
   if (error) return <div className="page"><div className="error">{error}</div></div>;
   if (!record || !schema) return <div className="page"><Loading /></div>;
@@ -150,10 +156,10 @@ export function ListPage() {
     ? `${schema.label_plural} where ${rule}.`
     : dynamic ? `Every ${schema.label_singular.toLowerCase()}: there are no filters yet.` : `${schema.label_plural} added by hand.`;
 
-  async function refreshNow() {
+  async function refreshNow(keepAddedByHand = false) {
     setRefreshing(true);
     try {
-      const r = await api<{ added: number; removed: number; members: number }>('POST', `/v1/lists/${id}/refresh`);
+      const r = await api<{ added: number; removed: number; members: number }>('POST', `/v1/lists/${id}/refresh`, { keep_added_by_hand: keepAddedByHand });
       toast(`Refreshed: ${r.members.toLocaleString()} ${noun(r.members)} (${r.added.toLocaleString()} joined, ${r.removed.toLocaleString()} left).`);
       setVersion((v) => v + 1);
     } catch (e) {
@@ -162,6 +168,13 @@ export function ListPage() {
       setRefreshing(false);
       await reload();
     }
+  }
+
+  // a static list: fill it again from its saved filters, keeping the records
+  // added by hand or starting over (the dialog below asks which)
+  async function fillNow(keepAddedByHand: boolean) {
+    setAskFill(false);
+    await refreshNow(keepAddedByHand);
   }
 
   async function setSchedule(v: string) {
@@ -177,6 +190,20 @@ export function ListPage() {
 
   return (
     <div className="list-page">
+      {askFill && (
+        <Modal title="Refresh the list from its filters?" onClose={() => setAskFill(false)}
+          footer={<>
+            <button className="btn" onClick={() => setAskFill(false)}>Cancel</button>
+            <button className="btn" onClick={() => fillNow(false)}>Start over</button>
+            <button className="btn primary" onClick={() => fillNow(true)}>Keep added by hand</button>
+          </>}>
+          <div className="list-fill-choices">
+            <p><strong>Keep added by hand:</strong> the {noun(2)} its saved filters match now join the list, the ones people added by hand stay, and the rest leave.</p>
+            <p><strong>Start over:</strong> all {memberCount.toLocaleString()} current {noun(memberCount)} go, and the list holds only what its filters match now.</p>
+            <p className="muted small">After that the list stays as it is until you refresh it again or change it by hand.</p>
+          </div>
+        </Modal>
+      )}
       <header className="list-head">
         <div className="list-head-row">
           <Link to="/objects/lists" className="list-back" aria-label="Back to lists"><ChevronLeft size={16} aria-hidden /> Lists</Link>
@@ -192,14 +219,21 @@ export function ListPage() {
                 {p.last_refreshed_at ? `Refreshed ${ago(p.last_refreshed_at as string)}` : 'Working out its members…'}
               </span>
               <Select className="list-schedule" value={first(p.refresh_schedule) ?? 'hourly'} aria-label="Refresh schedule" onChange={setSchedule} options={REFRESH_OPTIONS} />
-              <button className="btn small" onClick={refreshNow} disabled={refreshing}>
+              <button className="btn small" onClick={() => refreshNow()} disabled={refreshing}>
                 <RefreshCw size={14} className={refreshing ? 'spin' : undefined} aria-hidden /> {refreshing ? 'Refreshing…' : 'Refresh now'}
               </button>
             </>
           ) : (
-            <span className="muted small">
-              Changes only by hand{savedDef.groups.length && p.last_refreshed_at ? `; last filled from its filters ${when(p.last_refreshed_at as string)}` : ''}
-            </span>
+            <>
+              <span className="muted small">
+                Changes only by hand{savedDef.groups.length && p.last_refreshed_at ? `; last filled from its filters ${when(p.last_refreshed_at as string)}` : ''}
+              </span>
+              {savedDef.groups.length > 0 && (
+                <button className="btn small" onClick={() => setAskFill(true)} disabled={refreshing} title="Fill the list again from its saved filters">
+                  <RefreshCw size={14} className={refreshing ? 'spin' : undefined} aria-hidden /> {refreshing ? 'Refreshing…' : 'Refresh now'}
+                </button>
+              )}
+            </>
           )}
         </div>
         <p className="list-head-sub" title={[description, ruleText].filter(Boolean).join(' ')}>
@@ -279,8 +313,12 @@ function RulePane({ record, schema, fields, dynamic, archived, onSaved, onFilled
     onRule({ sql: preview?.sql ?? null, error: previewError, dirty, empty: def.groups.length === 0 });
   }, [preview, previewError, dirty, def.groups.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // a static list with every filter removed just keeps no filters: its
+  // members stay as they are (filling needs at least one filter)
+  const clearsOnly = !dynamic && def.groups.length === 0;
+
   async function save() {
-    if (!dynamic) {
+    if (!dynamic && !clearsOnly) {
       const members = Number(record.properties.member_count ?? 0);
       const ok = await confirmDialog(
         `Its ${members.toLocaleString()} current ${noun(members)} are replaced by the ${(preview?.count ?? 0).toLocaleString()} ${noun(preview?.count ?? 0)} that match now. After that the list stays as it is until you fill it again or change it by hand. The filters are kept, so you can make the list dynamic later.`,
@@ -293,6 +331,9 @@ function RulePane({ record, schema, fields, dynamic, archived, onSaved, onFilled
       if (dynamic) {
         onSaved(saved);
         toast('Filters saved. The members are worked out again within half a minute.');
+      } else if (clearsOnly) {
+        onSaved(saved);
+        toast('Filters removed. The list keeps its members.');
       } else {
         const r = await api<{ members: number }>('POST', `/v1/lists/${record.id}/refresh`);
         onSaved(await api<CrmRecord>('GET', `/v1/objects/lists/${record.id}`));
@@ -330,8 +371,8 @@ function RulePane({ record, schema, fields, dynamic, archived, onSaved, onFilled
               </>}
           </div>
           <button className="btn small" disabled={!dirty || busy} onClick={() => setDef(savedDef)}>Discard</button>
-          <button className="btn small primary" disabled={!dirty || busy || (!dynamic && def.groups.length === 0)} onClick={save}>
-            {busy ? 'Saving…' : dynamic ? 'Save filters' : 'Save and fill'}
+          <button className="btn small primary" disabled={!dirty || busy} onClick={save}>
+            {busy ? 'Saving…' : dynamic || clearsOnly ? 'Save filters' : 'Save and fill'}
           </button>
         </footer>
       )}
@@ -673,19 +714,26 @@ function HistoryTab({ listId, object, noun }: { listId: string; object: string; 
                   <time className="ledger-time" dateTime={h.at}>{isoLocal(h.at)}</time>
                 </div>
                 <div className="change-batch-items">
-                  {[{ list: joined, on: true }, { list: left, on: false }].filter((g) => g.list.length).map((g) => (
-                    <div key={String(g.on)} className={`ledger-entry link-change${g.on ? '' : ' unlinked'}`}>
-                      <span className="change-dot link-dot" aria-hidden="true">{g.on ? <UserPlus size={12} /> : <UserMinus size={12} />}</span>
-                      <div className="change-body">
-                        <strong className="change-what">{g.list.length.toLocaleString()} {noun(g.list.length)} {g.on ? 'joined' : 'left'}</strong>
-                        <ul className="change-links">
-                          {g.list.map((c) => (
-                            <li key={c.id}><Link to={`/objects/${object}/${c.record_id}`}>{c.name || c.record_id}</Link></li>
-                          ))}
-                        </ul>
+                  {[{ list: joined, on: true }, { list: left, on: false }].filter((g) => g.list.length).map((g) => {
+                    // a big change is one row with its count and no names (more than 1,000 records)
+                    const count = g.list.reduce((n, c) => n + (c.record_count ?? 1), 0);
+                    const named = g.list.filter((c) => c.record_id);
+                    return (
+                      <div key={String(g.on)} className={`ledger-entry link-change${g.on ? '' : ' unlinked'}`}>
+                        <span className="change-dot link-dot" aria-hidden="true">{g.on ? <UserPlus size={12} /> : <UserMinus size={12} />}</span>
+                        <div className="change-body">
+                          <strong className="change-what">{count.toLocaleString()} {noun(count)} {g.on ? 'joined' : 'left'}</strong>
+                          {named.length > 0 ? (
+                            <ul className="change-links">
+                              {named.map((c) => (
+                                <li key={c.id}><Link to={`/objects/${object}/${c.record_id}`}>{c.name || c.record_id}</Link></li>
+                              ))}
+                            </ul>
+                          ) : <p className="muted small list-change-many">Too many to list one by one.</p>}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

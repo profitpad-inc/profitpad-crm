@@ -190,8 +190,52 @@ export function listMembershipField(object: string, lists: ListChoice[], associa
   };
 }
 
+// ---- email campaign activity (contacts) ---------------------------------------
+
+// What a contact did with email campaigns (api/src/campaign-activity-filter.ts):
+// "__campaign_<event>", the event being received (sent), delivered, opened,
+// clicked, replied, unsubscribed, bounced or marked as spam.
+export const CAMPAIGN_ACTIVITY = '__campaign_';
+
+const CAMPAIGN_EVENTS: { event: string; label: string }[] = [
+  { event: 'sent', label: 'received' }, { event: 'delivered', label: 'delivered' }, { event: 'opened', label: 'opened' },
+  { event: 'clicked', label: 'clicked' }, { event: 'replied', label: 'replied' }, { event: 'unsubscribed', label: 'unsubscribed' },
+  { event: 'bounced', label: 'bounced' }, { event: 'complained', label: 'marked as spam' }
+];
+
+export const isCampaignField = (field: FilterField) => (field.property ?? field.key).startsWith(CAMPAIGN_ACTIVITY);
+
+// "Did not" needs the campaign to have been sent: "none of" means sent one
+// of them and did it for none (except for "received" itself).
+function campaignOps(field: FilterField): OperatorDef[] {
+  const sent = (field.property ?? field.key) === `${CAMPAIGN_ACTIVITY}sent`;
+  return [
+    { value: 'in', label: 'for any of', input: 'option_list' },
+    { value: 'not_in', label: sent ? 'for none of' : 'for none of, though sent one of', input: 'option_list' },
+    { value: 'has_property', label: 'for any campaign', input: 'none' },
+    { value: 'not_has_property', label: sent ? 'never' : 'never, though sent a campaign', input: 'none' },
+    { value: 'last_n_days', label: 'for any campaign in the last', input: 'days' }
+  ];
+}
+
+export interface CampaignChoice { id: string; name: string }
+
+// The "Email campaign: opened" fields and friends, for contacts or (association)
+// for linked contacts; none when nothing has been sent yet.
+export function campaignActivityFields(campaigns: CampaignChoice[], association?: { object: string; group: string; plural?: string }): FilterField[] {
+  if (campaigns.length === 0) return [];
+  const options = campaigns.map((c) => ({ value: c.id, label: c.name }));
+  return CAMPAIGN_EVENTS.map(({ event, label }) => ({
+    key: association ? `${association.object}.${CAMPAIGN_ACTIVITY}${event}` : `${CAMPAIGN_ACTIVITY}${event}`,
+    label: `Email campaign: ${label}`, type: 'dropdown' as const, options, multi: true,
+    description: `Whether the contact ${label === 'received' ? 'was sent' : label} an email campaign (opens and clicks by security scanners are left out)`,
+    ...(association ? { property: `${CAMPAIGN_ACTIVITY}${event}`, association: { object: association.object }, group: association.group, groupPlural: association.plural } : {})
+  }));
+}
+
 export function operatorsFor(field: FilterField): OperatorDef[] {
   if (isListField(field)) return LIST_OPS;
+  if (isCampaignField(field)) return campaignOps(field);
   if (field.count) return COUNT;
   switch (field.type) {
     case 'text': return TEXT;
@@ -216,7 +260,7 @@ export function operatorOf(field: FilterField | undefined, operator: string, com
 // fields holding several values don't compare at all.
 export type CompareKind = 'number' | 'time' | 'text';
 export function compareKind(field: FilterField): CompareKind | null {
-  if (field.count || isListField(field)) return null;
+  if (field.count || isListField(field) || isCampaignField(field)) return null;
   switch (field.type) {
     case 'number': return 'number';
     case 'date': case 'datetime': return 'time';

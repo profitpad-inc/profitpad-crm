@@ -172,6 +172,8 @@ export async function createSend(p: Principal, b: SendInput): Promise<SendResult
       scheduled_at: scheduledAt?.toISOString() ?? null,
       owner: p.userId
     }, links);
+    // Sent as: One to one (read-only to people, so set here rather than above)
+    await client.query(`update crm.${quoteIdent(emails.object_type_id)} set stream = '{one_to_one}' where ${quoteIdent(emails.id_column)} = $1`, [id]);
     await client.query(
       `insert into auth.mailbox_sends (email_id, user_id, provider, mailbox, from_address, from_name, file_ids, scheduled_at, status, track, track_token)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,

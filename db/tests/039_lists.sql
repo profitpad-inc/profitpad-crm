@@ -44,6 +44,20 @@ begin
   if exists (select 1 from meta.list_members where list_id = v_list) or exists (select 1 from meta.list_member_changes where list_id = v_list) then
     raise exception 'members outlived their list';
   end if;
+  -- 0159: permanently deleting a list (its row stays, marked deleted) clears them too
+  insert into crm.pc_0064 (name, list_object, list_type) values ('Static test 2', 'contacts', '{static}') returning pc_0064_id into v_list;
+  insert into meta.list_members (list_id, record_id) values (v_list, '00000000aa');
+  -- a big change is one history row with a count and no record
+  insert into meta.list_member_changes (list_id, record_id, record_count, change, source) values (v_list, null, 5000, 'added', 'refresh');
+  begin
+    insert into meta.list_member_changes (list_id, record_id, record_count, change, source) values (v_list, '00000000aa', 3, 'added', 'refresh');
+    raise exception 'a history row took both a record and a count';
+  exception when check_violation then null;
+  end;
+  update crm.pc_0064 set record_status = 'deleted' where pc_0064_id = v_list;
+  if exists (select 1 from meta.list_members where list_id = v_list) or exists (select 1 from meta.list_member_changes where list_id = v_list) then
+    raise exception 'members outlived a deleted list';
+  end if;
 
   -- the conversion, on a draft campaign with filters
   insert into crm.pc_0058 (name, audience) values ('Spring news', '{"filter_groups": [{"filters": [{"property": "city", "operator": "eq", "value": "Paris"}]}, {"filters": [{"property": "city", "operator": "eq", "value": "Rome"}]}]}')

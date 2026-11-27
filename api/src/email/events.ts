@@ -77,6 +77,21 @@ async function campaignOf(c: pg.PoolClient, email: EmailRow | null): Promise<str
   return (await linked(c, email.id, 'pc_0058'))[0] ?? null;
 }
 
+// Opens and clicks this soon after the email arrived are a security scanner,
+// not a person (seen live: an "open" in the same second as the delivery, from
+// an old Edge browser signature scanners use). Measured from the delivery, or
+// from the send when the delivery has not been reported yet.
+export const MACHINE_AFTER_DELIVERY_MS = 5_000;
+export const MACHINE_AFTER_SEND_MS = 10_000;
+
+export function isMachineEvent(at: string | Date, deliveredAt: string | Date | null, sentAt: string | Date | null): boolean {
+  const t = new Date(at).getTime();
+  if (Number.isNaN(t)) return false;
+  if (deliveredAt) return t - new Date(deliveredAt).getTime() < MACHINE_AFTER_DELIVERY_MS;
+  if (sentAt) return t - new Date(sentAt).getTime() < MACHINE_AFTER_SEND_MS;
+  return false;
+}
+
 export type OptOutReason = 'unsubscribed' | 'hard_bounce' | 'spam_complaint' | 'manual' | 'suppressed' | 'soft_bounces';
 
 // Soft bounces in a row (no delivery in between) that opt an address out:
@@ -155,6 +170,10 @@ export async function handleEvent(p: Payload, traceId: string | undefined): Prom
       case 'Click': {
         if (!email) break;
         const at = time(p.ReceivedAt);
+        const { rows: times } = await c.query('select delivered_at, sent_at from crm.pc_0031 where pc_0031_id = $1', [email.id]);
+        // security scanners fetch the tracking image and follow links the moment
+        // mail arrives: kept in auth.email_events, not counted
+        if (isMachineEvent(at, times[0]?.delivered_at ?? null, times[0]?.sent_at ?? null)) break;
         const [first, count, last] = type === 'Open'
           ? ['first_opened_at', 'open_count', 'email_last_opened_at']
           : ['first_clicked_at', 'click_count', 'email_last_clicked_at'];

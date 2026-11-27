@@ -4,6 +4,7 @@ import { getObject } from '../registry.js';
 import { liquidRecord, renderLiquid } from '../templates.js';
 import { primaryValue } from '../multi-values.js';
 import type { EmailSettings } from './settings.js';
+import { htmlToText } from '../mailbox/html.js';
 
 // A campaign's email for one contact: the campaign's email template (subject
 // and HTML body, both Liquid) filled in with the contact, their first
@@ -175,4 +176,25 @@ export async function renderCampaignEmail(
     placesLink ? '' : footer(settings.mailing_address, unsubscribeUrl, campaign.subscription_type_label)
   );
   return { subject, html };
+}
+
+// The plain-text part of a campaign email, made from its HTML: what mail apps
+// without HTML show, and what spam filters expect next to the HTML. Leaves out
+// the head, styles, scripts and comments, and the invisible padding after the
+// preview text, then turns the rest into text with links in brackets.
+export function campaignText(html: string): string {
+  const body = html
+    .replace(/<head[\s>][\s\S]*?<\/head>/gi, '')
+    .replace(/<(style|script|title)[\s>][\s\S]*?<\/\1>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // side-by-side inline pieces spaced only by CSS (a logo word and a label) keep a space between them
+    .replace(/(<\/(?:span|a|strong|b|em|i)>)(?=<(?:span|a|strong|b|em|i|img)\b)/gi, '$1 ');
+  return htmlToText(body)
+    .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
+    .replace(/[\u00a0 ]{2,}/g, ' ')
+    .split('\n')
+    .map((l) => l.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

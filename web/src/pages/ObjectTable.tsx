@@ -8,7 +8,7 @@ import {
 } from '../lib/api';
 import { AdvancedFilters } from '../components/AdvancedFilters';
 import { AddToListModal, SaveAsListModal } from '../components/ListDialogs';
-import { completeGroups, countFilters, fieldsFromSchema, filterParam, listMembershipField, parseFilterParam, toSearchGroups, type FilterField } from '../lib/filters';
+import { completeGroups, countFilters, fieldsFromSchema, filterParam, listMembershipField, parseFilterParam, toSearchGroups, type Filter, type FilterField } from '../lib/filters';
 import { useListChoices } from '../lib/lists';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
@@ -258,6 +258,38 @@ function ObjectTableFor({ object }: { object: string }) {
     });
     return [...own, ...(ownList ? [ownList] : []), ...linked] as FilterField[];
   }, [schema, linkedKey, listChoices]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Conditions "associated X's Record ID is <id>" (a record page's linked records
+  // card opens the table with one) read as that record's name: names loaded here
+  const idFilterKey = [...new Set(filterGroups.flatMap((g) => g.filters.flatMap((f) => {
+    const id = recordIdFilter(f);
+    return id ? [`${f.association!.object}:${id}`] : [];
+  })))].sort().join(',');
+  const [linkedNames, setLinkedNames] = useState<Map<string, string>>(() => new Map());
+  useEffect(() => {
+    const byObject = new Map<string, string[]>();
+    for (const k of idFilterKey ? idFilterKey.split(',') : []) {
+      const [o, id] = k.split(':');
+      if (otherSchemas[o] && !linkedNames.has(k)) byObject.set(o, [...(byObject.get(o) ?? []), id]);
+    }
+    let live = true;
+    for (const [o, ids] of byObject) {
+      api<{ results: CrmRecord[] }>('POST', `/v1/objects/${o}/batch/read`, { ids, properties: nameProperties(otherSchemas[o].properties) })
+        .then((r) => {
+          if (!live) return;
+          setLinkedNames((m) => {
+            const next = new Map(m);
+            for (const rec of r.results) next.set(`${o}:${rec.requested_id ?? rec.id}`, recordName(rec));
+            return next;
+          });
+        })
+        .catch(() => { /* the condition keeps showing the ID */ });
+    }
+    return () => { live = false; };
+  }, [idFilterKey, otherSchemas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filterRecordName = useCallback((f: Filter) => {
+    const id = recordIdFilter(f);
+    return id ? linkedNames.get(`${f.association!.object}:${id}`) : undefined;
+  }, [linkedNames]); // eslint-disable-line react-hooks/exhaustive-deps
   // the search waits for the objects its filters use, so it never runs without them
   const filtersWaiting = (filterObjectsKey ? filterObjectsKey.split(',') : []).some((o) => !otherSchemas[o] && !unreadable.has(o));
   const searchKey = JSON.stringify(toSearchGroups(filterGroups, filterFields));
@@ -1438,7 +1470,7 @@ function ObjectTableFor({ object }: { object: string }) {
             searchPlaceholder={`Search ${schema.label_singular.toLowerCase()} properties`}
             objectLabel={schema.label_singular} onPickerOpen={() => setWantAllLinked(true)} fieldsLoading={linkedLoading} objectIcon={objectIcon}
             pinnedObjects={PINNED_FILTER_OBJECTS[object] ?? PINNED_FILTER_OBJECTS.default}
-            associationLabels={filterLabelOptions} />
+            associationLabels={filterLabelOptions} recordName={filterRecordName} />
         </FiltersPanel>
       )}
       {showColumns && (
@@ -1519,6 +1551,13 @@ function directionWords(p: Property, dir: 'asc' | 'desc'): string {
 // a field Google Sheets reads back as one cell: quoted when it has tabs, line breaks or quotes
 function tsvField(s: string): string {
   return /[\t\n\r"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// The id an "associated record's Record ID is <id>" condition picks, else null
+// (each object's id property is "<code>_id", as RecordPage's associatedTableUrl writes it)
+function recordIdFilter(f: Filter): string | null {
+  if (!f.association || f.operator !== 'eq' || typeof f.value !== 'string' || !f.value) return null;
+  return /^pc_[0-9a-z]+_id$/.test(f.property) ? f.value : null;
 }
 
 function associatedItems(record: CrmRecord, column: { object: string; label_id: string | null }): AssociatedRecord[] {

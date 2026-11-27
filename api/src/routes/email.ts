@@ -9,15 +9,17 @@ import { loadEmailSettings, marketingSender, saveEmailSettings, settingsOut, web
 import { sendEmail } from '../email/send.js';
 import { handleEvent, handleInbound, optOut } from '../email/events.js';
 import { readUnsubscribeToken, unsubscribePageUrl, unsubscribeToken } from '../email/links.js';
-import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout } from '../email/render.js';
+import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout, campaignText } from '../email/render.js';
 import { campaignLists, cancelCampaign, checkCampaign, countAudience, listIds, refreshCounts, sampleAudience, startCampaign } from '../email/campaigns.js';
 import { EMAIL_ACTOR } from '../email/send.js';
+import { campaignActivity, recipientTimeline } from '../email/activity.js';
 import { addTopic, contactTopics, leaveTopic, listTopics, setContactTopics, topicCounts, updateTopic } from '../email/topics.js';
 
 // Email through Postmark (api/src/email/*):
 //   Settings → Email                 GET/PUT /v1/email/settings, POST /v1/email/test
 //   subscription types               GET/POST /v1/email/subscription-types, PATCH .../:value
 //   campaigns                        /v1/email/campaigns/:id/{check,preview,test,send,cancel}
+//   who did what                     GET /v1/email/campaigns/:id/activity[/:contactId]
 //   audience size of some lists      POST /v1/email/audience {list_ids, subscription_type}
 //   Postmark's calls                 POST /v1/postmark/webhook, /v1/postmark/inbound (basic auth)
 //   the preference page              GET/POST /v1/public/unsubscribe/:token
@@ -168,7 +170,7 @@ export async function emailRoutes(app: FastifyInstance) {
     await requireCampaignEdit(p);
     const to = await myEmail(p);
     const out = await previewCampaign(campaignId(req.params.id), req.body?.contact_id);
-    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
+    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, text: campaignText(out.html), tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
     return { sent_to: to, drawn_for: out.contact_id, message_id: res.message_id };
   });
 
@@ -198,6 +200,23 @@ export async function emailRoutes(app: FastifyInstance) {
     const id = campaignId(req.params.id);
     await refreshCounts([id]);
     return { refreshed: true };
+  });
+
+  // Who did what: a row per recipient, and one recipient's events in order
+  // (email/activity.ts). Only contacts the caller may read are listed.
+  app.get<{ Params: { id: string }; Querystring: { filter?: string; s?: string; limit?: string; offset?: string } }>('/v1/email/campaigns/:id/activity', async (req) => {
+    requireScope(req.principal!, 'read');
+    requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
+    requireObjectPermission(req.principal!, await getObject('contacts'), 'read');
+    const q = req.query ?? {};
+    return campaignActivity(req.principal!, campaignId(req.params.id), { filter: q.filter, search: q.s, limit: q.limit, offset: q.offset });
+  });
+
+  app.get<{ Params: { id: string; contactId: string } }>('/v1/email/campaigns/:id/activity/:contactId', async (req) => {
+    requireScope(req.principal!, 'read');
+    requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
+    requireObjectPermission(req.principal!, await getObject('contacts'), 'read');
+    return recipientTimeline(req.principal!, campaignId(req.params.id), req.params.contactId);
   });
 
   // ---- Postmark's calls ----

@@ -7,6 +7,7 @@ import { getObject } from '../registry.js';
 import { checkCampaign, countAudience, sampleAudience } from './campaigns.js';
 import { previewCampaign } from '../routes/email.js';
 import { sendEmail } from './send.js';
+import { campaignText } from './render.js';
 import { recordUrl } from '../record-url.js';
 
 // Email campaign tools for the MCP server (mcp.ts). Campaigns and email
@@ -112,7 +113,7 @@ export function registerEmailTools(server: McpServer, p: Principal): void {
     const { rows } = await pool.query("select email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1", [p.userId]);
     if (!rows[0]?.email) throw badRequest('Your user has no email address.');
     const out = await previewCampaign(campaign, contact_id);
-    const res = await sendEmail({ to: rows[0].email, subject: `[Test] ${out.subject}`, html: out.html, tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
+    const res = await sendEmail({ to: rows[0].email, subject: `[Test] ${out.subject}`, html: out.html, text: campaignText(out.html), tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
     return { sent_to: rows[0].email, drawn_for: out.contact_id, message_id: res.message_id };
   }));
 }
