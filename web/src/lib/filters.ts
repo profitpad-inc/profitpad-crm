@@ -198,6 +198,10 @@ function valueKind(field: FilterField): string | undefined {
 // it starts fresh.
 export function withProperty(prev: FilterField | undefined, next: FilterField, f: Filter): Filter {
   const fresh = newFilter(next);
+  // another property of the same associated object keeps its association label
+  if (fresh.association && f.association?.label_id && f.association.object === fresh.association.object) {
+    fresh.association = { ...fresh.association, label_id: f.association.label_id };
+  }
   const kind = prev && valueKind(prev);
   if (!kind || kind !== valueKind(next)) return fresh;
   const op = operatorOf(next, f.operator);
@@ -265,7 +269,8 @@ export function parseFilterParam(raw: string | null): FilterGroup[] | null {
     if (!Array.isArray(v) || v.length > MAX_GROUPS) return null;
     const ok = v.every((fs) => Array.isArray(fs) && fs.length <= MAX_FILTERS
       && fs.every((f: unknown) => !!f && typeof (f as Filter).property === 'string' && typeof (f as Filter).operator === 'string'
-        && ((f as Filter).association === undefined || typeof (f as Filter).association?.object === 'string')));
+        && ((f as Filter).association === undefined || (typeof (f as Filter).association?.object === 'string'
+          && ((f as Filter).association?.label_id === undefined || typeof (f as Filter).association?.label_id === 'string')))));
     return ok ? v.map((filters) => ({ filters: filters as Filter[] })) : null;
   } catch {
     return null;

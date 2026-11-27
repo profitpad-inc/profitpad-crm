@@ -30,7 +30,7 @@ import { Loading } from '../components/Loading';
 import { useIsMobile } from '../lib/use-mobile';
 import { confirmPrimaryChange } from '../components/confirm-primary';
 
-const PAGE = 50;
+const PAGE = 100;
 const BULK_CHUNK = 500; // the API's limit per bulk call
 const MIN_WIDTH = 60;
 const MAX_WIDTH = 1000;
@@ -405,6 +405,22 @@ function ObjectTableFor({ object }: { object: string }) {
       const updated = await api<View>('PATCH', `/v1/ui/views/${viewIdNow}`, body).catch(() => null);
       if (updated) setViews((vs) => vs.map((v) => (v.id === updated.id ? updated : v)));
     }, 400);
+  }
+
+  // a filter on associated records can be limited to one association label:
+  // the pair's labels, named from this object's side (as association columns)
+  function filterLabelOptions(otherName: string): { value: string; label: string }[] {
+    const other = objectByName.get(otherName);
+    if (!schema || !other) return [];
+    const self = schema.object_type_id;
+    return labels
+      .filter((l) => !l.is_default)
+      .filter((l) => {
+        const pair = [l.from_object_type, l.to_object_type];
+        if (!pair.includes(other.object_type_id) || !pair.includes(self)) return false;
+        return other.object_type_id !== self || l.from_object_type === l.to_object_type;
+      })
+      .map((l) => ({ value: l.id, label: associationColumnLabel({ object: otherName, label_id: l.id }, other, labels, schema.api_name, objectByName) }));
   }
 
   // the panel's edits apply at once; finished conditions are saved with the view
@@ -1238,7 +1254,8 @@ function ObjectTableFor({ object }: { object: string }) {
           <AdvancedFilters fields={filterFields} groups={filterGroups} onChange={changeFilters}
             searchPlaceholder={`Search ${schema.label_singular.toLowerCase()} properties`}
             objectLabel={schema.label_singular} onPickerOpen={() => setWantAllLinked(true)} fieldsLoading={linkedLoading} objectIcon={objectIcon}
-            pinnedObjects={PINNED_FILTER_OBJECTS[object] ?? PINNED_FILTER_OBJECTS.default} />
+            pinnedObjects={PINNED_FILTER_OBJECTS[object] ?? PINNED_FILTER_OBJECTS.default}
+            associationLabels={filterLabelOptions} />
         </FiltersPanel>
       )}
       {showColumns && (
