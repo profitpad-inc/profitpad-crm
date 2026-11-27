@@ -8,8 +8,8 @@ import {
 } from '../lib/api';
 import { AdvancedFilters } from '../components/AdvancedFilters';
 import { AddToListModal, SaveAsListModal } from '../components/ListDialogs';
-import { completeGroups, countFilters, fieldsFromSchema, filterParam, listMembershipField, parseFilterParam, toSearchGroups, type Filter, type FilterField } from '../lib/filters';
-import { useListChoices } from '../lib/lists';
+import { CAMPAIGN_ACTIVITY, campaignActivityFields, completeGroups, countFilters, fieldsFromSchema, filterParam, listMembershipField, parseFilterParam, toSearchGroups, type Filter, type FilterField } from '../lib/filters';
+import { useCampaignChoicesLoading, useListChoices } from '../lib/lists';
 import { useApp } from '../lib/app-context';
 import { norm } from '../lib/use-dirty';
 import { SaveHint } from '../components/SaveHint';
@@ -76,6 +76,9 @@ function ObjectTableFor({ object }: { object: string }) {
   const [otherSchemas, setOtherSchemas] = useState<Record<string, ObjectDef>>({});
   // lists, for the "List membership" filter (this object's and linked objects')
   const listChoices = useListChoices(objectByName.has('lists'));
+  // sent email campaigns, for the "Email campaign: received" filters on contacts
+  // (a campaign's record page links here with one); null while loading
+  const campaignChoices = useCampaignChoicesLoading(object === 'contacts' && objectByName.has('email_campaigns'));
   const [columns, setColumns] = useState<Column[]>([]);
   const [sorts, setSorts] = useState<Sort[]>([]);
   // the view's filters, half-made conditions included (the panel's working copy)
@@ -256,8 +259,9 @@ function ObjectTableFor({ object }: { object: string }) {
       const listField = listMembershipField(object, listChoices, a);
       return [...fieldsFromSchema(otherSchemas[o].properties, a), ...(listField ? [listField] : [])];
     });
-    return [...own, ...(ownList ? [ownList] : []), ...linked] as FilterField[];
-  }, [schema, linkedKey, listChoices]); // eslint-disable-line react-hooks/exhaustive-deps
+    const campaign = object === 'contacts' ? campaignActivityFields(campaignChoices ?? []) : [];
+    return [...own, ...(ownList ? [ownList] : []), ...campaign, ...linked] as FilterField[];
+  }, [schema, linkedKey, listChoices, campaignChoices]); // eslint-disable-line react-hooks/exhaustive-deps
   // Conditions "associated X's Record ID is <id>" (a record page's linked records
   // card opens the table with one) read as that record's name: names loaded here
   const idFilterKey = [...new Set(filterGroups.flatMap((g) => g.filters.flatMap((f) => {
@@ -291,7 +295,9 @@ function ObjectTableFor({ object }: { object: string }) {
     return id ? linkedNames.get(`${f.association!.object}:${id}`) : undefined;
   }, [linkedNames]); // eslint-disable-line react-hooks/exhaustive-deps
   // the search waits for the objects its filters use, so it never runs without them
-  const filtersWaiting = (filterObjectsKey ? filterObjectsKey.split(',') : []).some((o) => !otherSchemas[o] && !unreadable.has(o));
+  const filtersWaiting = (filterObjectsKey ? filterObjectsKey.split(',') : []).some((o) => !otherSchemas[o] && !unreadable.has(o))
+    || (object === 'contacts' && campaignChoices === null && objectByName.has('email_campaigns')
+      && filterGroups.some((g) => g.filters.some((f) => !f.association && f.property.startsWith(CAMPAIGN_ACTIVITY))));
   const searchKey = JSON.stringify(toSearchGroups(filterGroups, filterFields));
   const searchGroups = useMemo(() => JSON.parse(searchKey) as FilterGroup[], [searchKey]);
   const filterCount = countFilters(searchGroups);
@@ -596,7 +602,8 @@ function ObjectTableFor({ object }: { object: string }) {
   const urlFilters = searchParams.get('filters');
   const syncedFilters = useRef<string | null>(urlFilters);
   useEffect(() => {
-    if (appliedViewId !== activeView?.id || filterUrlValue === syncedFilters.current) return;
+    // fields still loading would drop their conditions from the address
+    if (appliedViewId !== activeView?.id || filtersWaiting || filterUrlValue === syncedFilters.current) return;
     syncedFilters.current = filterUrlValue;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -604,7 +611,7 @@ function ObjectTableFor({ object }: { object: string }) {
       else next.set('filters', filterUrlValue);
       return next;
     }, { replace: true });
-  }, [filterUrlValue, appliedViewId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterUrlValue, appliedViewId, filtersWaiting]); // eslint-disable-line react-hooks/exhaustive-deps
   // the address changed from outside (back button, a pasted link)
   useEffect(() => {
     if (urlFilters === syncedFilters.current || !activeView) return;

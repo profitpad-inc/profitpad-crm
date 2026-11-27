@@ -1,3 +1,4 @@
+import { Liquid } from 'liquidjs';
 import { pool } from '../db.js';
 import { badRequest } from '../errors.js';
 import { getObject } from '../registry.js';
@@ -9,8 +10,9 @@ import { htmlToText } from '../mailbox/html.js';
 // A campaign's email for one contact: the campaign's email template (subject
 // and HTML body, both Liquid) filled in with the contact, their first
 // company, their owner and the campaign. Every marketing email ends with the
-// sender's mailing address and an unsubscribe link: added here unless the
-// template places {{ unsubscribe_url }} itself.
+// marketing footer (the mailing address and an unsubscribe link, editable in
+// Settings → Email): added here unless the template places
+// {{ unsubscribe_url }} itself.
 //
 // Fields a template can use:
 //   {{ contact.first_name }}, {{ contact.email }}, ... (any contact property)
@@ -102,28 +104,57 @@ export async function contactData(ids: string[]): Promise<Map<string, ContactDat
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
-// The link opens the preference page (unsubscribe from the campaign's
-// subscription type, choose others, or leave all).
-function footer(mailingAddress: string | null, unsubscribeUrl: string | null): string {
-  const parts: string[] = [];
-  if (mailingAddress) parts.push(escapeHtml(mailingAddress).replace(/\r?\n/g, '<br>'));
-  if (unsubscribeUrl) {
-    parts.push(`<a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b7280;text-decoration:underline">Unsubscribe</a>`);
+// The footers (Settings → Email, Footers; migration 0164): HTML with Liquid,
+// null for the built-in ones below. Their own Liquid without output escaping,
+// because every value is escaped here first: {{ mailing_address }} is the
+// address as HTML with line breaks, {{ unsubscribe_url }} the link to the
+// preference page (marketing only), {{ today }} the date.
+export const DEFAULT_MARKETING_FOOTER = `<div style="margin:32px auto 0;max-width:600px;padding:16px;text-align:center;font:12px/1.5 Arial,Helvetica,sans-serif;color:#6b7280">
+  {% if mailing_address != blank %}{{ mailing_address }}<br>{% endif %}
+  <a href="{{ unsubscribe_url }}" style="color:#6b7280;text-decoration:underline">Unsubscribe</a>
+</div>`;
+export const DEFAULT_TRANSACTIONAL_FOOTER = `{% if mailing_address != blank %}<div style="margin:32px auto 0;max-width:600px;padding:16px;text-align:center;font:12px/1.5 Arial,Helvetica,sans-serif;color:#6b7280">
+  {{ mailing_address }}
+</div>{% endif %}`;
+
+export type FooterKind = 'marketing' | 'transactional';
+
+const footerLiquid = new Liquid({ strictFilters: true, ownPropertyOnly: true, timezoneOffset: 0, parseLimit: 100_000, renderLimit: 1_000, memoryLimit: 8 * 1024 * 1024 });
+
+// Throws a 400 naming the problem when a footer cannot be used.
+export function checkFooter(kind: FooterKind, source: string): void {
+  try {
+    footerLiquid.parse(source);
+  } catch (err) {
+    throw badRequest(`The ${kind} footer's Liquid has a mistake: ${(err as Error).message}`, { property: `${kind}_footer` });
   }
-  if (!parts.length) return '';
-  return `<div style="margin:32px auto 0;max-width:600px;padding:16px;text-align:center;font:12px/1.5 Arial,Helvetica,sans-serif;color:#6b7280">${parts.join('<br>')}</div>`;
+  if (kind === 'marketing' && !/\{\{-?\s*unsubscribe_url\b/.test(source)) {
+    throw badRequest('The marketing footer needs the unsubscribe link: {{ unsubscribe_url }}. The law and the mail providers require one in every marketing email.', { property: 'marketing_footer' });
+  }
+  if (kind === 'transactional' && /\bunsubscribe_url\b/.test(source)) {
+    throw badRequest('The transactional footer cannot use {{ unsubscribe_url }}: one-to-one email has no unsubscribe link.', { property: 'transactional_footer' });
+  }
+}
+
+export async function renderFooter(kind: FooterKind, source: string | null, mailingAddress: string | null, unsubscribeUrl: string | null): Promise<string> {
+  const tpl = source?.trim() ? source : kind === 'marketing' ? DEFAULT_MARKETING_FOOTER : DEFAULT_TRANSACTIONAL_FOOTER;
+  return (await footerLiquid.parseAndRender(tpl, {
+    mailing_address: mailingAddress ? escapeHtml(mailingAddress.trim()).replace(/\r?\n/g, '<br>') : '',
+    unsubscribe_url: kind === 'marketing' && unsubscribeUrl ? escapeHtml(unsubscribeUrl) : '',
+    today: new Date().toISOString().slice(0, 10)
+  })).trim();
 }
 
 // A transactional email (a test, a sign-in link, a notice): the CRM logo on
-// top, the body, and the same footer as marketing email (the mailing address;
-// no unsubscribe link, these are not marketing). The logo is the PNG the API
-// serves (brand.ts): mail apps do not show SVG.
-export function transactionalLayout(bodyHtml: string, opts: { logoUrl: string | null; mailingAddress: string | null }): string {
+// top, the body, and the transactional footer (by default the mailing
+// address; no unsubscribe link, these are not marketing). The logo is the PNG
+// the API serves (brand.ts): mail apps do not show SVG.
+export async function transactionalLayout(bodyHtml: string, opts: { logoUrl: string | null; mailingAddress: string | null; footer?: string | null }): Promise<string> {
   const logo = opts.logoUrl
     ? `<div style="padding:0 0 24px"><img src="${escapeHtml(opts.logoUrl)}" width="40" height="40" alt="CRM" style="display:block;border:0;width:40px;height:40px"></div>`
     : '';
   const card = `<div style="margin:0 auto;max-width:600px;padding:32px 24px;font:15px/1.6 Arial,Helvetica,sans-serif;color:#111827">${logo}${bodyHtml}</div>`;
-  return placeBody(card, '', footer(opts.mailingAddress, null));
+  return placeBody(card, '', await renderFooter('transactional', opts.footer ?? null, opts.mailingAddress, null));
 }
 
 // The hidden first line mail apps show after the subject.
@@ -171,7 +202,7 @@ export async function renderCampaignEmail(
   const html = placeBody(
     body,
     campaign.preheader ? preheaderHtml(campaign.preheader) : '',
-    placesLink ? '' : footer(settings.mailing_address, unsubscribeUrl)
+    placesLink ? '' : await renderFooter('marketing', settings.marketing_footer, settings.mailing_address, unsubscribeUrl)
   );
   return { subject, html };
 }

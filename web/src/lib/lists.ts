@@ -24,9 +24,9 @@ export function useListChoices(enabled = true): ListChoice[] {
 
 // Campaigns that have gone out (or started to), newest first, for the
 // "Email campaign: opened" filters on contacts. Empty when none, or when
-// campaigns can't be read.
-export function useCampaignChoices(enabled = true): CampaignChoice[] {
-  const [campaigns, setCampaigns] = useState<CampaignChoice[]>([]);
+// campaigns can't be read; null (useCampaignChoicesLoading) until loaded.
+export function useCampaignChoicesLoading(enabled = true): CampaignChoice[] | null {
+  const [campaigns, setCampaigns] = useState<CampaignChoice[] | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
@@ -34,8 +34,12 @@ export function useCampaignChoices(enabled = true): CampaignChoice[] {
       limit: 200, properties: ['name'], sorts: [{ property: 'created_at', direction: 'desc' }],
       filter_groups: [{ filters: [{ property: 'status', operator: 'in', values: ['sending', 'sent', 'canceled'] }] }]
     }).then((r) => live && setCampaigns(r.results.map((c) => ({ id: c.id, name: String(c.properties.name ?? 'Untitled campaign') }))))
-      .catch(() => undefined);
+      .catch(() => live && setCampaigns([]));
     return () => { live = false; };
   }, [enabled]);
   return campaigns;
+}
+
+export function useCampaignChoices(enabled = true): CampaignChoice[] {
+  return useCampaignChoicesLoading(enabled) ?? [];
 }

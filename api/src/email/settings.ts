@@ -7,11 +7,13 @@ import { open, seal, secretBoxReady } from '../secret-box.js';
 import { logEvent } from '../audit.js';
 import { serverInfo } from './postmark.js';
 import { isGmailTypo } from '../email-typo.js';
+import { checkFooter, DEFAULT_MARKETING_FOOTER, DEFAULT_TRANSACTIONAL_FOOTER } from './render.js';
 
 // Settings → Email (auth.email_settings, migrations 0094 and 0149): the
 // Postmark server token, the default senders (one for one-to-one email, one
-// for marketing, which falls back to the first), the reply domain and the
-// mailing address that goes in every marketing email's footer. The token and the webhook password
+// for marketing, which falls back to the first), the reply domain, the
+// mailing address that goes in every marketing email's footer, and the two
+// footers themselves (0164, null for the built-in ones). The token and the webhook password
 // are sealed (secret-box.ts) and only admins see this.
 
 export interface EmailSettings {
@@ -29,6 +31,8 @@ export interface EmailSettings {
   default_reply_to: string | null;
   fallback_address: string | null;
   mailing_address: string | null;
+  marketing_footer: string | null;
+  transactional_footer: string | null;
   broadcast_stream: string;
   transactional_stream: string;
   webhook_secret: string | null;
@@ -36,7 +40,7 @@ export interface EmailSettings {
 
 const EMPTY: EmailSettings = {
   enabled: false, token: null, token_hint: null, from_name: null, from_address: null, marketing_from_name: null, marketing_from_address: null, reply_domain: null, replies_enabled: false, default_reply_to: null,
-  fallback_address: null, mailing_address: null, broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
+  fallback_address: null, mailing_address: null, marketing_footer: null, transactional_footer: null, broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
 };
 
 let cached: { at: number; value: EmailSettings } | null = null;
@@ -59,7 +63,7 @@ export async function loadEmailSettings(): Promise<EmailSettings> {
         enabled: r.enabled, token: unseal(r.server_token), token_hint: r.token_hint, from_name: r.from_name,
         from_address: r.from_address, marketing_from_name: r.marketing_from_name, marketing_from_address: r.marketing_from_address,
         reply_domain: r.reply_domain, replies_enabled: r.replies_enabled ?? false, default_reply_to: r.default_reply_to ?? null, fallback_address: r.fallback_address,
-        mailing_address: r.mailing_address, broadcast_stream: r.broadcast_stream, transactional_stream: r.transactional_stream,
+        mailing_address: r.mailing_address, marketing_footer: r.marketing_footer ?? null, transactional_footer: r.transactional_footer ?? null, broadcast_stream: r.broadcast_stream, transactional_stream: r.transactional_stream,
         webhook_secret: unseal(r.webhook_secret)
       }
     : EMPTY;
@@ -150,6 +154,11 @@ export function settingsOut(s: EmailSettings, req: FastifyRequest) {
     default_reply_to: s.default_reply_to,
     fallback_address: s.fallback_address,
     mailing_address: s.mailing_address,
+    marketing_footer: s.marketing_footer,
+    transactional_footer: s.transactional_footer,
+    // what an empty footer means, to start editing from
+    default_marketing_footer: DEFAULT_MARKETING_FOOTER,
+    default_transactional_footer: DEFAULT_TRANSACTIONAL_FOOTER,
     broadcast_stream: s.broadcast_stream,
     transactional_stream: s.transactional_stream,
     // the addresses to paste into Postmark (they carry the webhook password)
@@ -161,7 +170,7 @@ export function settingsOut(s: EmailSettings, req: FastifyRequest) {
 }
 
 type Body = Partial<Record<'enabled' | 'server_token' | 'from_name' | 'from_address' | 'marketing_from_name' | 'marketing_from_address' | 'reply_domain' | 'replies_enabled' | 'default_reply_to' | 'fallback_address'
-  | 'mailing_address' | 'broadcast_stream' | 'transactional_stream' | 'new_webhook_secret', unknown>>;
+  | 'mailing_address' | 'marketing_footer' | 'transactional_footer' | 'broadcast_stream' | 'transactional_stream' | 'new_webhook_secret', unknown>>;
 
 const text = (v: unknown, name: string, max: number): string | null => {
   if (v === null || v === '') return null;
@@ -199,6 +208,12 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
   }
   if (next.replies_enabled && !next.reply_domain) throw badRequest('Add the reply domain before turning replies on.', { property: 'reply_domain' });
   if (b.mailing_address !== undefined) next.mailing_address = text(b.mailing_address, 'The mailing address', 500);
+  for (const k of ['marketing_footer', 'transactional_footer'] as const) {
+    if (b[k] === undefined) continue;
+    const v = text(b[k], k === 'marketing_footer' ? 'The marketing footer' : 'The transactional footer', 20000);
+    if (v) checkFooter(k === 'marketing_footer' ? 'marketing' : 'transactional', v);
+    next[k] = v;
+  }
   for (const k of ['broadcast_stream', 'transactional_stream'] as const) {
     if (b[k] === undefined) continue;
     const v = text(b[k], 'A stream ID', 100);
@@ -230,6 +245,7 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
     `update auth.email_settings set enabled = $1, from_name = $2, from_address = $3, reply_domain = $4, fallback_address = $5,
        mailing_address = $6, broadcast_stream = $7, transactional_stream = $8,
        marketing_from_name = $14, marketing_from_address = $15, replies_enabled = $16, default_reply_to = $17,
+       marketing_footer = $18, transactional_footer = $19,
        server_token = case when $9 then $10 else server_token end,
        token_hint = case when $9 then $11 else token_hint end,
        webhook_secret = coalesce($12, webhook_secret),
@@ -237,13 +253,15 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
      where id`,
     [next.enabled, next.from_name, next.from_address, next.reply_domain, next.fallback_address, next.mailing_address,
       next.broadcast_stream, next.transactional_stream, tokenChange !== undefined, tokenChange?.sealed ?? null,
-      tokenChange?.hint ?? null, secretChange ?? null, p.actor, next.marketing_from_name, next.marketing_from_address, next.replies_enabled, next.default_reply_to]
+      tokenChange?.hint ?? null, secretChange ?? null, p.actor, next.marketing_from_name, next.marketing_from_address, next.replies_enabled, next.default_reply_to, next.marketing_footer, next.transactional_footer]
   );
   clearEmailSettingsCache();
   await logEvent(req, 'settings.updated', {
     target: { type: 'setting', id: 'email' },
     details: {
       enabled: next.enabled, from_address: next.from_address, marketing_from_address: next.marketing_from_address, reply_domain: next.reply_domain, replies_enabled: next.replies_enabled, default_reply_to: next.default_reply_to,
+      ...(b.marketing_footer !== undefined && next.marketing_footer !== cur.marketing_footer ? { marketing_footer: 'changed' } : {}),
+      ...(b.transactional_footer !== undefined && next.transactional_footer !== cur.transactional_footer ? { transactional_footer: 'changed' } : {}),
       ...(tokenChange ? { server_token: tokenChange.sealed ? `replaced (${server})` : 'removed' } : {}),
       ...(secretChange ? { webhook_secret: 'replaced' } : {})
     }

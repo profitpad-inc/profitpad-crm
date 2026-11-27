@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CodeTextarea } from '../components/CodeTextarea';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CopyField, SaveBar, SavedSecret, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
@@ -8,7 +9,8 @@ import { CheckCircle2, Circle } from 'lucide-react';
 import '../email.css';
 
 // Settings → Email (admins): the Postmark server token, the default sender,
-// the reply domain, the mailing address for marketing footers, and the two
+// the reply domain, the mailing address, the marketing and transactional
+// footers (HTML with Liquid, empty for the built-in ones), and the two
 // webhook addresses to paste into Postmark (api/src/email/settings.ts). The
 // token is stored sealed and never shown again, only its last four
 // characters.
@@ -24,6 +26,10 @@ interface State {
   reply_domain: string | null;
   fallback_address: string | null;
   mailing_address: string | null;
+  marketing_footer: string | null;
+  transactional_footer: string | null;
+  default_marketing_footer: string;
+  default_transactional_footer: string;
   broadcast_stream: string;
   transactional_stream: string;
   webhook_url: string | null;
@@ -36,11 +42,19 @@ interface State {
 
 const FIELDS = ['from_name', 'from_address', 'marketing_from_name', 'marketing_from_address', 'reply_domain', 'fallback_address', 'default_reply_to', 'mailing_address', 'broadcast_stream', 'transactional_stream'] as const;
 type Field = typeof FIELDS[number];
-type Draft = Record<Field, string> & { enabled: boolean; replies_enabled: boolean };
+type Draft = Record<Field, string> & { enabled: boolean; replies_enabled: boolean; marketing_footer: string; transactional_footer: string };
+type FooterKind = 'marketing' | 'transactional';
+
+// a footer as edited: the saved one, else the built-in one to start from
+const footerOf = (s: State, k: FooterKind) => s[`${k}_footer`] ?? s[`default_${k}_footer`];
+// what to save: null when it is the built-in footer again
+const footerToSave = (s: State, k: FooterKind, v: string) => (!v.trim() || v.trim() === s[`default_${k}_footer`].trim() ? null : v);
 
 const draftOf = (s: State): Draft => ({
   enabled: s.enabled,
   replies_enabled: s.replies_enabled,
+  marketing_footer: footerOf(s, 'marketing'),
+  transactional_footer: footerOf(s, 'transactional'),
   ...Object.fromEntries(FIELDS.map((f) => [f, s[f] ?? ''])) as Record<Field, string>
 });
 
@@ -108,11 +122,14 @@ export function EmailSettings() {
     return <SettingsPage title="Email" description={description}>{error ? <div className="error">{error}</div> : <TableSkeleton rows={4} />}</SettingsPage>;
   }
 
-  const dirty = draft.enabled !== state.enabled || draft.replies_enabled !== state.replies_enabled || FIELDS.some((f) => draft[f] !== (state[f] ?? ''));
+  const dirty = draft.enabled !== state.enabled || draft.replies_enabled !== state.replies_enabled || FIELDS.some((f) => draft[f] !== (state[f] ?? ''))
+    || (['marketing', 'transactional'] as const).some((k) => footerToSave(state, k, draft[`${k}_footer`]) !== state[`${k}_footer`]);
   const set = (f: Field) => (e: { target: { value: string } }) => setDraft({ ...draft, [f]: e.target.value });
   const save = () => put({
     enabled: draft.enabled,
     replies_enabled: draft.replies_enabled,
+    marketing_footer: footerToSave(state, 'marketing', draft.marketing_footer),
+    transactional_footer: footerToSave(state, 'transactional', draft.transactional_footer),
     ...Object.fromEntries(FIELDS.map((f) => [f, draft[f].trim() || null]))
   }, 'Email settings saved.');
 
@@ -194,6 +211,27 @@ export function EmailSettings() {
         </SettingRow>
       </SettingsSection>
 
+      <SettingsSection title="Footers" description={<>The end of every email the CRM lays out, in HTML with Liquid. <code>{'{{ mailing_address }}'}</code> is the mailing address above, <code>{'{{ unsubscribe_url }}'}</code> the link to the contact's unsubscribe and preference page (marketing only), <code>{'{{ today }}'}</code> the date.</>}>
+        {(['marketing', 'transactional'] as const).map((k) => {
+          const isDefault = draft[`${k}_footer`].trim() === state[`default_${k}_footer`].trim();
+          return (
+            <SettingRow key={k} label={k === 'marketing' ? 'Marketing footer' : 'Transactional footer'}
+              hint={k === 'marketing'
+                ? <>Ends every campaign email, unless its template places <code>{'{{ unsubscribe_url }}'}</code> itself. Must keep the unsubscribe link; keep the mailing address too, the law asks for both.</>
+                : 'Ends tests, notices and other one-to-one email the CRM sends. No unsubscribe link.'}>
+              <CodeTextarea className="email-footer-code" rows={7} aria-label={k === 'marketing' ? 'Marketing footer HTML' : 'Transactional footer HTML'}
+                value={draft[`${k}_footer`]} onChange={(e) => setDraft({ ...draft, [`${k}_footer`]: e.target.value })} />
+              <FooterPreview kind={k} source={draft[`${k}_footer`]} />
+              {!isDefault && (
+                <div className="key-row">
+                  <button className="btn small" onClick={() => setDraft({ ...draft, [`${k}_footer`]: state[`default_${k}_footer`] })}>Back to the built-in footer</button>
+                </div>
+              )}
+            </SettingRow>
+          );
+        })}
+      </SettingsSection>
+
       <EmailSubscriptionTypes />
 
       <SettingsSection title="Replies" description="Whether replies to campaigns and tracked email come back into the CRM, where they show on the contact's timeline and in the campaign's Replied count.">
@@ -272,5 +310,29 @@ function SetupSteps({ state }: { state: State }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+// The footer as it will look, with the saved mailing address and a sample
+// unsubscribe link (POST /v1/email/footers/preview), redrawn a moment after
+// typing stops. Shown in a sandboxed frame on the email's grey.
+function FooterPreview({ kind, source }: { kind: FooterKind; source: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api<{ html: string }>('POST', '/v1/email/footers/preview', { kind, source })
+        .then((r) => { if (!cancelled) { setHtml(r.html); setProblem(null); } })
+        .catch((err) => { if (!cancelled) setProblem((err as Error).message); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [kind, source]);
+  if (problem) return <div className="error small">{problem}</div>;
+  if (html === null) return null;
+  if (!html) return <p className="muted small">Nothing is added: the mailing address is empty.</p>;
+  return (
+    <iframe className="email-footer-preview" title={`${kind} footer preview`} sandbox=""
+      srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:8px 0 16px;background:#f3f4f6">${html}</body></html>`} />
   );
 }

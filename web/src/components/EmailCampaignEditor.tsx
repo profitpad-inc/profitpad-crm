@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Eye, Send, CalendarClock, Ban, RefreshCw, X } from 'lucide-react';
+import { Eye, Send, CalendarClock, Ban, RefreshCw, UserPlus, X } from 'lucide-react';
 import { api, type CrmRecord, type SearchResult } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { DatePicker } from './DatePicker';
@@ -8,19 +8,29 @@ import { StatusPill, type Tone } from './settings';
 import { confirmDialog } from './confirm';
 import { Select } from './Select';
 import { CampaignActivity, FILTER_PARAM } from './CampaignActivity';
+import { CampaignSendMore } from './CampaignSendMore';
+import { Loading } from './Loading';
 import '../email.css';
 import '../lists.css';
 
-// The middle of an email campaign's record page (api/src/email/campaigns.ts):
-// who gets it (the contact lists linked to it), a preview drawn for one
-// contact, a test to yourself, then send now or schedule. After it goes out,
-// the counts (each opens the Activity card on those recipients) and who did
-// what (CampaignActivity). The email itself is the linked email template (right column).
+// The middle of an email campaign's record page (api/src/email/campaigns.ts),
+// in tabs (?campaign_tab=):
+//   Campaign  status; who gets it (the contact lists linked to it), then send
+//             now or schedule. After it goes out, the counts (each opens the
+//             Activity tab on those recipients) and Send to more (contacts
+//             picked by hand, sent straight away: CampaignSendMore).
+//   Activity  who did what (CampaignActivity), once it has gone out.
+//   Preview   the email drawn for one contact (drawn on opening the tab), and
+//             a test to yourself.
+// The email itself is the linked email template (right column).
 
 interface Check { ready: boolean; problems: string[]; recipients: number; can_send: boolean }
 interface Preview { contact_id: string; to: string | null; subject: string; html: string }
 interface LinkedList { id: string; name: string; member_count: number; list_type: string }
 interface SubscriptionType { value: string; label: string; description: string | null }
+
+export const TAB_PARAM = 'campaign_tab';
+type CampaignTab = 'campaign' | 'activity' | 'preview';
 
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined;
 const TONES: Record<string, Tone> = { draft: 'off', scheduled: 'info', sending: 'pending', sent: 'on', canceled: 'warn' };
@@ -34,10 +44,18 @@ const COUNTS: [string, string, string][] = [
 
 export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; onChanged: (r: CrmRecord) => void }) {
   const { toast } = useApp();
-  const [, setParams] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const p = record.properties;
   const status = first(p.status) ?? 'draft';
   const editable = status === 'draft' || status === 'scheduled';
+  const sentCounts = status === 'sending' || status === 'sent' || status === 'canceled';
+  const tabs: { key: CampaignTab; label: string }[] = [
+    { key: 'campaign', label: 'Campaign' },
+    ...(sentCounts ? [{ key: 'activity' as const, label: 'Activity' }] : []),
+    { key: 'preview', label: 'Preview' }
+  ];
+  const rawTab = params.get(TAB_PARAM);
+  const tab: CampaignTab = tabs.find((t) => t.key === rawTab)?.key ?? 'campaign';
   // the contact lists it goes to (linked records), and the ones that could be added
   const [lists, setLists] = useState<LinkedList[] | null>(null);
   const [choices, setChoices] = useState<{ value: string; label: string }[]>([]);
@@ -50,6 +68,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   const [check, setCheck] = useState<Check | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [when, setWhen] = useState('');
+  const [sendingMore, setSendingMore] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -171,26 +190,39 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     await reload();
   });
 
-  // a count opens the Activity card on the recipients it counts
-  const showActivity = (filter: string) => {
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (filter === 'all') next.delete(FILTER_PARAM);
-      else next.set(FILTER_PARAM, filter);
-      return next;
-    }, { replace: true });
-    document.getElementById('campaign-activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const showTab = (t: CampaignTab, filter?: string) => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    if (t === 'campaign') next.delete(TAB_PARAM);
+    else next.set(TAB_PARAM, t);
+    if (filter === 'all') next.delete(FILTER_PARAM);
+    else if (filter) next.set(FILTER_PARAM, filter);
+    return next;
+  }, { replace: true });
+
+  // a count opens the Activity tab on the recipients it counts
+  const showActivity = (filter: string) => showTab('activity', filter);
+
+  // the Preview tab draws the email the first time it opens
+  useEffect(() => {
+    if (tab === 'preview' && !preview && !busy) showPreview();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fit = () => {
     const f = frame.current;
     if (f?.contentDocument?.body) f.style.height = `${Math.min(f.contentDocument.documentElement.scrollHeight + 8, 2400)}px`;
   };
 
-  const sentCounts = status === 'sending' || status === 'sent' || status === 'canceled';
-
   return (
     <div className="campaign-editor">
+      <div className="tabs campaign-tabs" role="tablist" aria-label="Campaign">
+        {tabs.map((t) => (
+          <div key={t.key} className={`tab${tab === t.key ? ' active' : ''}`}>
+            <button role="tab" aria-selected={tab === t.key} onClick={() => showTab(t.key)}>{t.label}</button>
+          </div>
+        ))}
+      </div>
+
+      {tab === 'campaign' && <>
       <div className="card">
         <div className="card-head">
           <h3>Campaign</h3>
@@ -218,8 +250,6 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
         )}
         {error && <div className="error">{error}</div>}
       </div>
-
-      {sentCounts && <CampaignActivity campaignId={record.id} refreshKey={COUNTS.map(([k]) => String(p[k] ?? '')).join(',')} />}
 
       {editable && (
         <div className="card">
@@ -268,28 +298,16 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
         </div>
       )}
 
-      <div className="card">
-        <div className="card-head">
-          <h3>Email</h3>
-          <span className="push-right campaign-actions">
-            <button className="btn small" disabled={!!busy} onClick={showPreview}><Eye size={14} /> {preview ? 'Redraw' : 'Preview'}</button>
-            {editable && <button className="btn small" disabled={!!busy} onClick={sendTest}><Send size={14} /> Send me a test</button>}
-          </span>
-        </div>
-        {preview ? (
-          <>
-            <p className="small muted">Drawn for {preview.to ?? `contact ${preview.contact_id}`}. Subject: <strong>{preview.subject}</strong></p>
-            <iframe ref={frame} className="campaign-preview" title="Email preview" sandbox="allow-same-origin" srcDoc={preview.html} onLoad={fit} />
-          </>
-        ) : (
-          <p className="muted">The email is the email template linked to this campaign. Preview draws it for a contact in the audience, with the footer and unsubscribe link added.</p>
-        )}
-      </div>
-
-      {(editable || status === 'sending') && (
+      {(editable || status === 'sending' || status === 'sent') && (
         <div className="card">
-          <div className="card-head"><h3>Send</h3></div>
+          <div className="card-head">
+            <h3>Send</h3>
+            {(status === 'sending' || status === 'sent') && check?.can_send && (
+              <span className="push-right"><button className="btn small" disabled={!!busy} onClick={() => setSendingMore(true)}><UserPlus size={14} /> Send to more</button></span>
+            )}
+          </div>
           {check && !check.can_send && <p className="muted">Only an admin signed in to the CRM can send or schedule a campaign.</p>}
+          {status === 'sent' && check?.can_send && <p className="muted">Sent. Send to more sends it to contacts you pick, straight away.</p>}
           {editable && (
             <div className="campaign-send">
               <button className="btn primary" disabled={!!busy || !check?.ready || !check?.can_send || dirty} onClick={() => send(false)}>
@@ -307,6 +325,37 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
             <button className="btn danger-text" disabled={!!busy} onClick={cancel}><Ban size={14} /> {status === 'sending' ? 'Stop sending' : 'Cancel campaign'}</button>
           )}
         </div>
+      )}
+      </>}
+
+      {tab === 'activity' && sentCounts && (
+        <CampaignActivity campaignId={record.id} refreshKey={COUNTS.map(([k]) => String(p[k] ?? '')).join(',')} />
+      )}
+
+      {tab === 'preview' && (
+      <div className="card">
+        <div className="card-head">
+          <h3>Email</h3>
+          <span className="push-right campaign-actions">
+            <button className="btn small" disabled={!!busy} onClick={showPreview}><Eye size={14} /> Redraw</button>
+            {editable && <button className="btn small" disabled={!!busy} onClick={sendTest}><Send size={14} /> Send me a test</button>}
+          </span>
+        </div>
+        {error && <div className="error">{error}</div>}
+        {preview ? (
+          <>
+            <p className="small muted">Drawn for {preview.to ?? `contact ${preview.contact_id}`}. Subject: <strong>{preview.subject}</strong></p>
+            <iframe ref={frame} className="campaign-preview" title="Email preview" sandbox="allow-same-origin" srcDoc={preview.html} onLoad={fit} />
+          </>
+        ) : busy === 'preview' ? <Loading /> : (
+          <p className="muted">The email is the email template linked to this campaign, drawn for a contact in the audience with the footer and unsubscribe link added.</p>
+        )}
+      </div>
+      )}
+
+      {sendingMore && (
+        <CampaignSendMore campaignId={record.id} campaignName={String(p.name ?? 'this campaign')}
+          onClose={() => setSendingMore(false)} onSent={reload} />
       )}
     </div>
   );

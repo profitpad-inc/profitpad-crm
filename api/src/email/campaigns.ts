@@ -264,6 +264,76 @@ export async function cancelCampaign(id: string, p: Principal): Promise<{ status
   });
 }
 
+// ---- sending to more -------------------------------------------------------------
+
+export const SEND_MORE_MAX = 500;
+
+export interface SendMoreResult {
+  status: string;
+  queued: number;
+  skipped: { contact_id: string; email: string | null; why: string }[];
+}
+
+// Sends a campaign that already went out (or is going out) to contacts picked
+// by hand, straight away. The same rules as the audience: active, with an
+// email, not opted out, not unsubscribed from the campaign's subscription
+// type, and one copy per contact and per address. A sent campaign goes back to
+// sending until they are out; its lists are left as they are. Only admins
+// signed in to the CRM in a browser get here (routes/email.ts checks canApprove).
+export async function sendToMore(id: string, p: Principal, contactIds: string[]): Promise<SendMoreResult> {
+  const ids = [...new Set(contactIds)];
+  if (ids.length === 0) throw badRequest('Pick at least one contact.');
+  if (ids.length > SEND_MORE_MAX) throw badRequest(`At most ${SEND_MORE_MAX} contacts at a time.`);
+  const s = await loadEmailSettings();
+  const setup = missing(s);
+  if (setup.length) throw new ApiError(409, `Email is not set up: it needs ${setup.join(', ')} (Settings → Email).`, 'campaign_not_ready');
+  const template = await campaignTemplate(id);
+  if (!template?.body?.trim()) throw new ApiError(409, 'The campaign has no email template with a body.', 'campaign_not_ready');
+  return withTx({ principal: p, source: 'email_campaign' }, async (c) => {
+    const campaign = await lockCampaign(c, id);
+    if (!['sending', 'sent'].includes(campaign.status ?? 'draft')) {
+      throw badRequest(campaign.status === 'canceled'
+        ? 'This campaign was canceled: it is not sent to anyone else.'
+        : 'This campaign has not gone out yet: add the contacts to one of its lists instead.');
+    }
+    const { rows } = await c.query(
+      `select t.pc_0010_id as contact_id, t.email -> 0 ->> 'value' as email,
+              case
+                when t.email -> 0 ->> 'value' is null then 'has no email address'
+                when t.email_opt_out = '{true}' then 'opted out of marketing email'
+                when $3::text is not null and coalesce(t.email_unsubscribed_topics, '{}') @> array[$3]::text[] then 'unsubscribed from this subscription type'
+                when exists (select 1 from auth.email_outbox o where o.campaign_id = $1 and o.contact_id = t.pc_0010_id) then 'already got this campaign'
+                when exists (select 1 from auth.email_outbox o where o.campaign_id = $1 and lower(o.email) = lower(t.email -> 0 ->> 'value')) then 'that address already got this campaign'
+              end as why
+       from crm.pc_0010 t
+       where t.pc_0010_id = any($2) and t.record_status = 'active'
+       order by t.created_at`,
+      [id, ids, campaign.subscription_type]
+    );
+    const skipped: SendMoreResult['skipped'] = [];
+    const found = new Set(rows.map((r) => r.contact_id as string));
+    for (const cid of ids) if (!found.has(cid)) skipped.push({ contact_id: cid, email: null, why: 'not found or archived' });
+    const seen = new Set<string>();
+    const queue: { contact_id: string; email: string }[] = [];
+    for (const r of rows) {
+      const why = r.why ?? (seen.has(String(r.email).toLowerCase()) ? 'shares an address with another contact picked' : null);
+      if (why) { skipped.push({ contact_id: r.contact_id, email: r.email, why }); continue; }
+      seen.add(String(r.email).toLowerCase());
+      queue.push({ contact_id: r.contact_id, email: r.email });
+    }
+    if (queue.length) {
+      await c.query(
+        `insert into auth.email_outbox (campaign_id, contact_id, email)
+         select $1, x.contact_id, x.email from unnest($2::text[], $3::text[]) as x(contact_id, email) on conflict do nothing`,
+        [id, queue.map((q) => q.contact_id), queue.map((q) => q.email)]
+      );
+      if (campaign.status === 'sent') await c.query(`update crm.pc_0058 set status = '{sending}' where pc_0058_id = $1`, [id]);
+      dirtyCampaigns.add(id);
+    }
+    return { status: queue.length ? 'sending' : campaign.status!, queued: queue.length, skipped };
+  });
+}
+
 // ---- sending ---------------------------------------------------------------------
 
 function messageFor(s: EmailSettings, campaign: CampaignRow, to: string, subject: string, html: string,
@@ -478,8 +548,9 @@ async function tick(log: Logger): Promise<void> {
         if (left[0].stuck) {
           await pool.query(`update auth.email_outbox set status = 'failed', error = 'gave up after ${MAX_ATTEMPTS} tries' where campaign_id = $1 and status = 'queued'`, [k.id]);
         }
+        // a campaign sent to more contacts later (sendToMore) keeps its first sent time
         await withTx({ ...EMAIL_ACTOR, source: 'email_campaign' }, (c) =>
-          c.query(`update crm.pc_0058 set status = '{sent}', sent_at = now() where pc_0058_id = $1 and status <@ '{sending}'`, [k.id]));
+          c.query(`update crm.pc_0058 set status = '{sent}', sent_at = coalesce(sent_at, now()) where pc_0058_id = $1 and status <@ '{sending}'`, [k.id]));
         dirtyCampaigns.add(k.id);
         log.info({ campaign: k.id }, 'email campaign sent');
       }

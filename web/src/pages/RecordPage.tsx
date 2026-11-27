@@ -79,8 +79,8 @@ const DEFAULT_CARDS = ['contacts', 'companies', 'deals', 'tickets'];
 const DEFAULT_CARDS_FOR: Record<string, string[]> = {
   forms: ['form_submissions'],
   booking_pages: ['calls'],
-  // its email template, and the emails it sent (one per recipient)
-  email_campaigns: ['email_templates', 'emails'],
+  // the lists it sends to, its email template, and the emails it sent (one per recipient)
+  email_campaigns: ['lists', 'email_templates', 'emails'],
   // the campaigns that send to it
   lists: ['email_campaigns'],
   deals: [...DEFAULT_CARDS, 'lines', 'quotes', 'invoices'],

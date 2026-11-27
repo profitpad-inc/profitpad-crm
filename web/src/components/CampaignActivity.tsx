@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { api } from '../lib/api';
+import { CAMPAIGN_ACTIVITY, filterParam } from '../lib/filters';
 import { useUrlSearch } from '../lib/use-url-search';
 import { Loading, Spinner } from './Loading';
 import { Select } from './Select';
@@ -9,7 +10,9 @@ import { Select } from './Select';
 // Who did what with a sent campaign (api/src/email/activity.ts): a row per
 // recipient with when it arrived, was opened, clicked and so on; a row opens
 // to that recipient's events in order. The filter (?recipients=) and the
-// search (?recipient_s=) live in the address, like a table's.
+// search (?recipient_s=) live in the address, like a table's. The recipient
+// count opens the contacts table on the same people, through the "Email
+// campaign: received / opened / ..." filters (api/src/campaign-activity-filter.ts).
 
 export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'All recipients' },
@@ -25,6 +28,25 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'failed', label: "Couldn't be sent" }
 ];
 export const FILTER_PARAM = 'recipients';
+
+// The contacts table's filter for each Activity filter. "Couldn't be sent" has
+// none: the campaign filters count only emails that went out, so "All
+// recipients" there leaves those out too.
+const CONTACT_FILTERS: Record<string, { event: string; operator: 'in' | 'not_in' }> = {
+  all: { event: 'sent', operator: 'in' }, delivered: { event: 'delivered', operator: 'in' }, opened: { event: 'opened', operator: 'in' },
+  clicked: { event: 'clicked', operator: 'in' }, replied: { event: 'replied', operator: 'in' }, unsubscribed: { event: 'unsubscribed', operator: 'in' },
+  bounced: { event: 'bounced', operator: 'in' }, complained: { event: 'complained', operator: 'in' },
+  not_opened: { event: 'opened', operator: 'not_in' }, not_clicked: { event: 'clicked', operator: 'not_in' }
+};
+
+function contactsUrl(campaignId: string, filter: string, search: string): string | null {
+  const f = CONTACT_FILTERS[filter];
+  if (!f) return null;
+  const q = new URLSearchParams();
+  q.set('filters', filterParam([{ filters: [{ property: `${CAMPAIGN_ACTIVITY}${f.event}`, operator: f.operator, values: [campaignId] }] }]));
+  if (search) q.set('s', search);
+  return `/objects/contacts?${q}`;
+}
 
 interface Row {
   contact_id: string; name: string | null; email: string; status: 'sent' | 'failed'; error: string | null; email_id: string | null;
@@ -135,6 +157,8 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
   }, { replace: true });
 
   const label = ACTIVITY_FILTERS.find((f) => f.value === filter)!.label.toLowerCase();
+  const countText = `${total.toLocaleString()} ${total === 1 ? 'recipient' : 'recipients'}`;
+  const toContacts = total > 0 ? contactsUrl(campaignId, filter, settled) : null;
 
   return (
     <div className="card campaign-activity" id="campaign-activity">
@@ -145,7 +169,9 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
           <Search size={15} aria-hidden />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or email" aria-label="Search recipients" />
         </div>
-        <span className="muted small">{rows ? `${total.toLocaleString()} ${total === 1 ? 'recipient' : 'recipients'}` : ''}</span>
+        {!rows ? null : toContacts
+          ? <Link className="small campaign-to-contacts" to={toContacts} title="Open these contacts in the contacts table">{countText}</Link>
+          : <span className="muted small">{countText}</span>}
       </div>
       {error ? <div className="error">{error}</div> : !rows ? <Loading /> : rows.length === 0 ? (
         <p className="muted">{settled ? `No recipients match "${settled}".` : filter === 'all' ? 'No one has been sent this campaign yet.' : `No recipients: ${label}.`}</p>

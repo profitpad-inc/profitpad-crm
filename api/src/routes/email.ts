@@ -9,16 +9,17 @@ import { loadEmailSettings, marketingSender, saveEmailSettings, settingsOut, web
 import { sendEmail } from '../email/send.js';
 import { handleEvent, handleInbound, optOut } from '../email/events.js';
 import { readUnsubscribeToken, unsubscribePageUrl, unsubscribeToken } from '../email/links.js';
-import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout, campaignText } from '../email/render.js';
-import { campaignLists, cancelCampaign, checkCampaign, countAudience, listIds, refreshCounts, sampleAudience, startCampaign } from '../email/campaigns.js';
+import { checkFooter, renderFooter, campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout, campaignText } from '../email/render.js';
+import { campaignLists, cancelCampaign, checkCampaign, countAudience, listIds, refreshCounts, sampleAudience, sendToMore, startCampaign } from '../email/campaigns.js';
 import { EMAIL_ACTOR } from '../email/send.js';
 import { campaignActivity, recipientTimeline } from '../email/activity.js';
 import { addTopic, contactTopics, leaveTopic, listTopics, setContactTopics, topicCounts, updateTopic } from '../email/topics.js';
 
 // Email through Postmark (api/src/email/*):
-//   Settings → Email                 GET/PUT /v1/email/settings, POST /v1/email/test
+//   Settings → Email                 GET/PUT /v1/email/settings, POST /v1/email/test,
+//                                    POST /v1/email/footers/preview {kind, source}
 //   subscription types               GET/POST /v1/email/subscription-types, PATCH .../:value
-//   campaigns                        /v1/email/campaigns/:id/{check,preview,test,send,cancel}
+//   campaigns                        /v1/email/campaigns/:id/{check,preview,test,send,send-more,cancel}
 //   who did what                     GET /v1/email/campaigns/:id/activity[/:contactId]
 //   audience size of some lists      POST /v1/email/audience {list_ids, subscription_type}
 //   Postmark's calls                 POST /v1/postmark/webhook, /v1/postmark/inbound (basic auth)
@@ -93,6 +94,21 @@ export async function emailRoutes(app: FastifyInstance) {
     return settingsOut(await saveEmailSettings(req, p, req.body ?? {}), req);
   });
 
+  // A footer as it would look (Settings → Email, Footers), before saving:
+  // the source given (empty: the built-in one) with the saved mailing address
+  // and a sample unsubscribe link.
+  app.post<{ Body: { kind?: unknown; source?: unknown } }>('/v1/email/footers/preview', async (req) => {
+    const p = req.principal!;
+    requireAdminUser(p);
+    const kind = req.body?.kind;
+    if (kind !== 'marketing' && kind !== 'transactional') throw badRequest('kind must be marketing or transactional', { property: 'kind' });
+    const source = typeof req.body?.source === 'string' ? req.body.source : '';
+    if (source.length > 20000) throw badRequest('The footer is too long (at most 20000 characters)', { property: 'source' });
+    if (source.trim()) checkFooter(kind, source);
+    const s = await loadEmailSettings();
+    return { html: await renderFooter(kind, source, s.mailing_address, kind === 'marketing' ? `${apiBaseUrl(req)}/v1/public/unsubscribe/sample` : null) };
+  });
+
   // A test email to the signed-in admin, on the transactional stream.
   app.post('/v1/email/test', async (req) => {
     const p = req.principal!;
@@ -102,9 +118,9 @@ export async function emailRoutes(app: FastifyInstance) {
     const res = await sendEmail({
       to,
       subject: 'Test email from the CRM',
-      html: transactionalLayout(
+      html: await transactionalLayout(
         '<p style="margin:0">This test came from the CRM through Postmark. If you are reading it, transactional email works.</p>',
-        { logoUrl: `${apiBaseUrl(req)}/icon-512.png`, mailingAddress: s.mailing_address }
+        { logoUrl: `${apiBaseUrl(req)}/icon-512.png`, mailingAddress: s.mailing_address, footer: s.transactional_footer }
       ),
       text: 'This test came from the CRM through Postmark. If you are reading it, transactional email works.',
       tag: 'test'
@@ -187,6 +203,17 @@ export async function emailRoutes(app: FastifyInstance) {
       if (at.getTime() > Date.now() + 365 * 86400_000) throw badRequest('Campaigns can be scheduled up to a year ahead.');
     }
     return startCampaign(campaignId(req.params.id), p, at);
+  });
+
+  // A campaign that went out, sent straight away to contacts picked by hand.
+  // Like sending, only an admin signed in to the CRM in a browser.
+  app.post<{ Params: { id: string }; Body: { contact_ids?: unknown } }>('/v1/email/campaigns/:id/send-more', async (req) => {
+    const p = req.principal!;
+    if (!canApprove(p)) throw forbidden('Only an admin signed in to the CRM can send a campaign.');
+    requireRecentSignIn(p);
+    const ids = req.body?.contact_ids;
+    if (!Array.isArray(ids) || !ids.every((v) => typeof v === 'string' && /^[0-9a-f]{10}$/.test(v))) throw badRequest('contact_ids must be an array of contact ids');
+    return sendToMore(campaignId(req.params.id), p, ids as string[]);
   });
 
   app.post<{ Params: { id: string } }>('/v1/email/campaigns/:id/cancel', async (req) => {

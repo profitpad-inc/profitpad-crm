@@ -7,7 +7,7 @@ process.env.MASTER_ENCRYPTION_KEY ||= randomBytes(32).toString('base64');
 const { readUnsubscribeToken, unsubscribeToken, newReplyToken, REPLY_TOKEN_RE } = await import('./links.js');
 const { eventKey, isMachineEvent } = await import('./events.js');
 const { fromHeader, marketingSender, replyToFor } = await import('./settings.js');
-const { renderCampaignEmail, transactionalLayout, campaignText } = await import('./render.js');
+const { renderCampaignEmail, transactionalLayout, campaignText, checkFooter, renderFooter } = await import('./render.js');
 const { topicValue } = await import('./topics.js');
 
 test('unsubscribe tokens round-trip and refuse tampering', () => {
@@ -39,7 +39,7 @@ test('from headers quote names that need it', () => {
 
 const settings = {
   enabled: true, token: 't', token_hint: null, from_name: 'Acme', from_address: 'n@acme.com', marketing_from_name: null, marketing_from_address: null, reply_domain: null, replies_enabled: false, default_reply_to: null,
-  fallback_address: null, mailing_address: '1 Main St\nTown', broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
+  fallback_address: null, mailing_address: '1 Main St\nTown', marketing_footer: null, transactional_footer: null, broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
 };
 const campaign = {
   id: '00000000bb', name: 'Nov', subject: null, preheader: 'Short', from_name: null, from_address: null, audience: null, status: 'draft', scheduled_at: null,
@@ -107,13 +107,28 @@ test('Reply-To: the tracked address only while replies are on, else the default 
   assert.equal(replyToFor({ ...off, replies_enabled: true }, null), 'team@acme.com');
 });
 
-test('transactional emails get the CRM logo and the mailing address footer, no unsubscribe link', () => {
-  const html = transactionalLayout('<p>Hi</p>', { logoUrl: 'https://api.acme.com/icon-512.png', mailingAddress: '1 Main St\nTown' });
+test('transactional emails get the CRM logo and the mailing address footer, no unsubscribe link', async () => {
+  const html = await transactionalLayout('<p>Hi</p>', { logoUrl: 'https://api.acme.com/icon-512.png', mailingAddress: '1 Main St\nTown' });
   assert.match(html, /<img src="https:\/\/api\.acme\.com\/icon-512\.png"/);
   assert.match(html, /<p>Hi<\/p>/);
   assert.match(html, /1 Main St<br>Town/);
   assert.doesNotMatch(html, /Unsubscribe/);
   assert.match(html, /^<!doctype html>/);
+});
+
+test('custom footers: Liquid with escaped values, saved footers are checked', async () => {
+  const custom = '<p class="f">{{ mailing_address }} | <a href="{{ unsubscribe_url }}">Leave</a> {% if unsubscribe_url == blank %}none{% endif %}</p>';
+  const out = await renderCampaignEmail(campaign, { id: 't', name: 'T', subject: 'Hi', body: '<p>Body</p>' }, who,
+    { ...settings, mailing_address: '1 <Main> St\nTown', marketing_footer: custom }, 'https://x/unsub?a=1&b=2');
+  assert.match(out.html, /<p class="f">1 &lt;Main&gt; St<br>Town \| <a href="https:\/\/x\/unsub\?a=1&amp;b=2">Leave<\/a> <\/p>/);
+  assert.doesNotMatch(out.html, />Unsubscribe</);
+  const t = await transactionalLayout('<p>Hi</p>', { logoUrl: null, mailingAddress: 'A', footer: '<footer>{{ mailing_address }} {{ today }}</footer>' });
+  assert.match(t, /<footer>A \d{4}-\d{2}-\d{2}<\/footer>/);
+  assert.equal(await renderFooter('transactional', null, null, null), '');
+  assert.throws(() => checkFooter('marketing', '<p>{{ mailing_address }}</p>'), /needs the unsubscribe link/);
+  assert.throws(() => checkFooter('marketing', '{% if %}{{ unsubscribe_url }}'), /Liquid has a mistake/);
+  assert.throws(() => checkFooter('transactional', '{{ unsubscribe_url }}'), /no unsubscribe link/);
+  checkFooter('marketing', '<a href="{{unsubscribe_url}}">x</a>');
 });
 
 test('opens and clicks within seconds of delivery (or of the send) are a scanner', () => {
@@ -138,4 +153,12 @@ test('the plain-text part leaves out styles and preview padding, and keeps links
   assert.match(text, /Unsubscribe \(https:\/\/x\.com\/unsub\)/);
   assert.doesNotMatch(text, /\n{3,}/);
   assert.match(campaignText('<td><span>ProfitPad</span><span style="padding-left:10px">Newsletter</span></td>'), /ProfitPad Newsletter/);
+});
+
+test('send to more needs one to 500 contacts', async () => {
+  const { sendToMore, SEND_MORE_MAX } = await import('./campaigns.js');
+  const p = { userId: null } as never;
+  await assert.rejects(sendToMore('00000000bb', p, []), /at least one contact/);
+  const many = Array.from({ length: SEND_MORE_MAX + 1 }, (_, i) => i.toString(16).padStart(10, '0'));
+  await assert.rejects(sendToMore('00000000bb', p, many), /At most 500/);
 });
