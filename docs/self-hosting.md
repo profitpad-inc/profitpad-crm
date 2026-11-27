@@ -90,7 +90,7 @@ Optional:
 | `PCRM_FILES_DIR` | a host folder for uploads instead of the `pcrm_files` volume (owned by uid 1000) |
 | `PGPOOL_MAX` | database connections the API keeps (default 20) |
 | `LOG_LEVEL` | API log level (default `info`) |
-| `PCRM_PG_SHARED_BUFFERS`, `PCRM_PG_EFFECTIVE_CACHE_SIZE`, `PCRM_PG_WORK_MEM`, `PCRM_PG_MAINTENANCE_WORK_MEM`, `PCRM_PG_RANDOM_PAGE_COST` | Postgres memory and planner settings (defaults `256MB`, `1GB`, `16MB`, `128MB`, `1.1`, for a 2 to 4 GB server). On a bigger server set shared buffers to about a quarter of memory and the cache size to about half: 8 GB, `2GB` and `4GB`; 16 GB, `4GB` and `8GB`. A larger `PCRM_PG_WORK_MEM` (32MB or 64MB) helps big sorts and reports |
+| `PCRM_PG_SHARED_BUFFERS`, `PCRM_PG_EFFECTIVE_CACHE_SIZE`, `PCRM_PG_WORK_MEM`, `PCRM_PG_MAINTENANCE_WORK_MEM`, `PCRM_PG_RANDOM_PAGE_COST` | Postgres memory and planner settings. A new install gets them from the server's memory, split evenly with ProfitPad installs already running there ([the table](../README.md#server-size) lists them per memory size). Without them: `256MB`, `1GB`, `16MB`, `128MB`, `1.1` |
 
 After changing `.env`: `sudo docker compose up -d`.
 

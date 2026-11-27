@@ -36,8 +36,8 @@ services:
     # parallel queries on large tables fail with "could not resize shared
     # memory segment ... No space left on device"
     shm_size: 1g
-    # memory settings for a 2 to 4 GB server; larger servers raise them in
-    # .env (README, "Server size"; docs/self-hosting.md lists the variables)
+    # memory settings: install.sh writes them to .env for the server's size
+    # (README, "Server size"); these defaults suit a 2 GB server
     command: >-
       postgres
       -c shared_buffers=${PCRM_PG_SHARED_BUFFERS:-256MB}

@@ -52,6 +52,19 @@ Pick the row that covers both your record count and how many people use the CRM 
 - **Disk:** plan on about 4.5 GB per million records (record history is most of it), plus room for backups and file uploads.
 - **Sharing a server** with other apps means sizing for all of them together.
 
+**Postgres memory.** The installer sets these in `.env` on a new install, from the server's memory. When other ProfitPad installs already run on the server, it splits the memory evenly between them. Existing installs keep what their `.env` has; without these lines Postgres uses the Minimum row's values. To size for a different amount (other apps on the server, say), run the first install with `PCRM_PG_MEMORY_MB=4096`, or edit `.env` and run `sudo docker compose up -d`.
+
+| Memory for this install | `PCRM_PG_SHARED_BUFFERS` | `PCRM_PG_EFFECTIVE_CACHE_SIZE` | `PCRM_PG_WORK_MEM` | `PCRM_PG_MAINTENANCE_WORK_MEM` |
+|---|---|---|---|---|
+| 2 GB | 256MB | 1536MB | 16MB | 128MB |
+| 4 GB | 1GB | 3GB | 16MB | 256MB |
+| 8 GB | 2GB | 6GB | 32MB | 512MB |
+| 16 GB | 4GB | 12GB | 32MB | 1GB |
+| 32 GB | 8GB | 24GB | 64MB | 1GB |
+| 64 GB | 16GB | 48GB | 64MB | 1GB |
+
+Two installs on one 8 GB server each use the 4 GB row. `PCRM_PG_RANDOM_PAGE_COST` stays at 1.1, which suits SSD disks.
+
 ### Already running nginx or another web server?
 
 Let it keep ports 80 and 443 and forward your address to the CRM:

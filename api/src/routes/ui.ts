@@ -554,7 +554,7 @@ async function validateColumns(obj: ObjectDef, columns: unknown): Promise<Column
 // search accepts are saved.
 async function validateFilterGroups(obj: ObjectDef, groups: unknown, p: Principal): Promise<FilterGroup[]> {
   if (!Array.isArray(groups)) throw badRequest('filter_groups must be an array');
-  compileFilterGroups(obj, groups as FilterGroup[], [], noneHidden, 't', await filterAssociationContext(groups as FilterGroup[], p));
+  compileFilterGroups(obj, groups as FilterGroup[], [], noneHidden, 't', await filterAssociationContext(obj, groups as FilterGroup[], p));
   return (groups as FilterGroup[]).map((g) => ({
     filters: g.filters.map((f) => ({
       property: f.property,

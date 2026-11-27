@@ -36,6 +36,10 @@ export interface AssociationFilterContext {
   objects: Map<string, ObjectDef>;
   access: (other: ObjectDef, alias: string, params: unknown[]) => string;
   isHidden: (p: PropertyDef) => boolean;
+  // Which way links to each other object (by object_type_id) are stored: a
+  // link takes its label's direction, and default labels run from the lower
+  // object code to the higher. Missing: both ways are searched.
+  directions?: Map<string, { forward: boolean; reverse: boolean }>;
 }
 
 // The objects named by filters on associated records (api names as sent).
@@ -256,34 +260,58 @@ function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], 
   const other = assoc.objects.get(a.object);
   if (!other || !obj.links_to.includes(other.api_name)) throw badRequest(`${obj.api_name} records cannot be associated with "${a.object}"`);
   if (a.label_id !== undefined && (typeof a.label_id !== 'string' || !a.label_id)) throw badRequest('association.label_id must be a label id');
-  // unique aliases, so several association filters can sit side by side
-  const n = params.length + 1;
-  const link = `al${n}`;
-  const other_alias = `ar${n}`;
   params.push(obj.object_type_id, other.object_type_id);
   const from = `$${params.length - 1}::text`;
   const to = `$${params.length}::text`;
-  let label = '';
+  let labelParam = '';
   if (a.label_id) {
     params.push(a.label_id);
-    label = ` and ${link}.label_id = $${params.length}::text`;
+    labelParam = `$${params.length}::text`;
   }
-  const access = assoc.access(other, other_alias, params);
-  const linked = `from crm.associations_both ${link} join crm.${quoteIdent(other.object_type_id)} ${other_alias} on ${other_alias}.${quoteIdent(other.id_column)} = ${link}.other_record_id`
-    + ` where ${link}.object_type_id = ${from} and ${link}.record_id = ${alias}.${quoteIdent(obj.id_column)} and ${link}.other_object_type_id = ${to}${label}`
-    + ` and ${other_alias}.record_status = 'active' and ${access}`;
+  // Reads crm.pc_0005 directly, one direction per subquery, so the planner
+  // can use its from/to indexes (through the two-way associations_both view
+  // it misjudged the row count and gathered every match before sorting: 2 s
+  // at a million contacts, the 2026-11-27 stress test). Each direction gets
+  // its own aliases (unique per filter, so several can sit side by side).
+  const known = assoc.directions?.get(other.object_type_id);
+  const ways = (['forward', 'reverse'] as const).filter((w) => !known || known[w]);
+  if (ways.length === 0) ways.push('forward');
+  const linked = (way: 'forward' | 'reverse') => {
+    const n = params.length + 1;
+    const link = `al${n}`;
+    const o = `ar${n}`;
+    const [mine, theirs, mineType, theirsType] = way === 'forward'
+      ? ['from_id', 'to_id', 'from_object_type', 'to_object_type'] : ['to_id', 'from_id', 'to_object_type', 'from_object_type'];
+    const access = assoc.access(other, o, params);
+    const sql = `from crm.pc_0005 ${link} join crm.${quoteIdent(other.object_type_id)} ${o} on ${o}.${quoteIdent(other.id_column)} = ${link}.${theirs}`
+      + ` where ${link}.${mineType} = ${from} and ${link}.${mine} = ${alias}.${quoteIdent(obj.id_column)} and ${link}.${theirsType} = ${to}`
+      + (labelParam ? ` and ${link}.label_id = ${labelParam}` : '')
+      + ` and ${o}.record_status = 'active' and ${access}`;
+    return { sql, o };
+  };
+  const anyLinked = (extra?: (o: string) => string) => {
+    const parts = ways.map((w) => {
+      const l = linked(w);
+      return `exists (select 1 ${l.sql}${extra ? ` and ${extra(l.o)}` : ''})`;
+    });
+    return parts.length === 1 ? parts[0] : `(${parts.join(' or ')})`;
+  };
 
   if (f.property === ASSOCIATION_COUNT) {
     if (!COUNT_OPERATORS.includes(f.operator)) throw badRequest(`operator "${f.operator}" does not apply to the number of associated ${other.label_plural.toLowerCase()}`);
-    if (f.operator === 'has_property') return `exists (select 1 ${linked})`;
-    if (f.operator === 'not_has_property') return `not exists (select 1 ${linked})`;
+    if (f.operator === 'has_property') return anyLinked();
+    if (f.operator === 'not_has_property') return `not ${anyLinked()}`;
     const count = (v: unknown) => {
       const n = Number(v);
       if (v === null || v === '' || !Number.isInteger(n) || n < 0) throw badRequest(`the number of associated ${other.label_plural.toLowerCase()} must be a whole number, 0 or more`);
       params.push(n);
       return `$${params.length}::integer`;
     };
-    const total = `(select count(distinct ${other_alias}.${quoteIdent(other.id_column)}) ${linked})`;
+    const ids = ways.map((w) => {
+      const l = linked(w);
+      return `select ${l.o}.${quoteIdent(other.id_column)} as id ${l.sql}`;
+    });
+    const total = `(select count(distinct u.id) from (${ids.join(' union all ')}) u)`;
     if (f.operator === 'between') {
       const vals = f.values ?? (Array.isArray(f.value) ? f.value : undefined);
       if (!Array.isArray(vals) || vals.length !== 2) throw badRequest('"between" needs values: [low, high]');
@@ -293,8 +321,7 @@ function compileAssociationFilter(obj: ObjectDef, f: Filter, params: unknown[], 
     return `${total} ${ops[f.operator]} ${count(f.value)}`;
   }
 
-  const inner = compileFilter(other, { property: f.property, operator: f.operator, value: f.value, values: f.values, case_sensitive: f.case_sensitive }, params, assoc.isHidden, other_alias);
-  return `exists (select 1 ${linked} and ${inner})`;
+  return anyLinked((o) => compileFilter(other, { property: f.property, operator: f.operator, value: f.value, values: f.values, case_sensitive: f.case_sensitive }, params, assoc.isHidden, o));
 }
 
 // filter_groups -> "((a and b) or (c))" on the given table alias, or null

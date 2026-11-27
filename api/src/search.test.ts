@@ -54,13 +54,23 @@ const ctx: AssociationFilterContext = {
   isHidden: (p) => p.api_name === 'secret'
 };
 
-test('a filter on associated records is an exists over the links, with access and the other object\'s property', () => {
+// links to companies stored one way only, as default labels are
+const oneWay: AssociationFilterContext = { ...ctx, directions: new Map([['pc_0101', { forward: true, reverse: false }]]) };
+
+test('a filter on associated records is an exists over the links table, with access and the other object\'s property', () => {
   const params: unknown[] = [];
-  const sql = compileFilterGroups(obj, [{ filters: [{ property: 'country', operator: 'in', values: ['CA'], association: { object: 'companies', label_id: 'L1' } }] }], params, () => false, 't', ctx)!;
-  assert.equal(sql, '((exists (select 1 from crm.associations_both al1 join crm."pc_0101" ar1 on ar1."pc_0101_id" = al1.other_record_id'
-    + ' where al1.object_type_id = $1::text and al1.record_id = t."pc_0100_id" and al1.other_object_type_id = $2::text and al1.label_id = $3::text'
-    + ' and ar1.record_status = \'active\' and ar1.owner_ok and ar1."country" = any ($4::text[]))))');
+  const sql = compileFilterGroups(obj, [{ filters: [{ property: 'country', operator: 'in', values: ['CA'], association: { object: 'companies', label_id: 'L1' } }] }], params, () => false, 't', oneWay)!;
+  assert.equal(sql, '((exists (select 1 from crm.pc_0005 al4 join crm."pc_0101" ar4 on ar4."pc_0101_id" = al4.to_id'
+    + ' where al4.from_object_type = $1::text and al4.from_id = t."pc_0100_id" and al4.to_object_type = $2::text and al4.label_id = $3::text'
+    + ' and ar4.record_status = \'active\' and ar4.owner_ok and ar4."country" = any ($4::text[]))))');
   assert.deepEqual(params, ['pc_0100', 'pc_0101', 'L1', ['CA']]);
+});
+
+test('links stored both ways (or unknown) are searched in both directions', () => {
+  const params: unknown[] = [];
+  const sql = compileFilterGroups(obj, [{ filters: [{ property: 'country', operator: 'in', values: ['CA'], association: { object: 'companies' } }] }], params, () => false, 't', ctx)!;
+  assert.match(sql, /^\(\(\(exists \(select 1 from crm\.pc_0005 al3 .* on ar3\."pc_0101_id" = al3\.to_id where al3\.from_object_type = \$1::text and al3\.from_id = t\."pc_0100_id" .*ar3\."country" = any \(\$3::text\[\]\)\) or exists \(select 1 from crm\.pc_0005 al4 .* on ar4\."pc_0101_id" = al4\.from_id where al4\.to_object_type = \$1::text and al4\.to_id = t\."pc_0100_id" and al4\.from_object_type = \$2::text .*ar4\."country" = any \(\$4::text\[\]\)\)\)\)\)$/);
+  assert.deepEqual(params, ['pc_0100', 'pc_0101', ['CA'], ['CA']]);
 });
 
 test('association filters are refused without a context, on unlinkable objects and on hidden properties', () => {
@@ -73,14 +83,14 @@ test('association filters are refused without a context, on unlinkable objects a
 test('property __count on an association filters on how many linked records there are', () => {
   const run = (f: Filter) => {
     const params: unknown[] = [];
-    return { sql: compileFilterGroups(obj, [{ filters: [f] }], params, () => false, 't', ctx)!, params };
+    return { sql: compileFilterGroups(obj, [{ filters: [f] }], params, () => false, 't', oneWay)!, params };
   };
-  const linked = 'from crm.associations_both al1 join crm."pc_0101" ar1 on ar1."pc_0101_id" = al1.other_record_id'
-    + ' where al1.object_type_id = $1::text and al1.record_id = t."pc_0100_id" and al1.other_object_type_id = $2::text'
-    + ' and ar1.record_status = \'active\' and ar1.owner_ok';
+  const linked = 'from crm.pc_0005 al3 join crm."pc_0101" ar3 on ar3."pc_0101_id" = al3.to_id'
+    + ' where al3.from_object_type = $1::text and al3.from_id = t."pc_0100_id" and al3.to_object_type = $2::text'
+    + ' and ar3.record_status = \'active\' and ar3.owner_ok';
   assert.equal(run({ property: '__count', operator: 'not_has_property', association: { object: 'companies' } }).sql, `((not exists (select 1 ${linked})))`);
   assert.deepEqual(run({ property: '__count', operator: 'gte', value: 2, association: { object: 'companies' } }),
-    { sql: `(((select count(distinct ar1."pc_0101_id") ${linked}) >= $3::integer))`, params: ['pc_0100', 'pc_0101', 2] });
+    { sql: `(((select count(distinct u.id) from (select ar3."pc_0101_id" as id ${linked}) u) >= $3::integer))`, params: ['pc_0100', 'pc_0101', 2] });
   assert.throws(() => run({ property: '__count', operator: 'contains', value: 'x', association: { object: 'companies' } }), /does not apply/);
   assert.throws(() => run({ property: '__count', operator: 'eq', value: -1, association: { object: 'companies' } }), /whole number/);
 });

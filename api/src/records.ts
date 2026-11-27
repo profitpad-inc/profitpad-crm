@@ -269,7 +269,7 @@ export async function batchReadRecords(
 // linked objects they name, each readable by the caller, with the caller's
 // record access and hidden properties. principal null (checking a saved
 // filter's shape) skips the access checks. undefined when no filter needs one.
-export async function filterAssociationContext(groups: FilterGroup[] | undefined, principal: Principal | null): Promise<AssociationFilterContext | undefined> {
+export async function filterAssociationContext(obj: ObjectDef, groups: FilterGroup[] | undefined, principal: Principal | null): Promise<AssociationFilterContext | undefined> {
   const names = filterAssociationObjects(groups);
   if (names.length === 0) return undefined;
   const objects = new Map<string, ObjectDef>();
@@ -279,8 +279,21 @@ export async function filterAssociationContext(groups: FilterGroup[] | undefined
     if (principal) requireObjectPermission(principal, other, 'read');
     objects.set(name, other);
   }
+  // which way the links are stored: from the labels between the two objects
+  // (archived ones too, their links remain)
+  const codes = [...new Set([...objects.values()].map((o) => o.object_type_id))];
+  const { rows } = await pool.query(
+    `select o as code, bool_or(l.from_object_type = $1 and l.to_object_type = o) as forward,
+            bool_or(l.from_object_type = o and l.to_object_type = $1) as reverse
+     from unnest($2::text[]) o left join meta.pc_0004 l
+       on (l.from_object_type = $1 and l.to_object_type = o) or (l.from_object_type = o and l.to_object_type = $1)
+     group by o`,
+    [obj.object_type_id, codes]
+  );
+  const directions = new Map(rows.map((r) => [r.code as string, { forward: r.forward === true, reverse: r.reverse === true }]));
   return {
     objects,
+    directions,
     access: (other, alias, params) => (principal ? recordFilter(principal, other, params, alias) : 'true'),
     isHidden: (p) => (principal ? propertyAccess(principal, p) === 'hidden' : false)
   };
@@ -293,7 +306,7 @@ export async function searchRecords(obj: ObjectDef, principal: Principal, req: S
   const props = visibleProperties(obj, principal, req.properties);
   const params: unknown[] = [];
   const hidden = (p: PropertyDef) => propertyAccess(principal, p) === 'hidden';
-  const q = compileSearch(obj, req, params, hidden, await filterAssociationContext(req.filter_groups, principal));
+  const q = compileSearch(obj, req, params, hidden, await filterAssociationContext(obj, req.filter_groups, principal));
   const access = recordFilter(principal, obj, params);
   const table = `crm.${quoteIdent(obj.object_type_id)}`;
   // The count stops at TOTAL_CAP (searches page up to 10,000 results anyway),
