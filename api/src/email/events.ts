@@ -77,7 +77,30 @@ async function campaignOf(c: pg.PoolClient, email: EmailRow | null): Promise<str
   return (await linked(c, email.id, 'pc_0058'))[0] ?? null;
 }
 
-export type OptOutReason = 'unsubscribed' | 'hard_bounce' | 'spam_complaint' | 'manual';
+export type OptOutReason = 'unsubscribed' | 'hard_bounce' | 'spam_complaint' | 'manual' | 'suppressed' | 'soft_bounces';
+
+// Soft bounces in a row (no delivery in between) that opt an address out:
+// Postmark's guidance is 3 to 5; mailbox-full and over-quota addresses rarely
+// recover once they have failed this often.
+export const SOFT_BOUNCE_LIMIT = 3;
+
+// Counts a soft bounce for an address; true when it reached the limit.
+export async function countSoftBounce(c: pg.PoolClient, address: string, messageId: string | null): Promise<boolean> {
+  const { rows } = await c.query(
+    `insert into auth.email_soft_bounces (email, count, last_message_id, last_at) values (lower($1), 1, $2, now())
+     on conflict (email) do update set
+       count = auth.email_soft_bounces.count + case when auth.email_soft_bounces.last_message_id is not distinct from excluded.last_message_id then 0 else 1 end,
+       last_message_id = excluded.last_message_id, last_at = now()
+     returning count`,
+    [address, messageId]
+  );
+  return rows[0].count >= SOFT_BOUNCE_LIMIT;
+}
+
+// A delivery means the address works again.
+export async function clearSoftBounces(c: pg.PoolClient, address: string | null): Promise<void> {
+  if (address) await c.query('delete from auth.email_soft_bounces where email = lower($1)', [address]);
+}
 
 export async function optOut(c: pg.PoolClient, contactIds: string[], reason: OptOutReason, campaignId: string | null): Promise<void> {
   if (!contactIds.length) return;
@@ -118,6 +141,7 @@ export async function handleEvent(p: Payload, traceId: string | undefined): Prom
 
     switch (type) {
       case 'Delivery':
+        await clearSoftBounces(c, str(p.Recipient));
         if (email) {
           await c.query(
             `update crm.pc_0031 set delivered_at = coalesce(delivered_at, $2::timestamptz),
@@ -160,7 +184,14 @@ export async function handleEvent(p: Payload, traceId: string | undefined): Prom
             [email.id, why.slice(0, 2000) || 'bounced', hard, time(p.BouncedAt)]
           );
         }
-        if (hard) await optOut(c, await contactsFor(c, email, str(p.Email)), 'hard_bounce', campaign);
+        if (hard) {
+          await optOut(c, await contactsFor(c, email, str(p.Email)), 'hard_bounce', campaign);
+        } else if ((p.Type === 'SoftBounce' || p.TypeCode === 4096) && str(p.Email)) {
+          // mailbox full, account disabled, over quota: a few in a row and the address stops getting marketing email
+          if (await countSoftBounce(c, str(p.Email)!, str(p.MessageID))) {
+            await optOut(c, await contactsFor(c, email, str(p.Email)), 'soft_bounces', campaign);
+          }
+        }
         break;
       }
       case 'SpamComplaint':

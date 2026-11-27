@@ -10,10 +10,13 @@ import { useUrlSearch } from '../lib/use-url-search';
 
 // Settings → Notification emails (admins, migration 0099): the system address
 // internal notifications come from (e.g. noreply@), sent through the Google or
-// Microsoft service account of Settings → Mailboxes, and the log of every
-// notification email (mentions, tasks assigned, the API, tests).
+// Microsoft service account of Settings → Mailboxes or (migration 0150)
+// Postmark from Settings → Email, and the log of every notification email
+// (mentions, tasks assigned, the API, tests).
 
-type Provider = 'google' | 'microsoft';
+type MailboxProvider = 'google' | 'microsoft';
+type Provider = MailboxProvider | 'postmark';
+type Via = 'mailbox' | 'postmark';
 type Status = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped';
 type Kind = 'mention' | 'task_assigned' | 'invite' | 'api' | 'test';
 
@@ -31,7 +34,8 @@ interface Sender {
 
 interface State {
   sender: Sender | null;
-  providers: { provider: Provider; ready: boolean; domains: string[] }[];
+  providers: { provider: MailboxProvider; ready: boolean; domains: string[] }[];
+  postmark: { connected: boolean; problem: string | null; from_address: string | null; from_name: string | null };
   ui_url_set: boolean;
 }
 
@@ -56,7 +60,7 @@ interface LogRow {
   actor_name: string | null;
 }
 
-const PROVIDER_LABEL: Record<Provider, string> = { google: 'Google Workspace', microsoft: 'Microsoft 365' };
+const PROVIDER_LABEL: Record<Provider, string> = { google: 'Google Workspace', microsoft: 'Microsoft 365', postmark: 'Postmark' };
 const KIND_LABEL: Record<Kind, string> = { mention: 'Mention', task_assigned: 'Task assigned', invite: 'Invite', api: 'API', test: 'Test' };
 const STATUS_LABEL: Record<Status, string> = { queued: 'Waiting', sending: 'Sending', sent: 'Sent', failed: 'Failed', skipped: 'Skipped' };
 const tone = (s: Status): Tone => (s === 'sent' ? 'on' : s === 'failed' ? 'failed' : s === 'skipped' ? 'off' : 'pending');
@@ -95,7 +99,10 @@ export function NotificationEmailSettings() {
 function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => void }) {
   const { toast, me } = useApp();
   const s = state.sender;
-  const [mailbox, setMailbox] = useState(s?.mailbox ?? '');
+  const ready = state.providers.filter((p) => p.ready);
+  const savedVia: Via | null = s ? (s.provider === 'postmark' ? 'postmark' : 'mailbox') : null;
+  const [via, setVia] = useState<Via>(savedVia ?? (ready.length === 0 && state.postmark.connected ? 'postmark' : 'mailbox'));
+  const [mailbox, setMailbox] = useState(s && s.provider !== 'postmark' ? s.mailbox : '');
   const [fromAddress, setFromAddress] = useState(s?.from_address ?? '');
   const [fromName, setFromName] = useState(s?.from_name ?? '');
   const [testTo, setTestTo] = useState('');
@@ -104,15 +111,20 @@ function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => v
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setMailbox(s?.mailbox ?? '');
+    if (s) setVia(s.provider === 'postmark' ? 'postmark' : 'mailbox');
+    setMailbox(s && s.provider !== 'postmark' ? s.mailbox : '');
     setFromAddress(s?.from_address ?? '');
     setFromName(s?.from_name ?? '');
-  }, [s?.mailbox, s?.from_address, s?.from_name]);
+  }, [s?.provider, s?.mailbox, s?.from_address, s?.from_name]);
 
-  const ready = state.providers.filter((p) => p.ready);
+  const postmark = via === 'postmark';
   const domain = mailbox.trim().toLowerCase().split('@')[1] ?? '';
   const provider = ready.find((p) => p.domains.includes(domain))?.provider ?? null;
-  const dirty = mailbox.trim().toLowerCase() !== (s?.mailbox ?? '') || (fromAddress.trim().toLowerCase() || mailbox.trim().toLowerCase()) !== (s?.from_address ?? '') || fromName.trim() !== (s?.from_name ?? '');
+  const from = postmark ? fromAddress.trim().toLowerCase() : fromAddress.trim().toLowerCase() || mailbox.trim().toLowerCase();
+  const dirty = via !== savedVia
+    || (!postmark && mailbox.trim().toLowerCase() !== (s?.provider === 'postmark' ? '' : s?.mailbox ?? ''))
+    || from !== (s?.from_address ?? '') || fromName.trim() !== (s?.from_name ?? '');
+  const canSave = postmark ? !!fromAddress.trim() && state.postmark.connected : !!mailbox.trim();
 
   async function put(body: Record<string, unknown>, done: string) {
     setBusy(true);
@@ -151,13 +163,16 @@ function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => v
     <SettingsSection
       title="System sender"
       actions={pill}
-      description={<>
+      description={postmark ? <>
+        Sent through Postmark's transactional stream, set up in <Link to="/settings/email">Email</Link>. The From address must be on a domain confirmed in Postmark; no mailbox or alias is needed.
+      </> : <>
         The Google or Microsoft service account from <Link to="/settings/mailboxes">Mailboxes</Link> sends as a real mailbox: a licensed user (for example noreply@ itself), or a user that has the system address as an alias.
         On Google, add the alias in that user's Gmail settings (Accounts, Send mail as). On Microsoft, add it as an email alias of the user and turn on Send from aliases in Mailboxes (Exchange must allow SendFromAliasesEnabled).
       </>}
     >
       {error && <div className="error">{error}</div>}
-      {ready.length === 0 && <div className="callout warn">Set up Google or Microsoft in <Link to="/settings/mailboxes">Mailboxes</Link> first.</div>}
+      {!postmark && ready.length === 0 && <div className="callout warn">Set up Google or Microsoft in <Link to="/settings/mailboxes">Mailboxes</Link> first, or send through Postmark.</div>}
+      {postmark && state.postmark.problem && <div className="callout warn">{state.postmark.problem}. <Link to="/settings/email">Open Email settings</Link></div>}
       {!state.ui_url_set && <div className="callout warn">UI_URL is not set on the server, so the buttons in the emails link to a path only. Set it to the address people sign in at.</div>}
       {s?.status === 'error' && s.last_error && !test && <div className="callout warn">Last test: {s.last_error}</div>}
 
@@ -167,19 +182,28 @@ function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => v
       <SettingRow label="Invite new users" hint="Emails each new user an invite to sign in when their user is created with an email address. Admins can also send one from Users.">
         <label><input type="checkbox" role="switch" checked={!!s?.invite_new_users} disabled={busy || !s} onChange={(e) => put({ invite_new_users: e.target.checked }, e.target.checked ? 'New users will get an invite.' : 'New users will not get an invite.')} /> {s?.invite_new_users ? 'On' : 'Off'}</label>
       </SettingRow>
-      <SettingRow label="Mailbox" htmlFor="ne-mailbox" hint={provider ? `Sent through ${PROVIDER_LABEL[provider]}. The service account acts as this user.` : domain ? `${domain} is not a domain in Mailboxes.` : 'The licensed user the service account sends as.'}>
-        <input id="ne-mailbox" type="text" inputMode="email" autoCapitalize="none" value={mailbox} placeholder="noreply@example.com" spellCheck={false} onChange={(e) => setMailbox(e.target.value)} />
+      <SettingRow label="Send through" hint={postmark ? 'Postmark, from Settings → Email.' : 'The Google or Microsoft service account from Settings → Mailboxes.'}>
+        <Select value={via} onChange={(v) => { setVia(v as Via); if (v === 'postmark' && !fromAddress.trim() && state.postmark.from_address) setFromAddress(state.postmark.from_address); }} aria-label="Send through">
+          <option value="mailbox">Google or Microsoft (Mailboxes)</option>
+          <option value="postmark">Postmark (Email)</option>
+        </Select>
       </SettingRow>
-      <SettingRow label="From address" htmlFor="ne-from" hint="Leave empty to send from the mailbox itself. Otherwise one of its aliases, such as noreply@.">
-        <input id="ne-from" type="text" inputMode="email" autoCapitalize="none" value={fromAddress} placeholder={mailbox.trim() || 'noreply@example.com'} spellCheck={false} onChange={(e) => setFromAddress(e.target.value)} />
+      {!postmark && (
+        <SettingRow label="Mailbox" htmlFor="ne-mailbox" hint={provider ? `Sent through ${PROVIDER_LABEL[provider]}. The service account acts as this user.` : domain ? `${domain} is not a domain in Mailboxes.` : 'The licensed user the service account sends as.'}>
+          <input id="ne-mailbox" type="text" inputMode="email" autoCapitalize="none" value={mailbox} placeholder="noreply@example.com" spellCheck={false} onChange={(e) => setMailbox(e.target.value)} />
+        </SettingRow>
+      )}
+      <SettingRow label="From address" htmlFor="ne-from" hint={postmark ? 'On a domain confirmed in Postmark, such as noreply@.' : 'Leave empty to send from the mailbox itself. Otherwise one of its aliases, such as noreply@.'}>
+        <input id="ne-from" type="text" inputMode="email" autoCapitalize="none" value={fromAddress}
+          placeholder={postmark ? state.postmark.from_address ?? 'noreply@example.com' : mailbox.trim() || 'noreply@example.com'} spellCheck={false} onChange={(e) => setFromAddress(e.target.value)} />
       </SettingRow>
       <SettingRow label="From name" htmlFor="ne-name" hint="Shown as the sender's name, for example ProfitPad CRM.">
-        <input id="ne-name" value={fromName} maxLength={100} placeholder="ProfitPad CRM" onChange={(e) => setFromName(e.target.value)} />
+        <input id="ne-name" value={fromName} maxLength={100} placeholder={(postmark && state.postmark.from_name) || 'ProfitPad CRM'} onChange={(e) => setFromName(e.target.value)} />
       </SettingRow>
       <div className="key-row">
-        <button className="btn primary" disabled={busy || !dirty || !mailbox.trim()} onClick={() => put({
-          mailbox: mailbox.trim(), from_address: fromAddress.trim() || mailbox.trim(), from_name: fromName.trim()
-        }, 'Sender saved.')}>Save sender</button>
+        <button className="btn primary" disabled={busy || !dirty || !canSave} onClick={() => put(postmark
+          ? { via, from_address: fromAddress.trim(), from_name: fromName.trim() }
+          : { via, mailbox: mailbox.trim(), from_address: fromAddress.trim() || mailbox.trim(), from_name: fromName.trim() }, 'Sender saved.')}>Save sender</button>
       </div>
 
       {s && (

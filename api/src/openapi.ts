@@ -318,8 +318,8 @@ function notificationPaths(): Record<string, Schema> {
   const kind = { type: 'string', enum: ['mention', 'task_assigned', 'invite', 'api', 'test'] };
   const status = { type: 'string', enum: ['queued', 'sending', 'sent', 'failed', 'skipped'] };
   const sender = { type: 'object', nullable: true, properties: {
-    provider: { type: 'string', enum: ['google', 'microsoft'] },
-    mailbox: { type: 'string', description: 'The user the service account acts as' },
+    provider: { type: 'string', enum: ['google', 'microsoft', 'postmark'] },
+    mailbox: { type: 'string', description: 'The user the service account acts as (with Postmark: the from address)' },
     from_address: { type: 'string', description: 'The mailbox or one of its aliases' },
     from_name: { type: 'string', nullable: true },
     enabled: { type: 'boolean' },
@@ -361,7 +361,8 @@ function notificationPaths(): Record<string, Schema> {
   return {
     '/v1/notifications/settings': {
       get: { tags, summary: 'The system sender (admin)', description: 'The address notification emails come from, sent through the Google or Microsoft service account of Settings → Mailboxes, plus which providers are ready. sender is null until set up.', operationId: 'get_notification_settings', responses: { 200: settings, ...errors } },
-      put: { tags, summary: 'Set up the system sender (admin)', description: 'Admins; a browser session needs a sign-in within 4 hours. Fields not sent stay. mailbox must be in a domain of a ready provider in Settings → Mailboxes; the provider follows from it. from_address defaults to the mailbox and must be the mailbox or one of its aliases (checked by the test, not here). Changing the mailbox or From resets the test status.', operationId: 'update_notification_settings', requestBody: body({ type: 'object', properties: {
+      put: { tags, summary: 'Set up the system sender (admin)', description: 'Admins; a browser session needs a sign-in within 4 hours. Fields not sent stay. via picks the way out: mailbox (default; the provider follows from the mailbox, which must be in a domain of a ready provider in Settings → Mailboxes) or postmark (Postmark\'s transactional stream from Settings → Email; no mailbox, from_address required, on a domain confirmed in Postmark). from_address defaults to the mailbox and must be the mailbox or one of its aliases (checked by the test, not here). Changing the mailbox or From resets the test status.', operationId: 'update_notification_settings', requestBody: body({ type: 'object', properties: {
+        via: { type: 'string', enum: ['mailbox', 'postmark'] },
         mailbox: { type: 'string', example: 'noreply@example.com' },
         from_address: { type: 'string', example: 'noreply@example.com' },
         from_name: { type: 'string', nullable: true, example: 'ProfitPad CRM' },
@@ -621,7 +622,7 @@ export async function buildOpenApi(serverUrl: string): Promise<Schema> {
       properties: {
         property: { type: 'string' },
         operator: { type: 'string', enum: [...OPERATORS] },
-        value: { description: 'Single value (eq, neq, lt, lte, gt, gte, contains, not_contains, starts_with, ends_with; a whole number of days for last_n_days, next_n_days, more_than_n_days_ago on dates)' },
+        value: { description: 'Single value (eq, neq, lt, lte, gt, gte, contains, not_contains, starts_with, ends_with; on dropdowns contains and not_contains search the option labels; a whole number of days for last_n_days, next_n_days, more_than_n_days_ago on dates)' },
         values: { type: 'array', items: {}, description: 'Several values (in, not_in, contains_all, between)' },
         case_sensitive: { type: 'boolean', description: 'Text only. false: eq, neq, in and not_in ignore case. true: contains, not_contains, starts_with and ends_with match case. Omitted: equality is exact, the others ignore case' },
         association: {

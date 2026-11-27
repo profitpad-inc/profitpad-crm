@@ -194,6 +194,19 @@ function compileFilter(
         return `not coalesce(${col} && ${p(list(), 'text[]')}, false)`;
       case 'contains_all':
         return `${col} @> ${p(list(), 'text[]')}`;
+      case 'contains':
+      case 'not_contains': {
+        // dropdowns: a string search over the options' labels (and values),
+        // turned into the matching options so the array index still applies
+        if (t !== 'dropdown') throw badRequest(`operator "${f.operator}" does not apply to ${prop.type} properties`);
+        if (typeof f.value !== 'string') throw badRequest(`filter on "${prop.api_name}" expects a string`);
+        const exact = f.case_sensitive === true;
+        const s = exact ? f.value.trim() : f.value.trim().toLowerCase();
+        const has = (x: string) => (exact ? x : x.toLowerCase()).includes(s);
+        const matched = prop.dropdown_options.filter((o) => has(o.label) || has(o.api_value)).map((o) => o.api_value);
+        const any = `coalesce(${col} && ${p(matched, 'text[]')}, false)`;
+        return f.operator === 'contains' ? any : `not ${any}`;
+      }
       default:
         throw badRequest(`operator "${f.operator}" does not apply to ${prop.type} properties`);
     }

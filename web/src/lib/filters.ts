@@ -116,15 +116,23 @@ const COUNT: OperatorDef[] = [
   { value: 'between', label: 'is between', input: 'range' }
 ];
 
+// "contains exactly" searches the options' labels as text
+const DROPDOWN_TEXT: OperatorDef[] = [
+  { value: 'contains', label: 'contains exactly', input: 'single', text: true },
+  { value: 'not_contains', label: "doesn't contain exactly", input: 'single', text: true }
+];
+
 const DROPDOWN: OperatorDef[] = [
   { value: 'in', label: 'is any of', input: 'option_list' },
   { value: 'not_in', label: 'is none of', input: 'option_list' },
+  ...DROPDOWN_TEXT,
   ...KNOWN
 ];
 
 const DROPDOWN_MULTI: OperatorDef[] = [
   ...DROPDOWN.slice(0, 2),
   { value: 'contains_all', label: 'is all of', input: 'option_list' },
+  ...DROPDOWN_TEXT,
   ...KNOWN
 ];
 
@@ -169,6 +177,37 @@ export function newFilter(field: FilterField): Filter {
     ...(field.association ? { association: { object: field.association.object } } : {}),
     ...(op.text ? { case_sensitive: false } : {})
   };
+}
+
+// Field types whose values carry over when the property changes: text, email
+// and phone take the same strings; numbers and dates keep theirs too, and
+// dropdowns theirs when both have the same options.
+function valueKind(field: FilterField): string | undefined {
+  if (field.count) return 'count';
+  switch (field.type) {
+    case 'text': case 'email': case 'phone': return 'string';
+    case 'number': return 'number';
+    case 'date': case 'datetime': return 'date';
+    case 'dropdown': return 'dropdown:' + (field.options ?? []).map((o) => o.value).sort().join('\u0000');
+    default: return undefined;
+  }
+}
+
+// The condition on another property. Between properties of the same kind
+// (one text property to another, say) the operator and values stay; otherwise
+// it starts fresh.
+export function withProperty(prev: FilterField | undefined, next: FilterField, f: Filter): Filter {
+  const fresh = newFilter(next);
+  const kind = prev && valueKind(prev);
+  if (!kind || kind !== valueKind(next)) return fresh;
+  const op = operatorOf(next, f.operator);
+  if (!op) return fresh;
+  const out: Filter = { ...fresh, operator: op.value };
+  if (op.text) out.case_sensitive = f.case_sensitive ?? false;
+  else delete out.case_sensitive;
+  if (f.value !== undefined) out.value = f.value;
+  if (f.values !== undefined) out.values = f.values;
+  return out;
 }
 
 // The condition with another operator, keeping the value when it fits.
@@ -366,6 +405,14 @@ function matchOne(row: Record<string, unknown>, f: Filter, field: FilterField): 
   const values = (f.values ?? []).map(String);
 
   if (field.type === 'dropdown') {
+    if (f.operator === 'contains' || f.operator === 'not_contains') {
+      // the options' labels (and values), as the search API does
+      const fold = f.case_sensitive !== true;
+      const norm = (s: string) => (fold ? s.toLowerCase() : s);
+      const needle = norm(String(f.value ?? '').trim());
+      const hit = texts.some((t) => norm(optionText(field, t)).includes(needle) || norm(t).includes(needle));
+      return f.operator === 'contains' ? hit : !hit;
+    }
     if (f.operator === 'in') return texts.some((t) => values.includes(t));
     if (f.operator === 'not_in') return !texts.some((t) => values.includes(t));
     if (f.operator === 'contains_all') return values.every((v) => texts.includes(v));

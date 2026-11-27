@@ -8,9 +8,10 @@ import { logEvent } from '../audit.js';
 import { serverInfo } from './postmark.js';
 import { isGmailTypo } from '../email-typo.js';
 
-// Settings → Email (auth.email_settings, migration 0094): the Postmark server
-// token, the default sender, the reply domain and the mailing address that
-// goes in every marketing email's footer. The token and the webhook password
+// Settings → Email (auth.email_settings, migrations 0094 and 0149): the
+// Postmark server token, the default senders (one for one-to-one email, one
+// for marketing, which falls back to the first), the reply domain and the
+// mailing address that goes in every marketing email's footer. The token and the webhook password
 // are sealed (secret-box.ts) and only admins see this.
 
 export interface EmailSettings {
@@ -19,6 +20,8 @@ export interface EmailSettings {
   token_hint: string | null;
   from_name: string | null;
   from_address: string | null;
+  marketing_from_name: string | null;
+  marketing_from_address: string | null;
   reply_domain: string | null;
   fallback_address: string | null;
   mailing_address: string | null;
@@ -28,7 +31,7 @@ export interface EmailSettings {
 }
 
 const EMPTY: EmailSettings = {
-  enabled: false, token: null, token_hint: null, from_name: null, from_address: null, reply_domain: null,
+  enabled: false, token: null, token_hint: null, from_name: null, from_address: null, marketing_from_name: null, marketing_from_address: null, reply_domain: null,
   fallback_address: null, mailing_address: null, broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
 };
 
@@ -50,7 +53,8 @@ export async function loadEmailSettings(): Promise<EmailSettings> {
   const value: EmailSettings = r
     ? {
         enabled: r.enabled, token: unseal(r.server_token), token_hint: r.token_hint, from_name: r.from_name,
-        from_address: r.from_address, reply_domain: r.reply_domain, fallback_address: r.fallback_address,
+        from_address: r.from_address, marketing_from_name: r.marketing_from_name, marketing_from_address: r.marketing_from_address,
+        reply_domain: r.reply_domain, fallback_address: r.fallback_address,
         mailing_address: r.mailing_address, broadcast_stream: r.broadcast_stream, transactional_stream: r.transactional_stream,
         webhook_secret: unseal(r.webhook_secret)
       }
@@ -76,6 +80,15 @@ export async function readySettings(): Promise<EmailSettings & { token: string; 
   const m = missing(s);
   if (m.length) throw new ApiError(503, `Email is not set up yet: it needs ${m.join(', ')} (Settings → Email).`, 'email_not_configured');
   return s as EmailSettings & { token: string; from_address: string };
+}
+
+// Who marketing email comes from: the campaign's own sender, else the
+// marketing default, else the one-to-one sender.
+export function marketingSender(s: EmailSettings, campaign?: { from_name: string | null; from_address: string | null }): { name: string | null; address: string } {
+  return {
+    name: campaign?.from_name || s.marketing_from_name || s.from_name,
+    address: campaign?.from_address || s.marketing_from_address || s.from_address!
+  };
 }
 
 // "Name <address>", quoting the name when it has characters that need it.
@@ -114,6 +127,8 @@ export function settingsOut(s: EmailSettings, req: FastifyRequest) {
     has_token: !!s.token,
     from_name: s.from_name,
     from_address: s.from_address,
+    marketing_from_name: s.marketing_from_name,
+    marketing_from_address: s.marketing_from_address,
     reply_domain: s.reply_domain,
     fallback_address: s.fallback_address,
     mailing_address: s.mailing_address,
@@ -127,7 +142,7 @@ export function settingsOut(s: EmailSettings, req: FastifyRequest) {
   };
 }
 
-type Body = Partial<Record<'enabled' | 'server_token' | 'from_name' | 'from_address' | 'reply_domain' | 'fallback_address'
+type Body = Partial<Record<'enabled' | 'server_token' | 'from_name' | 'from_address' | 'marketing_from_name' | 'marketing_from_address' | 'reply_domain' | 'fallback_address'
   | 'mailing_address' | 'broadcast_stream' | 'transactional_stream' | 'new_webhook_secret', unknown>>;
 
 const text = (v: unknown, name: string, max: number): string | null => {
@@ -146,9 +161,11 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
     next.enabled = b.enabled;
   }
   if (b.from_name !== undefined) next.from_name = text(b.from_name, 'The from name', 100);
-  for (const k of ['from_address', 'fallback_address'] as const) {
+  if (b.marketing_from_name !== undefined) next.marketing_from_name = text(b.marketing_from_name, 'The marketing from name', 100);
+  const LABELS = { from_address: 'The from address', marketing_from_address: 'The marketing from address', fallback_address: 'The fallback address' };
+  for (const k of ['from_address', 'marketing_from_address', 'fallback_address'] as const) {
     if (b[k] === undefined) continue;
-    const v = text(b[k], k === 'from_address' ? 'The from address' : 'The fallback address', 254);
+    const v = text(b[k], LABELS[k], 254);
     if (v && !isEmail(v)) throw badRequest(`"${v}" is not an email address`, { property: k });
     if (v && isGmailTypo(v)) throw badRequest(`"${v}" looks like a typo, did you mean @gmail.com?`, { property: k });
     next[k] = v ? v.toLowerCase() : null;
@@ -189,6 +206,7 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
   await pool.query(
     `update auth.email_settings set enabled = $1, from_name = $2, from_address = $3, reply_domain = $4, fallback_address = $5,
        mailing_address = $6, broadcast_stream = $7, transactional_stream = $8,
+       marketing_from_name = $14, marketing_from_address = $15,
        server_token = case when $9 then $10 else server_token end,
        token_hint = case when $9 then $11 else token_hint end,
        webhook_secret = coalesce($12, webhook_secret),
@@ -196,13 +214,13 @@ export async function saveEmailSettings(req: FastifyRequest, p: Principal, b: Bo
      where id`,
     [next.enabled, next.from_name, next.from_address, next.reply_domain, next.fallback_address, next.mailing_address,
       next.broadcast_stream, next.transactional_stream, tokenChange !== undefined, tokenChange?.sealed ?? null,
-      tokenChange?.hint ?? null, secretChange ?? null, p.actor]
+      tokenChange?.hint ?? null, secretChange ?? null, p.actor, next.marketing_from_name, next.marketing_from_address]
   );
   clearEmailSettingsCache();
   await logEvent(req, 'settings.updated', {
     target: { type: 'setting', id: 'email' },
     details: {
-      enabled: next.enabled, from_address: next.from_address, reply_domain: next.reply_domain,
+      enabled: next.enabled, from_address: next.from_address, marketing_from_address: next.marketing_from_address, reply_domain: next.reply_domain,
       ...(tokenChange ? { server_token: tokenChange.sealed ? `replaced (${server})` : 'removed' } : {}),
       ...(secretChange ? { webhook_secret: 'replaced' } : {})
     }

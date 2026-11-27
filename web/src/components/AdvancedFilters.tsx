@@ -4,7 +4,7 @@ import { Boxes, Calendar, CalendarClock, ChevronLeft, ChevronRight, Copy, Hash, 
 import { Select } from './Select';
 import { DatePicker } from './DatePicker';
 import {
-  FIELD_TYPE_LABELS, MAX_FILTERS, MAX_GROUPS, daysSuffix, filterKey, newFilter, operatorOf, operatorsFor, withOperator,
+  FIELD_TYPE_LABELS, MAX_FILTERS, MAX_GROUPS, daysSuffix, filterKey, newFilter, operatorOf, operatorsFor, withOperator, withProperty,
   type Filter, type FilterField, type FilterFieldType, type FilterGroup
 } from '../lib/filters';
 import '../advanced-filters.css';
@@ -127,7 +127,7 @@ function Condition({ fields, field, filter, cls, onChange, onRemove }: {
       <div className="af-cond-fields">
         {filter.association && !field?.count && <div className="af-cond-object">Associated {(field?.group ?? filter.association.object).toLowerCase()}</div>}
         <Select className={cls.select} value={key} aria-label="Property"
-          onChange={(v) => { const nf = fields.find((x) => x.key === v); if (nf) onChange(newFilter(nf)); }}
+          onChange={(v) => { const nf = fields.find((x) => x.key === v); if (nf) onChange(withProperty(field, nf, filter)); }}
           options={options} />
         {field && (
           <Select className={cls.select} value={filter.operator} aria-label="Condition" search

@@ -6,7 +6,8 @@ import { logEvent } from '../audit.js';
 import { isAdmin } from '../routes/ui.js';
 import { cleanAddresses } from '../mailbox/send.js';
 import { loadProviders, MAIL_PROVIDERS, providerFor, providerReady } from '../mailbox/providers.js';
-import { deliver, loadSender, PREFERENCE_VALUES, queueApiEmail, queueInvite, sendTest, type ApiEmailInput } from './emails.js';
+import { deliver, loadSender, postmarkProblem, PREFERENCE_VALUES, queueApiEmail, queueInvite, sendTest, type ApiEmailInput } from './emails.js';
+import { isEmail, loadEmailSettings } from '../email/settings.js';
 
 // Settings → Notification emails (admins): the system sender, a test, and
 // the log of every notification email; plus POST /v1/notifications/email for
@@ -22,9 +23,12 @@ const STATUSES = ['queued', 'sending', 'sent', 'failed', 'skipped'];
 async function settingsOut() {
   const sender = await loadSender();
   const providers = await loadProviders();
+  const email = await loadEmailSettings();
   return {
     sender,
     providers: MAIL_PROVIDERS.map((p) => ({ provider: p, ready: providerReady(providers.get(p)), domains: providers.get(p)?.domains ?? [] })),
+    // Postmark (Settings → Email): problem is null when it can send
+    postmark: { connected: !!email.token, problem: await postmarkProblem(), from_address: email.from_address, from_name: email.from_name },
     ui_url_set: !!process.env.UI_URL
   };
 }
@@ -35,14 +39,19 @@ export async function notificationRoutes(app: FastifyInstance) {
     return settingsOut();
   });
 
-  // mailbox (the user the service account acts as), from_address (it or one
-  // of its aliases, e.g. noreply@), from_name, enabled, invite_new_users
-  app.put<{ Body: { mailbox?: unknown; from_address?: unknown; from_name?: unknown; enabled?: unknown; invite_new_users?: unknown } }>('/v1/notifications/settings', async (req) => {
+  // via: 'mailbox' (a Google or Microsoft service account) or 'postmark';
+  // mailbox (the user the service account acts as; not for Postmark),
+  // from_address (the mailbox or one of its aliases, e.g. noreply@; with
+  // Postmark an address on a domain confirmed there), from_name, enabled,
+  // invite_new_users
+  app.put<{ Body: { via?: unknown; mailbox?: unknown; from_address?: unknown; from_name?: unknown; enabled?: unknown; invite_new_users?: unknown } }>('/v1/notifications/settings', async (req) => {
     const p = req.principal!;
     requireAdmin(p);
     requireRecentSignIn(p);
     const b = req.body ?? {};
     const cur = await loadSender();
+    if (b.via !== undefined && b.via !== 'mailbox' && b.via !== 'postmark') throw badRequest('via is mailbox or postmark', { property: 'via' });
+    const via = b.via ?? (cur?.provider === 'postmark' ? 'postmark' : 'mailbox');
     const pick = (v: unknown, field: string, fallback: string | undefined) => {
       if (v === undefined) {
         if (!fallback) throw badRequest(`${field === 'mailbox' ? 'the mailbox' : 'the from address'} is required`, { property: field });
@@ -52,10 +61,24 @@ export async function notificationRoutes(app: FastifyInstance) {
       if (!a) throw badRequest(`${field === 'mailbox' ? 'the mailbox' : 'the from address'} is required`, { property: field });
       return a;
     };
-    const mailbox = pick(b.mailbox, 'mailbox', cur?.mailbox);
-    const fromAddress = b.from_address === undefined || b.from_address === '' ? (b.mailbox !== undefined && !cur ? mailbox : cur?.from_address ?? mailbox) : pick(b.from_address, 'from_address', undefined);
-    const cfg = providerFor(await loadProviders(), mailbox);
-    if (!cfg) throw badRequest(`${mailbox.split('@')[1]} is not a domain of Google or Microsoft in Settings → Mailboxes (or that provider is off)`, { property: 'mailbox' });
+    let provider: 'google' | 'microsoft' | 'postmark';
+    let mailbox: string;
+    let fromAddress: string;
+    if (via === 'postmark') {
+      // no mailbox to act as: the From address goes in both columns
+      if (!(await loadEmailSettings()).token) throw badRequest('Connect Postmark in Settings → Email first (its server token).', { property: 'via' });
+      const keep = cur?.provider === 'postmark' ? cur.from_address : undefined;
+      fromAddress = b.from_address === undefined || b.from_address === '' ? keep ?? '' : pick(b.from_address, 'from_address', undefined);
+      if (!fromAddress || !isEmail(fromAddress)) throw badRequest('Enter the From address: one on a domain confirmed in Postmark, such as noreply@.', { property: 'from_address' });
+      provider = 'postmark';
+      mailbox = fromAddress;
+    } else {
+      mailbox = pick(b.mailbox, 'mailbox', cur?.provider === 'postmark' ? undefined : cur?.mailbox);
+      fromAddress = b.from_address === undefined || b.from_address === '' ? (b.mailbox !== undefined && (!cur || cur.provider === 'postmark') ? mailbox : cur?.from_address ?? mailbox) : pick(b.from_address, 'from_address', undefined);
+      const cfg = providerFor(await loadProviders(), mailbox);
+      if (!cfg) throw badRequest(`${mailbox.split('@')[1]} is not a domain of Google or Microsoft in Settings → Mailboxes (or that provider is off)`, { property: 'mailbox' });
+      provider = cfg.provider;
+    }
     let fromName = cur?.from_name ?? null;
     if (b.from_name !== undefined) fromName = typeof b.from_name === 'string' ? b.from_name.replace(/[\r\n"<>]+/g, ' ').trim().slice(0, 100) || null : null;
     let enabled = cur?.enabled ?? false;
@@ -68,7 +91,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       if (typeof b.invite_new_users !== 'boolean') throw badRequest('invite_new_users must be true or false', { property: 'invite_new_users' });
       inviteNewUsers = b.invite_new_users;
     }
-    const changedAccount = !cur || cur.mailbox !== mailbox || cur.from_address !== fromAddress || cur.provider !== cfg.provider;
+    const changedAccount = !cur || cur.mailbox !== mailbox || cur.from_address !== fromAddress || cur.provider !== provider;
     await pool.query(
       `insert into auth.notification_sender (id, provider, mailbox, from_address, from_name, enabled, invite_new_users, status, last_error, updated_by, updated_at)
        values (true, $1, $2, $3, $4, $5, $8, 'unchecked', null, $6, now())
@@ -77,11 +100,11 @@ export async function notificationRoutes(app: FastifyInstance) {
          status = case when $7 then 'unchecked' else auth.notification_sender.status end,
          last_error = case when $7 then null else auth.notification_sender.last_error end,
          updated_by = excluded.updated_by, updated_at = now()`,
-      [cfg.provider, mailbox, fromAddress, fromName, enabled, p.actor, changedAccount, inviteNewUsers]
+      [provider, mailbox, fromAddress, fromName, enabled, p.actor, changedAccount, inviteNewUsers]
     );
     await logEvent(req, 'notification_email.settings_changed', {
       target: { type: 'notification_sender', id: 'system' },
-      details: { provider: cfg.provider, mailbox, from_address: fromAddress, enabled, invite_new_users: inviteNewUsers }
+      details: { provider, mailbox, from_address: fromAddress, enabled, invite_new_users: inviteNewUsers }
     });
     return settingsOut();
   });

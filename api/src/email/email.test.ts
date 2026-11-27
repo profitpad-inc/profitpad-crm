@@ -6,7 +6,7 @@ process.env.MASTER_ENCRYPTION_KEY ||= randomBytes(32).toString('base64');
 
 const { readUnsubscribeToken, unsubscribeToken, newReplyToken, REPLY_TOKEN_RE } = await import('./links.js');
 const { eventKey } = await import('./events.js');
-const { fromHeader } = await import('./settings.js');
+const { fromHeader, marketingSender } = await import('./settings.js');
 const { renderCampaignEmail } = await import('./render.js');
 
 test('unsubscribe tokens round-trip and refuse tampering', () => {
@@ -37,7 +37,7 @@ test('from headers quote names that need it', () => {
 });
 
 const settings = {
-  enabled: true, token: 't', token_hint: null, from_name: 'Acme', from_address: 'n@acme.com', reply_domain: null,
+  enabled: true, token: 't', token_hint: null, from_name: 'Acme', from_address: 'n@acme.com', marketing_from_name: null, marketing_from_address: null, reply_domain: null,
   fallback_address: null, mailing_address: '1 Main St\nTown', broadcast_stream: 'broadcast', transactional_stream: 'outbound', webhook_secret: null
 };
 const campaign = { id: '00000000bb', name: 'Nov', subject: null, preheader: 'Short', from_name: null, from_address: null, audience: null, status: 'draft', scheduled_at: null };
@@ -57,4 +57,13 @@ test('a template that places the unsubscribe link gets no second footer', async 
   const out = await renderCampaignEmail(campaign, { id: 't', name: 'T', subject: 'Hi', body: '<html><body><a href="{{ unsubscribe_url }}">Leave</a></body></html>' }, who, settings, 'https://x/unsub');
   assert.equal(out.html.match(/https:\/\/x\/unsub/g)?.length, 1);
   assert.doesNotMatch(out.html, /1 Main St/);
+});
+
+test('marketing email comes from the campaign, else the marketing default, else the one-to-one sender', () => {
+  const base = { ...settings, from_name: 'Acme', from_address: 'noreply@acme.com' };
+  assert.deepEqual(marketingSender(base), { name: 'Acme', address: 'noreply@acme.com' });
+  const withMarketing = { ...base, marketing_from_name: 'Acme News', marketing_from_address: 'news@acme.com' };
+  assert.deepEqual(marketingSender(withMarketing), { name: 'Acme News', address: 'news@acme.com' });
+  assert.deepEqual(marketingSender(withMarketing, { from_name: 'Sam', from_address: 'sam@acme.com' }), { name: 'Sam', address: 'sam@acme.com' });
+  assert.deepEqual(marketingSender(withMarketing, { from_name: null, from_address: null }), { name: 'Acme News', address: 'news@acme.com' });
 });

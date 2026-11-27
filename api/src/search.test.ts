@@ -7,7 +7,15 @@ const prop = (api_name: string, type: string): PropertyDef => ({
   api_name, label: api_name, type, options: {}, record_status: 'active', dropdown_options: []
 } as unknown as PropertyDef);
 
-const props = [prop('name', 'text'), prop('amount', 'number'), prop('close_date', 'date'), prop('created_at', 'datetime')];
+const stage = {
+  ...prop('stage', 'dropdown'),
+  dropdown_options: [
+    { api_value: 'new_lead', label: 'New lead' },
+    { api_value: 'qualified', label: 'Qualified' },
+    { api_value: 'closed_won', label: 'Closed Won' }
+  ]
+} as unknown as PropertyDef;
+const props = [prop('name', 'text'), prop('amount', 'number'), prop('close_date', 'date'), prop('created_at', 'datetime'), stage];
 const obj = { api_name: 'deals', object_type_id: 'pc_0100', id_column: 'pc_0100_id', links_to: ['companies'], properties: props, byName: new Map(props.map((p) => [p.api_name, p])) } as unknown as ObjectDef;
 
 function compile(f: Filter): { sql: string; params: unknown[] } {
@@ -32,6 +40,15 @@ test('contains, starts_with and ends_with ignore case unless case_sensitive is t
     { sql: '((t."name" like $1::text))', params: ['%Inc'] });
   assert.equal(compile({ property: 'name', operator: 'not_contains', value: 'x', case_sensitive: true }).sql,
     '((coalesce(t."name" not like $1::text, true)))');
+});
+
+test('contains on a dropdown searches the option labels and matches those options', () => {
+  assert.deepEqual(compile({ property: 'stage', operator: 'contains', value: ' LEAD ' }),
+    { sql: '((coalesce(t."stage" && $1::text[], false)))', params: [['new_lead']] });
+  assert.deepEqual(compile({ property: 'stage', operator: 'contains', value: 'won', case_sensitive: true }).params, [['closed_won']]);
+  assert.deepEqual(compile({ property: 'stage', operator: 'not_contains', value: 'e' }),
+    { sql: '((not coalesce(t."stage" && $1::text[], false)))', params: [['new_lead', 'qualified', 'closed_won']] });
+  assert.deepEqual(compile({ property: 'stage', operator: 'contains', value: 'nothing' }).params, [[]]);
 });
 
 test('relative date operators take a whole number of days', () => {

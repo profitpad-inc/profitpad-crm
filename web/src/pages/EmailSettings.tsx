@@ -3,6 +3,8 @@ import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CopyField, SaveBar, SettingRow, SettingsPage, SettingsSection, StatusPill, TableSkeleton } from '../components/settings';
 import { confirmDialog } from '../components/confirm';
+import { CheckCircle2, Circle } from 'lucide-react';
+import '../email.css';
 
 // Settings → Email (admins): the Postmark server token, the default sender,
 // the reply domain, the mailing address for marketing footers, and the two
@@ -16,6 +18,8 @@ interface State {
   has_token: boolean;
   from_name: string | null;
   from_address: string | null;
+  marketing_from_name: string | null;
+  marketing_from_address: string | null;
   reply_domain: string | null;
   fallback_address: string | null;
   mailing_address: string | null;
@@ -27,7 +31,7 @@ interface State {
   secrets_ready: boolean;
 }
 
-const FIELDS = ['from_name', 'from_address', 'reply_domain', 'fallback_address', 'mailing_address', 'broadcast_stream', 'transactional_stream'] as const;
+const FIELDS = ['from_name', 'from_address', 'marketing_from_name', 'marketing_from_address', 'reply_domain', 'fallback_address', 'mailing_address', 'broadcast_stream', 'transactional_stream'] as const;
 type Field = typeof FIELDS[number];
 type Draft = Record<Field, string> & { enabled: boolean };
 
@@ -104,11 +108,9 @@ export function EmailSettings() {
       description={description}
       actions={state.missing.length === 0
         ? <><StatusPill tone="on">Ready</StatusPill> <button className="btn" disabled={busy} onClick={sendTest}>Send me a test</button></>
-        : <StatusPill tone="off">Not set up</StatusPill>}
+        : <StatusPill tone={state.has_token ? 'pending' : 'off'}>{state.has_token ? 'Almost ready' : 'Not set up'}</StatusPill>}
     >
-      {state.missing.length > 0 && (
-        <div className="callout warn">Email can't go out yet: it needs {state.missing.join(', ')}.</div>
-      )}
+      {(state.missing.length > 0 || !state.mailing_address) && <SetupSteps state={state} />}
 
       <SettingsSection title="Postmark" description="Make a server in Postmark with a transactional stream and a broadcast stream, confirm your sending domain (DKIM and Return-Path), then paste the server's API token here.">
         <SettingRow
@@ -143,12 +145,18 @@ export function EmailSettings() {
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection title="Sender" description="Who email comes from, unless a campaign says otherwise. The address must be on a domain confirmed in Postmark.">
-        <SettingRow label="From name" htmlFor="pm-from-name">
+      <SettingsSection title="Sender" description="Who email comes from. Addresses must be on a domain confirmed in Postmark.">
+        <SettingRow label="One-to-one from name" htmlFor="pm-from-name" hint="Tests, notices and other email to one person.">
           <input id="pm-from-name" value={draft.from_name} placeholder="ProfitPad" onChange={set('from_name')} />
         </SettingRow>
-        <SettingRow label="From address" htmlFor="pm-from">
-          <input id="pm-from" type="text" inputMode="email" autoCapitalize="none" value={draft.from_address} placeholder="news@yourdomain.com" onChange={set('from_address')} />
+        <SettingRow label="One-to-one from address" htmlFor="pm-from">
+          <input id="pm-from" type="text" inputMode="email" autoCapitalize="none" value={draft.from_address} placeholder="noreply@yourdomain.com" onChange={set('from_address')} />
+        </SettingRow>
+        <SettingRow label="Marketing from name" htmlFor="pm-mkt-name" hint={`Campaigns, unless a campaign sets its own. Empty: ${draft.from_name.trim() || 'the one-to-one name'}.`}>
+          <input id="pm-mkt-name" value={draft.marketing_from_name} placeholder={draft.from_name.trim() || 'ProfitPad News'} onChange={set('marketing_from_name')} />
+        </SettingRow>
+        <SettingRow label="Marketing from address" htmlFor="pm-mkt-from" hint={`Empty: ${draft.from_address.trim() || 'the one-to-one address'}. Replies come back to the CRM when a reply domain is set.`}>
+          <input id="pm-mkt-from" type="text" inputMode="email" autoCapitalize="none" value={draft.marketing_from_address} placeholder="news@yourdomain.com" onChange={set('marketing_from_address')} />
         </SettingRow>
         <SettingRow label="Mailing address" htmlFor="pm-mailing" hint="Your postal address. Anti-spam laws require it in every marketing email; the CRM adds it to the footer.">
           <textarea id="pm-mailing" rows={3} value={draft.mailing_address} onChange={set('mailing_address')} />
@@ -184,5 +192,30 @@ export function EmailSettings() {
         <button className="btn primary" disabled={!dirty || busy} onClick={save}>Save</button>
       </SaveBar>
     </SettingsPage>
+  );
+}
+
+// What is done and what is left before email can go out, as a checklist
+// rather than a warning: a saved token is progress, not a problem.
+function SetupSteps({ state }: { state: State }) {
+  const steps: { done: boolean; label: string; hint: string }[] = [
+    { done: state.has_token, label: 'Postmark server token', hint: state.has_token ? `Saved, ending in ${state.token_hint}.` : 'Paste it below.' },
+    { done: !!state.from_address, label: 'One-to-one from address', hint: state.from_address ?? 'Under Sender, on a domain confirmed in Postmark. Marketing can have its own.' },
+    { done: !!state.mailing_address, label: 'Mailing address', hint: state.mailing_address ? 'Added.' : 'Under Sender. Needed for campaigns, not for one-to-one email.' },
+    { done: state.enabled, label: 'Sending turned on', hint: state.enabled ? 'On.' : 'The Send email switch, then Save.' }
+  ];
+  const done = steps.filter((s) => s.done).length;
+  return (
+    <div className="email-setup">
+      <div className="email-setup-head"><strong>Setup</strong><span className="muted">{done} of {steps.length} done</span></div>
+      <ul>
+        {steps.map((s) => (
+          <li key={s.label} className={s.done ? 'done' : ''}>
+            {s.done ? <CheckCircle2 size={16} aria-label="Done" /> : <Circle size={16} aria-label="To do" />}
+            <span><strong>{s.label}</strong> <span className="muted">{s.hint}</span></span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

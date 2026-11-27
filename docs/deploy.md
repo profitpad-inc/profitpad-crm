@@ -368,7 +368,7 @@ Updating afterwards: `cd /opt/profitpad-crm && sudo bash install.sh` (fetches ma
 
 ## 25. Notification emails and invites (migration 0099)
 
-Needs section 23 (Mailboxes) working for the provider that sends.
+Needs section 23 (Mailboxes) working for the provider that sends, or Postmark connected in Settings → Email (section 23, Email through Postmark) with "Send through: Postmark" picked here (migration 0150).
 
 1. Apply `0099_notification_emails.sql` and `0100_user_notification_settings.sql` (each user's settings, all on by default), rebuild and restart the API, deploy the UI. `UI_URL` must be set (the emails link to the CRM).
 2. Pick the mailbox the service account sends as:
