@@ -8,7 +8,8 @@ import { approveFields, canApprove, requestFields } from './approval.js';
 import type { Principal } from './auth.js';
 import { checkUrl, KEY_RE } from './integrations.js';
 import { open, seal, secretBoxReady } from './secret-box.js';
-import { checkViewOn } from './views.js';
+import { checkQueriesOn, checkViewOn } from './views.js';
+import { checkTemplate, parseSources, sourcesText, TEMPLATE_OBJECTS } from './templates.js';
 import { ICON_NAMES } from './icons.js';
 import { HOTBAR_MAX } from './routes/ui.js';
 
@@ -97,6 +98,23 @@ export interface Manifest {
   // package's integrations (the one already stored, when some exist) and
   // shows a new one once, for the other end (an n8n workflow) to check.
   integrations?: IntegrationSpec[];
+  // document templates (quote PDFs and pages), from templates/<file>.liquid and
+  // templates/<file>.queries.json, with {{code:...}} and {{id:...}} filled as in
+  // views. Matched on name: one that exists is left alone. Installed published;
+  // default makes it its object's default template, only when the install
+  // creates it (a tenant that picked another default later keeps it).
+  document_templates?: TemplateSpec[];
+}
+
+export interface TemplateSpec {
+  file: string;
+  name: string;
+  object?: string;
+  description?: string;
+  page_size?: 'letter' | 'legal' | 'a4';
+  orientation?: 'portrait' | 'landscape';
+  page_margin?: string;
+  default?: boolean;
 }
 
 export interface SettingSpec {
@@ -127,7 +145,7 @@ export type NavSpec =
 // skip: left out because a setting it needs was not given
 export type StepAction = 'create' | 'exists' | 'conflict' | 'update' | 'skip';
 export interface Step {
-  kind: 'object' | 'property' | 'option' | 'option_scope' | 'association_label' | 'record' | 'view' | 'option_list' | 'option_list_link' | 'nav' | 'integration';
+  kind: 'object' | 'property' | 'option' | 'option_scope' | 'association_label' | 'record' | 'view' | 'option_list' | 'option_list_link' | 'nav' | 'integration' | 'document_template';
   target: string;
   action: StepAction;
   detail?: string;
@@ -251,6 +269,20 @@ export function checkManifest(name: string, m: Manifest): void {
     if (i.audience !== undefined && i.audience !== 'admins' && i.audience !== 'everyone') fail(`integration ${i.key}: audience must be admins or everyone`);
     if (i.secret_header !== undefined && !/^[A-Za-z0-9-]{1,64}$/.test(i.secret_header)) fail(`integration ${i.key}: secret_header must be a header name like X-Webhook-Secret`);
   }
+  const defaults = new Set<string>();
+  for (const t of m.document_templates ?? []) {
+    if (!t?.file || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(t.file)) fail('every document template needs a file (lowercase letters, digits, dashes)');
+    if (!t.name || t.name.length > 200) fail(`document template ${t.file} needs a name (up to 200 characters)`);
+    once(`document template ${t.name.toLowerCase()}`);
+    const object = t.object ?? 'quotes';
+    if (!(TEMPLATE_OBJECTS as readonly string[]).includes(object)) fail(`document template ${t.file}: templates can be made for ${TEMPLATE_OBJECTS.join(', ')}`);
+    if (t.page_size !== undefined && !['letter', 'legal', 'a4'].includes(t.page_size)) fail(`document template ${t.file}: page_size must be letter, legal or a4`);
+    if (t.orientation !== undefined && !['portrait', 'landscape'].includes(t.orientation)) fail(`document template ${t.file}: orientation must be portrait or landscape`);
+    if (t.default) {
+      if (defaults.has(object)) fail(`only one document template can be the default for ${object}`);
+      defaults.add(object);
+    }
+  }
   const headers = new Set((m.integrations ?? []).map((i) => i.secret_header).filter(Boolean));
   if (headers.size > 1) fail('the integrations share one secret, so they must use the same secret_header');
   if (m.nav !== undefined) {
@@ -347,6 +379,23 @@ export async function loadViewFiles(name: string, slug: string): Promise<{ sourc
     queries = JSON.parse(await readFile(`${dir}${slug}.queries.json`, 'utf8'));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw badRequest(`package "${name}": views/${slug}.queries.json: ${(err as Error).message}`);
+  }
+  return { source, queries };
+}
+
+export async function loadTemplateFiles(name: string, file: string): Promise<{ source: string; queries: unknown }> {
+  const dir = `${PACKAGES_DIR}${name}/templates/`;
+  let source: string;
+  try {
+    source = await readFile(`${dir}${file}.liquid`, 'utf8');
+  } catch {
+    throw badRequest(`package "${name}": templates/${file}.liquid is missing`);
+  }
+  let queries: unknown = {};
+  try {
+    queries = JSON.parse(await readFile(`${dir}${file}.queries.json`, 'utf8'));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw badRequest(`package "${name}": templates/${file}.queries.json: ${(err as Error).message}`);
   }
   return { source, queries };
 }
@@ -633,8 +682,52 @@ async function runManifest(ctx: Ctx, m: Manifest): Promise<void> {
     ctx.items.push({ kind: 'view', object_type_id: 'pc_0055', item_key: made[0].id, created: true });
   }
 
+  if (m.document_templates?.length) await installTemplates(ctx, m);
   if (m.integrations?.length) await installIntegrations(ctx, m);
   if (m.nav) await installNav(ctx, m, m.nav);
+}
+
+// Document templates, matched on name among active ones. Inserted as published
+// (draft and published the same), never built in, so the tenant can edit,
+// archive or delete them like their own.
+async function installTemplates(ctx: Ctx, m: Manifest): Promise<void> {
+  for (const t of m.document_templates!) {
+    const object = t.object ?? 'quotes';
+    const target = `${t.name} (${object})`;
+    const files = await loadTemplateFiles(m.name, t.file);
+    const { rows } = await ctx.c.query(
+      `select pc_0057_id as id from crm.pc_0057 where lower(name) = lower($1) and record_status = 'active' order by pc_0057_id limit 1`, [t.name]);
+    if (rows[0]) {
+      ctx.steps.push({ kind: 'document_template', target, action: 'exists', detail: 'kept as it is: edit it on its page, or archive it and install again' });
+      ctx.items.push({ kind: 'document_template', object_type_id: 'pc_0057', item_key: rows[0].id, created: false });
+      continue;
+    }
+    const filled = await fillView(ctx, files.source, files.queries);
+    const sources = parseSources(filled.queries);
+    await checkTemplate(filled.source, { queries: {}, integrations: sources.integrations });
+    const planned = filled.unresolved || (ctx.dryRun && ctx.steps.some((s) => (s.kind === 'object' || s.kind === 'property') && s.action === 'create'));
+    if (!planned) await checkQueriesOn(ctx.c, `document template ${t.file}`, sources.queries);
+    const checked = planned ? 'queries are checked when installing' : `${Object.keys(sources.queries).length} queries checked`;
+    ctx.steps.push({ kind: 'document_template', target, action: 'create', detail: `published${t.default ? `, the default for ${object}` : ''}, ${checked}` });
+    if (ctx.dryRun) {
+      ctx.items.push({ kind: 'document_template', object_type_id: 'pc_0057', item_key: `new:${t.file}`, created: true });
+      continue;
+    }
+    const queriesText = sourcesText(sources);
+    const { rows: made } = await ctx.c.query(
+      `insert into crm.pc_0057 (name, description, object, status, is_default, is_builtin, page_size, orientation, page_margin,
+         draft_source, draft_queries, source, queries, published_at)
+       values ($1, $2, $3, '{published}', '{false}', '{false}', $4, $5, $6, $7, $8, $7, $8, now()) returning pc_0057_id as id`,
+      [t.name, t.description ?? null, [object], [t.page_size ?? 'letter'], [t.orientation ?? 'portrait'], t.page_margin ?? '0.75in',
+        filled.source, queriesText]);
+    const id = made[0].id as string;
+    if (t.default) {
+      // the new default first, so there is never a moment without one (as setDefaultTemplate)
+      await ctx.c.query(`update crm.pc_0057 set is_default = '{true}' where pc_0057_id = $1`, [id]);
+      await ctx.c.query(`update crm.pc_0057 set is_default = '{false}' where object[1] = $1 and is_default[1] = 'true' and pc_0057_id <> $2`, [object, id]);
+    }
+    ctx.items.push({ kind: 'document_template', object_type_id: 'pc_0057', item_key: id, created: true });
+  }
 }
 
 // View integrations, matched on key. The secret is one per install for all of

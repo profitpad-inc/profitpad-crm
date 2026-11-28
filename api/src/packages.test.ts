@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { checkManifest, fillSettings, loadManifest, readSettings, settingsIn, type Manifest } from './packages.js';
+import { checkManifest, fillSettings, loadManifest, loadTemplateFiles, readSettings, settingsIn, type Manifest } from './packages.js';
+import { checkTemplate, parseSources, renderLiquid } from './templates.js';
 
 const API_RE = /^[a-z][a-z0-9_]{0,62}$/;
 const OPTION_RE = /^[A-Za-z0-9._]{1,63}$/;
@@ -151,4 +152,56 @@ test('the defense integrations are the ones its views call, all behind the n8n a
     assert.equal(i.audience, 'everyone', i.key);
     assert.equal(i.secret_header, 'X-PCRM-Secret', i.key);
   }
+});
+
+test('the manifest check covers document templates', () => {
+  const base: Manifest = { name: 'x', label: 'X', version: '1' };
+  const tpl = (t: Partial<NonNullable<Manifest['document_templates']>[number]>) => ({ ...base, document_templates: [{ file: 'q', name: 'Q', ...t }] });
+  assert.doesNotThrow(() => checkManifest('x', tpl({})));
+  assert.throws(() => checkManifest('x', tpl({ file: 'Bad File' })), /needs a file/);
+  assert.throws(() => checkManifest('x', tpl({ name: '' })), /needs a name/);
+  assert.throws(() => checkManifest('x', tpl({ object: 'deals' })), /templates can be made for quotes/);
+  assert.throws(() => checkManifest('x', tpl({ page_size: 'a3' as never })), /page_size/);
+  assert.throws(() => checkManifest('x', { ...base, document_templates: [{ file: 'a', name: 'Q' }, { file: 'b', name: 'q' }] }), /twice/);
+  assert.throws(() => checkManifest('x', { ...base, document_templates: [{ file: 'a', name: 'A', default: true }, { file: 'b', name: 'B', default: true }] }), /only one document template/);
+});
+
+test('the defense quote template parses, its query reads only part names and quantities, and it draws the defense fields', async () => {
+  const m = await loadManifest('defense');
+  const spec = (m.document_templates ?? []).find((t) => t.file === 'defense-quote');
+  assert.ok(spec?.default, 'the defense quote is the default quote template');
+  const { source, queries } = await loadTemplateFiles('defense', 'defense-quote');
+  const sources = parseSources(JSON.parse(JSON.stringify(queries).replace(/\{\{id:lines\}\}/g, 'pc_0020_id')));
+  assert.deepEqual(Object.keys(sources.queries), ['kit_parts']);
+  // customer-facing: never a cost or price column from the BOM's parts
+  assert.doesNotMatch(sources.queries.kit_parts.sql, /unit_cost|unit_price|amount|total_cogs/);
+  await checkTemplate(source, { queries: {}, integrations: {} });
+
+  const text = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, String(v ?? '')]));
+  const quote = {
+    id: '0000000042', name: 'C-UAS sensor kit', status: 'sent', currency: 'USD', amount: 9000, expiration_date: '2099-01-31', created_at: '2026-11-28T12:00:00Z',
+    payment_terms: 'net_30', lead_time: '6 to 8 weeks ARO', berry_compliant: 'yes', country_of_origin: 'USA', price_list: 'gsa',
+    shipping_address: '1 Main St\nFort Liberty, NC', ship_length: 24, ship_width: 18, ship_height: null, ship_weight: 40, ship_units: 'in_lb',
+    est_freight: 250, notes_terms: 'Excludes training.\nITAR terms apply.', discount_type: 'percent', discount_value: 10
+  };
+  const line = { name: 'Radar head', sku: 'RH-1', quantity: 2, unit_price: 5000, amount: 10000, discount: 0, berry_compliant: 'no', country_of_origin: 'Canada', lead_time: '4 weeks', customizations: 'Desert tan', uom: null };
+  const html = await renderLiquid(source, {
+    quote: { ...quote, _text: { ...text(quote), payment_terms: 'Net 30', berry_compliant: 'Yes', price_list: 'GSA' } },
+    lines: [{ ...line, _text: { ...text(line), berry_compliant: 'No' } }],
+    linked: { partnerships: [{ name: 'Acme VAR' }], boms: [{ name: 'Sensor kit BOM' }] },
+    company: { name: 'US Army' }, contact: null, deal: null,
+    queries: { kit_parts: [{ name: 'Tripod', sku: 'TP-2', quantity: 1, uom: null }] },
+    org: { logo: null, theme: {} }, today: '2026-11-28', now: '2026-11-28T12:00:00Z'
+  });
+  for (const want of ['Quote 0000000042', 'Through partner', 'Acme VAR', 'Net 30', '6 to 8 weeks ARO', 'GSA', 'Fort Liberty', '24 × 18 × ? in', '40 lb',
+    'Made in Canada · Lead time 4 weeks', 'Desert tan', '<td>No</td>', 'Estimated freight', '$250.00', '$9,250.00', 'Kit contents: Sensor kit BOM', 'Tripod',
+    'Notes and special terms', 'ITAR terms apply.', 'Discount (10%)']) {
+    assert.ok(html.includes(want), `missing "${want}"`);
+  }
+  // nothing defense-specific shows when the fields are empty
+  const bare = await renderLiquid(source, {
+    quote: { id: '1', name: 'Plain', status: 'draft', currency: 'USD', amount: 0, _text: {} }, lines: [], linked: {}, company: null, contact: null, deal: null,
+    queries: { kit_parts: [] }, org: { logo: null, theme: {} }, today: '2026-11-28', now: '2026-11-28T12:00:00Z'
+  });
+  for (const gone of ['Terms and shipping', 'Kit contents', 'Estimated freight', 'Notes and special terms', 'Through partner']) assert.ok(!bare.includes(gone), `"${gone}" on an empty quote`);
 });

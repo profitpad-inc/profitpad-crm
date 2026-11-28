@@ -160,6 +160,14 @@ The four n8n workflows check one secret, the defense CRM's (the RFP generator co
 
 The card scanner is native, not an integration: Claude Haiku 5.5 with the tenant's Anthropic key (Settings, Card scanner), Tesseract without one. It has Trade Show Mode (pick or create an event and a default priority; each scan also records the participation with that priority). It does not extract branch, command or unit as their own fields; rank goes into the job title.
 
+## Quote template
+
+`templates/defense-quote.liquid` with `templates/defense-quote.queries.json`, installed by the manifest's `document_templates` (package 0.2.0, migration 0167) as "Defense quote", published and the default quote template. It is the Standard quote plus: quote number and date, the partner or VAR ("Through partner", the first linked partnership), Berry, country of origin, lead time and customizations per line (the Berry column only when a line has one), estimated freight and the total with freight under the total (apart from the quote's amount, as in the Quotations view), a "Terms and shipping" block (payment terms, lead time, Berry, country of origin, pricing basis, ship to, size and weight in the chosen units), "Kit contents" from the linked BOM (query `kit_parts`: part names, SKUs and quantities only, never costs, since the page goes to customers) and "Notes and special terms" (markdown shown as plain text with its line breaks; there is no markdown filter in the template engine). Empty fields leave their rows and blocks out. The seller logo shows top right when the CRM has one.
+
+Checked 2026-11-28 on a throwaway cluster: the install created it as the default, it rendered a seeded quote (company, partner, two lines, a BOM with two parts, a 10% discount, freight) with no warnings and the right totals, and the page was looked at as a screenshot and a local Chrome PDF. Not printed through the server's PDF renderer and not installed on the defense CRM.
+
+To put it on the defense CRM: deploy a release with migration 0167, then re-run the installer there (`docker compose exec api npm run install-package -- defense` to see the plan, then with `--apply`). It adds only what is missing; a template already named "Defense quote" is left alone, and the default changes only when the install creates the template. Not checked whether the defense CRM has its own quote template or a different default now.
+
 ## Core features the package relies on
 
 All built and on main. Listed so nobody rebuilds them.
@@ -173,7 +181,7 @@ All built and on main. Listed so nobody rebuilds them.
 | Outside links from views | `openUrl`, `ExternalLink`; the viewer confirms the domain |
 | Line items editor from a view | `editLineItems(object, id)` |
 | Multi-currency totals (0068a) | `amount_base`, `view_data.convert_currency` |
-| Quote PDF and page as Liquid document templates (migration 0080, built-in "Standard quote") | document templates (MCP `save_document_template_draft`, the template editor). The old Settings, Quote document page was removed 2026-11-04. No defense quote template is in the repo (the defense CRM was not checked) |
+| Quote PDF and page as Liquid document templates (migration 0080, built-in "Standard quote") | document templates (MCP `save_document_template_draft`, the template editor). The old Settings, Quote document page was removed 2026-11-04. The package ships its own "Defense quote" (see Quote template below) |
 | Quote, deal and invoice discounts (0104) | `web/src/lib/lines.ts` `parentTotals` |
 | Shared option lists (0097) | manifest `option_lists` |
 | Sidebar sections with icons and flyouts | `web/src/components/Sidebar.tsx` |
@@ -191,13 +199,12 @@ From Matt's app, not built:
 - **PDF and CSV from views:** dashboard PDF, share to team, trip approval PDF. Not checked whether `window.print()` works in the view frame.
 - **Documents:** "Email selected" not built (the composer can attach a record's files, but not from a view).
 - **Card scanner:** extraction fields are not configurable per package (branch, command or unit, rank).
-- **Quote PDF:** quotes use the built-in "Standard quote" Liquid template, which does not show the defense fields (per-line Berry, lead time and origin, payment terms, shipping, freight, kit BOM). Needs a defense quote template, made per tenant or shipped by the package.
 - **"PDFs exported" counter** on the Quote Tracker.
 
 Package and installer:
 
 - No upgrade path (version-aware changes to owned items) and no uninstall.
-- No manifest keys for document templates or tenant switches (such as turning gamification off).
+- No manifest key for tenant switches (such as turning gamification off).
 - The `leads` object's future (see Data model).
 - The old worktree `.claude/worktrees/defense-package` can be removed once nobody needs it.
 

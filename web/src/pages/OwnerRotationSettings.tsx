@@ -703,7 +703,7 @@ function RotationSettings({ r, busy, run, onChange }: { r: Rotation; busy: boole
 
       <SettingsSection
         title="Assign from n8n or the API"
-        description={<>For records from anywhere other than a booking page: send the record to this address with an API key (Settings → API keys) that can edit it. The answer says who got it. Claude can do the same through the MCP (assign_with_owner_rotation). Rotation id: <code>{r.id}</code>.</>}
+        description={<>For records from anywhere other than a booking page: send the record to this address with an API key (Settings &gt; API keys) that can edit it. The answer says who got it. Claude can do the same through the MCP (assign_with_owner_rotation). Rotation id: <code>{r.id}</code>.</>}
       >
         <CopyField value={endpoint} label="Address" />
         <pre className="rot-code">{curl}</pre>

@@ -289,7 +289,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
       <div className="ec-row">
         <span className="ec-label">From</span>
         {senders === null ? <Loading inline className="muted small" label="Loading your mailboxes…" />
-          : senders.length === 0 ? <span className="muted small">No mailbox is set up for you. An admin can set one up in Settings → Mailboxes.</span>
+          : senders.length === 0 ? <span className="muted small">No mailbox is set up for you. An admin can set one up in Settings &gt; Mailboxes.</span>
           : (
             <Select className="ec-from" aria-label="From" value={`${senderKey}|${from}`} options={fromOptions}
               onChange={(v) => { const i = v.indexOf('|'); setSenderKey(v.slice(0, i)); setFrom(v.slice(i + 1)); }} />
@@ -331,7 +331,7 @@ export function EmailComposer({ page, pageLabel, recipients, prefill, attachable
               {sigTip && (
                 <div className="ec-sig-tip" role="tooltip">
                   Your signature, added under the email when it is sent. Change it in{' '}
-                  <a href="/settings" target="_blank" rel="noopener">Settings → Account</a>, or turn it off with the Signature switch below.
+                  <a href="/settings" target="_blank" rel="noopener">Settings &gt; Account</a>, or turn it off with the Signature switch below.
                 </div>
               )}
             </div>

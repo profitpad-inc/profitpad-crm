@@ -175,7 +175,10 @@ export function CampaignActivity({ campaignId, refreshKey, emails = 1 }: { campa
   const cols = 5 + (showStep ? 1 : 0) + (showVariant ? 1 : 0);
   const label = ACTIVITY_FILTERS.find((f) => f.value === filter)!.label.toLowerCase();
   const countText = `${total.toLocaleString()} ${total === 1 ? 'recipient' : 'recipients'}`;
-  const toContacts = total > 0 ? contactsUrl(campaignId, filter, settled) : null;
+  // the contacts table's campaign filters count only emails that went out, so
+  // with every listed recipient "Couldn't be sent" the link would open an
+  // empty table: show the count as plain text then
+  const toContacts = total > 0 && rows?.some((r) => r.status === 'sent') ? contactsUrl(campaignId, filter, settled) : null;
 
   return (
     <div className="card campaign-activity" id="campaign-activity">

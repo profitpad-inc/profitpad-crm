@@ -87,6 +87,7 @@ Optional:
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | online invoice payments (Stripe Connect) |
 | `MCP_ALLOWED_ORIGINS` | browser-based MCP clients allowed to call `/mcp` |
 | `MCP_SERVER_NAME`, `MCP_SERVER_ABOUT` | what the MCP server calls itself (default ProfitPad CRM) and one sentence on what it holds, for AI clients connected to more than one CRM |
+| `CALC_NIGHTLY_HOUR_UTC` | the UTC hour (0 to 23, default 8) from which the API queues every calculation once a day |
 | `FILES_MAX_BYTES` | largest upload (default 5 GB) |
 | `PCRM_FILES_DIR` | a host folder for uploads instead of the `pcrm_files` volume (owned by uid 1000) |
 | `PGPOOL_MAX` | database connections the API keeps (default 20) |

@@ -3,6 +3,8 @@
 
   /usr/bin/python3 http_bench.py single            # each scenario alone, 5 runs, latency
   /usr/bin/python3 http_bench.py concurrent 10 60  # 10 simulated users for 60 s
+  /usr/bin/python3 http_bench.py ramp 25,50,100,150 150  # realistic users (about 15 s between actions), 150 s a step,
+                                                         # stops once p95 passes 2 s or more than 1% fail
 
 Needs PCRM_API_KEY (or a key file path in PCRM_API_KEY_FILE) and PCRM_API_URL (default https://crm.profitpad.com).
 """
@@ -162,28 +164,33 @@ def single(runs=5, only=None):
               (f'  ERRORS {bad} {body[:200]!r}' if bad else ''), flush=True)
 
 
-def concurrent(users, seconds):
+def concurrent(users, seconds, think=(0.5, 2.0), warmup=0):
     names = [n for n, w in MIX for _ in range(w)]
-    stop = time.time() + seconds
+    t0 = time.time()
+    stop = t0 + warmup + seconds
+    measure_from = t0 + warmup
     lock = threading.Lock()
     results = []  # (name, status, ms)
 
     def user():
+        # spread the first actions over one think period, so users do not all start at once
+        time.sleep(random.uniform(0, think[1]))
         while time.time() < stop:
             n = random.choice(names)
+            started = time.time()
             s, ms, _ = SCENARIOS[n]()
-            with lock:
-                results.append((n, s, ms))
-            time.sleep(random.uniform(0.5, 2.0))  # think time
+            if started >= measure_from:
+                with lock:
+                    results.append((n, s, ms))
+            time.sleep(random.uniform(*think))
 
     for o in ('contacts', 'companies'):
         sample_id(o)
     load_stress_ids()
-    ths = [threading.Thread(target=user) for _ in range(users)]
-    t0 = time.time()
+    ths = [threading.Thread(target=user, daemon=True) for _ in range(users)]
     [t.start() for t in ths]
     [t.join() for t in ths]
-    dur = time.time() - t0
+    dur = time.time() - measure_from
     ok = [r for r in results if r[1] == 200]
     errs = [r for r in results if r[1] != 200]
     all_ms = [r[2] for r in ok]
@@ -197,11 +204,25 @@ def concurrent(users, seconds):
         e = [s for s, _ in xs if s != 200]
         print(f'  {n:32} n={len(xs):4} p50={pct(good, 50) if good else 0:7.0f} p95={pct(good, 95) if good else 0:7.0f}' + (f' errors={sorted(set(e))}x{len(e)}' if e else ''))
     sys.stdout.flush()
+    return (pct(all_ms, 95) if all_ms else float('inf')), (len(errs) / len(results) if results else 1.0)
+
+
+def ramp(steps, seconds):
+    # a realistic user acts about every 15 s (the README's definition of a concurrent user)
+    for users in steps:
+        print(f'--- {time.strftime("%H:%M:%S")} step: {users} users', flush=True)
+        p95, err = concurrent(users, seconds, think=(10.0, 20.0), warmup=30)
+        if p95 > 2000 or err > 0.01:
+            print(f'stopped at {users} users: p95 {p95:.0f} ms, {err:.1%} failed', flush=True)
+            return
+    print('every step stayed under p95 2 s and 1% failures', flush=True)
 
 
 if __name__ == '__main__':
     mode = sys.argv[1] if len(sys.argv) > 1 else 'single'
     if mode == 'single':
         single(only=sys.argv[2:] or None)
+    elif mode == 'ramp':
+        ramp([int(x) for x in sys.argv[2].split(',')], int(sys.argv[3]))
     else:
         concurrent(int(sys.argv[2]), int(sys.argv[3]))

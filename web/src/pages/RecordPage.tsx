@@ -53,6 +53,7 @@ import { useUrlSearch } from '../lib/use-url-search';
 import { useIsMobile, useMediaQuery } from '../lib/use-mobile';
 import { useHoldTapsOutside, usePinWhileEditing } from '../lib/pin-editor';
 import { Loading, Spinner } from '../components/Loading';
+import { HIDDEN_PROPS } from '../lib/hidden-props';
 
 // a contact's additional emails, as stored ("a@x.com; b@y.com")
 
@@ -144,22 +145,6 @@ const PROP_SECTIONS: Record<string, { key: string; title: string; props: string[
   ]
 };
 
-// Shown elsewhere on the page (builder, answers, link and signing cards) rather than as raw values
-const HIDDEN_PROPS: Record<string, string[]> = {
-  forms: ['definition', 'public_key', 'slug'],
-  quotes: ['public_key', 'slug', 'signing_fields', 'signed_fields', 'customer_signature', 'countersigner_signature'],
-  invoices: ['public_key', 'slug'],
-  form_submissions: ['summary', 'submission_values'],
-  booking_pages: ['public_key', 'slug', 'availability', 'timezone', 'form_before_id', 'form_after_id', 'duration_minutes', 'duration_options', 'co_hosts', 'co_hosts_unchecked'],
-  files: ['public_token', 'storage_key'],
-  views: ['icon', 'draft_source', 'draft_queries', 'source', 'queries'],
-  email_campaigns: ['audience'],
-  // the list page's member columns (pages/ListPage.tsx); its filters show as JSON
-  lists: ['member_columns'],
-  // the Preview tab (EmailTemplateCard)
-  email_templates: ['body'],
-  emails: ['reply_token']
-};
 // "About this ..." order: these first, in this order, then the rest as before
 const ABOUT_ORDER: Record<string, string[]> = {
   booking_pages: [

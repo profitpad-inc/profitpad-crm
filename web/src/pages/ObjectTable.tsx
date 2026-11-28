@@ -32,6 +32,7 @@ import { useUrlSearch } from '../lib/use-url-search';
 import { Loading } from '../components/Loading';
 import { useIsMobile } from '../lib/use-mobile';
 import { confirmPrimaryChange } from '../components/confirm-primary';
+import { HIDDEN_PROPS } from '../lib/hidden-props';
 
 const PAGE = 100;
 const BULK_CHUNK = 500; // the API's limit per bulk call
@@ -957,7 +958,7 @@ function ObjectTableFor({ object }: { object: string }) {
       return other ? [{ column: c, index, label: associationColumnLabel(c, other, labels, object, objectByName) }] : [];
     }
     const p = schema.properties.find((x) => x.api_name === c.property);
-    return p && !NAME_PARTS.has(p.api_name) ? [{ column: c, index: Math.max(index, 1), label: p.label }] : [];
+    return p && !NAME_PARTS.has(p.api_name) && !(HIDDEN_PROPS[object]?.includes(p.api_name)) ? [{ column: c, index: Math.max(index, 1), label: p.label }] : [];
   }).slice(0, CARD_FIELDS);
   const searchedFields = schema.search_properties.map((n) => schema.properties.find((p) => p.api_name === n)?.label.toLowerCase() ?? n).join(', ');
 

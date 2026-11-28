@@ -182,7 +182,7 @@ function SenderCard({ state, onSaved }: { state: State; onSaved: (s: State) => v
       <SettingRow label="Invite new users" hint="Emails each new user an invite to sign in when their user is created with an email address. Admins can also send one from Users.">
         <label><input type="checkbox" role="switch" checked={!!s?.invite_new_users} disabled={busy || !s} onChange={(e) => put({ invite_new_users: e.target.checked }, e.target.checked ? 'New users will get an invite.' : 'New users will not get an invite.')} /> {s?.invite_new_users ? 'On' : 'Off'}</label>
       </SettingRow>
-      <SettingRow label="Send through" hint={postmark ? 'Postmark, from Settings → Email.' : 'The Google or Microsoft service account from Settings → Mailboxes.'}>
+      <SettingRow label="Send through" hint={postmark ? 'Postmark, from Settings > Email.' : 'The Google or Microsoft service account from Settings > Mailboxes.'}>
         <Select value={via} onChange={(v) => { setVia(v as Via); if (v === 'postmark' && !fromAddress.trim() && state.postmark.from_address) setFromAddress(state.postmark.from_address); }} aria-label="Send through">
           <option value="mailbox">Google or Microsoft (Mailboxes)</option>
           <option value="postmark">Postmark (Email)</option>

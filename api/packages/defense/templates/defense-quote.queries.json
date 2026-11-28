@@ -1,0 +1,5 @@
+{
+  "kit_parts": {
+    "sql": "select l.name, l.sku, l.quantity, l.uom__label as uom from associations a join lines l on l.{{id:lines}} = a.other_record_id where a.object = 'boms' and a.other_object = 'lines' and a.record_id = (select q.other_record_id from associations q where q.object = 'quotes' and q.other_object = 'boms' and q.record_id = :record_id order by q.created_at limit 1) order by l.created_at, l.{{id:lines}}"
+  }
+}

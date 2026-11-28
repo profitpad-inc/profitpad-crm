@@ -306,11 +306,11 @@ function StepPanel({ step, steps, campaignId, campaignStatus, defaults, template
             <div className="field-row">
               <label className="field grow">
                 <span>From name</span>
-                <input value={v.from_name} placeholder={defaults.from_name || 'Settings → Email sender'} onChange={(e) => setVariant({ from_name: e.target.value })} />
+                <input value={v.from_name} placeholder={defaults.from_name || 'Settings > Email sender'} onChange={(e) => setVariant({ from_name: e.target.value })} />
               </label>
               <label className="field grow">
                 <span>From address</span>
-                <input type="email" value={v.from_address} placeholder={defaults.from_address || 'Settings → Email sender'} onChange={(e) => setVariant({ from_address: e.target.value })} />
+                <input type="email" value={v.from_address} placeholder={defaults.from_address || 'Settings > Email sender'} onChange={(e) => setVariant({ from_address: e.target.value })} />
               </label>
             </div>
             <p className="small muted">Empty fields use the campaign's own (shown greyed out). Subjects can use Liquid, like the template.</p>
@@ -372,7 +372,7 @@ function StepResults({ step, canSend, busy, onPick }: {
           {testing && step.held > 0 ? ` ${step.held.toLocaleString()} contacts are waiting for the winner.` : ''}
         </p>
       )}
-      <div className="list-table-wrap">
+      <div className="list-table-wrap campaign-variant-wrap">
         <table className="list-table campaign-variant-table">
           <thead>
             <tr>
@@ -391,13 +391,13 @@ function StepResults({ step, canSend, busy, onPick }: {
                   </span>
                   {v.template_name && <span className="small muted campaign-email">{v.template_name}</span>}
                 </td>
-                <td className="campaign-subject">{v.subject ?? <span className="muted">The template's</span>}</td>
-                <td className="num">{v.stats.sent.toLocaleString()}</td>
-                <td className="num">{v.stats.delivered.toLocaleString()}</td>
-                <td className="num">{v.stats.opened.toLocaleString()} <span className="muted small">{pct(v.stats.opened, v.stats.sent)}</span></td>
-                <td className="num">{v.stats.clicked.toLocaleString()} <span className="muted small">{pct(v.stats.clicked, v.stats.sent)}</span></td>
-                <td className="num">{v.stats.unsubscribed.toLocaleString()}</td>
-                <td className="num">{v.stats.bounced.toLocaleString()}</td>
+                <td className="campaign-subject" data-label="Subject">{v.subject ?? <span className="muted">The template's</span>}</td>
+                <td className="num" data-label="Sent">{v.stats.sent.toLocaleString()}</td>
+                <td className="num" data-label="Delivered">{v.stats.delivered.toLocaleString()}</td>
+                <td className="num" data-label="Opened">{v.stats.opened.toLocaleString()} <span className="muted small">{pct(v.stats.opened, v.stats.sent)}</span></td>
+                <td className="num" data-label="Clicked">{v.stats.clicked.toLocaleString()} <span className="muted small">{pct(v.stats.clicked, v.stats.sent)}</span></td>
+                <td className="num" data-label="Unsubscribed">{v.stats.unsubscribed.toLocaleString()}</td>
+                <td className="num" data-label="Bounced">{v.stats.bounced.toLocaleString()}</td>
                 {testing && canSend && (
                   <td><button className="btn small" disabled={!!busy} onClick={() => onPick(v)}>Pick as winner</button></td>
                 )}

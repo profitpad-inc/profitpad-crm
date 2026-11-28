@@ -236,6 +236,13 @@ export async function checkViewOn(c: pg.PoolClient, label: string, source: strin
     throw badRequest(`${label}: ${(err as Error).message}`);
   }
   const queries = parseQueries(rawQueries);
+  await checkQueriesOn(c, label, queries);
+  return queries;
+}
+
+// Runs each query's plan check in this transaction (savepoints), so it sees
+// objects and properties made earlier in it, such as a package install's.
+export async function checkQueriesOn(c: pg.PoolClient, label: string, queries: Queries): Promise<void> {
   for (const [name, spec] of Object.entries(queries)) {
     const probe = substitute(spec.sql, (p) => `(null::${PARAM_TYPES[p === 'me' ? 'text' : spec.params[p]]})`);
     await c.query('savepoint view_check');
@@ -247,7 +254,6 @@ export async function checkViewOn(c: pg.PoolClient, label: string, source: strin
       throw badRequest(`${label}, query "${name}": ${(err as Error).message}`);
     }
   }
-  return queries;
 }
 
 // What the caller's roles allow: Read on every object the query reads, and no

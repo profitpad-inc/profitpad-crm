@@ -93,5 +93,20 @@ button.campaign-stat:focus-visible { outline: 2px solid var(--primary); outline-
 .campaign-variant-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--page-background); font-size: 12px; font-weight: 600; line-height: 1; }
 .campaign-variant-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .campaign-variant-table .campaign-subject { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* In a narrow box (the middle column at tablet width, phones) the eight
+   columns would hide behind a sideways scroll: each email becomes a block of
+   label and value rows instead */
+.campaign-variant-wrap { container-type: inline-size; }
+@container (max-width: 600px) {
+  .campaign-variant-table thead { display: none; }
+  .campaign-variant-table, .campaign-variant-table tbody, .campaign-variant-table tr { display: block; }
+  .campaign-variant-table tr { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .campaign-variant-table tbody tr:last-child { border-bottom: 0; }
+  .campaign-variant-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 3px 12px; border-bottom: 0; max-width: none; }
+  .campaign-variant-table td:first-child { justify-content: flex-start; flex-wrap: wrap; padding-top: 6px; }
+  .campaign-variant-table td[data-label]::before { content: attr(data-label); flex: none; font-size: 12px; color: var(--muted-text); }
+  .campaign-variant-table .campaign-subject { max-width: none; white-space: normal; text-align: right; overflow-wrap: anywhere; }
+  .campaign-variant-table tbody tr:hover td { background: none; }
+}
 .campaign-flag svg { vertical-align: -2px; }
 .campaign-preview-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

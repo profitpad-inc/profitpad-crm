@@ -147,7 +147,7 @@ export function parseSources(raw: unknown): TemplateSources {
   return { queries: parseQueries(sql), integrations };
 }
 
-function sourcesText(s: TemplateSources): string | null {
+export function sourcesText(s: TemplateSources): string | null {
   const out: Record<string, unknown> = {};
   for (const [name, q] of Object.entries(s.queries)) {
     const params = Object.fromEntries(Object.entries(q.params).filter(([k]) => k !== 'record_id'));

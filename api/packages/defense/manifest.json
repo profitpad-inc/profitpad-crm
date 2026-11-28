@@ -1,7 +1,7 @@
 {
   "name": "defense",
   "label": "Defense",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Business development for defense, public safety and federal sellers: a defense pipeline with PWIN and BANT scoring, contract vehicles and solicitations, compliance fields on products and quotes, partnerships, OEM integrations, proposals, BOMs, travel, marketing materials and opportunity discovery. Details in DEFENSE_HANDOFF.md beside this manifest.",
 
   "objects": [
@@ -438,6 +438,10 @@
 
   "publish_views": true,
 
+  "document_templates": [
+    { "file": "defense-quote", "name": "Defense quote", "object": "quotes", "page_size": "letter", "orientation": "portrait", "page_margin": "0.75in", "default": true,
+      "description": "The Standard quote plus the defense fields: partner, payment terms, lead time, Berry compliance, country of origin, pricing, shipping, estimated freight, kit contents (part names and quantities, never costs) and notes and special terms." }
+  ],
   "nav": {
     "items": [
       {

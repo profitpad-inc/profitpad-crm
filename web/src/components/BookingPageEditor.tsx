@@ -385,7 +385,7 @@ function EmailsCard({ v, setV, check, saving }: { v: EmailSettings; setV: (v: Em
         </p>
       </div>
       {check && !check.round_robin && !check.email_from && (
-        <div className="callout warn">The host has no mailbox the CRM can send from (Settings → Mailboxes), so no emails go out.</div>
+        <div className="callout warn">The host has no mailbox the CRM can send from (Settings &gt; Mailboxes), so no emails go out.</div>
       )}
       {check?.email_from && <p className="ed-hint">Sent from {check.email_from}.</p>}
       {check?.round_robin && <p className="ed-hint">Round robin: each email comes from the mailbox of the person hosting that meeting.</p>}
@@ -477,7 +477,7 @@ function CoHostsCard({ value, onChange, users, host, saving, noCalendar }: {
                 </label>
                 {on && calendarless && <span className="bk-cohost-note small muted">No calendar connected</span>}
                 {on && (
-                  <label className="bk-switch bk-cohost-check" title={calendarless && !on.checked ? 'Connect a calendar for them first (Settings → Users)' : undefined}>
+                  <label className="bk-switch bk-cohost-check" title={calendarless && !on.checked ? 'Connect a calendar for them first (Settings > Users)' : undefined}>
                     <input type="checkbox" checked={on.checked} disabled={saving || (calendarless && !on.checked)} onChange={(e) => set(p.id, { id: p.id, checked: e.target.checked })} />
                     Check calendar
                   </label>
@@ -756,7 +756,7 @@ export function BookingPageEditor({ record, onSaved }: { record: CrmRecord; onSa
           <p>
             Pick an owner rotation to share meetings between its members: visitors see the times anyone in it is free, and each booking goes to
             the next person in the rotation who is free then, who also becomes the contact's owner. Manage rotations in{' '}
-            <Link to="/settings/owner-rotations">Settings → Owner rotations</Link>.
+            <Link to="/settings/owner-rotations">Settings &gt; Owner rotations</Link>.
           </p>
         </div>
         <div className="ed-rows">

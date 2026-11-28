@@ -100,7 +100,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
     }
   }
 
-  const missing = [...FIELDS.filter((f) => f.required && !(values[f.key] ?? '').trim()).map((f) => `a ${f.label.toLowerCase()}`), !roleId && 'a role'];
+  const missing = [...FIELDS.filter((f) => f.required && !(values[f.key] ?? '').trim()).map((f) => `${/^[aeiou]/i.test(f.label) ? 'an' : 'a'} ${f.label.toLowerCase()}`), !roleId && 'a role'];
   const ready = !!schema && !!roles && missing.every((m) => !m);
 
   return (

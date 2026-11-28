@@ -167,7 +167,7 @@ export async function buildApp() {
     // customer-facing quote and form pages find records by their public key
     if (path.startsWith('/v1/public/')) return;
     // landing page shells at /p/page/<slug> (routes/landing-pages.ts)
-    if (req.method === 'GET' && path.startsWith('/p/page/')) return;
+    if ((req.method === 'GET' || req.method === 'HEAD') && path.startsWith('/p/page/')) return;
     // OAuth (oauth.ts) and the MCP server (mcp.ts, OAuth tokens only) check their own callers
     if (path.startsWith('/oauth/') || path.startsWith('/.well-known/') || path === '/mcp') return;
     // stored files: signed links carry their own permission, public links need none (files.ts)
@@ -274,7 +274,12 @@ export async function buildApp() {
 // Calculations are recomputed from meta.calc_queue in the background, and
 // every 30 s the running record counts fold their changes in (migration 0147).
 // Exchange rate changes only leave a note; each tick first turns waiting
-// notes into queued records (migration 0158).
+// notes into queued records (migration 0158). Records two and three
+// associations away from a change are noted too and queued every 30 s, and
+// every calculation is queued once a night from CALC_NIGHTLY_HOUR_UTC
+// (default 8), checked every 5 minutes (migration 0168).
+const CALC_NIGHTLY_HOUR_UTC = Number(process.env.CALC_NIGHTLY_HOUR_UTC ?? 8);
+
 function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
   let running = false;
   let ticks = 0;
@@ -283,8 +288,11 @@ function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
     running = true;
     try {
       await pool.query('select meta.expand_currency_calcs()');
+      ++ticks;
+      if (ticks % 15 === 0) await pool.query('select meta.expand_calc_chains(5000)');
+      if (ticks % 150 === 1) await pool.query('select meta.nightly_enqueue_calcs($1)', [CALC_NIGHTLY_HOUR_UTC]);
       await drainCalcQueue(20);
-      if (++ticks % 15 === 0) await pool.query('select meta.compact_record_counts()');
+      if (ticks % 15 === 0) await pool.query('select meta.compact_record_counts()');
     } catch (err) {
       log.error(err, 'calculation worker failed');
     } finally {

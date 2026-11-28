@@ -21,7 +21,7 @@ export async function loadPhoto(file: Blob): Promise<HTMLCanvasElement> {
     img.decoding = 'async';
     img.src = url;
     await img.decode().catch(() => {
-      throw new Error("This photo can't be opened here. Try a JPEG or PNG (on an iPhone: Settings → Camera → Formats → Most Compatible).");
+      throw new Error("This photo can't be opened here. Try a JPEG or PNG (on an iPhone: Settings > Camera > Formats > Most Compatible).");
     });
     const scale = Math.min(1, WORK_MAX / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
