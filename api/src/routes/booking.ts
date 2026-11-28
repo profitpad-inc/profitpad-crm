@@ -208,18 +208,18 @@ async function problems(db: Db, page: BookingPage): Promise<string[]> {
       const on = rot.members.filter((m) => m.enabled);
       let withCalendar = 0;
       for (const m of on) if ((await hostConnections(db, m.userId)).length) withCalendar++;
-      if (!withCalendar) out.push(`Nobody switched on in the owner rotation "${rot.name}" has a connected calendar (Settings → Calendars).`);
+      if (!withCalendar) out.push(`Nobody switched on in the owner rotation "${rot.name}" has a connected calendar (Settings > Calendars).`);
     }
   } else if (!page.host) out.push('Pick a host.');
-  else if (!(await hostConnections(db, page.host)).length) out.push(`${page.hostName ?? 'The host'} has no connected calendar (Settings → Calendars).`);
+  else if (!(await hostConnections(db, page.host)).length) out.push(`${page.hostName ?? 'The host'} has no connected calendar (Settings > Calendars).`);
   if (!page.rules) out.push('Add a meeting length, a time zone and the available hours.');
   // a co-host whose calendar is not checked is invited at their CRM address when they have no calendar
   for (const u of page.coHosts.filter((x) => !page.coHostsUnchecked.includes(x))) {
     if ((await hostConnections(db, u)).length) continue;
     const { rows } = await db.query('select name from crm.pc_0000 where pc_0000_id = $1', [u]);
-    out.push(`Co-host ${rows[0]?.name ?? u} has no connected calendar (Settings → Users), or turn Check calendar off for them.`);
+    out.push(`Co-host ${rows[0]?.name ?? u} has no connected calendar (Settings > Users), or turn Check calendar off for them.`);
   }
-  if (page.locationType === 'zoom' && !zoomReady(await loadZoom())) out.push('Zoom is not connected (Settings → Meetings).');
+  if (page.locationType === 'zoom' && !zoomReady(await loadZoom())) out.push('Zoom is not connected (Settings > Meetings).');
   if (!page.formBeforeId && !page.formAfterId) out.push('Pick a form to ask before or after the time.');
   if (page.formBeforeId && page.formBeforeId === page.formAfterId) out.push('The forms before and after the time must be different.');
   const [before, after] = [await loadForm(db, page.formBeforeId), await loadForm(db, page.formAfterId)];

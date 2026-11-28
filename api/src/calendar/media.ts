@@ -81,7 +81,7 @@ export function vttToMarkdown(vtt: string): string {
 
 async function zoomMedia(job: Job): Promise<Found> {
   const z = await loadZoom();
-  if (!zoomReady(z)) throw new Error('Zoom is not connected (Settings, Calendars)');
+  if (!zoomReady(z)) throw new Error('Zoom is not connected (Settings > Calendars)');
   const { rows } = await pool.query<{ id: string | null }>('select external_meeting_id as id from crm.pc_0030 where pc_0030_id = $1', [job.call_id]);
   const id = rows[0]?.id ?? zoomMeetingId(job.join_url);
   if (!id) return { recordingUrl: null, transcript: null, more: false };
@@ -186,7 +186,7 @@ async function teamsMedia(job: Job, cfg: ProviderRow): Promise<Found> {
 async function fetchMedia(job: Job): Promise<Found> {
   if (job.platform === 'zoom') return zoomMedia(job);
   const cfg = (await loadProviders()).get(job.platform === 'google_meet' ? 'google' : 'microsoft');
-  if (!providerReady(cfg)) throw new Error(`${job.platform === 'google_meet' ? 'Google' : 'Microsoft'} is not set up in Settings, Mailboxes`);
+  if (!providerReady(cfg)) throw new Error(`${job.platform === 'google_meet' ? 'Google' : 'Microsoft'} is not set up in Settings > Mailboxes`);
   try {
     return job.platform === 'google_meet' ? await meetMedia(job, cfg) : await teamsMedia(job, cfg);
   } catch (err) {

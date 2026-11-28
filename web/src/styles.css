@@ -785,11 +785,20 @@ input:focus, .select-face:focus, textarea:focus { outline: 2px solid color-mix(i
 .view-code-tabs > .tabs { box-shadow: none; margin-bottom: 0; }
 .view-code-tabs > .tabs:first-child { flex: 1; }
 .view-code-tabs .code-wrap-toggle { margin-left: auto; }
+.view-code-edit { align-self: center; margin-left: auto; margin-right: 8px; }
+.view-code-tabs .code-wrap-toggle + .view-code-edit { margin-left: 0; }
+/* Edit on the Queries tab: name and params above each query's SQL */
+.view-query-editors { display: flex; flex-direction: column; gap: 16px; }
+.view-query-editor { display: flex; flex-direction: column; gap: 8px; }
+.view-query-fields { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(180px, 2fr) auto; gap: 8px; align-items: end; }
 @media (max-width: 767px) {
   .view-code-card > .card-head { flex-direction: column; align-items: stretch; }
   .view-code-tabs { flex-direction: column; align-items: stretch; box-shadow: none; gap: 8px; }
   .view-code-tabs > .tabs { box-shadow: inset 0 -1px 0 var(--border); }
   .view-code-tabs .code-wrap-toggle { margin-right: 0; }
+  .view-code-edit { align-self: flex-start; margin-left: 0; }
+  .view-query-fields { grid-template-columns: 1fr auto; }
+  .view-query-fields > .field:first-child { grid-column: 1 / -1; }
 }
 .custom-view-frame { display: block; width: 100%; border: 0; background: var(--page-background); }
 /* HtmlPreview frames drawn over the view frame, at the boxes it reports */

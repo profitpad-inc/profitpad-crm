@@ -178,7 +178,7 @@ export function ExportModal({ object, view, onClose }: { object: ObjectDef; view
             />
           </label>
           {count !== null && count > MAX_EXPORT && <p className="muted small">Only the first {MAX_EXPORT.toLocaleString()} records are exported.</p>}
-          <p className="muted small">Every record gets its Record ID first. Exports are listed in Settings, Imports and exports.</p>
+          <p className="muted small">Every record gets its Record ID first. Exports are listed in Settings &gt; Imports and exports.</p>
         </div>
       )}
     </Modal>

@@ -202,7 +202,7 @@ export function PaymentSettings() {
                   <ul className="small">{todo.map((t, i) => <li key={i}>{requirementLabel(t.description)}</li>)}</ul>
                 </div>
               )}
-              <p className="muted small">Choose which ways customers can pay (bank payments, Klarna and more) in the Stripe Dashboard under Settings, Payment methods.</p>
+              <p className="muted small">Choose which ways customers can pay (bank payments, Klarna and more) in the Stripe Dashboard under Settings &gt; Payment methods.</p>
             </div>
           </div>
         )}

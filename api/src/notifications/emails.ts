@@ -65,9 +65,9 @@ export async function senderProvider(sender: Pick<SenderRow, 'provider' | 'mailb
   const providers = await loadProviders();
   const cfg = providers.get(sender.provider);
   const name = sender.provider === 'google' ? 'Google' : 'Microsoft';
-  if (!providerReady(cfg)) throw new MailAuthError(`${name} sending is not set up or is turned off in Settings → Mailboxes`);
+  if (!providerReady(cfg)) throw new MailAuthError(`${name} sending is not set up or is turned off in Settings > Mailboxes`);
   if (providerFor(providers, sender.mailbox)?.provider !== sender.provider) {
-    throw new MailAuthError(`${sender.mailbox.split('@')[1]} is not one of the ${name} domains in Settings → Mailboxes`);
+    throw new MailAuthError(`${sender.mailbox.split('@')[1]} is not one of the ${name} domains in Settings > Mailboxes`);
   }
   return cfg;
 }
@@ -113,7 +113,7 @@ export async function checkFromAddress(cfg: ProviderRow, mailbox: string, from: 
   throw new MailAuthError(
     cfg.ms_send_from_aliases
       ? `${from} is not an alias (proxy address) of ${mailbox} in Microsoft 365`
-      : `${from} is not ${mailbox}: sending from an alias needs "Send from aliases" on in Settings → Mailboxes (and SendFromAliasesEnabled in Exchange)`
+      : `${from} is not ${mailbox}: sending from an alias needs "Send from aliases" on in Settings > Mailboxes (and SendFromAliasesEnabled in Exchange)`
   );
 }
 
@@ -121,8 +121,8 @@ export async function checkFromAddress(cfg: ProviderRow, mailbox: string, from: 
 // on there. Returns what is missing, or null when it can send.
 export async function postmarkProblem(): Promise<string | null> {
   const s = await loadEmailSettings();
-  if (!s.token) return 'Postmark is not connected: add its server token in Settings → Email';
-  if (!s.enabled) return 'Email is turned off in Settings → Email';
+  if (!s.token) return 'Postmark is not connected: add its server token in Settings > Email';
+  if (!s.enabled) return 'Email is turned off in Settings > Email';
   return null;
 }
 
@@ -382,7 +382,7 @@ async function write(row: QueuedRow): Promise<Written> {
 // Queues an invite to a user now (Settings → Users, or the API).
 export async function queueInvite(p: Principal, userId: string): Promise<{ id: string; to: string }> {
   const sender = await loadSender();
-  if (!sender?.enabled) throw new ApiError(409, 'notification emails are not set up or are turned off (Settings → Notification emails)', 'not_configured');
+  if (!sender?.enabled) throw new ApiError(409, 'notification emails are not set up or are turned off (Settings > Notification emails)', 'not_configured');
   const { rows: u } = await pool.query(
     `select email -> 0 ->> 'value' as email, record_status, coalesce(status, '{}') @> '{deactivated}' as deactivated from crm.pc_0000 where pc_0000_id = $1`,
     [userId]
@@ -424,7 +424,7 @@ export async function deliver(id: string, opts: { retry: boolean }): Promise<{ o
   if (!row) throw notFound('notification email not found');
   const sender = await loadSender();
   if (!sender?.enabled && row.kind !== 'test') {
-    await finish(id, { status: 'skipped', error: 'notification emails are turned off in Settings → Notification emails' });
+    await finish(id, { status: 'skipped', error: 'notification emails are turned off in Settings > Notification emails' });
     return { ok: false, status: 'skipped', error: 'notification emails are turned off' };
   }
   if (!sender) {
@@ -520,7 +520,7 @@ const textToHtml = (t: string) =>
 
 export async function queueApiEmail(p: Principal, b: ApiEmailInput): Promise<{ ids: string[]; status: Status }> {
   const sender = await loadSender();
-  if (!sender?.enabled) throw new ApiError(409, 'notification emails are not set up or are turned off (Settings → Notification emails)', 'not_configured');
+  if (!sender?.enabled) throw new ApiError(409, 'notification emails are not set up or are turned off (Settings > Notification emails)', 'not_configured');
   const subject = typeof b.subject === 'string' ? b.subject.replace(/[\r\n]+/g, ' ').trim() : '';
   if (!subject || subject.length > 300) throw badRequest('subject is required (up to 300 characters)', { property: 'subject' });
   const text = typeof b.text === 'string' ? b.text.trim() : '';

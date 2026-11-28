@@ -832,7 +832,7 @@ function PropertyEditor({ object, property, siblings, onClose, onSaved }: {
               </Select>
             </label>
             <SharedChoices object={object} property={property} listId={listId} setListId={setListId} lists={lists}
-              blocked={bool('auto_append_users') ? 'Choices filled with users cannot be shared.' : isCurrency ? 'Currency choices follow Settings, Currencies, so they cannot be shared.' : null} />
+              blocked={bool('auto_append_users') ? 'Choices filled with users cannot be shared.' : isCurrency ? 'Currency choices follow Settings > Currencies, so they cannot be shared.' : null} />
             <div className="field">
               <span>Choices</span>
               <div className="choice-list">
@@ -974,7 +974,7 @@ function SharedChoices({ object, property, listId, setListId, lists, blocked }: 
         {listId && !lists?.some((l) => l.id === listId) && <option value={listId}>{property?.option_list?.label ?? 'Option list'}</option>}
       </Select>
       {hint && <p className="muted small shared-list-note">{hint}</p>}
-      {!hint && <p className="muted small shared-list-note">Create lists under Settings, Option lists to give dropdowns on different objects the same choices.</p>}
+      {!hint && <p className="muted small shared-list-note">Create lists under Settings &gt; Option lists to give dropdowns on different objects the same choices.</p>}
     </label>
   );
 }

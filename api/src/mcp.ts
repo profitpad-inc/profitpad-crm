@@ -557,7 +557,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   server.registerTool('get_theme', {
     title: 'Get theme',
-    description: 'The portal colours in use (Settings, Theme): the light and dark palettes (primary, sidebar_background, sidebar_text, sidebar_active, page_background, surface, text, muted_text, border) as #rrggbb, the 16 colours offered for dropdown choices, and whether a logo is set. Saved colours are shown over the defaults.',
+    description: 'The portal colours in use (Settings > Theme): the light and dark palettes (primary, sidebar_background, sidebar_text, sidebar_active, page_background, surface, text, muted_text, border) as #rrggbb, the 16 colours offered for dropdown choices, and whether a logo is set. Saved colours are shown over the defaults.',
     annotations: { readOnlyHint: true }
   }, async () => run(async () => {
     requireScope(p, 'read');
@@ -568,7 +568,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
   if (knowledgeAccess(p) !== 'none') server.registerTool('get_knowledge', {
     title: 'Get knowledge base',
-    description: 'The business\'s knowledge base (Settings, Knowledge base; also called KB, wiki, company info or playbook): articles the company wrote about itself, such as its ideal customer profile (ICP), revenue and goals, sales team, products and pricing, competitors and sales process. Read it for context whenever a question is about the business itself, its strategy, who to target or how to sell. With no arguments, lists the articles without their text (id, title, admins_only, updated_at, length) and missing_topics, the standard topics no article title covers yet; then call with id to read one in full. query keeps those whose title or text has every word, each with a snippet around the match. full: true returns every listed article\'s whole text.',
+    description: 'The business\'s knowledge base (Settings > Knowledge base; also called KB, wiki, company info or playbook): articles the company wrote about itself, such as its ideal customer profile (ICP), revenue and goals, sales team, products and pricing, competitors and sales process. Read it for context whenever a question is about the business itself, its strategy, who to target or how to sell. With no arguments, lists the articles without their text (id, title, admins_only, updated_at, length) and missing_topics, the standard topics no article title covers yet; then call with id to read one in full. query keeps those whose title or text has every word, each with a snippet around the match. full: true returns every listed article\'s whole text.',
     inputSchema: z.object({
       id: z.string().optional().describe('One article\'s id: returns its whole text'),
       query: z.string().optional().describe('Words to look for in titles and text, any case'),
@@ -641,7 +641,7 @@ export function buildServer(p: Principal, icons: { src: string; mimeType: string
 
     server.registerTool('update_knowledge_article', {
       title: 'Update knowledge base article',
-      description: 'Changes a knowledge base article. Change the text one way per call: edits (find-and-replace, best for updating one fact), append (adds to the end) or body (replaces all of it). Every version is kept, and admins can restore an earlier one in Settings, Knowledge base. Returns the article without its text (call get_knowledge with the id to read it).',
+      description: 'Changes a knowledge base article. Change the text one way per call: edits (find-and-replace, best for updating one fact), append (adds to the end) or body (replaces all of it). Every version is kept, and admins can restore an earlier one in Settings > Knowledge base. Returns the article without its text (call get_knowledge with the id to read it).',
       inputSchema: z.object({
         id: z.string().describe('The article\'s id from get_knowledge'),
         title: titleArg.optional(),
@@ -1691,7 +1691,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('create_webhook_endpoint', {
     title: 'Create webhook endpoint',
-    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs, batched: events within 50 ms of each other go in one POST {batch_id, events: [...]}, up to batch_max (default 10, 1 to 1000). Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings, Webhooks. Then add subscriptions with create_webhook_subscription. The endpoint and its subscriptions start off: give the admin their approve_url links to review and turn them on in the CRM (test_webhook_endpoint still works meanwhile).',
+    description: 'Adds an endpoint: an outside URL (https on a public address, e.g. an n8n webhook) that receives record events as signed JSON POSTs, batched: events within 50 ms of each other go in one POST {batch_id, events: [...]}, up to batch_max (default 10, 1 to 1000). Confirm the URL with the admin first. Returns signing_secret once (for checking X-PCRM-Signature); give it to the admin, who can also reveal it later in Settings > Webhooks. Then add subscriptions with create_webhook_subscription. The endpoint and its subscriptions start off: give the admin their approve_url links to review and turn them on in the CRM (test_webhook_endpoint still works meanwhile).',
     inputSchema: z.object({
       name: z.string(),
       url: z.string(),
@@ -1786,7 +1786,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('update_theme', {
     title: 'Update theme',
-    description: 'Changes the portal colours everyone sees (Settings, Theme). Give only the colours to change; the rest stay. light and dark are the two palettes (each person picks light or dark for themselves). dropdown_colors replaces the 16 colours offered for dropdown choices. reset puts a palette back to the defaults before applying any colours given. Call get_theme first, keep text readable on its background (and sidebar_text on sidebar_background) in both palettes, and confirm the colours with the admin before saving. Returns the theme now in use.',
+    description: 'Changes the portal colours everyone sees (Settings > Theme). Give only the colours to change; the rest stay. light and dark are the two palettes (each person picks light or dark for themselves). dropdown_colors replaces the 16 colours offered for dropdown choices. reset puts a palette back to the defaults before applying any colours given. Call get_theme first, keep text readable on its background (and sidebar_text on sidebar_background) in both palettes, and confirm the colours with the admin before saving. Returns the theme now in use.',
     inputSchema: z.object({
       light: paletteArg.optional().describe('Light palette colours to change'),
       dark: paletteArg.optional().describe('Dark palette colours to change'),
@@ -1805,7 +1805,7 @@ function registerAdminTools(server: McpServer, p: Principal, req?: FastifyReques
 
   server.registerTool('get_nav_menus', {
     title: 'Get sidebar menus',
-    description: 'Every sidebar menu (Settings, Navigation): the default menu everyone gets, each menu group\'s menu (with its members\' user ids), and the menus users made for themselves (scope user). Each has items (the sidebar), bottom (the phone hotbar) more_hidden (objects left out of the More list; "*" in it means the More menu is off) and landing (the start page: where the bare CRM address sends people who see that menu, {"type":"home"} by default). Also whether everyone may change their own menu. Call it before update_nav_menu and change only what was asked.',
+    description: 'Every sidebar menu (Settings > Navigation): the default menu everyone gets, each menu group\'s menu (with its members\' user ids), and the menus users made for themselves (scope user). Each has items (the sidebar), bottom (the phone hotbar) more_hidden (objects left out of the More list; "*" in it means the More menu is off) and landing (the start page: where the bare CRM address sends people who see that menu, {"type":"home"} by default). Also whether everyone may change their own menu. Call it before update_nav_menu and change only what was asked.',
     annotations: { readOnlyHint: true }
   }, async () => run(async () => {
     requireScope(p, 'schema');

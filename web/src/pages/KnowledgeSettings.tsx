@@ -129,7 +129,7 @@ export function KnowledgeSettings() {
       title="Knowledge base"
       description={<>
         What your business knows about itself: who you sell to, your numbers, your team, how you sell. AI agents connected to the CRM
-        (Settings, Connected apps) read it for context, and the agent of someone who may edit it can add to it and keep it current when
+        (Settings &gt; Connected apps) read it for context, and the agent of someone who may edit it can add to it and keep it current when
         you tell it something new. Roles decide who reads it and who edits it.
         {canEdit ? ' Every save is kept, so you can see and undo what changed.' : ' Your team keeps it up to date.'}
       </>}

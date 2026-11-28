@@ -586,7 +586,7 @@ export async function fetchLoggedAttachments(p: Principal, emailId: string): Pro
   fetching.add(emailId);
   try {
     const cfg = (await loadProviders()).get(row.provider);
-    if (!providerReady(cfg)) throw new ApiError(409, `${row.provider === 'google' ? 'Google' : 'Microsoft'} is not set up in Settings, Mailboxes any more`, 'conflict');
+    if (!providerReady(cfg)) throw new ApiError(409, `${row.provider === 'google' ? 'Google' : 'Microsoft'} is not set up in Settings > Mailboxes any more`, 'conflict');
     let list: FetchedAttachment[] | null;
     try {
       list = await fetchMessageAttachments(cfg, row.mailbox, row.provider_message_id);

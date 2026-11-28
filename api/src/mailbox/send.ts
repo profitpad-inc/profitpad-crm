@@ -260,7 +260,7 @@ export async function deliver(emailId: string, opts: { retry: boolean }): Promis
   }
   try {
     const cfg = (await loadProviders()).get(row.provider);
-    if (!cfg?.enabled) throw new MailAuthError(`${row.provider === 'google' ? 'Google' : 'Microsoft'} sending is turned off in Settings → Mailboxes`);
+    if (!cfg?.enabled) throw new MailAuthError(`${row.provider === 'google' ? 'Google' : 'Microsoft'} sending is turned off in Settings > Mailboxes`);
     const attachments = [];
     for (const id of row.file_ids) {
       const f = await readFileBytes(pool, SYSTEM, id, MAX_ATTACHMENT_BYTES);

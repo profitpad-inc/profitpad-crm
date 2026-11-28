@@ -60,12 +60,12 @@ function McpExplainer({ kind, onClose }: { kind: McpKind; onClose: () => void })
         </ol>
         <CopyField value={MCP_URL} label="MCP server address" />
         <ol start={2}>
-          <li>In your AI app, add it as a connector (some apps call it a custom connector or an MCP server).</li>
+          <li>In your AI app (Claude, ChatGPT, Gemini, etc.), add it as a connector (some apps call it a custom connector or an MCP server).</li>
           <li>Sign in to the CRM when it asks, and allow access.</li>
           <li>Ask for what you want in plain English. For example: <em>"{EXAMPLE[kind]}"</em></li>
         </ol>
         <p className="muted small">
-          You can see and disconnect your connected apps in <Link to="/settings/connected-apps" onClick={onClose}>Settings, Connected apps</Link>.
+          You can see and disconnect your connected apps in <Link to="/settings/connected-apps" onClick={onClose}>Settings &gt; Connected apps</Link>.
         </p>
       </section>
       <section>

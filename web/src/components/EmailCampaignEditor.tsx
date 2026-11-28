@@ -261,14 +261,19 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     await reload();
   });
 
-  const showTab = (t: CampaignTab, filter?: string) => setParams((prev) => {
-    const next = new URLSearchParams(prev);
-    if (t === 'campaign') next.delete(TAB_PARAM);
-    else next.set(TAB_PARAM, t);
-    if (filter === 'all') next.delete(FILTER_PARAM);
-    else if (filter) next.set(FILTER_PARAM, filter);
-    return next;
-  }, { replace: true });
+  // each tab switch is its own history entry, so the browser's back button
+  // returns to the tab you came from (a count's Activity view, back to Campaign)
+  const showTab = (t: CampaignTab, filter?: string) => {
+    if (t === tab && !filter) return;
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (t === 'campaign') next.delete(TAB_PARAM);
+      else next.set(TAB_PARAM, t);
+      if (filter === 'all') next.delete(FILTER_PARAM);
+      else if (filter) next.set(FILTER_PARAM, filter);
+      return next;
+    });
+  };
 
   // a count opens the Activity tab on the recipients it counts
   const showActivity = (filter: string) => showTab('activity', filter);
@@ -451,7 +456,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
 
       {tab === 'preview' && (
       <div className="card">
-        <div className="card-head">
+        <div className="card-head campaign-preview-head">
           <h3>Email</h3>
           {previewOptions.length > 1 && (
             <Select value={previewOf || previewOptions[0].value} onChange={pickPreview} options={previewOptions} disabled={!!busy} aria-label="Which email to draw" />

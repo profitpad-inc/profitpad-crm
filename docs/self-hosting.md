@@ -51,7 +51,7 @@ The installer:
 3. pulls the images and starts everything on `127.0.0.1:8080` (or the next free port; it says which); the database is set up on first start;
 4. asks for the first admin's email and name.
 
-Point your reverse proxy at that port ([HTTPS and ports](#https-and-ports)), open `https://crm.example.com` and sign in with the Google or Microsoft account that uses the admin's email. Add everyone else under Settings → Users, and give each a role (Settings → Roles); a user with no role can sign in but sees nothing.
+Point your reverse proxy at that port ([HTTPS and ports](#https-and-ports)), open `https://crm.example.com` and sign in with the Google or Microsoft account that uses the admin's email. Add everyone else under Settings > Users, and give each a role (Settings > Roles); a user with no role can sign in but sees nothing.
 
 **Back up `.env` and `db.env` somewhere safe.** The database password and the two keys in `.env` cannot be recovered from the server's data. Changing `FILES_URL_KEY` breaks file links already shared; changing `MASTER_ENCRYPTION_KEY` makes every stored secret unreadable (calendar connections, integration and webhook secrets, API keys saved in Settings).
 
@@ -175,12 +175,12 @@ opens a superuser shell on the server. To reach the database from your own compu
 
 - **Calendars (meeting booker).** Google: enable the Calendar API, add the scopes `https://www.googleapis.com/auth/calendar.freebusy`, `.../calendar.events` and `.../calendar.calendarlist.readonly` to the consent screen, and the redirect URI `https://crm.example.com/v1/calendar/google/callback`. Microsoft: add the delegated Graph permissions `Calendars.ReadWrite` and `offline_access` and the redirect URI `https://crm.example.com/v1/calendar/microsoft/callback`. Set `CALENDAR_GOOGLE_DOMAINS` to your Google domain.
 - **Payments.** A Stripe account with Connect turned on, a webhook for connected accounts to `https://crm.example.com/v1/stripe/webhook` (events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`), then `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in `.env`.
-- **AI assistants (MCP).** Nothing to install: connect a client to `https://crm.example.com/mcp`; the address is also on Settings → Connected apps.
-- **Business card scanning** works out of the box with Tesseract; an admin can add an Anthropic API key in Settings → Card scanner, for better results.
-- **Address autocomplete**: an admin adds a Google Maps key (Places API (New)) in Settings → Address autocomplete.
-- **Email (Postmark)**: marketing campaigns and one-to-one email go out through a Postmark server with a transactional and a broadcast stream, and your sending domain confirmed there (DKIM, Return-Path). An admin pastes the server token, senders and mailing address in Settings → Email, then copies the webhook address shown there into Postmark. Replies coming back into the CRM are optional (off by default, since Postmark bills each received email like a sent one): they need an inbound stream whose domain (e.g. `reply.example.com`) has an MX record to `inbound.postmarkapp.com`. Ask Postmark to let you manage unsubscribes yourself, or every campaign shows two unsubscribe links: see [Postmark and unsubscribes](#postmark-and-unsubscribes).
+- **AI assistants (MCP).** Nothing to install: connect a client to `https://crm.example.com/mcp`; the address is also on Settings > Connected apps.
+- **Business card scanning** works out of the box with Tesseract; an admin can add an Anthropic API key in Settings > Card scanner, for better results.
+- **Address autocomplete**: an admin adds a Google Maps key (Places API (New)) in Settings > Address autocomplete.
+- **Email (Postmark)**: marketing campaigns and one-to-one email go out through a Postmark server with a transactional and a broadcast stream, and your sending domain confirmed there (DKIM, Return-Path). An admin pastes the server token, senders and mailing address in Settings > Email, then copies the webhook address shown there into Postmark. Replies coming back into the CRM are optional (off by default, since Postmark bills each received email like a sent one): they need an inbound stream whose domain (e.g. `reply.example.com`) has an MX record to `inbound.postmarkapp.com`. Ask Postmark to let you manage unsubscribes yourself, or every campaign shows two unsubscribe links: see [Postmark and unsubscribes](#postmark-and-unsubscribes).
 - **Integrations and webhooks** (n8n, Zapier, your own services) are called over the internet: their addresses must be https on a public address, even when the service runs on the same server.
-- **Forms and booking on other websites**: add the website under Settings → Embed domains and paste the snippet shown there; it loads `https://crm.example.com/p/embed.js`.
+- **Forms and booking on other websites**: add the website under Settings > Embed domains and paste the snippet shown there; it loads `https://crm.example.com/p/embed.js`.
 
 ### Postmark and unsubscribes
 

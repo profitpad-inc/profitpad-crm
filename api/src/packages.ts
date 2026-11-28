@@ -649,7 +649,7 @@ async function installIntegrations(ctx: Ctx, m: Manifest): Promise<void> {
     const target = `${spec.key} (${spec.label})`;
     const { rows: found } = await ctx.c.query('select key from auth.view_integrations where key = $1', [spec.key]);
     if (found[0]) {
-      ctx.steps.push({ kind: 'integration', target, action: 'exists', detail: 'kept as it is: change it in Settings, View integrations' });
+      ctx.steps.push({ kind: 'integration', target, action: 'exists', detail: 'kept as it is: change it in Settings > View integrations' });
       ctx.items.push({ kind: 'integration', object_type_id: 'auth', item_key: spec.key, created: false });
       continue;
     }
@@ -678,7 +678,7 @@ async function installIntegrations(ctx: Ctx, m: Manifest): Promise<void> {
       }
     }
     const approval = approvalFor(ctx);
-    const state = approval.enabled ? 'on' : 'off until an admin signed in to the CRM turns it on in Settings, View integrations';
+    const state = approval.enabled ? 'on' : 'off until an admin signed in to the CRM turns it on in Settings > View integrations';
     const secretNote = spec.secret_header ? (secretIsNew ? `, header ${spec.secret_header} with a new secret (shown once below)` : `, header ${spec.secret_header} with the secret from the earlier install`) : '';
     ctx.steps.push({ kind: 'integration', target, action: 'create', detail: `${new URL(checked).host}, ${state}${secretNote}` });
     ctx.items.push({ kind: 'integration', object_type_id: 'auth', item_key: spec.key, created: true });

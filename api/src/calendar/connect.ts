@@ -241,7 +241,7 @@ export async function calendarRoutes(app: FastifyInstance) {
           calendars = await listCalendars(r);
         } catch (err) {
           error = err instanceof CalendarAuthError ? 'Connect this calendar again.'
-            : err instanceof CalendarPermissionError ? 'Your organization connected this calendar, but the provider is refusing access. Ask an admin to check Settings, Meetings.'
+            : err instanceof CalendarPermissionError ? 'Your organization connected this calendar, but the provider is refusing access. Ask an admin to check Settings > Meetings.'
             : (err as Error).message;
           if (err instanceof CalendarAuthError) r.status = 'needs_reconnect';
         }
@@ -286,7 +286,7 @@ export async function calendarRoutes(app: FastifyInstance) {
     const userId = signedInUser(req.principal);
     requireScope(req.principal!, 'write');
     const conn = await connectionOf(userId, req.params.id);
-    if (conn.via_service) throw badRequest('this calendar was connected by your organization; an admin can turn that off in Settings, Meetings');
+    if (conn.via_service) throw badRequest('this calendar was connected by your organization; an admin can turn that off in Settings > Meetings');
     await revoke(conn);
     forgetAccessToken(conn.id);
     await pool.query('delete from auth.calendar_connections where id = $1', [conn.id]);

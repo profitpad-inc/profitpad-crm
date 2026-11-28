@@ -20,8 +20,8 @@ Hostnames use hyphens: underscores are not valid in hostnames for TLS certificat
 ## 2. GitHub
 
 1. Push the repo with `web/` and `.github/workflows/pages.yml`.
-2. Settings → Pages → Source: **GitHub Actions**. Custom domain: `crm.profitpad.com`, then tick **Enforce HTTPS** once the certificate is issued.
-3. Settings → Secrets and variables → Actions → **Variables**: `VITE_API_URL` = `https://api.crm.profitpad.com`.
+2. Settings > Pages > Source: **GitHub Actions**. Custom domain: `crm.profitpad.com`, then tick **Enforce HTTPS** once the certificate is issued.
+3. Settings > Secrets and variables > Actions > **Variables**: `VITE_API_URL` = `https://api.crm.profitpad.com`.
 4. Run the workflow (push to `main` or run it manually). `404.html` is a copy of `index.html`, so deep links like `/objects/contacts` load the app on Pages.
 
 ## 3. Server (API, in Docker)
@@ -93,7 +93,7 @@ Each person needs an active user record whose email matches their Google or Micr
 Migration `0013_public_pages.sql` must be applied (`./db/migrate.sh`) before deploying an API that serves `/v1/public/`. The pages themselves ship with the UI (`/p/quote/`, `/p/form/`, `/p/embed.js` on GitHub Pages); nothing new in DNS.
 
 - `TRUST_PROXY=true` in `deploy/.env`, so rate limits and stored submission IPs see the visitor, not nginx.
-- Websites that embed forms are listed in Settings → Embed domains, not in `CORS_ORIGINS`.
+- Websites that embed forms are listed in Settings > Embed domains, not in `CORS_ORIGINS`.
 - Rate limits in nginx (per visitor IP: public routes 30 a minute, sign-in routes 20 a minute, with bursts). Install the zones file and the updated site, keeping the `listen 443 ssl` and certificate lines certbot added to the live site:
 
   ```bash
@@ -119,7 +119,7 @@ Migration `0020_oauth.sql` is applied to the server DB (2026-11-02, after 0019).
 - `PUBLIC_API_URL=https://api.crm.profitpad.com` must be set: it is the OAuth issuer and the MCP resource (`https://api.crm.profitpad.com/mcp`). Do not set `OAUTH_INSECURE_METADATA_FETCH`.
 - nginx: add the `pcrm_oauth` zone (in `deploy/nginx-pcrm-limits.conf`) and the `/oauth/` and `= /mcp` locations from `deploy/nginx-api.conf` (the `/mcp` one turns off buffering for streamed replies), as in section 5.
 - Check: `curl -s https://api.crm.profitpad.com/.well-known/oauth-authorization-server` returns the metadata, and `curl -si -X POST https://api.crm.profitpad.com/mcp` answers 401 with a `WWW-Authenticate` header.
-- Connect an MCP client to `https://api.crm.profitpad.com/mcp` (the address is also on Settings → Connected apps).
+- Connect an MCP client to `https://api.crm.profitpad.com/mcp` (the address is also on Settings > Connected apps).
 
 ## 8. Meeting booker (migration 0022)
 
@@ -144,7 +144,7 @@ Files are stored on this server's disk for now (the plan to move them to Cloudfl
 
 ## 10. Payments (migration 0027, applied 2026-11-02)
 
-- Stripe (ProfitPad's account, the platform): activate it, turn on Connect and complete the platform profile (without it creating accounts fails, e.g. `connect_profile_not_submitted`). Under Settings → Connect → Payment methods, set the defaults for connected accounts (cards on; ACH Direct Debit, Canadian pre-authorized debit and Klarna on or off) and turn on "Allow connected accounts to customize their own payment methods".
+- Stripe (ProfitPad's account, the platform): activate it, turn on Connect and complete the platform profile (without it creating accounts fails, e.g. `connect_profile_not_submitted`). Under Settings > Connect > Payment methods, set the defaults for connected accounts (cards on; ACH Direct Debit, Canadian pre-authorized debit and Klarna on or off) and turn on "Allow connected accounts to customize their own payment methods".
 - Webhook: Workbench → Webhooks → add a destination for **Connected accounts**, snapshot payload, URL `https://api.crm.profitpad.com/v1/stripe/webhook`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`. Copy its signing secret.
 - `deploy/.env`: `STRIPE_SECRET_KEY=` (platform secret key; `sk_test_...` until going live) and `STRIPE_WEBHOOK_SECRET=` (`whsec_...`), and `UI_URL=https://crm.profitpad.com` (return links from Stripe). Then `docker compose up -d --build`.
 - No nginx change: the webhook is a normal `/v1/` path and Stripe's events are far below the body limit.
@@ -201,11 +201,11 @@ Apply `0047_object_aliases.sql` with the API deploy: the new API reads `meta.pc_
 
 ## 19. Card scanner (migrations 0063, 0065 and 0067)
 
-The business card scanner (`/scan`, `api/src/card-scan.ts`) reads cards with Tesseract inside the API container, or with Claude when an admin adds an Anthropic API key in Settings → Card scanner.
+The business card scanner (`/scan`, `api/src/card-scan.ts`) reads cards with Tesseract inside the API container, or with Claude when an admin adds an Anthropic API key in Settings > Card scanner.
 
 1. Apply `0063_card_scanner.sql`, `0065_card_scan_settings.sql` and `0067_card_scans.sql` (all three already applied to the server DB on 2026-11-03). 0067 adds the `card_scans` object (`pc_0056`); the new API writes to it on every read, so deploy the API after it.
 2. On the server: `git pull`, then `docker compose up -d --build` in `deploy/`. The API image now installs `tesseract-ocr` and its English data (`api/Dockerfile`).
-3. Check: `docker exec pc-api tesseract --version`, then Settings → Card scanner shows "Installed".
+3. Check: `docker exec pc-api tesseract --version`, then Settings > Card scanner shows "Installed".
 4. Saving an Anthropic key needs `MASTER_ENCRYPTION_KEY` (already set for calendars); the key is sealed with it. Changing that key means the admin saves the Anthropic key again.
 5. Deploy the UI too (the page, the Settings page and the "Card scanner" menu item type).
 
@@ -216,7 +216,7 @@ Locally: `brew install tesseract`.
 1. Migration `0069_address_autocomplete.sql` is already applied to the server DB.
 2. In `deploy/.env` on the server, rename `CALENDAR_TOKEN_KEY=` to `MASTER_ENCRYPTION_KEY=` and keep the same value (a new value would make every stored secret unreadable: calendar connections, the Anthropic and Google Maps keys, integration secret headers and webhook signing secrets). The API still reads the old name when the new one is missing, so the order of this step and the deploy does not matter.
 3. Rebuild and restart the API (`docker compose up -d --build`), then deploy the UI.
-4. An admin adds the Google Maps key in Settings → Address autocomplete (Places API (New) turned on for it, restricted by API rather than by website, since the calls come from the API server).
+4. An admin adds the Google Maps key in Settings > Address autocomplete (Places API (New) turned on for it, restricted by API rather than by website, since the calls come from the API server).
 
 ## 21. Live updates on record pages (migrations 0086 and 0087)
 
@@ -261,30 +261,30 @@ Order matters: every migration before 0088 must already be applied while the rol
 7. **After**: create and archive a test property; run a custom view as a non-admin and check row-level security still hides records; open a public quote link and a form embed on the new host. Leave the old `test_crm` database in n8n's container for a week, then drop it (ask first, back up first).
 ## 23. Sending email from mailboxes (migration 0093)
 
-Users send email from record pages as themselves through the organization's Google Workspace or Microsoft 365. No per-user linking: an admin sets up one service account per provider in Settings → Mailboxes. Nothing goes in `deploy/.env` except `MASTER_ENCRYPTION_KEY` (already set), which seals the service account key and the client secret.
+Users send email from record pages as themselves through the organization's Google Workspace or Microsoft 365. No per-user linking: an admin sets up one service account per provider in Settings > Mailboxes. Nothing goes in `deploy/.env` except `MASTER_ENCRYPTION_KEY` (already set), which seals the service account key and the client secret.
 
 1. Apply `0093_mailboxes.sql` (`./db/migrate.sh`). It adds `auth.mailbox_providers`, `auth.shared_mailboxes`, `auth.shared_mailbox_users`, `auth.mailbox_sends`, the `bcc_addresses`, `reply_to` and `scheduled_at` properties and the `scheduled`, `sending` and `cancelled` statuses on emails, and the trigger that locks a sent email's content.
 2. Rebuild and restart the API (`npm ci` picks up nodemailer, used only to build MIME), then deploy the UI (`npm ci` picks up TipTap).
 3. Google Workspace (for each domain whose people sign in with Google):
    1. Google Cloud console: in any project, enable the Gmail API, create a service account (no roles needed) and a JSON key for it.
-   2. Google Admin (admin.google.com): Security → Access and data control → API controls → Manage Domain-wide delegation (https://admin.google.com/ac/owl/domainwidedelegation) → Add new. Client ID: the service account's (Settings → Mailboxes shows it after the key is saved). Scopes: `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.settings.basic` (the second lists each person's send-as aliases).
-   3. Settings → Mailboxes → Google: paste the JSON key, enter the domains (e.g. `profitpad.com`), turn Sending on, press Test. Google can take a few minutes to apply a new delegation.
+   2. Google Admin (admin.google.com): Security → Access and data control → API controls → Manage Domain-wide delegation (https://admin.google.com/ac/owl/domainwidedelegation) → Add new. Client ID: the service account's (Settings > Mailboxes shows it after the key is saved). Scopes: `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.settings.basic` (the second lists each person's send-as aliases).
+   3. Settings > Mailboxes > Google: paste the JSON key, enter the domains (e.g. `profitpad.com`), turn Sending on, press Test. Google can take a few minutes to apply a new delegation.
    4. Your organization may block service account key creation (the `iam.disableServiceAccountKeyCreation` policy); an org admin can make an exception for this project.
 4. Microsoft 365 (for each domain whose people use Outlook):
    1. Microsoft Entra admin center → App registrations → New registration (single tenant, no redirect URI).
    2. API permissions → Add → Microsoft Graph → **Application** permissions → `Mail.Send` and `User.Read.All` → Grant admin consent.
    3. Certificates & secrets → New client secret; copy its Value. Microsoft secrets expire (at most 24 months): put a reminder to paste a new one before then.
    4. Recommended: limit the app to the mailboxes that send from the CRM with Exchange Online RBAC for Applications (or the older application access policy). Without it, the app can send as any mailbox in the tenant.
-   5. Sending from aliases needs Exchange Online's `SendFromAliasesEnabled` organization setting. Not verified with a real tenant yet: turn "Send from aliases" on in Settings → Mailboxes only after testing it.
-   6. Settings → Mailboxes → Microsoft: tenant ID, client ID, secret, domains, turn Sending on, press Test.
-5. Shared mailboxes (sales@, support@): Settings → Mailboxes → Add shared mailbox, then pick who may send from it. On Google it must be a real user mailbox (or use a group address as a send-as alias of someone's mailbox).
+   5. Sending from aliases needs Exchange Online's `SendFromAliasesEnabled` organization setting. Not verified with a real tenant yet: turn "Send from aliases" on in Settings > Mailboxes only after testing it.
+   6. Settings > Mailboxes > Microsoft: tenant ID, client ID, secret, domains, turn Sending on, press Test.
+5. Shared mailboxes (sales@, support@): Settings > Mailboxes > Add shared mailbox, then pick who may send from it. On Google it must be a real user mailbox (or use a group address as a send-as alias of someone's mailbox).
 
 ### 23a. Logging email automatically (migration 0106)
 
 1. Apply `0106_email_autolog.sql` (`./db/migrate.sh`), then deploy the API and UI.
 2. Google: in Google Admin, Domain-wide delegation, edit the CRM's client ID and add `https://www.googleapis.com/auth/gmail.readonly` to its scopes (keep the two sending scopes).
 3. Microsoft: on the app registration, add the Microsoft Graph **Application** permission `Mail.Read` and grant admin consent. It lets the app read every mailbox it may reach: limit it with Exchange Online RBAC for Applications (or an application access policy) to the people who use the CRM.
-4. Settings → Mailboxes → (provider) → Log emails automatically: turn Logging on, pick the default for users and how often to check. Mailboxes appear in the table within a minute; a "Needs permission" row means step 2 or 3 is missing.
+4. Settings > Mailboxes → (provider) → Log emails automatically: turn Logging on, pick the default for users and how often to check. Mailboxes appear in the table within a minute; a "Needs permission" row means step 2 or 3 is missing.
 5. Not verified against a real Google Workspace or Microsoft 365 tenant yet (fake servers only). On Microsoft, the delta query's `receivedDateTime` filter and reading `internetMessageHeaders` per message are unverified with a real tenant.
 
 ### 23b. Calendars for everyone, meetings with contacts, Zoom (migration 0108)
@@ -292,8 +292,8 @@ Users send email from record pages as themselves through the organization's Goog
 1. Apply `0108_calendar_meetings.sql`, and `0110_calendar_lookback_additional_emails.sql` after the contact additional emails migration 0109 (`./db/migrate.sh`; migrations also run when the published images start), then deploy the API and UI.
 2. Google: in Google Admin, Domain-wide delegation, edit the CRM's client ID and add `https://www.googleapis.com/auth/calendar.events`, `https://www.googleapis.com/auth/calendar.freebusy` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` (keep the mail scopes). For Meet recordings and transcripts also add `https://www.googleapis.com/auth/meetings.space.readonly`.
 3. Microsoft: on the app registration, add the Microsoft Graph **Application** permission `Calendars.ReadWrite` with admin consent. For Teams transcripts also `OnlineMeetings.Read.All` and `OnlineMeetingTranscript.Read.All`, plus a Teams application access policy (`New-CsApplicationAccessPolicy` / `Grant-CsApplicationAccessPolicy`) for the organizers.
-4. Zoom (optional): in the Zoom App Marketplace, build a Server-to-Server OAuth app with the scopes `meeting:write:admin`, `user:read:admin`, `cloud_recording:read:admin` (or their granular equivalents) and activate it. Paste its account ID, client ID and secret in Settings → Meetings → Zoom, Test, turn it on.
-5. Settings → Meetings: turn on "Calendars for everyone" per provider, then "Mark meetings with contacts" (check every 3 min by default) and, if wanted, "Recordings and transcripts". The Connected calendars table shows each calendar; "Needs permission" means step 2 or 3 is missing.
+4. Zoom (optional): in the Zoom App Marketplace, build a Server-to-Server OAuth app with the scopes `meeting:write:admin`, `user:read:admin`, `cloud_recording:read:admin` (or their granular equivalents) and activate it. Paste its account ID, client ID and secret in Settings > Meetings > Zoom, Test, turn it on.
+5. Settings > Meetings: turn on "Calendars for everyone" per provider, then "Mark meetings with contacts" (check every 3 min by default) and, if wanted, "Recordings and transcripts". The Connected calendars table shows each calendar; "Needs permission" means step 2 or 3 is missing.
 6. Not verified against real Google, Microsoft or Zoom accounts (fake servers only). Unverified with real tenants: Graph `originalStart` on occurrences, app-only Teams online meeting lookup by `JoinWebUrl`, Meet `conferenceRecords` filtering by `space.meeting_code` as a delegated non-organizer, and the exact Zoom scope names on newer (granular-scope) apps.
 
 ## 23. Email through Postmark (migration 0094)
@@ -301,12 +301,12 @@ Users send email from record pages as themselves through the organization's Goog
 1. Apply `0094_email_postmark.sql` (`./db/migrate.sh` through the tunnel, or `./db.sh migrate` on the server) before deploying the API: the email worker starts with the API and reads the new tables.
 2. `deploy/.env` needs `UI_URL` (for unsubscribe page links) and `PUBLIC_API_URL` (for one-click unsubscribe and the webhook addresses), plus `MASTER_ENCRYPTION_KEY` (already set). Campaigns refuse to send without the first two.
 3. Add the `location /v1/postmark/` block from `deploy/nginx-api.conf` to the live site (40 MB body limit, no rate limit; keep the certbot lines), then `sudo nginx -t && sudo systemctl reload nginx`.
-4. Rebuild and restart the API, deploy the UI (Settings → Email, the campaign page, and the new public page `/p/unsubscribe/`).
+4. Rebuild and restart the API, deploy the UI (Settings > Email, the campaign page, and the new public page `/p/unsubscribe/`).
 5. Postmark (someone with the account):
    - One server with a **Transactional** stream (`outbound`) and a **Broadcast** stream (ask Postmark to approve broadcast sending). Ask Postmark support to let you manage unsubscribes on your own (the CRM adds its own link and headers; without this every campaign shows two unsubscribe links); once approved, pick **Manage unsubscribes on your own** in the broadcast stream's Settings tab. Sample request: `docs/self-hosting.md`, Postmark and unsubscribes.
    - Sender signature / domain: add the sending domain and its DKIM and Return-Path DNS records; DMARC on the root domain.
-   - Only if replies should come back into the CRM (Settings → Email, Replies, off by default; each received email is billed like a sent one and needs Postmark's Pro or Platform plan): inbound stream with inbound domain e.g. `reply.profitpad.com`, and an MX record `reply.profitpad.com → inbound.postmarkapp.com` (priority 10).
-6. In the CRM, Settings → Email: paste the server API token, from name and address, mailing address, reply domain (and a fallback address), turn sending on, Save. Copy the two webhook addresses shown there into Postmark: the events webhook on both the transactional and broadcast streams (Delivery, Bounce, Spam complaint, Open, Click, Subscription change; open and link tracking on for the broadcast stream), the inbound webhook on the inbound stream. Then "Send me a test".
+   - Only if replies should come back into the CRM (Settings > Email > Replies, off by default; each received email is billed like a sent one and needs Postmark's Pro or Platform plan): inbound stream with inbound domain e.g. `reply.profitpad.com`, and an MX record `reply.profitpad.com → inbound.postmarkapp.com` (priority 10).
+6. In the CRM, Settings > Email: paste the server API token, from name and address, mailing address, reply domain (and a fallback address), turn sending on, Save. Copy the two webhook addresses shown there into Postmark: the events webhook on both the transactional and broadcast streams (Delivery, Bounce, Spam complaint, Open, Click, Subscription change; open and link tracking on for the broadcast stream), the inbound webhook on the inbound stream. Then "Send me a test".
 7. Try a campaign on 2 or 3 internal contacts before a real one: delivery, open and click counts, a reply (shows on the contact's timeline), unsubscribe (contact opted out, left out next time).
 
 ## 24. Reinstall from prebuilt images on one address (done 2026-11-08)
@@ -321,7 +321,7 @@ Before this, the server ran `deploy/docker-compose.yml` from `/srv/profitpad_crm
 
 1. **Images.** With `.github/workflows/images.yml` on `main`, the Images workflow publishes `:main` for all four images. After that first run, make each `profitpad-crm-*` package public (github.com/orgs/profitpad-inc/packages, the package, Package settings, Change visibility). Check from any machine: `docker pull ghcr.io/profitpad-inc/profitpad-crm-api:main`.
 2. **Google** (Cloud console, the OAuth client): add the redirect URIs `https://crm.profitpad.com/v1/auth/google/callback` and `https://crm.profitpad.com/v1/calendar/google/callback`. **Microsoft** (Entra, the app registration, Authentication): add `https://crm.profitpad.com/v1/auth/microsoft/callback` and `https://crm.profitpad.com/v1/calendar/microsoft/callback`. Keep the `api.crm` ones until everything works.
-3. **DNS**: change `crm.profitpad.com` from the CNAME to `profitpad-inc.github.io` to an A record for `34.130.249.246`. Then, in the repo's Settings, Pages, remove the custom domain. Wait until `dig +short crm.profitpad.com` shows the server's address before step 8 (certbot needs it).
+3. **DNS**: change `crm.profitpad.com` from the CNAME to `profitpad-inc.github.io` to an A record for `34.130.249.246`. Then, in the repo's Settings > Pages, remove the custom domain. Wait until `dig +short crm.profitpad.com` shows the server's address before step 8 (certbot needs it).
 
 ### On the server
 
@@ -361,20 +361,20 @@ Before this, the server ran `deploy/docker-compose.yml` from `/srv/profitpad_crm
 
 ### After
 
-10. **Set up again** what lived in the old database: users and roles; Settings, Email (Postmark token and sender; then paste the two webhook addresses it shows, now on `crm.profitpad.com`, into Postmark); theme and logo; embed domains; calendar connections; API keys for n8n flows; the MCP connector in Claude (`https://crm.profitpad.com/mcp`).
+10. **Set up again** what lived in the old database: users and roles; Settings > Email (Postmark token and sender; then paste the two webhook addresses it shows, now on `crm.profitpad.com`, into Postmark); theme and logo; embed domains; calendar connections; API keys for n8n flows; the MCP connector in Claude (`https://crm.profitpad.com/mcp`).
 11. **Repo cleanup** (done 2026-11-08): removed `.github/workflows/pages.yml`, `deploy/docker-compose.yml`, `deploy/db.sh`, `deploy/.env.example` and the three `deploy/nginx-*.conf`. `/srv/profitpad_crm` is only a checkout now, not what runs. Pages was unpublished 2026-11-11; still to do in GitHub's settings: delete the repository variable `VITE_API_URL`, which nothing uses any more.
 
 Updating afterwards: `cd /opt/profitpad-crm && sudo bash install.sh` (fetches main's `docker-compose.yml`, pulls the `:main` images, runs migrations, restarts).
 
 ## 25. Notification emails and invites (migration 0099)
 
-Needs section 23 (Mailboxes) working for the provider that sends, or Postmark connected in Settings → Email (section 23, Email through Postmark) with "Send through: Postmark" picked here (migration 0150).
+Needs section 23 (Mailboxes) working for the provider that sends, or Postmark connected in Settings > Email (section 23, Email through Postmark) with "Send through: Postmark" picked here (migration 0150).
 
 1. Apply `0099_notification_emails.sql` and `0100_user_notification_settings.sql` (each user's settings, all on by default), rebuild and restart the API, deploy the UI. `UI_URL` must be set (the emails link to the CRM).
 2. Pick the mailbox the service account sends as:
-   - Google Workspace: a licensed user (e.g. `noreply@` itself), or an existing user with `noreply@` added as an alternate email in Google Admin and then as a send-as address in that user's Gmail (Settings → Accounts → Send mail as). With an alias, the Mailbox is that user's own address (not `noreply@`), and the From address is `noreply@`. The service account needs the same two scopes as section 23.
-   - Microsoft 365: a licensed user (e.g. `noreply@`), or a user with `noreply@` as an email alias; an alias also needs "Send from aliases" on in Settings → Mailboxes and `SendFromAliasesEnabled` in Exchange (not verified with a real tenant). If the Entra app is limited to some mailboxes, include this one.
-3. Settings → Notification emails: mailbox, From address (empty means the mailbox), From name, Save, Send test, then turn Sending on. Turn "Invite new users" on if new users should get an invite when their user is created.
+   - Google Workspace: a licensed user (e.g. `noreply@` itself), or an existing user with `noreply@` added as an alternate email in Google Admin and then as a send-as address in that user's Gmail (Settings > Accounts > Send mail as). With an alias, the Mailbox is that user's own address (not `noreply@`), and the From address is `noreply@`. The service account needs the same two scopes as section 23.
+   - Microsoft 365: a licensed user (e.g. `noreply@`), or a user with `noreply@` as an email alias; an alias also needs "Send from aliases" on in Settings > Mailboxes and `SendFromAliasesEnabled` in Exchange (not verified with a real tenant). If the Entra app is limited to some mailboxes, include this one.
+3. Settings > Notification emails: mailbox, From address (empty means the mailbox), From name, Save, Send test, then turn Sending on. Turn "Invite new users" on if new users should get an invite when their user is created.
 4. Check the Sent log there after the first mentions and tasks.
 
 ## Notes

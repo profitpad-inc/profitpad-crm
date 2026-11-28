@@ -498,7 +498,7 @@ function ThemeSettings() {
               </div>
             </div>
           </SettingsSection>
-          <SettingsSection title="Portal colours" description="Each person picks light or dark in Settings, Account. The CRM shows the palette you are editing while this page is open.">
+          <SettingsSection title="Portal colours" description="Each person picks light or dark in Settings > Account. The CRM shows the palette you are editing while this page is open.">
             <div className="segmented palette-tabs" role="group" aria-label="Palette">
               <button type="button" aria-pressed={editing === 'light'} onClick={() => setEditing('light')}>Light mode</button>
               <button type="button" aria-pressed={editing === 'dark'} onClick={() => setEditing('dark')}>Dark mode</button>

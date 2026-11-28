@@ -395,7 +395,7 @@ function AutologCard({ p, sync, onSaved }: { p: ProviderState; sync: SyncRow[]; 
   return (
     <SettingsSection
       title="Log emails automatically"
-      description={`Reads each user's own ${p.provider === 'google' ? 'Gmail' : 'Outlook'} mailbox and logs email to or from existing contacts on those contacts and their companies. Email among colleagues only is never logged. Logging starts when it is turned on: older email is not brought in. Each user can choose differently in Settings, Account.`}
+      description={`Reads each user's own ${p.provider === 'google' ? 'Gmail' : 'Outlook'} mailbox and logs email to or from existing contacts on those contacts and their companies. Email among colleagues only is never logged. Logging starts when it is turned on: older email is not brought in. Each user can choose differently in Settings > Account.`}
     >
       {error && <div className="error">{error}</div>}
       {reconsent && (

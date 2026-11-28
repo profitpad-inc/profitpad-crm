@@ -105,11 +105,11 @@ export function MeetingSettings() {
 
       <SettingsSection
         title="Calendars for everyone"
-        description="Uses the service account or app already set up in Settings, Mailboxes. Everyone who signs in with an address in its domains gets their calendar connected within a minute, for booking pages and for marking meetings. Users who connected a calendar themselves keep it."
+        description="Uses the service account or app already set up in Settings > Mailboxes. Everyone who signs in with an address in its domains gets their calendar connected within a minute, for booking pages and for marking meetings. Users who connected a calendar themselves keep it."
       >
         {state.providers.map((p) => (
           <div key={p.provider}>
-            <SettingRow label={LABEL[p.provider]} hint={p.ready ? `Domains: ${p.domains.join(', ')}` : 'Set up this provider in Settings, Mailboxes first.'}>
+            <SettingRow label={LABEL[p.provider]} hint={p.ready ? `Domains: ${p.domains.join(', ')}` : 'Set up this provider in Settings > Mailboxes first.'}>
               <label><input type="checkbox" role="switch" checked={p.calendar_enabled} disabled={busy || (!p.calendar_enabled && !p.ready)}
                 onChange={(e) => put(`providers/${p.provider}`, { calendar_enabled: e.target.checked }, e.target.checked ? 'Calendars connect automatically.' : 'Organization calendars turned off.')} /> {p.calendar_enabled ? 'On' : 'Off'}</label>
             </SettingRow>
@@ -143,12 +143,12 @@ export function MeetingSettings() {
           <label><input type="checkbox" role="switch" checked={m.recordings_enabled} disabled={busy} onChange={(e) => put('meetings', { recordings_enabled: e.target.checked }, e.target.checked ? 'Recordings and transcripts will be fetched.' : 'Turned off.')} /> {m.recordings_enabled ? 'On' : 'Off'}</label>
         </SettingRow>
         {google && (
-          <SettingRow label="Google Meet" hint={google.ready ? <>Add this scope to {google.client_id ? <>client ID <code>{google.client_id}</code></> : 'the Google client ID'} under <GoogleDelegationLink />. Recordings are linked from Drive; transcripts are copied.</> : 'Set up Google in Settings, Mailboxes first.'}>
+          <SettingRow label="Google Meet" hint={google.ready ? <>Add this scope to {google.client_id ? <>client ID <code>{google.client_id}</code></> : 'the Google client ID'} under <GoogleDelegationLink />. Recordings are linked from Drive; transcripts are copied.</> : 'Set up Google in Settings > Mailboxes first.'}>
             <CopyField value={google.meeting_scopes.join(',')} label="OAuth scope" />
           </SettingRow>
         )}
         {microsoft && (
-          <SettingRow label="Microsoft Teams" hint={microsoft.ready ? 'Application permissions with admin consent. Teams also needs an application access policy (New-CsApplicationAccessPolicy) granted to the meeting organizers. Transcripts are copied; recordings stay in Teams.' : 'Set up Microsoft in Settings, Mailboxes first.'}>
+          <SettingRow label="Microsoft Teams" hint={microsoft.ready ? 'Application permissions with admin consent. Teams also needs an application access policy (New-CsApplicationAccessPolicy) granted to the meeting organizers. Transcripts are copied; recordings stay in Teams.' : 'Set up Microsoft in Settings > Mailboxes first.'}>
             <CopyField value={microsoft.meeting_scopes.join(', ')} label="Permissions" />
           </SettingRow>
         )}
@@ -158,7 +158,7 @@ export function MeetingSettings() {
 
       <SettingsSection title="Connected calendars" description="Every calendar the CRM can read, and how marking meetings is going.">
         {state.calendars.length === 0 ? (
-          <EmptyState compact title="No calendars yet">Turn on calendars for everyone above, or users connect their own in Settings, Calendars.</EmptyState>
+          <EmptyState compact title="No calendars yet">Turn on calendars for everyone above, or users connect their own in Settings &gt; Calendars.</EmptyState>
         ) : (
           <div className="access-table">
             <table className="grid">

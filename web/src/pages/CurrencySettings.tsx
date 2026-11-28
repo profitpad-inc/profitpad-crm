@@ -280,7 +280,7 @@ export function CurrencySettings() {
           </div>
         )}
         <p className="muted small">
-          Archiving a currency hides it here and from conversions; records keep their amounts. Archive it in the currency dropdowns too (Settings, Properties) to stop people picking it.
+          Archiving a currency hides it here and from conversions; records keep their amounts. Archive it in the currency dropdowns too (Settings &gt; Properties) to stop people picking it.
         </p>
       </SettingsSection>
 

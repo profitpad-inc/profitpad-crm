@@ -54,7 +54,7 @@ export async function queueBookingEmails(
     );
   const sender = await hostSender(t.host);
   if (!sender) {
-    for (const j of jobs) await log(j.kind, j.minutes, null, 'skipped', "The host has no mailbox the CRM can send from (Settings → Mailboxes).");
+    for (const j of jobs) await log(j.kind, j.minutes, null, 'skipped', "The host has no mailbox the CRM can send from (Settings > Mailboxes).");
     return 0;
   }
   const emails = await getObject('emails');

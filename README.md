@@ -141,11 +141,11 @@ sudo docker compose up -d                                           # apply .env
 
 ## Using it
 
-**People** sign in with Google or Microsoft when their verified email matches an active user record. There is no self sign-up: admins add users in Settings → Users. What each person sees comes from their roles (Settings → Roles): an admin role gives full access, other roles grant read, create, edit and delete per object and limit which records are visible. A user with no role can sign in but sees nothing. The database refuses to deactivate, archive or delete the last admin.
+**People** sign in with Google or Microsoft when their verified email matches an active user record. There is no self sign-up: admins add users in Settings > Users. What each person sees comes from their roles (Settings > Roles): an admin role gives full access, other roles grant read, create, edit and delete per object and limit which records are visible. A user with no role can sign in but sees nothing. The database refuses to deactivate, archive or delete the last admin.
 
-**Scripts and integrations** use API keys (`pcrm_...`), made by admins in Settings → API keys. A key acts as one user and never does more than that user may. The API reference is at `https://<your address>/docs`.
+**Scripts and integrations** use API keys (`pcrm_...`), made by admins in Settings > API keys. A key acts as one user and never does more than that user may. The API reference is at `https://<your address>/docs`.
 
-**AI assistants** such as Claude connect to the MCP server at `https://<your address>/mcp` (also shown in Settings → Connected apps): add it as a connector and sign in when asked. Connected apps get short-lived OAuth tokens limited to read, or read and write; users see and disconnect them in Settings → Connected apps, and admins can block an app for everyone.
+**AI assistants** such as Claude connect to the MCP server at `https://<your address>/mcp` (also shown in Settings > Connected apps): add it as a connector and sign in when asked. Connected apps get short-lived OAuth tokens limited to read, or read and write; users see and disconnect them in Settings > Connected apps, and admins can block an app for everyone.
 
 ## Development
 

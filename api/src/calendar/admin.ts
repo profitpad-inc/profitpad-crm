@@ -70,7 +70,7 @@ export async function meetingAdminRoutes(app: FastifyInstance) {
     if (!MAIL_PROVIDERS.includes(prov)) throw notFound('unknown provider');
     const v = req.body?.calendar_enabled;
     if (typeof v !== 'boolean') throw badRequest('calendar_enabled must be true or false', { property: 'calendar_enabled' });
-    if (v && !providerReady((await loadProviders()).get(prov))) throw badRequest('set up this provider in Settings, Mailboxes first');
+    if (v && !providerReady((await loadProviders()).get(prov))) throw badRequest('set up this provider in Settings > Mailboxes first');
     await pool.query(`insert into auth.mailbox_providers (provider) values ($1) on conflict do nothing`, [prov]);
     await pool.query(`update auth.mailbox_providers set calendar_enabled = $2, updated_by = $3, updated_at = now() where provider = $1`, [prov, v, p.actor]);
     await reconcileServiceCalendars();

@@ -66,7 +66,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     let fromAddress: string;
     if (via === 'postmark') {
       // no mailbox to act as: the From address goes in both columns
-      if (!(await loadEmailSettings()).token) throw badRequest('Connect Postmark in Settings → Email first (its server token).', { property: 'via' });
+      if (!(await loadEmailSettings()).token) throw badRequest('Connect Postmark in Settings > Email first (its server token).', { property: 'via' });
       const keep = cur?.provider === 'postmark' ? cur.from_address : undefined;
       fromAddress = b.from_address === undefined || b.from_address === '' ? keep ?? '' : pick(b.from_address, 'from_address', undefined);
       if (!fromAddress || !isEmail(fromAddress)) throw badRequest('Enter the From address: one on a domain confirmed in Postmark, such as noreply@.', { property: 'from_address' });
@@ -76,7 +76,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       mailbox = pick(b.mailbox, 'mailbox', cur?.provider === 'postmark' ? undefined : cur?.mailbox);
       fromAddress = b.from_address === undefined || b.from_address === '' ? (b.mailbox !== undefined && (!cur || cur.provider === 'postmark') ? mailbox : cur?.from_address ?? mailbox) : pick(b.from_address, 'from_address', undefined);
       const cfg = providerFor(await loadProviders(), mailbox);
-      if (!cfg) throw badRequest(`${mailbox.split('@')[1]} is not a domain of Google or Microsoft in Settings → Mailboxes (or that provider is off)`, { property: 'mailbox' });
+      if (!cfg) throw badRequest(`${mailbox.split('@')[1]} is not a domain of Google or Microsoft in Settings > Mailboxes (or that provider is off)`, { property: 'mailbox' });
       provider = cfg.provider;
     }
     let fromName = cur?.from_name ?? null;

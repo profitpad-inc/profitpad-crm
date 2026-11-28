@@ -86,7 +86,7 @@ export function missing(s: EmailSettings): string[] {
 export async function readySettings(): Promise<EmailSettings & { token: string; from_address: string }> {
   const s = await loadEmailSettings();
   const m = missing(s);
-  if (m.length) throw new ApiError(503, `Email is not set up yet: it needs ${m.join(', ')} (Settings → Email).`, 'email_not_configured');
+  if (m.length) throw new ApiError(503, `Email is not set up yet: it needs ${m.join(', ')} (Settings > Email).`, 'email_not_configured');
   return s as EmailSettings & { token: string; from_address: string };
 }
 

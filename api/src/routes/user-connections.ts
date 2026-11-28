@@ -92,7 +92,7 @@ export async function userConnectionRoutes(app: FastifyInstance) {
     const address = typeof req.body?.address === 'string' ? req.body.address.trim().toLowerCase() : '';
     if (!user.emails.includes(address)) throw badRequest('pick one of the user\'s own email addresses', { property: 'address' });
     if (!providerFor(await loadProviders(), address)) {
-      throw badRequest('no mailbox service account covers this domain (Settings → Mailboxes)', { property: 'address' });
+      throw badRequest('no mailbox service account covers this domain (Settings > Mailboxes)', { property: 'address' });
     }
     const { rows: owner } = await pool.query(`select user_id from ${USER_MAILBOXES_SQL} m where email = $1`, [address]);
     if (owner.some((r) => r.user_id !== user.id)) throw new ApiError(409, 'another user already has this address', 'conflict');
@@ -131,7 +131,7 @@ export async function userConnectionRoutes(app: FastifyInstance) {
     );
     const conn = rows[0];
     if (!conn) throw notFound('calendar connection not found');
-    if (conn.via_service) throw badRequest('this calendar comes through the organization; remove the linked address, or turn calendars off in Settings → Meetings');
+    if (conn.via_service) throw badRequest('this calendar comes through the organization; remove the linked address, or turn calendars off in Settings > Meetings');
     await revoke(conn);
     forgetAccessToken(conn.id);
     await pool.query('delete from auth.calendar_connections where id = $1', [conn.id]);

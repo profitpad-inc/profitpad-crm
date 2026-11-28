@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { ViewIcon } from '../lib/lucide-icons';
@@ -10,6 +10,7 @@ import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
 import { McpNotice } from './McpNotice';
 import { CodeBlock } from './CodeBlock';
+import { CodeTextarea } from './CodeTextarea';
 import { useFillColumn } from '../lib/use-fill-column';
 
 interface ViewCodeOut {
@@ -19,9 +20,9 @@ interface ViewCodeOut {
   unpublished_changes: boolean;
   published_at: string | null;
   draft_source: string | null;
-  draft_queries: Record<string, { sql: string; params: Record<string, string> }>;
+  draft_queries: Queries;
   source: string | null;
-  queries: Record<string, { sql: string; params: Record<string, string> }>;
+  queries: Queries;
 }
 
 const WRAP_KEY = 'pcrm.viewCodeWrap';
@@ -32,6 +33,50 @@ function readWrap(): boolean {
   } catch {
     return false;
   }
+}
+
+type Queries = Record<string, { sql: string; params: Record<string, string> }>;
+
+// A query while it is being edited: params as "since: date, owner: text"
+interface QueryDraft {
+  key: number;
+  name: string;
+  params: string;
+  sql: string;
+}
+
+const PARAM_TYPES = ['text', 'number', 'date', 'datetime', 'boolean'];
+let nextKey = 1;
+
+function toDrafts(queries: Queries | null | undefined): QueryDraft[] {
+  return Object.entries(queries ?? {}).map(([name, q]) => ({
+    key: nextKey++,
+    name,
+    params: Object.entries(q.params).map(([p, t]) => `${p}: ${t}`).join(', '),
+    sql: q.sql
+  }));
+}
+
+const sameDrafts = (a: QueryDraft[], b: QueryDraft[]) =>
+  a.length === b.length && a.every((q, i) => q.name === b[i].name && q.params === b[i].params && q.sql === b[i].sql);
+
+// The edited queries as the API takes them, or what is wrong with them.
+// The server checks the rest (names, types, params the SQL uses).
+function fromDrafts(list: QueryDraft[]): { queries: Queries } | { error: string } {
+  const queries: Queries = {};
+  for (const q of list) {
+    const name = q.name.trim();
+    if (!name) return { error: 'Every query needs a name.' };
+    if (queries[name]) return { error: `Two queries are named "${name}".` };
+    const params: Record<string, string> = {};
+    for (const part of q.params.split(',').map((x) => x.trim()).filter(Boolean)) {
+      const m = part.match(/^([^:\s]+)\s*:\s*(\S+)$/);
+      if (!m) return { error: `Query "${name}": write params as "name: type", like "since: date". Types: ${PARAM_TYPES.join(', ')}.` };
+      params[m[1]] = m[2];
+    }
+    queries[name] = { sql: q.sql, params };
+  }
+  return { queries };
 }
 
 // An integration as GET /v1/view-integrations returns it (url and status for admins only)
@@ -112,14 +157,15 @@ function ViewIntegrations({ source }: { source: string | null }) {
         );
       })}
       {dynamic > 0 && <p className="small muted">{dynamic === 1 ? '1 call builds its key' : `${dynamic} calls build their key`} in code, so it is not listed here.</p>}
-      <p className="small muted">Integrations are set up in <Link to="/settings/view-integrations">Settings, View integrations</Link>.</p>
+      <p className="small muted">Integrations are set up in <Link to="/settings/view-integrations">Settings &gt; View integrations</Link>.</p>
     </div>
   );
 }
 
 // A custom view's record page: its React code and SQL queries (draft and
-// published), with Open and Publish. Views are written by admins' AI through
-// the MCP; this card is for reading and publishing.
+// published), with Open and Publish. Views are usually written by admins' AI
+// through the MCP; Edit on the draft lets an admin type in the React code and
+// the queries by hand, and saving returns to the read-only view.
 export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: (r: CrmRecord) => void }) {
   const { toast, reloadCustomViews } = useApp();
   const [code, setCode] = useState<ViewCodeOut | null>(null);
@@ -128,16 +174,28 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [wrap, setWrap] = useState(readWrap);
+  const [editing, setEditing] = useState(false);
+  const [draftSource, setDraftSource] = useState('');
+  const [draftQueries, setDraftQueries] = useState<QueryDraft[]>([]);
+  const [savedQueries, setSavedQueries] = useState<QueryDraft[]>([]);
   const iconPicker = useViewIconPicker(record, onChanged);
   const icon = iconPicker.icon;
   const menu = useAddToMenu(code?.slug);
   // the React code runs down to the bottom of the record's middle column, like a landing page's HTML
-  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([code, error, tab, which]);
+  const { ref: bodyRef, height: bodyHeight } = useFillColumn<HTMLDivElement>([code, error, tab, which, editing]);
+
+  const load = (c: ViewCodeOut) => {
+    setCode(c);
+    setDraftSource(c.draft_source ?? '');
+    const q = toDrafts(c.draft_queries);
+    setDraftQueries(q);
+    setSavedQueries(q);
+  };
 
   useEffect(() => {
     let live = true;
     api<ViewCodeOut>('GET', `/v1/views/${record.id}/code`)
-      .then((c) => live && setCode(c))
+      .then((c) => live && load(c))
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
@@ -157,7 +215,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
     setBusy(true);
     setError(null);
     try {
-      setCode(await api<ViewCodeOut>('POST', `/v1/views/${record.id}/publish`));
+      load(await api<ViewCodeOut>('POST', `/v1/views/${record.id}/publish`));
       onChanged(await api<CrmRecord>('GET', `/v1/objects/views/${record.id}`));
       reloadCustomViews().catch(() => undefined);
       toast('Published');
@@ -168,10 +226,44 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
     }
   }
 
+  async function save() {
+    const parsed = fromDrafts(draftQueries);
+    if ('error' in parsed) {
+      setError(parsed.error);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      load(await api<ViewCodeOut>('PUT', `/v1/views/${record.id}/draft`, { source: draftSource, queries: parsed.queries }));
+      onChanged(await api<CrmRecord>('GET', `/v1/objects/views/${record.id}`));
+      setEditing(false);
+      toast('Draft saved');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function discard() {
+    if (!code) return;
+    setDraftSource(code.draft_source ?? '');
+    setDraftQueries(savedQueries);
+    setError(null);
+    setEditing(false);
+  }
+
+  const setQuery = (key: number, patch: Partial<QueryDraft>) =>
+    setDraftQueries((list) => list.map((q) => (q.key === key ? { ...q, ...patch } : q)));
+
   if (error && !code) return <div className="card"><div className="error">{error}</div></div>;
   if (!code) return <div className="card muted"><Loading /></div>;
   const source = which === 'draft' ? code.draft_source : code.source;
   const queries = which === 'draft' ? code.draft_queries : code.queries;
+  const dirty = draftSource !== (code.draft_source ?? '') || !sameDrafts(draftQueries, savedQueries);
+  // typing in the draft: Edit was pressed, or there are unsaved changes
+  const typing = which === 'draft' && tab !== 'integrations' && (editing || dirty);
   return (
     <div className="card view-code-card">
       <div className="card-head">
@@ -188,7 +280,9 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
           <Link className="btn small" to={{ pathname: '/view/', search: '?draft=1', hash: `#${code.slug}` }}>Open draft <ExternalLink size={12} /></Link>
           {code.status === 'published' && <Link className="btn small" to={{ pathname: '/view/', hash: `#${code.slug}` }}>Open <ExternalLink size={12} /></Link>}
           {menu && <Link className="btn small" to="/settings/navigation">{menu.inMenu ? 'In menu' : 'Add to menu'}</Link>}
-          {code.unpublished_changes && code.draft_source && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
+          {code.unpublished_changes && code.draft_source && (
+            <button className="btn small primary" disabled={busy || dirty} title={dirty ? 'Save the draft first' : undefined} onClick={publish}>Publish</button>
+          )}
         </div>
       </div>
       <McpNotice kind="views" />
@@ -199,28 +293,82 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
         <div className="tabs">
           <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>
           <div className={`tab${which === 'published' ? ' active' : ''}`}><button onClick={() => setWhich('published')} disabled={!code.source}>Published</button></div>
-          {tab !== 'integrations' && (
+          {tab !== 'integrations' && !typing && (
             <label className="small muted code-wrap-toggle">
               <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
             </label>
           )}
+          {which === 'draft' && tab !== 'integrations' && !typing && (
+            <button className="btn small view-code-edit" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
+          )}
         </div>
         <div className="tabs">
           <div className={`tab${tab === 'code' ? ' active' : ''}`}><button onClick={() => setTab('code')}>React</button></div>
-          <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Queries ({Object.keys(queries ?? {}).length})</button></div>
-          <div className={`tab${tab === 'integrations' ? ' active' : ''}`}><button onClick={() => setTab('integrations')}>Integrations ({integrationKeys(source).keys.length})</button></div>
+          <div className={`tab${tab === 'queries' ? ' active' : ''}`}><button onClick={() => setTab('queries')}>Queries ({which === 'draft' ? draftQueries.length : Object.keys(queries ?? {}).length})</button></div>
+          <div className={`tab${tab === 'integrations' ? ' active' : ''}`}><button onClick={() => setTab('integrations')}>Integrations ({integrationKeys(which === 'draft' ? draftSource : source).keys.length})</button></div>
         </div>
       </div>
       {tab === 'integrations' ? (
-        <ViewIntegrations source={source} />
+        <ViewIntegrations source={which === 'draft' ? draftSource : source} />
+      ) : typing ? (
+        <>
+          {tab === 'code' ? (
+            <div ref={bodyRef} className="landing-body code-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
+              <CodeTextarea value={draftSource} autoFocus aria-label="React code"
+                placeholder="export default function View() { ... }"
+                onChange={(e) => setDraftSource(e.target.value)} />
+            </div>
+          ) : (
+            <div className="view-query-editors">
+              {draftQueries.length === 0 && <p className="muted">No queries.</p>}
+              {draftQueries.map((q) => (
+                <div key={q.key} className="view-query-editor">
+                  <div className="view-query-fields">
+                    <label className="field">
+                      <span>Name</span>
+                      <input value={q.name} placeholder="deals_by_week" onChange={(e) => setQuery(q.key, { name: e.target.value })} />
+                    </label>
+                    <label className="field">
+                      <span>Params</span>
+                      <input value={q.params} placeholder="since: date, owner: text" onChange={(e) => setQuery(q.key, { params: e.target.value })} />
+                    </label>
+                    <button className="btn small ghost danger-text" title="Remove this query" aria-label={`Remove query ${q.name || 'without a name'}`}
+                      onClick={async () => {
+                        if (q.sql.trim() && !(await confirmDialog(`Remove the query "${q.name || 'without a name'}" from the draft?`, { title: 'Remove the query?', confirmLabel: 'Remove', danger: true }))) return;
+                        setDraftQueries((list) => list.filter((x) => x.key !== q.key));
+                      }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <CodeTextarea value={q.sql} rows={Math.min(24, Math.max(6, q.sql.split('\n').length + 1))} aria-label={`SQL for ${q.name || 'the query'}`}
+                    placeholder="select ... from reporting.deals where close_date >= :since"
+                    onChange={(e) => setQuery(q.key, { sql: e.target.value })} />
+                </div>
+              ))}
+              <div>
+                <button className="btn small" onClick={() => setDraftQueries((list) => [...list, { key: nextKey++, name: '', params: '', sql: '' }])}>
+                  <Plus size={13} /> Add query
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="template-actions">
+            <span className="muted small">{tab === 'code' ? 'Folding comes back after you save.' : `Param types: ${PARAM_TYPES.join(', ')}. :me is built in.`}</span>
+            <span style={{ flex: 1 }} />
+            {dirty
+              ? <button className="btn small ghost" disabled={busy} onClick={discard}>Discard</button>
+              : <button className="btn small ghost" onClick={() => setEditing(false)}>Done</button>}
+            <button className="btn small primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? 'Saving...' : 'Save draft'}</button>
+          </div>
+        </>
       ) : tab === 'code' ? (
         source ? (
           <div ref={bodyRef} className="landing-body code-body" style={bodyHeight ? { height: bodyHeight } : undefined}>
             <CodeBlock text={source} wrap={wrap} lang="js" />
           </div>
-        ) : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection.</p>
+        ) : <p className="muted">No code yet. Ask your AI to build this view through the CRM's MCP connection{which === 'draft' && ', or press Edit to write it'}.</p>
       ) : Object.keys(queries ?? {}).length === 0 ? (
-        <p className="muted">No queries.</p>
+        <p className="muted">No queries.{which === 'draft' && ' Press Edit to add one.'}</p>
       ) : (
         Object.entries(queries).map(([name, q]) => (
           <div key={name} style={{ marginTop: 10 }}>

@@ -205,8 +205,8 @@ export async function checkCampaign(id: string, firstAt: Date = new Date()): Pro
   if (!campaign) throw new ApiError(404, `email campaign ${id} not found`, 'not_found');
   const template = await campaignTemplate(id);
   const s = await loadEmailSettings();
-  const problems = missing(s).map((m) => `Email is not set up: it needs ${m} (Settings → Email).`);
-  if (!s.mailing_address) problems.push('Settings → Email needs a mailing address: the law requires one in marketing email.');
+  const problems = missing(s).map((m) => `Email is not set up: it needs ${m} (Settings > Email).`);
+  if (!s.mailing_address) problems.push('Settings > Email needs a mailing address: the law requires one in marketing email.');
   if (!process.env.UI_URL || !process.env.PUBLIC_API_URL) problems.push('The server needs UI_URL and PUBLIC_API_URL set to build unsubscribe links.');
   const topics = await listTopics();
   if (campaign.subscription_type) {
@@ -312,7 +312,7 @@ export async function sendToMore(id: string, p: Principal, contactIds: string[])
   if (ids.length > SEND_MORE_MAX) throw badRequest(`At most ${SEND_MORE_MAX} contacts at a time.`);
   const s = await loadEmailSettings();
   const setup = missing(s);
-  if (setup.length) throw new ApiError(409, `Email is not set up: it needs ${setup.join(', ')} (Settings → Email).`, 'campaign_not_ready');
+  if (setup.length) throw new ApiError(409, `Email is not set up: it needs ${setup.join(', ')} (Settings > Email).`, 'campaign_not_ready');
   const template = await campaignTemplate(id);
   if (!template?.body?.trim()) throw new ApiError(409, 'The campaign has no email template with a body.', 'campaign_not_ready');
   return withTx({ principal: p, source: 'email_campaign' }, async (c) => {

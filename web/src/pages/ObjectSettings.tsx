@@ -262,7 +262,7 @@ function ObjectEditor({ object, onClose, onSaved }: {
             </div>
             <p className="muted small">
               Every object starts with a name and the system properties; add your own on the Properties page.
-              Admins can use it right away; other roles need access to it in Settings, Roles.
+              Admins can use it right away; other roles need access to it in Settings &gt; Roles.
             </p>
           </>
         )}

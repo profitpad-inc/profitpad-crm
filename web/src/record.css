@@ -56,8 +56,10 @@
 :is(.record-page, .list-props) .prop-section-head { gap: 6px; padding: 12px 0; border-radius: var(--radius-sm); }
 :is(.record-page, .list-props) .prop-section-head h3 { font-size: 14px; }
 :is(.record-page, .list-props) .prop-section-head:focus-visible { outline-offset: 0; }
+/* negative block margin: the pill only shows while closed, so it must not
+   make the head taller, or the title jumps up when the section opens */
 .prop-section-count {
-  margin-left: auto; padding: 0 7px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 20px;
+  margin: -4px 0 -4px auto; padding: 0 7px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 20px;
   color: var(--muted-text); background: var(--surface);
 }
 :is(.record-page, .list-props) .prop-section-body { gap: 2px; padding-bottom: 10px; }

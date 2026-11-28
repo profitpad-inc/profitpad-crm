@@ -261,7 +261,7 @@ export async function readCard(image: Buffer, mediaType: ImageType, opts: { apiK
     });
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-      throw new ApiError(502, 'Anthropic did not accept the API key in Settings → Card scanner. Ask an admin to check it, or type the details in.', 'card_reading_failed');
+      throw new ApiError(502, 'Anthropic did not accept the API key in Settings > Card scanner. Ask an admin to check it, or type the details in.', 'card_reading_failed');
     }
     if (err instanceof Anthropic.RateLimitError) throw new ApiError(429, 'Card reading is busy. Try again in a moment.', 'rate_limited');
     if (err instanceof Anthropic.APIError) throw new ApiError(502, `Card reading failed (${err.status ?? 'no response'}). Try again, or type the details in.`, 'card_reading_failed');

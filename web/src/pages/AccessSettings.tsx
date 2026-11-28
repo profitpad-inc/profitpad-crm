@@ -255,7 +255,7 @@ export function UserSettings() {
 
   // the user's own address, reached through the organization's mailbox service account
   async function linkMailbox(u: UserRow, address: string) {
-    if (!(await confirmDialog(`The CRM reaches ${address} through the organization's mailbox service account, as if ${u.name} had signed in with it: they can send from it, their email is logged by their setting, and their calendar is checked when Settings, Meetings has calendars on.`, { title: `Connect ${address}?`, confirmLabel: 'Connect' }))) return;
+    if (!(await confirmDialog(`The CRM reaches ${address} through the organization's mailbox service account, as if ${u.name} had signed in with it: they can send from it, their email is logged by their setting, and their calendar is checked when Settings > Meetings has calendars on.`, { title: `Connect ${address}?`, confirmLabel: 'Connect' }))) return;
     await connectionChange(() => api('POST', `/v1/users/${u.id}/linked-mailboxes`, { address }), 'Connected');
   }
 
@@ -360,7 +360,7 @@ export function UserSettings() {
                     <td>
                       {conn && !u.deactivated && (
                         <span className="connection-pills">
-                          <span title={conn.mailboxes?.length ? conn.mailboxes.map((m) => `${m.address}${m.provider ? '' : ' (no mailbox service account for this domain)'}${m.linked_id ? ', connected by an admin' : ''}`).join('\n') : conn.email ? undefined : 'Not connected: they have not signed in with Google or Microsoft in a domain set up in Settings, Mailboxes'}>
+                          <span title={conn.mailboxes?.length ? conn.mailboxes.map((m) => `${m.address}${m.provider ? '' : ' (no mailbox service account for this domain)'}${m.linked_id ? ', connected by an admin' : ''}`).join('\n') : conn.email ? undefined : 'Not connected: they have not signed in with Google or Microsoft in a domain set up in Settings > Mailboxes'}>
                             <StatusPill tone={conn.email ? 'on' : 'off'}>{conn.email ? 'Email' : 'No email'}</StatusPill>
                           </span>
                           <span title={conn.calendars?.length ? conn.calendars.map((c) => `${c.email ?? CALENDAR_PROVIDER[c.provider]}${c.via_service ? ' (through the organization)' : ''}${c.status !== 'active' ? `, ${c.status.replace(/_/g, ' ')}` : ''}`).join('\n') : conn.calendar ? undefined : 'No connected calendar'}>

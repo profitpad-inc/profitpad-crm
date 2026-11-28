@@ -285,7 +285,7 @@ export async function deleteEndpoint(p: Principal, id: unknown, req?: FastifyReq
 // Settings' Reveal secret (people only: the secret is for the receiver's checks).
 export async function revealSigningSecret(p: Principal, id: unknown, req?: FastifyRequest) {
   requireAdmin(p);
-  if (p.oauth) throw forbidden('connected apps cannot read signing secrets; an admin reveals it in Settings, Webhooks');
+  if (p.oauth) throw forbidden('connected apps cannot read signing secrets; an admin reveals it in Settings > Webhooks');
   const e = await loadEndpoint(id);
   await audit(p, 'webhook.secret_revealed', 'webhook_endpoint', Number(e.id), {}, req);
   return { signing_secret: open(e.signing_secret) };

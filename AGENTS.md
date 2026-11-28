@@ -19,3 +19,7 @@ Follow these steps in order whenever the user asks to commit, push, release or d
 8. **Deploy.** `./scripts/deploy.sh` deploys origin/main to the live CRM (crm.profitpad.com). `./scripts/deploy.sh defense` deploys the newest release to the defense CRM (crm.defense.profitpad.com). Each one waits for CI and Images and stops if either failed. The live deploy also waits on the tag's Images run when main and the tag are on the same commit, so do step 6 first. Run each in the foreground with a 10 minute timeout.
 9. **Verify.** Each deploy ends with `done: <target> runs <commit>`. Check that the new migrations ran on both databases (the `meta.migrations` query from step 1 for live, the same query through `docker exec pc-defense-db psql` for defense). Check that both sites return 200 (`curl -s -o /dev/null -w '%{http_code}' <url>`).
 10. **Record it** in `HANDOFF.md` under "Where we're at": the version, the commits, the backups and what was verified.
+
+## UI wording
+
+- When text names a path through menus, pages or buttons, join the steps with ` > `, for example "Settings > Connected apps" or "Settings > Option lists". Never join them with a comma ("Settings, Connected apps").
