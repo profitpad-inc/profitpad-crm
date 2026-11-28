@@ -87,18 +87,34 @@ Pick the row that covers both your record count and how many people use the CRM 
 |---|---|---|---|---|---|
 | Minimum | 2 | 4 GB | 50 GB | 250,000 | 50 |
 | **Base (tested)** | **2** | **8 GB** | **100 GB** | **1,500,000** | **50** |
-| Medium | 4 | 16 GB | 100 GB | 1,500,000 | 100 |
-| Large | 8 | 32 GB | 200 GB | 3,000,000 | 150 |
-| Extra large | 16 | 64 GB | 400 GB | 3,000,000 | 300 |
+| **Medium (tested)** | **4** | **16 GB** | **100 GB** | **1,500,000** | **300** |
+| Large | 8 | 32 GB | 200 GB | 3,000,000 | 500 |
+| Extra large | 16 | 64 GB | 400 GB | 3,000,000 | 900 |
 
-- **Base** was measured (2026-11-27): 1M contacts, 200k companies, 300k deals and 1.6M associations on a Google Cloud e2-standard-2 (2 vCPU, 8 GB), shared with another CRM install, ERPNext and n8n. At the activity of about 65 people (4.5 actions a second, edits included), pages answered in 190 ms (median) and 2 s at worst for 95% of them, with no errors (v0.2.44); the slow ones were filters on associated records' properties and the sidebar search. The test simulated fewer, much faster users, so the 50 is worked out from the number of actions a second, not measured with 50 people. Every other row is an estimate scaled from that test.
+- **Base** was measured (2026-11-27): 1M contacts, 200k companies, 300k deals and 1.6M associations on a Google Cloud e2-standard-2 (2 vCPU, 8 GB), shared with another CRM install, ERPNext and n8n. At the activity of about 65 people (4.5 actions a second, edits included), pages answered in 190 ms (median) and 2 s at worst for 95% of them, with no errors (v0.2.44); the slow ones were filters on associated records' properties and the sidebar search. The test simulated fewer, much faster users, so the 50 is worked out from the number of actions a second, not measured with 50 people. Every row other than Base and Medium is an estimate scaled from those tests. Large and Extra large scale Medium's 300 users by the CPU count, assuming each doubling adds about 75% rather than 100% (Postgres does not scale perfectly across cores), and they hold twice the records, which costs some of that gain.
+- **Medium** was measured (2026-11-28, v0.2.57): the same data on an e2-standard-4 (4 vCPU, 16 GB) as the only CRM on the server, with users paced like real people (an action about every 15 seconds). Pages stayed at about 140 ms (median) and under 375 ms for 95% of them up to 300 users, and under 2 s for 95% at 400; at 500 the 95% mark reached 5 s. No request failed. The database's CPU is what runs out. The table says 300 to leave room for background work such as list refreshes and campaign sends, which the test did not include.
 - **Total records** counts every record (contacts, companies, deals, tickets and so on). The work behind searching and opening tables grows with the number of records, so more records means fewer users on the same hardware.
 - **Concurrent users** means people actively working at the same moment, each opening a page or running a search every 15 seconds or so. The number of people with accounts can be several times higher.
 - **Memory** is mostly database cache. Once the database is larger than memory, tables and searches slow down sharply.
-- **Disk:** plan on about 4.5 GB per million records (record history is most of it), plus room for backups and file uploads.
+- **Disk:** plan on about 4.5 GB per million records (record history is most of it), plus room for backups and file uploads. The tested 1.5M records (1M contacts, 200k companies, 300k deals, with 1.6M associations) take 7.0 GB of database (measured 2026-11-28): 4.4 GB record history, 1.0 GB contacts, 0.7 GB associations, 0.4 GB companies and deals, 0.3 GB unique-value lookups, the rest smaller tables. Each figure includes the table's indexes.
 - **Sharing a server** with other apps means sizing for all of them together.
 
-**Postgres memory.** The installer sets these in `.env` on a new install, from the server's memory. When other installs of the CRM already run on the server, it splits the memory evenly between them. Existing installs keep what their `.env` has; without these lines Postgres uses the small defaults in `docker-compose.yml`. To size for a different amount (other apps on the server, say), run the first install with `PCRM_PG_MEMORY_MB=4096`, or edit `.env` and run `sudo docker compose up -d`.
+**Google Cloud cost estimates** (as of 2026-11-28, supplied by ProfitPad; prices change, so check the Google Cloud pricing calculator before buying):
+
+| Type | vCPU | Memory (GB) | Storage (GB) | Cost (CA$ per month) | Concurrent users at 1.5M records |
+|---|---|---|---|---|---|
+| e2-medium | 2 | 4 | 50 | $30 | Not recommended (see Minimum: 250,000 records) |
+| **e2-standard-2** | **2** | **8** | **50** | **$54** | **50 (tested)** |
+| custom (4/8) | 4 | 8 | 50 | $90 | Up to 300 (estimate, not tested) |
+| **e2-standard-4** | **4** | **16** | **50** | **$103** | **300 (tested)** |
+| custom (8/16) | 8 | 16 | 50 | $175 | About 500 (estimate) |
+| custom (8/16) | 8 | 16 | 100 | $180 | About 500 (estimate) |
+| e2-standard-8 | 8 | 32 | 50 | $201 | About 500 (estimate) |
+| e2-standard-8 | 8 | 32 | 100 | $206 | About 500 (estimate) |
+
+Of these, only e2-standard-2 (Base) and e2-standard-4 (Medium) have been load tested; see the notes under the size table. The tests found CPU to be the limit, so the 4 vCPU custom machine may reach Medium's 300, but with half the memory less of the database stays cached, and it slows sooner as records grow. The 8 vCPU rows scale Medium by about 75% per doubling of CPU; extra memory does not add users at this record count, it leaves room to grow.
+
+**Postgres memory** is worked out each time the database container starts, from the server's memory split evenly between the CRM installs on the server, so after resizing the server a restart (`sudo docker compose up -d`, or rebooting) is all it takes. Each install's database counts itself in with a file named after its container in `/var/lib/profitpad-crm/pg-installs`; when you take an install off the server, take its file out of that folder too and restart the others. The values chosen are in the database's log (`sudo docker compose logs db | grep "postgres memory"`). To plan on a different amount (other apps on the server, say), put `PCRM_PG_MEMORY_MB=4096` in `.env` (or run the first install with it); to set one value outright, put its key from the table below in `.env`. Updating an install from before 2026-11-28 removes the sizes the installer used to write into `.env`, and keeps any you added yourself.
 
 | Memory for this install | `PCRM_PG_SHARED_BUFFERS` | `PCRM_PG_EFFECTIVE_CACHE_SIZE` | `PCRM_PG_WORK_MEM` | `PCRM_PG_MAINTENANCE_WORK_MEM` |
 |---|---|---|---|---|

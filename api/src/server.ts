@@ -42,6 +42,7 @@ import { knowledgeRoutes } from './knowledge.js';
 import { commentRoutes } from './comments.js';
 import { addressRoutes } from './address.js';
 import { currencyRoutes, startCurrencyScheduler } from './currency.js';
+import { calcSettingsRoutes } from './calc-settings.js';
 import { liveRoutes, startLiveListener } from './live.js';
 import { mailboxRoutes } from './mailbox/routes.js';
 import { startMailWorker } from './mailbox/send.js';
@@ -259,6 +260,7 @@ export async function buildApp() {
   await app.register(cardScanRoutes);
   await app.register(addressRoutes);
   await app.register(currencyRoutes);
+  await app.register(calcSettingsRoutes);
   await app.register(snippetRoutes);
   await app.register(knowledgeRoutes);
   await app.register(commentRoutes);
@@ -276,9 +278,9 @@ export async function buildApp() {
 // Exchange rate changes only leave a note; each tick first turns waiting
 // notes into queued records (migration 0158). Records two and three
 // associations away from a change are noted too and queued every 30 s, and
-// every calculation is queued once a night from CALC_NIGHTLY_HOUR_UTC
-// (default 8), checked every 5 minutes (migration 0168).
-const CALC_NIGHTLY_HOUR_UTC = Number(process.env.CALC_NIGHTLY_HOUR_UTC ?? 8);
+// every calculation is queued once a night at the time picked in Settings >
+// Calculations, checked every 5 minutes (migration 0168). Both go in at
+// priority 2, worked on only when no first-hop work (priority 1) waits.
 
 function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
   let running = false;
@@ -290,8 +292,8 @@ function startCalcWorker(log: { error: (o: unknown, m: string) => void }) {
       await pool.query('select meta.expand_currency_calcs()');
       ++ticks;
       if (ticks % 15 === 0) await pool.query('select meta.expand_calc_chains(5000)');
-      if (ticks % 150 === 1) await pool.query('select meta.nightly_enqueue_calcs($1)', [CALC_NIGHTLY_HOUR_UTC]);
-      await drainCalcQueue(20);
+      if (ticks % 150 === 1) await pool.query('select meta.nightly_enqueue_calcs()');
+      await drainCalcQueue(20, 2);
       if (ticks % 15 === 0) await pool.query('select meta.compact_record_counts()');
     } catch (err) {
       log.error(err, 'calculation worker failed');

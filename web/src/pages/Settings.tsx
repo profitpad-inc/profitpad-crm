@@ -28,12 +28,13 @@ import { IntegrationSettings } from './IntegrationSettings';
 import { WebhookSettings } from './WebhookSettings';
 import { CardScannerSettings } from './CardScannerSettings';
 import { CurrencySettings } from './CurrencySettings';
+import { CalculationSettings } from './CalculationSettings';
 import { ImportHistory } from './ImportHistory';
 import { OptionListSettings } from './OptionListSettings';
 import { AssociationLabelSettings } from './AssociationLabelSettings';
 import { AddressSettings } from './AddressSettings';
 import { EmailSettings } from './EmailSettings';
-import { BookOpen, History, ListChecks, Repeat, Send, Tags, Video } from 'lucide-react';
+import { BookOpen, Calculator, History, ListChecks, Repeat, Send, Tags, Video } from 'lucide-react';
 import { SnippetSettings } from './SnippetSettings';
 import { KnowledgeSettings } from './KnowledgeSettings';
 import { MailboxSettings } from './MailboxSettings';
@@ -68,6 +69,7 @@ const GROUPS: { label: string; links: SettingsLink[] }[] = [
     { path: 'properties', label: 'Properties', icon: <SlidersHorizontal size={16} />, gate: ['properties'], element: <PropertySettings /> },
     { path: 'option-lists', label: 'Option lists', icon: <ListChecks size={16} />, gate: ['properties'], element: <OptionListSettings /> },
     { path: 'association-labels', label: 'Association labels', icon: <Tags size={16} />, gate: ['properties'], element: <AssociationLabelSettings /> },
+    { path: 'calculations', label: 'Calculations', icon: <Calculator size={16} />, gate: ['properties'], element: <CalculationSettings /> },
     { path: 'currencies', label: 'Currencies', icon: <Coins size={16} />, gate: 'admin', element: <CurrencySettings /> },
     { path: 'imports', label: 'Imports and exports', icon: <History size={16} />, gate: 'all', element: <ImportHistory /> }
   ] },

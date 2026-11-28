@@ -31,9 +31,10 @@
 #                                      (pc-demo-api) and volumes
 #                                      (pcrm_demo_files); saved in .env
 # PCRM_PG_MEMORY_MB=4096 bash install.sh
-#                                      first run only: size Postgres for this
-#                                      much memory instead of the server's
-#                                      (split with other ProfitPad installs)
+#                                      first run only: saves PCRM_PG_MEMORY_MB
+#                                      in .env, so Postgres plans on this much
+#                                      memory instead of its share of the
+#                                      server's (worked out at every start)
 set -euo pipefail
 
 repo=profitpad-inc/profitpad-crm
@@ -54,34 +55,20 @@ command -v openssl >/dev/null || die "openssl is not installed"
 # value of KEY in .env, if any
 env_value() { [[ -f .env ]] && grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- || true; }
 
-# Postgres memory settings for a new install (README, "Server size"), from M,
-# the memory this install may plan on, in MB, rounded to whole GB: the
-# server's memory split evenly with the ProfitPad installs already running on
-# it. PCRM_PG_MEMORY_MB sets M instead, e.g. when other apps share the server.
-#   pg_settings <server MB> <other installs>  prints KEY=value lines
-pg_size() { if (( $1 % 1024 == 0 )); then echo "$(($1 / 1024))GB"; else echo "$1MB"; fi; }
-pg_settings() {
-  local m g sb ecs mwm wm
-  m="${PCRM_PG_MEMORY_MB:-$(( $1 / ($2 + 1) ))}"
-  # servers report a little under their size (8 GB shows about 7.8): round up
-  # to whole GB, and to an even number from 6 GB
-  g=$(( (m + 1023) / 1024 )); (( g >= 1 )) || g=1
-  (( g >= 6 && g % 2 == 1 )) && g=$((g + 1))
-  m=$((g * 1024))
-  # a quarter of memory for shared buffers (an eighth below 4 GB, where the
-  # API and the renderer need most of it), at most 16 GB
-  if (( m < 4096 )); then sb=$((m / 8)); else sb=$((m / 4)); fi
-  (( sb <= 16384 )) || sb=16384
-  ecs=$((m * 3 / 4))
-  mwm=$((m / 16)); (( mwm >= 64 )) || mwm=64; (( mwm <= 1024 )) || mwm=1024
-  wm=16; (( m >= 8192 )) && wm=32; (( m >= 32768 )) && wm=64
-  echo "PCRM_PG_SHARED_BUFFERS=$(pg_size "$sb")"
-  echo "PCRM_PG_EFFECTIVE_CACHE_SIZE=$(pg_size "$ecs")"
-  echo "PCRM_PG_WORK_MEM=${wm}MB"
-  echo "PCRM_PG_MAINTENANCE_WORK_MEM=$(pg_size "$mwm")"
+# Postgres memory is worked out by the db container each time it starts
+# (docker-compose.yml). Installs from before that had it written into .env
+# once, under this comment; those lines are taken out so the container's
+# sizing applies. Values a person set by hand (no such comment) are kept.
+pg_marker='^# Postgres memory, set at install for a '
+drop_installer_pg_settings() {
+  [[ -f .env ]] && grep -qE "$pg_marker" .env || return 0
+  sed -i.bak -E \
+    -e "/$pg_marker/d" \
+    -e '/^# Change them for a different server size/d' \
+    -e '/^PCRM_PG_(SHARED_BUFFERS|EFFECTIVE_CACHE_SIZE|WORK_MEM|MAINTENANCE_WORK_MEM)=/d' \
+    .env && rm -f .env.bak
+  echo "Postgres memory is now worked out when the database starts; removed the sizes the installer had written to .env"
 }
-server_mb() { awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo 2>/dev/null || echo 0; }
-other_installs() { docker ps --format '{{.Names}}' | grep -cE '^pc(-.+)?-db$' || true; }
 
 # Is something already listening on this TCP port? This install's own web
 # container holding it does not count (an update recreates it).
@@ -242,18 +229,11 @@ GOOGLE_CLIENT_SECRET=$google_secret
 MICROSOFT_CLIENT_ID=$ms_id
 MICROSOFT_CLIENT_SECRET=$ms_secret
 EOF
-  pg_mb="$(server_mb)"; pg_others="$(other_installs)"
-  # memory unknown (no /proc/meminfo): the compose defaults apply
-  if (( pg_mb > 0 )) || [[ -n "${PCRM_PG_MEMORY_MB:-}" ]]; then
+  if [[ -n "${PCRM_PG_MEMORY_MB:-}" ]]; then
     {
       echo
-      if [[ -n "${PCRM_PG_MEMORY_MB:-}" ]]; then
-        echo "# Postgres memory, set at install for ${PCRM_PG_MEMORY_MB} MB (PCRM_PG_MEMORY_MB)."
-      else
-        echo "# Postgres memory, set at install for a ${pg_mb} MB server shared by $((pg_others + 1)) ProfitPad install(s)."
-      fi
-      echo "# Change them for a different server size (README, \"Server size\"), then: docker compose up -d"
-      pg_settings "$pg_mb" "$pg_others"
+      echo "# Postgres plans on this much memory (MB) instead of its share of the server's (README, \"Server size\")"
+      echo "PCRM_PG_MEMORY_MB=$PCRM_PG_MEMORY_MB"
     } >> .env
   fi
   [[ -f db.env ]] || echo "POSTGRES_PASSWORD=$(rand_hex)" > db.env
@@ -273,6 +253,7 @@ elif [[ -n "${PCRM_VERSION:-}" ]]; then
   fi
 fi
 [[ -f db.env ]] || die "db.env is missing; it holds the database superuser password"
+drop_installer_pg_settings
 
 # Behind a proxy: the port in the override must still be free (something else
 # may have taken it since, or the first start failed on it).

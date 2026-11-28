@@ -87,12 +87,12 @@ Optional:
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | online invoice payments (Stripe Connect) |
 | `MCP_ALLOWED_ORIGINS` | browser-based MCP clients allowed to call `/mcp` |
 | `MCP_SERVER_NAME`, `MCP_SERVER_ABOUT` | what the MCP server calls itself (default ProfitPad CRM) and one sentence on what it holds, for AI clients connected to more than one CRM |
-| `CALC_NIGHTLY_HOUR_UTC` | the UTC hour (0 to 23, default 8) from which the API queues every calculation once a day |
 | `FILES_MAX_BYTES` | largest upload (default 5 GB) |
 | `PCRM_FILES_DIR` | a host folder for uploads instead of the `pcrm_files` volume (owned by uid 1000) |
 | `PGPOOL_MAX` | database connections the API keeps (default 20) |
 | `LOG_LEVEL` | API log level (default `info`) |
-| `PCRM_PG_SHARED_BUFFERS`, `PCRM_PG_EFFECTIVE_CACHE_SIZE`, `PCRM_PG_WORK_MEM`, `PCRM_PG_MAINTENANCE_WORK_MEM`, `PCRM_PG_RANDOM_PAGE_COST` | Postgres memory and planner settings. A new install gets them from the server's memory, split evenly with ProfitPad installs already running there ([the table](../README.md#server-size) lists them per memory size). Without them: `256MB`, `1GB`, `16MB`, `128MB`, `1.1` |
+| `PCRM_PG_SHARED_BUFFERS`, `PCRM_PG_EFFECTIVE_CACHE_SIZE`, `PCRM_PG_WORK_MEM`, `PCRM_PG_MAINTENANCE_WORK_MEM`, `PCRM_PG_RANDOM_PAGE_COST` | Postgres memory and planner settings, each set outright. Leave them out and the database works them out at every start from the server's memory, split evenly between the ProfitPad installs on it ([the table](../README.md#server-size) lists them per memory size); `PCRM_PG_RANDOM_PAGE_COST` defaults to `1.1` |
+| `PCRM_PG_MEMORY_MB` | memory (MB) Postgres plans on instead of its share of the server's, e.g. when other apps run on the server |
 
 After changing `.env`: `sudo docker compose up -d`.
 

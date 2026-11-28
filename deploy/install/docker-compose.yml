@@ -36,20 +36,63 @@ services:
     # parallel queries on large tables fail with "could not resize shared
     # memory segment ... No space left on device"
     shm_size: 1g
-    # memory settings: install.sh writes them to .env for the server's size
-    # (README, "Server size"); these defaults suit a 2 GB server
-    command: >-
-      postgres
-      -c shared_buffers=${PCRM_PG_SHARED_BUFFERS:-256MB}
-      -c effective_cache_size=${PCRM_PG_EFFECTIVE_CACHE_SIZE:-1GB}
-      -c work_mem=${PCRM_PG_WORK_MEM:-16MB}
-      -c maintenance_work_mem=${PCRM_PG_MAINTENANCE_WORK_MEM:-128MB}
-      -c random_page_cost=${PCRM_PG_RANDOM_PAGE_COST:-1.1}
+    # Memory settings are worked out each time the container starts (README,
+    # "Server size"): the server's memory (or the container's limit), split
+    # evenly between the ProfitPad installs on the server. Each install's
+    # database leaves a file named after its container in
+    # /var/lib/profitpad-crm/pg-installs on the host, and the files are
+    # counted; after taking an install off the server, take its file out of
+    # that folder and restart the others.
+    # PCRM_PG_MEMORY_MB in .env plans on that many MB instead (other apps on
+    # the server, say); PCRM_PG_SHARED_BUFFERS and the other PCRM_PG_* keys
+    # set one value outright. The chosen values are in the container's log.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -eu
+        mb=$$(awk '/^MemTotal:/ { print int($$2 / 1024) }' "$${PG_MEMINFO:-/proc/meminfo}")
+        lim=$$(cat "$${PG_CGROUP_MAX:-/sys/fs/cgroup/memory.max}" 2>/dev/null || echo max)
+        if [ "$$lim" != max ] && [ $$((lim / 1048576)) -lt "$$mb" ]; then mb=$$((lim / 1048576)); fi
+        dir=$${PG_INSTALLS_DIR:-/pg-installs}
+        mkdir -p "$$dir" && touch "$$dir/$$PCRM_DB_CONTAINER"
+        n=$$(( $$(find "$$dir" -maxdepth 1 -type f | wc -l) )); [ "$$n" -ge 1 ] || n=1
+        m=$${PCRM_PG_MEMORY_MB:-$$((mb / n))}
+        # servers report a little under their size (8 GB shows about 7.8): round
+        # up to whole GB, and to an even number from 6 GB
+        g=$$(( (m + 1023) / 1024 )); [ "$$g" -ge 1 ] || g=1
+        if [ "$$g" -ge 6 ] && [ $$((g % 2)) -eq 1 ]; then g=$$((g + 1)); fi
+        m=$$((g * 1024))
+        size() { if [ $$(($$1 % 1024)) -eq 0 ]; then echo "$$(($$1 / 1024))GB"; else echo "$${1}MB"; fi; }
+        # a quarter of memory for shared buffers (an eighth below 4 GB, where the
+        # API and the renderer need most of it), at most 16 GB
+        if [ "$$m" -lt 4096 ]; then sb=$$((m / 8)); else sb=$$((m / 4)); fi
+        [ "$$sb" -le 16384 ] || sb=16384
+        ecs=$$((m * 3 / 4))
+        mwm=$$((m / 16)); [ "$$mwm" -ge 64 ] || mwm=64; [ "$$mwm" -le 1024 ] || mwm=1024
+        wm=16; [ "$$m" -lt 8192 ] || wm=32; [ "$$m" -lt 32768 ] || wm=64
+        sb=$${PCRM_PG_SHARED_BUFFERS:-$$(size $$sb)}
+        ecs=$${PCRM_PG_EFFECTIVE_CACHE_SIZE:-$$(size $$ecs)}
+        wm=$${PCRM_PG_WORK_MEM:-$${wm}MB}
+        mwm=$${PCRM_PG_MAINTENANCE_WORK_MEM:-$$(size $$mwm)}
+        rpc=$${PCRM_PG_RANDOM_PAGE_COST:-1.1}
+        echo "postgres memory: $${mb} MB server, $$n install(s), planning on $$m MB:" \
+          "shared_buffers=$$sb effective_cache_size=$$ecs work_mem=$$wm maintenance_work_mem=$$mwm"
+        exec docker-entrypoint.sh postgres -c shared_buffers=$$sb -c effective_cache_size=$$ecs \
+          -c work_mem=$$wm -c maintenance_work_mem=$$mwm -c random_page_cost=$$rpc
     environment:
       POSTGRES_USER: postgres
       POSTGRES_DB: profitpad_crm_db
+      PCRM_DB_CONTAINER: pc${PCRM_INSTANCE:+-${PCRM_INSTANCE}}-db
+      PCRM_PG_MEMORY_MB: ${PCRM_PG_MEMORY_MB:-}
+      PCRM_PG_SHARED_BUFFERS: ${PCRM_PG_SHARED_BUFFERS:-}
+      PCRM_PG_EFFECTIVE_CACHE_SIZE: ${PCRM_PG_EFFECTIVE_CACHE_SIZE:-}
+      PCRM_PG_WORK_MEM: ${PCRM_PG_WORK_MEM:-}
+      PCRM_PG_MAINTENANCE_WORK_MEM: ${PCRM_PG_MAINTENANCE_WORK_MEM:-}
+      PCRM_PG_RANDOM_PAGE_COST: ${PCRM_PG_RANDOM_PAGE_COST:-}
     volumes:
       - pc_db_data:/var/lib/postgresql/data
+      - /var/lib/profitpad-crm/pg-installs:/pg-installs
     networks:
       - db_net
     healthcheck:

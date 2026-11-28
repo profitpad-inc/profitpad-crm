@@ -662,11 +662,14 @@ export async function upsertProperties<T extends Record<string, unknown>>(_db: D
 }
 
 // Calculations are recomputed by a queue. Draining one batch right after a
-// write lets the response include fresh same-record calculations.
-export async function drainCalcQueue(maxRounds = 1): Promise<number> {
+// write lets the response include fresh same-record calculations. Only
+// priority 1 (changed records and hop 1) by default: hops 2 and 3 and the
+// nightly run (priority 2) are left to the background worker, so a save never
+// works through that backlog (migration 0168).
+export async function drainCalcQueue(maxRounds = 1, maxPriority: 1 | 2 = 1): Promise<number> {
   let total = 0;
   for (let i = 0; i < maxRounds; i++) {
-    const { rows } = await pool.query('select meta.process_calc_queue(500) as n');
+    const { rows } = await pool.query('select meta.process_calc_queue(500, $1) as n', [maxPriority]);
     total += rows[0].n;
     if (rows[0].n === 0) break;
   }

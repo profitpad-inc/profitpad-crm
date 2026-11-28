@@ -273,3 +273,46 @@ The first 20 and 50-user runs were thrown away: the test script picked contacts 
 Throughput at 20 users is back to round 2's level (8.0 against 8.4 actions a second) with exact counts and edits in the mix. Edits stay at 85 to 176 ms (p50) up to 20 users. At 50 users both cores were busy (load average about 17.7), memory stayed at about 3.8 GB available, no request failed.
 
 The one slow action left is the filter on an associated company's property matching many contacts (2.5 s alone, 21 s at p50 with 20 users). It takes CPU from everything else under load.
+
+## Round 5, a Medium server and a real-paced ramp, 2026-11-28 (v0.2.57)
+
+The server was resized to a Google Cloud e2-standard-4 (4 vCPU, 16 GB). For the test the defense CRM was stopped, so this was the only CRM on the server (ERPNext and n8n stayed up but were idle), and Postgres got the installer's 16 GB row (shared_buffers 4GB, effective_cache_size 12GB, work_mem 32MB, maintenance_work_mem 1GB). Same data as rounds 1 to 4 (1M contacts, 200k companies, 300k deals, 1.6M links). Temporary key `stress-test-5`, revoked afterwards (401 confirmed).
+
+New in `http_bench.py`: `ramp`. Earlier rounds simulated a few very fast users (an action every 0.5 to 2 s). A ramp user acts every 10 to 20 s (about 15 s on average, the README's definition of a concurrent user), first actions spread over one think period, 30 s of warm-up not counted, 150 s measured per step. It stops at the first step where p95 passes 2 s or more than 1% of actions fail. Raw output: `http_ramp_results_4vcpu.txt`, `http_single_results_4vcpu.txt`, `monitor.log`.
+
+### One user at a time (median of 5)
+
+| Action | Round 4 (2 vCPU) | Round 5 (4 vCPU) |
+|---|---|---|
+| Contacts table, newest first | 54 ms | 69 ms |
+| Contacts table, default view | 82 ms | 74 ms |
+| Companies / deals tables | 45 / 47 ms | 71 / 52 ms |
+| Home page counts | 155 ms | 58 ms |
+| Edit a contact | 88 ms | 69 ms |
+| Contacts search "smith" | 188 ms | 123 ms |
+| Sidebar search "acme" / "sarah" | 106 / 182 ms | 99 / 193 ms |
+| First name starts with "chris", case-sensitive | 193 ms | 162 ms |
+| Record pages | 239 to 242 ms | 230 to 252 ms |
+| Company industry contains "software" | 2.5 s | 933 ms |
+
+One user sees little difference apart from the slow association filter: most actions are bound by round trips, not CPU.
+
+### Real-paced users
+
+| Users | Actions/s | p50 | p95 | Max | Errors |
+|---|---|---|---|---|---|
+| 50 | 2.9 | 148 ms | 336 ms | 1.7 s | 0 |
+| 100 | 5.9 | 142 ms | 337 ms | 1.8 s | 0 |
+| 150 | 8.8 | 141 ms | 327 ms | 1.8 s | 0 |
+| 200 | 11.7 | 141 ms | 337 ms | 2.1 s | 0 |
+| 300 | 17.7 | 143 ms | 373 ms | 3.1 s | 0 |
+| 400 | 23.3 | 157 ms | 834 ms | 7.0 s | 0 |
+| 500 | 27.5 | 392 ms | 5.0 s | 13.4 s | 0 |
+
+Up to 300 users the times barely move. At 400 the p95 more than doubles (the company industry filter reaches 5 s at p95, sidebar and contact searches about 0.7 s) but every other action stays under 350 ms at p95. At 500 everything queues: tables and record pages reach 1.6 to 5.6 s at p95, the industry filter 11 s. No request failed at any step.
+
+**The limit is the database's CPU.** At 400 users `pc-db` used 240 to 345% of the 400% available (load average about 6); the API container stayed at 10 to 15%, and memory never mattered (11.6 GB or more available throughout, no swap). At 500 the load average reached 17.
+
+**Sizing:** a Medium server meets the "p95 under 2 s" bar at 400 real-paced users and fails at 500. The README's Medium row says 300, leaving headroom for background work (list refreshes, campaign sends, imports, the slow association filter), none of which ran during the test. The 2 vCPU Base row has not been ramped this way; its 50 users is still worked out from round 4's actions per second.
+
+After the test the defense CRM was started again and both installs set to the installer's 8 GB row (shared_buffers 2GB, effective_cache_size 6GB, work_mem 32MB, maintenance_work_mem 512MB), which is what two installs on a 16 GB server get. Earlier `.env` copies are in `.env.bak-*` in each install folder.

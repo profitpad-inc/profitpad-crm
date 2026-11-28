@@ -18,13 +18,13 @@ Every fake record is tagged `created_by = 'system:stress_test'` (history `source
 | `run_load.sh` | Loads one object in 50k-row transactions and logs rows/s to `load.log`: `./run_load.sh companies 1 200000`, then `contacts`, then `deals`. Batch size: `STEP=...`. |
 | `load_companies.sql`, `load_contacts.sql`, `load_deals.sql` | The generators `run_load.sh` runs (deterministic fake values, so reruns give the same data). |
 | `load_assoc_prep.sql`, `load_assoc.sql` | Links: run the prep once (`psql ... -f load_assoc_prep.sql`), then `./run_load.sh assoc 1 1000000` (contact to company, deal to company, deal to contact). |
-| `http_bench.py` | Load test through the API with the requests the web app sends. `PCRM_API_KEY=... /usr/bin/python3 http_bench.py single` (each scenario alone) or `concurrent 20 60` (20 simulated users for 60 s). `PCRM_API_URL` defaults to the live CRM; use a temporary key with read and write scopes and revoke it after. The `edit_contact` scenario edits stress-test contacts only. |
+| `http_bench.py` | Load test through the API with the requests the web app sends. `PCRM_API_KEY=... /usr/bin/python3 http_bench.py single` (each scenario alone) or `concurrent 20 60` (20 fast simulated users for 60 s), or `ramp 50,100,200,400 150` (users paced like real people, about 15 s between actions, 150 s a step, stopping once p95 passes 2 s or more than 1% fail). `PCRM_API_URL` defaults to the live CRM; use a temporary key with read and write scopes and revoke it after. The `edit_contact` scenario edits stress-test contacts only. |
 | `sql_bench.py` + `bench.sql` | Runs each `-- Q:<name>` query in a `.sql` file 3 times with EXPLAIN ANALYZE and prints server-side timings. The queries in `bench.sql` are the shapes the API sent in November 2026 and may be out of date. |
 | `monitor.sh` | Samples load, memory, disk and container stats every 30 s into `monitor.log` while a test runs. Uses the live server's SSH alias and container names; adjust for another server. Stop it when the test ends. |
 | `cleanup.sql` | Deletes every stress-test record, link, history row and helper table in one transaction. Then `vacuum (full)` the large tables to return the disk space (locks them while it runs). |
 
-## Records of the November 2026 run
+## Records of the November 2026 runs
 
-`RESULTS.md` (findings, four rounds), `http_single_results*.txt` and `http_concurrent_results*.txt` (per release), `sql_bench_results.txt`, `load.log`, `monitor.log`.
+`RESULTS.md` (findings, five rounds), `http_single_results*.txt`, `http_concurrent_results*.txt` and `http_ramp_results*.txt` (per release or server size), `sql_bench_results.txt`, `load.log`, `monitor.log`.
 
 One-off experiments from that run, kept because `RESULTS.md` cites them; they no longer run as written (the search column they tried became migration 0144): `search_index_try.sql`, `search_column_try.sql`, `search_bench*.sql`, `search_bench_results.txt`, `bench_after.py`, `bench_after_results.txt`.

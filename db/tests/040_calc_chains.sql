@@ -1,7 +1,8 @@
 -- Calculation chains (0168): a change two or three associations away is
 -- noted and queued later by meta.expand_calc_chains (not inside the write),
 -- link changes are followed too, circular calculations across objects are
--- refused, and meta.nightly_enqueue_calcs runs once per day. Rolled back.
+-- refused, hops 2 and 3 wait behind first-hop work, and
+-- meta.nightly_enqueue_calcs runs once per day at the picked time. Rolled back.
 \set ON_ERROR_STOP 1
 begin;
 
@@ -95,21 +96,58 @@ begin
   end;
   if not v_failed then raise exception 'cross-object circular calculation refused'; end if;
 
-  -- nightly: once per UTC day, from the hour given
-  update meta.calc_schedule set last_full_enqueue_on = (now() at time zone 'utc')::date - 1;
+  -- priority: hops 2 and 3 are queued at 2 and wait while first-hop work (1) is queued
+  update crm.pc_0020 set quantity = 4 where pc_0020_id = v_l2;
+  if (select priority from meta.calc_queue where object_type_id = 'pc_0012' and record_id = v_deal) <> 1 then raise exception 'hop 1 queued at priority 1'; end if;
+  perform meta.expand_calc_chains(100000);
+  if (select priority from meta.calc_queue where object_type_id = 'pc_0011' and record_id = v_co) <> 2 then raise exception 'hop 2 queued at priority 2'; end if;
+  perform meta._test_settle();
+  if (select line_total from crm.pc_0011 where pc_0011_id = v_co) <> 20 then raise exception 'company line total after priority run: %', (select line_total from crm.pc_0011 where pc_0011_id = v_co); end if;
   delete from meta.calc_queue;
-  v_n := meta.nightly_enqueue_calcs(0);
+  insert into meta.calc_queue (object_type_id, record_id, priority) values ('pc_0010', v_ct, 2), ('pc_0012', v_deal, 1);
+  if meta.process_calc_queue(1000, 1) <> 1 then raise exception 'priority 1 drained alone'; end if;
+  if meta.process_calc_queue(1000, 1) <> 0 then raise exception 'a priority 1 drain leaves priority 2 alone'; end if;
+  if not exists (select 1 from meta.calc_queue where object_type_id = 'pc_0010' and record_id = v_ct and priority = 2) then raise exception 'contact still waiting'; end if;
+  if meta.process_calc_queue(1000) <> 1 then raise exception 'a full drain takes priority 2 once nothing else waits'; end if;
+  -- a link change raises a waiting priority 2 row to 1
+  insert into meta.calc_queue (object_type_id, record_id, priority) values ('pc_0011', v_co, 2);
+  perform meta.dissociate('contacts', v_ct, 'companies', v_co);
+  perform meta.associate('contacts', v_ct, 'companies', v_co);
+  if (select priority from meta.calc_queue where object_type_id = 'pc_0011' and record_id = v_co) <> 1 then raise exception 'company raised to priority 1'; end if;
+  perform meta._test_settle();
+
+  -- nightly: once per day in the picked time zone, from the picked hour, at priority 2
+  perform meta.set_nightly_calcs(0, 'America/Los_Angeles');
+  if (select nightly_time_zone from meta.calc_schedule) <> 'America/Los_Angeles' then raise exception 'time zone saved'; end if;
+  update meta.calc_schedule set last_full_enqueue_on = (now() at time zone 'America/Los_Angeles')::date - 1;
+  delete from meta.calc_queue;
+  v_n := meta.nightly_enqueue_calcs();
   if v_n is null or v_n = 0 then raise exception 'nightly queued every calculation, got %', v_n; end if;
-  if not exists (select 1 from meta.calc_queue where object_type_id = 'pc_0011' and record_id = v_co) then raise exception 'nightly queued the company'; end if;
-  if (select last_full_enqueue_on from meta.calc_schedule) <> (now() at time zone 'utc')::date then raise exception 'nightly day recorded'; end if;
-  if meta.nightly_enqueue_calcs(0) is not null then raise exception 'nightly runs once a day'; end if;
+  if not exists (select 1 from meta.calc_queue where object_type_id = 'pc_0011' and record_id = v_co and priority = 2) then raise exception 'nightly queued the company at priority 2'; end if;
+  if (select last_full_enqueue_on from meta.calc_schedule) <> (now() at time zone 'America/Los_Angeles')::date then raise exception 'nightly day recorded'; end if;
+  if meta.nightly_enqueue_calcs() is not null then raise exception 'nightly runs once a day'; end if;
+  -- moving the zone never runs it a second time the same day
+  perform meta.set_nightly_calcs(0, 'Pacific/Kiritimati');
+  if (select last_full_enqueue_on from meta.calc_schedule) <> (now() at time zone 'Pacific/Kiritimati')::date then raise exception 'zone change carries the day over'; end if;
+  if meta.nightly_enqueue_calcs() is not null then raise exception 'zone change ran it twice in one day'; end if;
+  -- not before the hour
+  perform meta.set_nightly_calcs(23, 'UTC');
+  update meta.calc_schedule set last_full_enqueue_on = null;
+  if extract(hour from now() at time zone 'utc') < 23 and meta.nightly_enqueue_calcs() is not null then raise exception 'nightly waits for its hour'; end if;
   v_failed := false;
   begin
-    perform meta.nightly_enqueue_calcs(24);
+    perform meta.set_nightly_calcs(24, 'UTC');
   exception when others then
     v_failed := true;
   end;
   if not v_failed then raise exception 'nightly hour checked'; end if;
+  v_failed := false;
+  begin
+    perform meta.set_nightly_calcs(3, 'Mars/Olympus');
+  exception when others then
+    v_failed := true;
+  end;
+  if not v_failed then raise exception 'time zone checked'; end if;
 
   raise notice 'ok 040 calc chains';
 end $t$;

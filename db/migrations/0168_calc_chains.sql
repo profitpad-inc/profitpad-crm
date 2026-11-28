@@ -18,10 +18,18 @@
 --   once spent 350 ms looking up links);
 -- * a link added or removed leaves a note for both ends that expands hops 1
 --   to 3 from each end (the ends themselves are queued at once, as before);
--- * meta.nightly_enqueue_calcs(hour) queues every calculation once a day,
---   from the hour given (UTC) on, catching anything deeper. The API worker
---   calls it every few minutes; the day it last ran is kept here, so restarts
---   and several API processes never run it twice.
+-- * meta.nightly_enqueue_calcs() queues every calculation once a day, from
+--   the hour and time zone picked in Settings > Calculations
+--   (meta.set_nightly_calcs), catching anything deeper. The API worker calls
+--   it every few minutes; the day it last ran is kept here, so restarts and
+--   several API processes never run it twice;
+-- * meta.calc_queue rows have a priority: 1 for the changed record and hop 1
+--   (what a save or an import touched), 2 for hops 2 and 3 and the nightly
+--   run. meta.process_calc_queue works only on the lowest priority waiting,
+--   so a large import or the nightly run never holds up first-hop work, and
+--   a priority 2 row is raised to 1 when a change queues it directly. The
+--   drain right after a save or an import takes priority 1 only
+--   (drainCalcQueue in api/src/records.ts); the background worker takes both.
 --
 -- Intermediate hops may be any object; only the last hop must be an object
 -- with a calculation reading what changed. Circular calculations stay
@@ -42,13 +50,104 @@ grant select on meta.calc_chain_notes to pc_api;
 
 create table meta.calc_schedule (
   id boolean primary key default true check (id),
-  -- the UTC day the nightly full recompute last ran
+  -- when the nightly full recompute runs: from this hour on, in this zone
+  nightly_hour smallint not null default 8 check (nightly_hour between 0 and 23),
+  nightly_time_zone text not null default 'UTC',
+  updated_by text,
+  updated_at timestamptz,
+  -- the day (in nightly_time_zone) the nightly full recompute last ran
   last_full_enqueue_on date,
   last_full_enqueue_at timestamptz,
   last_full_enqueue_count integer
 );
 insert into meta.calc_schedule (id) values (true);
 grant select on meta.calc_schedule to pc_api;
+
+-- 1: the changed record and hop 1; 2: hops 2 and 3, the nightly run
+alter table meta.calc_queue add column priority smallint not null default 1 check (priority in (1, 2));
+create index calc_queue_priority_idx on meta.calc_queue (priority, object_type_id, enqueued_at);
+
+-- Settings > Calculations (api/src/calc-settings.ts)
+create function meta.set_nightly_calcs(p_hour integer, p_time_zone text) returns void
+language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
+begin
+  if p_hour is null or p_hour < 0 or p_hour > 23 then
+    perform meta._fail('the hour must be 0 to 23');
+  end if;
+  if p_time_zone is null or not exists (select 1 from pg_timezone_names where name = p_time_zone) then
+    perform meta._fail(format('unknown time zone "%s"', p_time_zone));
+  end if;
+  update meta.calc_schedule
+  set nightly_hour = p_hour, nightly_time_zone = p_time_zone, updated_by = meta.actor(), updated_at = now(),
+    -- a new time counts from today: never a second run today because the zone moved
+    last_full_enqueue_on = case
+      when nightly_time_zone is distinct from p_time_zone and last_full_enqueue_at is not null
+        then greatest(last_full_enqueue_on, (last_full_enqueue_at at time zone p_time_zone)::date)
+      else last_full_enqueue_on end;
+end $$;
+revoke all on function meta.set_nightly_calcs(integer, text) from public;
+grant execute on function meta.set_nightly_calcs(integer, text) to pc_api;
+
+-- As in the baseline, but only the lowest priority waiting is worked on.
+drop function meta.process_calc_queue(integer);
+create function meta.process_calc_queue(p_limit integer default 500, p_max_priority integer default 2) returns integer
+language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
+declare
+  v_priority smallint;
+  v_code text;
+  v_ids text[];
+  v_obj meta.pc_0001;
+  v_prop meta.pc_0002;
+  v_total integer := 0;
+  v_prev_actor text := current_setting('crm.actor', true);
+  v_prev_source text := current_setting('crm.source', true);
+begin
+  select min(priority) into v_priority from meta.calc_queue where priority <= p_max_priority;
+  if v_priority is null then
+    return 0;
+  end if;
+  perform set_config('crm.actor', 'system:calculation', true);
+  perform set_config('crm.source', 'calculation', true);
+  for v_code in select distinct object_type_id from meta.calc_queue where priority = v_priority loop
+    with picked as (
+      select object_type_id, record_id from meta.calc_queue
+      where object_type_id = v_code and priority = v_priority order by enqueued_at limit p_limit
+      for update skip locked
+    ), removed as (
+      delete from meta.calc_queue q using picked
+      where q.object_type_id = picked.object_type_id and q.record_id = picked.record_id
+      returning q.record_id
+    )
+    select array_agg(record_id) into v_ids from removed;
+    continue when v_ids is null;
+    v_total := v_total + cardinality(v_ids);
+    select * into v_obj from meta.pc_0001 where object_type_id = v_code;
+    for v_prop in
+      select * from meta.pc_0002
+      where object_type_id = v_code and type = 'calculation' and record_status = 'active'
+      order by pc_0002_id
+    loop
+      begin
+        execute format(
+          'update crm.%1$I t set %2$I = v.val from (select r.%3$I as id, (%4$s)::%5$s as val from crm.%6$I r where r.%3$I = any ($1)) v '
+          'where t.%3$I = v.id and t.record_status in (''active'', ''archived'') and t.%2$I is distinct from v.val',
+          v_code, v_prop.api_name, v_code || '_id', v_prop.calc_sql, meta._column_type('calculation', v_prop.calc_output_type), v_obj.api_name)
+          using v_ids;
+        if v_prop.calc_last_error is not null then
+          update meta.pc_0002 set calc_last_error = null, calc_last_error_at = null where pc_0002_id = v_prop.pc_0002_id;
+        end if;
+      exception when others then
+        update meta.pc_0002 set calc_last_error = left(sqlerrm, 1000), calc_last_error_at = now()
+        where pc_0002_id = v_prop.pc_0002_id;
+      end;
+    end loop;
+  end loop;
+  perform set_config('crm.actor', coalesce(v_prev_actor, ''), true);
+  perform set_config('crm.source', coalesce(v_prev_source, ''), true);
+  return v_total;
+end $$;
+revoke all on function meta.process_calc_queue(integer, integer) from public;
+grant execute on function meta.process_calc_queue(integer, integer) to pc_api;
 
 -- a record's linked records, either direction; p_type narrows to one object
 create function meta._calc_neighbors(p_object text, p_id text, p_type text default null)
@@ -62,7 +161,8 @@ language sql stable as $$
 $$;
 
 -- As in 0148 (EXECUTE so the link lookup is planned for the actual values),
--- plus the note for hops 2 and 3.
+-- plus the note for hops 2 and 3; a record already waiting at priority 2 is
+-- raised to 1.
 create or replace function meta._enqueue_calcs(p_object text, p_id text, p_changed text[])
 returns void language plpgsql as $$
 begin
@@ -85,7 +185,7 @@ begin
       select a.from_id from crm.pc_0005 a
       where a.to_object_type = $1 and a.to_id = $2 and a.from_object_type = c.object_type_id
     ) t (record_id)
-    on conflict do nothing
+    on conflict (object_type_id, record_id) do update set priority = 1 where meta.calc_queue.priority > 1
   $q$ using p_object, p_id, p_changed;
 
   insert into meta.calc_chain_notes (object_type_id, record_id, target_types, first_hop)
@@ -131,15 +231,15 @@ begin
   select distinct x.o, x.i
   from (values (v_row.from_object_type, v_row.from_id), (v_row.to_object_type, v_row.to_id)) x (o, i)
   where x.o = any (v_targets)
-  on conflict do nothing;
+  on conflict (object_type_id, record_id) do update set priority = 1 where meta.calc_queue.priority > 1;
 
   insert into meta.calc_chain_notes (object_type_id, record_id, target_types, first_hop)
   values (v_row.from_object_type, v_row.from_id, v_targets, 1), (v_row.to_object_type, v_row.to_id, v_targets, 1);
   return null;
 end $$;
 
--- Turns up to p_limit waiting notes into queued records; returns how many
--- were queued. Called by the API's calculation worker.
+-- Turns up to p_limit waiting notes into queued records (priority 2);
+-- returns how many were queued. Called by the API's calculation worker.
 create function meta.expand_calc_chains(p_limit integer default 1000) returns integer
 language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
 declare
@@ -172,8 +272,8 @@ begin
     union
     select target, record_id from hop3
   )
-  insert into meta.calc_queue (object_type_id, record_id)
-  select target, record_id from found
+  insert into meta.calc_queue (object_type_id, record_id, priority)
+  select target, record_id, 2 from found
   on conflict do nothing;
   get diagnostics v_count = row_count;
   return v_count;
@@ -181,30 +281,40 @@ end $$;
 revoke all on function meta.expand_calc_chains(integer) from public;
 grant execute on function meta.expand_calc_chains(integer) to pc_api;
 
--- Queues every calculation once per UTC day, from p_hour (UTC) on. Returns
--- how many records were queued, or null when it is not due.
-create function meta.nightly_enqueue_calcs(p_hour integer default 8) returns integer
+-- Queues every calculation (priority 2) once a day, from the hour picked in
+-- meta.calc_schedule, in its time zone. Returns how many records were
+-- queued, or null when it is not due.
+create function meta.nightly_enqueue_calcs() returns integer
 language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
 declare
-  v_now timestamp := now() at time zone 'utc';
+  v_s meta.calc_schedule;
+  v_now timestamp;
+  v_code text;
   v_count integer;
+  v_total integer := 0;
 begin
-  if p_hour is null or p_hour < 0 or p_hour > 23 then
-    perform meta._fail('the hour must be 0 to 23');
-  end if;
-  if extract(hour from v_now) < p_hour then
+  select * into v_s from meta.calc_schedule;
+  v_now := now() at time zone v_s.nightly_time_zone;
+  if extract(hour from v_now) < v_s.nightly_hour then
     return null;
   end if;
   if not pg_try_advisory_xact_lock(hashtext('meta.nightly_enqueue_calcs')) then
     return null;
   end if;
-  if exists (select 1 from meta.calc_schedule where last_full_enqueue_on >= v_now::date) then
+  if (select last_full_enqueue_on from meta.calc_schedule) >= v_now::date then
     return null;
   end if;
-  v_count := meta.enqueue_calcs();
+  for v_code in
+    select distinct object_type_id from meta.pc_0002 where type = 'calculation' and record_status = 'active'
+  loop
+    execute format('insert into meta.calc_queue (object_type_id, record_id, priority) select %L, %I, 2 from crm.%I where record_status in (''active'', ''archived'') on conflict do nothing',
+      v_code, v_code || '_id', v_code);
+    get diagnostics v_count = row_count;
+    v_total := v_total + v_count;
+  end loop;
   update meta.calc_schedule
-  set last_full_enqueue_on = v_now::date, last_full_enqueue_at = now(), last_full_enqueue_count = v_count;
-  return v_count;
+  set last_full_enqueue_on = v_now::date, last_full_enqueue_at = now(), last_full_enqueue_count = v_total;
+  return v_total;
 end $$;
-revoke all on function meta.nightly_enqueue_calcs(integer) from public;
-grant execute on function meta.nightly_enqueue_calcs(integer) to pc_api;
+revoke all on function meta.nightly_enqueue_calcs() from public;
+grant execute on function meta.nightly_enqueue_calcs() to pc_api;
