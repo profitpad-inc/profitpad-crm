@@ -7,21 +7,49 @@ An object-based CRM in the spirit of HubSpot: contacts, companies, deals, quotes
 - **Web app:** React + Vite. Table views, record pages, settings, users and roles, public quote, invoice, form and booking pages.
 - **Sign-in:** Google or Microsoft for people (no passwords); API keys for scripts and jobs; OAuth for apps a user connects, including AI assistants through the built-in MCP server.
 
-MIT licensed. ProfitPad's own copy runs at https://crm.profitpad.com.
+MIT licensed.
+
+## Setting up the CRM
+
+1. [Get a server](https://github.com/profitpad-inc/profitpad-crm#1-get-a-server)
+2. [Install Docker](https://github.com/profitpad-inc/profitpad-crm#2-install-docker)
+3. [Point your address at the server](https://github.com/profitpad-inc/profitpad-crm#3-point-your-address-at-the-server)
+4. [Create a sign-in app](https://github.com/profitpad-inc/profitpad-crm#4-create-a-sign-in-app)
+5. [Run the installer](https://github.com/profitpad-inc/profitpad-crm#5-run-the-installer)
+6. [Set up HTTPS](https://github.com/profitpad-inc/profitpad-crm#6-set-up-https)
 
 ## Install
 
 Everything runs in Docker from published images: there is nothing to clone or build.
 
-**You need:**
+### 1. Get a server
 
-- A Linux server with a public IP address, ports 80 and 443 open, and at least 2 CPU cores, 4 GB of memory and 50 GB of storage ([sizing](#server-size))
-- A reverse proxy on the server that does HTTPS, such as nginx with certbot ([details](#https-and-ports))
-- Docker with the compose plugin (`curl -fsSL https://get.docker.com | sudo sh`)
-- A DNS record (an A record) for your address, e.g. `crm.example.com`, pointing at the server
-- A Google OAuth client or a Microsoft Entra app registration for sign-in, with the redirect URI `https://crm.example.com/v1/auth/google/callback` or `https://crm.example.com/v1/auth/microsoft/callback` ([details](docs/self-hosting.md#2-sign-in-apps))
+A Linux server with a public IP address, ports 80 and 443 open, and at least 2 CPU cores, 4 GB of memory and 50 GB of storage. Any server works: a Google Cloud, AWS or other VM, or your own machine. [Server size](#server-size) lists what larger installs need.
 
-**Then, on the server:**
+### 2. Install Docker
+
+Docker with the compose plugin:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+```
+
+### 3. Point your address at the server
+
+Create a DNS record (an A record) for your address, e.g. `crm.example.com`, pointing at the server's public IP address. Use your own name in place of `crm.example.com` throughout.
+
+### 4. Create a sign-in app
+
+People sign in with Google or Microsoft, so set up at least one of these. The installer asks for the IDs and secrets; you can also leave them blank and fill in `.env` later.
+
+- **Google:** a Google OAuth client of type Web application, with the redirect URI `https://crm.example.com/v1/auth/google/callback`
+- **Microsoft:** a Microsoft Entra app registration with a client secret, with the Web redirect URI `https://crm.example.com/v1/auth/microsoft/callback`
+
+[docs/self-hosting.md](docs/self-hosting.md#2-sign-in-apps) has the step by step for each.
+
+### 5. Run the installer
+
+On the server:
 
 ```bash
 sudo mkdir -p /opt/profitpad-crm && cd /opt/profitpad-crm
@@ -29,9 +57,27 @@ sudo curl -fsSLO --retry 6 --retry-delay 5 https://github.com/profitpad-inc/prof
 sudo bash install.sh
 ```
 
-The installer asks for your address, which sign-in to use (Google, Microsoft or both) and the first admin's email. It writes `.env` and `db.env` with new random passwords and keys, pulls the images and starts everything. The CRM listens on `127.0.0.1:8080`; point your reverse proxy at it ([HTTPS and ports](#https-and-ports)). Open your address and sign in with the admin's Google or Microsoft account.
+The installer asks for your address, which sign-in to use (Google, Microsoft or both) and the first admin's email. It writes `.env` and `db.env` with new random passwords and keys, pulls the images and starts everything. The CRM listens on `127.0.0.1:8080` (or the next free port; the installer says which).
 
 **Back up `.env` and `db.env`.** The keys in them cannot be recovered from the server's data.
+
+### 6. Set up HTTPS
+
+The installer leaves ports 80 and 443 free, so your reverse proxy can serve your address over HTTPS and forward it to the CRM's port. With nginx:
+
+1. Copy [`deploy/install/nginx-proxy.conf`](deploy/install/nginx-proxy.conf) into your nginx sites and set your address and the CRM's port in it.
+2. Enable the site and reload nginx.
+3. Run `certbot --nginx` to get the certificate.
+
+Then open your address and sign in with the admin's Google or Microsoft account. That's the whole install.
+
+### Other install options
+
+You don't need any of these for a normal install. Each one replaces `sudo bash install.sh` in step 5.
+
+- **No reverse proxy at all.** Only if nothing else runs on the server: `sudo PCRM_BEHIND_PROXY=off bash install.sh` lets the CRM take ports 80 and 443 and get its own HTTPS certificate, and you skip step 6.
+- **A different port.** `sudo PCRM_BEHIND_PROXY=8090 bash install.sh` starts looking for a free port at 8090 instead of 8080.
+- **A second install on the same server** (a demo, say). `sudo PCRM_INSTANCE=demo bash install.sh` puts it in its own folder on the next free port. See [several installs on one server](docs/self-hosting.md#several-installs-on-one-server).
 
 ### Server size
 
@@ -52,7 +98,7 @@ Pick the row that covers both your record count and how many people use the CRM 
 - **Disk:** plan on about 4.5 GB per million records (record history is most of it), plus room for backups and file uploads.
 - **Sharing a server** with other apps means sizing for all of them together.
 
-**Postgres memory.** The installer sets these in `.env` on a new install, from the server's memory. When other ProfitPad installs already run on the server, it splits the memory evenly between them. Existing installs keep what their `.env` has; without these lines Postgres uses the small defaults in `docker-compose.yml`. To size for a different amount (other apps on the server, say), run the first install with `PCRM_PG_MEMORY_MB=4096`, or edit `.env` and run `sudo docker compose up -d`.
+**Postgres memory.** The installer sets these in `.env` on a new install, from the server's memory. When other installs of the CRM already run on the server, it splits the memory evenly between them. Existing installs keep what their `.env` has; without these lines Postgres uses the small defaults in `docker-compose.yml`. To size for a different amount (other apps on the server, say), run the first install with `PCRM_PG_MEMORY_MB=4096`, or edit `.env` and run `sudo docker compose up -d`.
 
 | Memory for this install | `PCRM_PG_SHARED_BUFFERS` | `PCRM_PG_EFFECTIVE_CACHE_SIZE` | `PCRM_PG_WORK_MEM` | `PCRM_PG_MAINTENANCE_WORK_MEM` |
 |---|---|---|---|---|
@@ -63,18 +109,6 @@ Pick the row that covers both your record count and how many people use the CRM 
 | 64 GB | 16GB | 48GB | 64MB | 1GB |
 
 Two installs on one 8 GB server each use the 4 GB row. `PCRM_PG_RANDOM_PAGE_COST` stays at 1.1, which suits SSD disks.
-
-### HTTPS and ports
-
-The installer leaves ports 80 and 443 free for anything else on the server. The CRM listens on `127.0.0.1:8080` (or the next free port; the installer says which), and your own reverse proxy serves your address over HTTPS and forwards it there. For nginx, [`deploy/install/nginx-proxy.conf`](deploy/install/nginx-proxy.conf) is a ready site: set your address and port, enable it, and run `certbot --nginx`. To start from another port: `sudo PCRM_BEHIND_PROXY=8090 bash install.sh`.
-
-No reverse proxy, and nothing else on the server? Let the CRM take ports 80 and 443 and get its HTTPS certificate itself:
-
-```bash
-sudo PCRM_BEHIND_PROXY=off bash install.sh
-```
-
-A second install on the same server (a demo, say) goes in its own folder with a name, and gets the next free port: `sudo PCRM_INSTANCE=demo bash install.sh`. See [several installs on one server](docs/self-hosting.md#several-installs-on-one-server).
 
 ### Updating
 
@@ -125,7 +159,7 @@ sudo docker compose up -d                                           # apply .env
 | `db/Dockerfile` | The migrate image (`db/entrypoint.sh`) |
 | `deploy/install/` | The compose file, installer and nginx template that installs use |
 | `deploy/renderer/` | The renderer image |
-| `scripts/` | Sample data generator; `deploy.sh` updates ProfitPad's own server |
+| `scripts/` | Sample data generator |
 | `docs/` | Architecture, rules, property types, hosting |
 
 ### Running it locally
@@ -168,23 +202,9 @@ Installs apply new migrations on their own when they update. To apply them to a 
 git tag v1.4.0 && git push origin v1.4.0
 ```
 
-Do not create the release by hand (`gh release create`): the workflow's release job fails if one already exists. The full release and deploy checklist is in `AGENTS.md`.
+Do not create the release by hand (`gh release create`): the workflow's release job fails if one already exists.
 
 To try local changes in the full setup, build the images yourself (`docker build -t ghcr.io/profitpad-inc/profitpad-crm-api:dev api`, likewise `web`, `db` as `-migrate` and `deploy/renderer` as `-renderer`) and set `PCRM_VERSION=dev` in an install's `.env`.
-
-## ProfitPad's own server
-
-It runs the `:main` images from `/opt/profitpad-crm`, behind the server's nginx. After a push to `main`:
-
-```bash
-./scripts/deploy.sh
-```
-
-That waits for CI and the Images workflow on the pushed commit (and stops if either fails), runs `install.sh` on the server, then checks that every container runs that commit.
-
-That is the live CRM, `crm.profitpad.com`. The defense CRM (`crm.defense.profitpad.com`, `/opt/profitpad-defense-crm`, `PCRM_INSTANCE=defense`) follows releases instead. After tagging one: `./scripts/deploy.sh defense`. There is no demo install any more.
-
-Database access through the SSH tunnel and backups are in `CLAUDE.md`; the history of the server is in `docs/deploy.md`.
 
 ## Documentation
 
@@ -192,7 +212,6 @@ Database access through the SSH tunnel and backups are in `CLAUDE.md`; the histo
 - [docs/architecture.md](docs/architecture.md): schemas, base columns, object codes, associations, database roles, API layout, sign-in, OAuth and MCP
 - [docs/RULES.md](docs/RULES.md): rules for changing a tenant (naming, codes, calculations, reporting, destructive actions)
 - [docs/property-types.md](docs/property-types.md): property types and their options
-- [docs/deploy.md](docs/deploy.md): ProfitPad's own server, as a diary
 - [HANDOFF.md](HANDOFF.md): current state and what's next, written for whoever picks up the work next, human or AI
 
 ## License

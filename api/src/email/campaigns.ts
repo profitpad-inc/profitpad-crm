@@ -10,15 +10,18 @@ import { BATCH_MAX, PostmarkError, sendBatch, type PostmarkMessage } from './pos
 import { campaignTemplate, contactData, loadCampaign, renderCampaignEmail, type CampaignRow, type TemplateParts, campaignText } from './render.js';
 import { EMAIL_ACTOR, insertEmailRecord, markFailed, markSent } from './send.js';
 import { dirtyCampaigns, optOut } from './events.js';
+import { contentProblems, followUpSql, LIVE_STEP, loadSteps, pickDueWinners, startStep, stepProblems, variantCampaign, variantTemplate, type StepRow, type VariantRow } from './steps.js';
 import { listTopics } from './topics.js';
 
-// Email campaigns (pc_0058): a marketing email (its email template) sent to
-// an audience of contacts through Postmark's broadcast stream.
+// Email campaigns (pc_0058): marketing email sent to an audience of contacts
+// through Postmark's broadcast stream. A campaign holds one or more emails
+// (steps, each with one or more A/B variants: steps.ts, migration 0165).
 //
 //   draft -> scheduled -> sending -> sent      (or canceled before sending)
 //
-// Starting a campaign fixes its audience: one auth.email_outbox row per
-// contact. The email worker (startEmailWorker, every few seconds) sends
+// The campaign is sending while any of its emails is still to go. Starting
+// it starts email 1 and fixes its audience: one auth.email_outbox row per
+// contact (later emails go to who got email 1, when their time comes). The email worker (startEmailWorker, every few seconds) sends
 // queued rows in batches of up to 500, each with its own `emails` record
 // linked to the contact and the campaign, and keeps the campaign's counts
 // up to date from those records.
@@ -111,6 +114,19 @@ export async function sampleAudience(ids: string[], limit = 5, topic?: unknown):
   return rows;
 }
 
+// The newest contacts in the audience (by when the contact was created), with
+// their names: the Preview tab's "Drawn for" picker and its default contact.
+export async function recentAudience(ids: string[], limit = 10, topic?: unknown): Promise<{ id: string; name: string | null; email: string }[]> {
+  const params: unknown[] = [];
+  const sql = await audienceSql(await loadLists(pool, ids), params, topicOf(topic));
+  const { rows } = await pool.query(
+    `select a.contact_id as id, c.name, a.email from (${sql}) a join crm.pc_0010 c on c.pc_0010_id = a.contact_id
+     order by c.created_at desc, a.contact_id limit ${Math.min(Math.max(limit, 1), 50)}`,
+    params
+  );
+  return rows;
+}
+
 // ---- record rules --------------------------------------------------------------
 
 const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v);
@@ -184,7 +200,7 @@ async function lockCampaign(c: pg.PoolClient, id: string): Promise<CampaignRow> 
 }
 
 // Everything a campaign needs before it can go out.
-export async function checkCampaign(id: string): Promise<{ campaign: CampaignRow; template: TemplateParts; recipients: number; problems: string[] }> {
+export async function checkCampaign(id: string, firstAt: Date = new Date()): Promise<{ campaign: CampaignRow; template: TemplateParts; recipients: number; problems: string[]; steps: StepRow[] }> {
   const campaign = await loadCampaign(id);
   if (!campaign) throw new ApiError(404, `email campaign ${id} not found`, 'not_found');
   const template = await campaignTemplate(id);
@@ -192,9 +208,6 @@ export async function checkCampaign(id: string): Promise<{ campaign: CampaignRow
   const problems = missing(s).map((m) => `Email is not set up: it needs ${m} (Settings → Email).`);
   if (!s.mailing_address) problems.push('Settings → Email needs a mailing address: the law requires one in marketing email.');
   if (!process.env.UI_URL || !process.env.PUBLIC_API_URL) problems.push('The server needs UI_URL and PUBLIC_API_URL set to build unsubscribe links.');
-  if (!template) problems.push('Link an email template to the campaign.');
-  else if (!template.body?.trim()) problems.push('The email template has no body.');
-  if (!(campaign.subject || template?.subject)) problems.push('Give the campaign (or its template) a subject.');
   const topics = await listTopics();
   if (campaign.subscription_type) {
     if (!topics.some((t) => t.value === campaign.subscription_type)) {
@@ -212,19 +225,26 @@ export async function checkCampaign(id: string): Promise<{ campaign: CampaignRow
   } catch (err) {
     problems.push((err as Error).message);
   }
-  return { campaign, template: template as TemplateParts, recipients, problems };
+  // each email that has not gone out: its template, subject, time and condition
+  const steps = await loadSteps(pool, id);
+  problems.push(...await stepProblems(pool, campaign, steps, firstAt, recipients));
+  return { campaign, template: template as TemplateParts, recipients, problems, steps };
 }
 
+// Starts email 1 (to the lists) and schedules the later ones at their times.
 async function begin(c: pg.PoolClient, campaign: CampaignRow, sentBy: string | null): Promise<number> {
-  const params: unknown[] = [campaign.id];
-  const sql = await audienceSql(await campaignLists(c, campaign.id), params, campaign.subscription_type);
-  const { rowCount } = await c.query(
-    `insert into auth.email_outbox (campaign_id, contact_id, email) select $1, a.contact_id, a.email from (${sql}) a on conflict do nothing`,
-    params
-  );
+  const steps = await loadSteps(c, campaign.id, true);
+  const first = steps.find((x) => x.position === 1);
+  if (!first) throw badRequest('This campaign has no email.');
   // The sender it goes out as is written on the campaign, so the record shows
   // it even when the campaign left it to the Settings → Email default.
   const from = marketingSender(await loadEmailSettings(), campaign);
+  const params: unknown[] = [];
+  const sql = await audienceSql(await campaignLists(c, campaign.id), params, campaign.subscription_type);
+  const rowCount = await startStep(c, campaign, first, sql, params, from);
+  await c.query(
+    `update auth.email_campaign_steps set status = 'scheduled' where campaign_id = $1 and position > 1 and status in ('draft', 'scheduled') and scheduled_at is not null`,
+    [campaign.id]);
   await c.query(
     `update crm.pc_0058 set status = '{sending}', recipient_count = $2, sent_by = coalesce(sent_by, $3),
        from_name = coalesce(nullif(from_name, ''), $4), from_address = coalesce(nullif(from_address, ''), $5)
@@ -237,14 +257,19 @@ async function begin(c: pg.PoolClient, campaign: CampaignRow, sentBy: string | n
 // Send now, or at `at` (scheduled). Only admins signed in to the CRM in a
 // browser get here (routes/email.ts checks canApprove).
 export async function startCampaign(id: string, p: Principal, at: Date | null): Promise<{ status: string; recipients: number }> {
-  const check = await checkCampaign(id);
+  const later = at && at.getTime() > Date.now() + 60_000 ? at : null;
+  const check = await checkCampaign(id, later ?? new Date());
   if (check.problems.length) throw new ApiError(409, check.problems.join(' '), 'campaign_not_ready', { problems: check.problems });
   return withTx({ principal: p, source: 'email_campaign' }, async (c) => {
     const campaign = await lockCampaign(c, id);
     if (!['draft', 'scheduled'].includes(campaign.status ?? 'draft')) throw badRequest(`This campaign is already ${campaign.status}.`);
-    if (at && at.getTime() > Date.now() + 60_000) {
+    if (later) {
       await c.query(`update crm.pc_0058 set status = '{scheduled}', scheduled_at = $2, sent_by = $3 where pc_0058_id = $1`,
-        [id, at, p.userId ? [p.userId] : null]);
+        [id, later, p.userId ? [p.userId] : null]);
+      await c.query(
+        `update auth.email_campaign_steps set status = 'scheduled', scheduled_at = case when position = 1 then $2 else scheduled_at end
+         where campaign_id = $1 and status in ('draft', 'scheduled') and (position = 1 or scheduled_at is not null)`,
+        [id, later]);
       return { status: 'scheduled', recipients: check.recipients };
     }
     const n = await begin(c, campaign, p.userId);
@@ -257,7 +282,8 @@ export async function cancelCampaign(id: string, p: Principal): Promise<{ status
     const campaign = await lockCampaign(c, id);
     if (!['draft', 'scheduled', 'sending'].includes(campaign.status ?? 'draft')) throw badRequest(`This campaign is already ${campaign.status}.`);
     const { rowCount } = await c.query(
-      `update auth.email_outbox set status = 'skipped', error = 'campaign canceled' where campaign_id = $1 and status = 'queued'`, [id]);
+      `update auth.email_outbox set status = 'skipped', error = 'campaign canceled' where campaign_id = $1 and status in ('queued', 'held')`, [id]);
+    await c.query(`update auth.email_campaign_steps set status = 'canceled' where campaign_id = $1 and status <> 'sent'`, [id]);
     await c.query(`update crm.pc_0058 set status = '{canceled}' where pc_0058_id = $1`, [id]);
     dirtyCampaigns.add(id);
     return { status: 'canceled', not_sent: rowCount ?? 0 };
@@ -296,6 +322,11 @@ export async function sendToMore(id: string, p: Principal, contactIds: string[])
         ? 'This campaign was canceled: it is not sent to anyone else.'
         : 'This campaign has not gone out yet: add the contacts to one of its lists instead.');
     }
+    // they get email 1 (its winner when it was an A/B test), then later emails like everyone else
+    const first = (await loadSteps(c, id, true)).find((x) => x.position === 1);
+    if (!first) throw badRequest('This campaign has no email.');
+    const variant = first.variants.length === 1 ? first.variants[0].id : first.winner_variant_id;
+    if (!variant) throw badRequest('Email 1 is still being A/B tested: Send to more works once its winner is picked.');
     const { rows } = await c.query(
       `select t.pc_0010_id as contact_id, t.email -> 0 ->> 'value' as email,
               case
@@ -323,10 +354,11 @@ export async function sendToMore(id: string, p: Principal, contactIds: string[])
     }
     if (queue.length) {
       await c.query(
-        `insert into auth.email_outbox (campaign_id, contact_id, email)
-         select $1, x.contact_id, x.email from unnest($2::text[], $3::text[]) as x(contact_id, email) on conflict do nothing`,
-        [id, queue.map((q) => q.contact_id), queue.map((q) => q.email)]
+        `insert into auth.email_outbox (campaign_id, step_id, variant_id, contact_id, email)
+         select $1, $4::bigint, $5::bigint, x.contact_id, x.email from unnest($2::text[], $3::text[]) as x(contact_id, email) on conflict do nothing`,
+        [id, queue.map((q) => q.contact_id), queue.map((q) => q.email), first.id, variant]
       );
+      if (first.status === 'sent') await c.query(`update auth.email_campaign_steps set status = 'sending' where id = $1`, [first.id]);
       if (campaign.status === 'sent') await c.query(`update crm.pc_0058 set status = '{sending}' where pc_0058_id = $1`, [id]);
       dirtyCampaigns.add(id);
     }
@@ -337,7 +369,7 @@ export async function sendToMore(id: string, p: Principal, contactIds: string[])
 // ---- sending ---------------------------------------------------------------------
 
 function messageFor(s: EmailSettings, campaign: CampaignRow, to: string, subject: string, html: string,
-  replyToken: string | null, unsub: string | null, emailId: string): PostmarkMessage {
+  replyToken: string | null, unsub: string | null, emailId: string, row: { step_id: string; variant_id: string | null }): PostmarkMessage {
   const oneClick = unsub ? oneClickUrl(unsub) : null;
   return {
     From: (({ name, address }) => fromHeader(name, address))(marketingSender(s, campaign)),
@@ -352,13 +384,15 @@ function messageFor(s: EmailSettings, campaign: CampaignRow, to: string, subject
       : [],
     TrackOpens: true,
     TrackLinks: 'HtmlAndText',
-    Metadata: { email_id: emailId, campaign_id: campaign.id },
+    Metadata: { email_id: emailId, campaign_id: campaign.id, step_id: row.step_id, variant_id: row.variant_id ?? '' },
     MessageStream: s.broadcast_stream
   };
 }
 
 interface OutboxRow {
   id: number;
+  step_id: string;
+  variant_id: string | null;
   contact_id: string;
   email: string;
   email_id: string | null;
@@ -373,7 +407,7 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
          select id from auth.email_outbox
          where campaign_id = $1 and status = 'queued' and (lease_until is null or lease_until < now()) and attempts < $2
          order by id limit $3 for update skip locked)
-       returning id, contact_id, email, email_id`,
+       returning id, step_id::text, variant_id::text, contact_id, email, email_id`,
       [campaignId, MAX_ATTEMPTS, BATCH_MAX]
     );
     return rows as OutboxRow[];
@@ -382,8 +416,7 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
 
   const s = await readySettings();
   const campaign = await loadCampaign(campaignId);
-  const template = await campaignTemplate(campaignId);
-  if (!campaign || !template || campaign.status !== 'sending') {
+  if (!campaign || campaign.status !== 'sending') {
     await pool.query(`update auth.email_outbox set lease_until = null where id = any($1)`, [rows.map((r) => r.id)]);
     return 0;
   }
@@ -398,6 +431,23 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
     for (const g of gone) leftTopic.add(g.id);
   }
 
+  // each row is drawn with its variant (subject, sender, template)
+  const variants = new Map<string, VariantRow>();
+  for (const st of await loadSteps(pool, campaignId)) for (const v of st.variants) variants.set(v.id, v);
+  const drawn = new Map<string, { campaign: CampaignRow; template: TemplateParts | null; problem: string | null }>();
+  const drawnFor = async (variantId: string | null) => {
+    const key = variantId ?? '';
+    if (!drawn.has(key)) {
+      const v = variantId ? variants.get(variantId) ?? null : null;
+      if (!v) drawn.set(key, { campaign, template: null, problem: 'its email variant is gone' });
+      else {
+        const { template, problem } = await variantTemplate(pool, campaignId, v);
+        drawn.set(key, { campaign: variantCampaign(campaign, v), template, problem });
+      }
+    }
+    return drawn.get(key)!;
+  };
+
   const msgs: PostmarkMessage[] = [];
   const sent: { row: OutboxRow; emailId: string }[] = [];
   const skipped: { id: number; why: string }[] = [];
@@ -407,10 +457,12 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
       if (!who || !who.email) { skipped.push({ id: row.id, why: 'the contact or its email is gone' }); continue; }
       if (first(who.contact.email_opt_out) === 'true') { skipped.push({ id: row.id, why: 'opted out' }); continue; }
       if (leftTopic.has(row.contact_id)) { skipped.push({ id: row.id, why: 'unsubscribed from this subscription type' }); continue; }
+      const d = await drawnFor(row.variant_id);
+      if (!d.template) { skipped.push({ id: row.id, why: d.problem ?? 'no email template' }); continue; }
       const unsub = unsubscribeToken(row.contact_id, campaignId);
       let rendered;
       try {
-        rendered = await renderCampaignEmail(campaign, template, who, s, unsub ? unsubscribePageUrl(unsub) : null);
+        rendered = await renderCampaignEmail(d.campaign, d.template, who, s, unsub ? unsubscribePageUrl(unsub) : null);
       } catch (err) {
         skipped.push({ id: row.id, why: `the template failed: ${(err as Error).message}` });
         continue;
@@ -425,12 +477,12 @@ async function sendCampaignBatch(campaignId: string, log: Logger): Promise<numbe
         // the rendered HTML is kept on the record, like one-to-one email, so the
         // timeline shows what this contact got
         emailId = await insertEmailRecord(c, {
-          subject: rendered.subject, body: rendered.html, from: marketingSender(s, campaign).address, to: who.email,
+          subject: rendered.subject, body: rendered.html, from: marketingSender(s, d.campaign).address, to: who.email,
           stream: 'broadcast', replyToken, ownerUserId: null
         }, [{ object: 'pc_0010', id: row.contact_id }, { object: 'pc_0058', id: campaignId }]);
         await c.query('update auth.email_outbox set email_id = $2 where id = $1', [row.id, emailId]);
       }
-      msgs.push(messageFor(s, campaign, who.email, rendered.subject, rendered.html, replyToken, unsub, emailId));
+      msgs.push(messageFor(s, d.campaign, who.email, rendered.subject, rendered.html, replyToken, unsub, emailId, row));
       sent.push({ row, emailId });
     }
     if (skipped.length) {
@@ -484,15 +536,16 @@ export async function refreshCounts(campaignIds: string[]): Promise<void> {
          recipient_count = s.recipients, delivered_count = s.delivered, opened_count = s.opened, clicked_count = s.clicked,
          bounced_count = s.bounced, complained_count = s.complained, unsubscribed_count = s.unsubscribed, replied_count = s.replied
        from (
+         -- contacts, not emails: a campaign with several emails counts each person once
          select o.campaign_id,
-           count(*) filter (where o.status in ('queued', 'sent')) as recipients,
-           count(e.delivered_at) as delivered,
-           count(e.first_opened_at) as opened,
-           count(e.first_clicked_at) as clicked,
-           count(e.bounced_at) as bounced,
-           count(*) filter (where e.status <@ '{complained}') as complained,
-           count(o.unsubscribed_at) as unsubscribed,
-           count(e.replied_at) as replied
+           count(distinct o.contact_id) filter (where o.status in ('queued', 'held', 'sent')) as recipients,
+           count(distinct o.contact_id) filter (where e.delivered_at is not null) as delivered,
+           count(distinct o.contact_id) filter (where e.first_opened_at is not null) as opened,
+           count(distinct o.contact_id) filter (where e.first_clicked_at is not null) as clicked,
+           count(distinct o.contact_id) filter (where e.bounced_at is not null) as bounced,
+           count(distinct o.contact_id) filter (where e.status <@ '{complained}') as complained,
+           count(distinct o.contact_id) filter (where o.unsubscribed_at is not null) as unsubscribed,
+           count(distinct o.contact_id) filter (where e.replied_at is not null) as replied
          from auth.email_outbox o left join crm.pc_0031 e on e.pc_0031_id = o.email_id
          where o.campaign_id = any($1)
          group by o.campaign_id
@@ -506,6 +559,80 @@ export async function refreshCounts(campaignIds: string[]): Promise<void> {
 }
 
 type Logger = { error: (o: unknown, m: string) => void; info: (o: unknown, m: string) => void };
+
+// Moves a sending campaign's emails along once their queued rows are out: an
+// A/B test's slice is done (its wait starts), an email is sent; and the
+// campaign is sent once none of its emails is still to go.
+async function settleCampaign(id: string, log: Logger): Promise<void> {
+  const { rows } = await pool.query(
+    `select s.id::text, s.position, s.status, s.test_sent_at,
+            count(o.id) filter (where o.status = 'queued' and o.attempts < $2)::int as queued,
+            count(o.id) filter (where o.status = 'queued' and o.attempts >= $2)::int as stuck
+     from auth.email_campaign_steps s left join auth.email_outbox o on o.step_id = s.id
+     where s.campaign_id = $1 and s.status in ('testing', 'sending')
+     group by s.id`,
+    [id, MAX_ATTEMPTS]
+  );
+  for (const st of rows) {
+    if (st.queued > 0) continue;
+    if (st.stuck) {
+      await pool.query(`update auth.email_outbox set status = 'failed', error = 'gave up after ${MAX_ATTEMPTS} tries' where step_id = $1 and status = 'queued'`, [st.id]);
+    }
+    if (st.status === 'testing' && !st.test_sent_at) {
+      await pool.query(`update auth.email_campaign_steps set test_sent_at = now() where id = $1`, [st.id]);
+      log.info({ campaign: id, step: st.position }, 'email campaign A/B test slice sent');
+    } else if (st.status === 'sending') {
+      await pool.query(`update auth.email_campaign_steps set status = 'sent', sent_at = coalesce(sent_at, now()) where id = $1 and status = 'sending'`, [st.id]);
+      dirtyCampaigns.add(id);
+    }
+  }
+  const { rows: open } = await pool.query(
+    `select count(*)::int as n from auth.email_campaign_steps where campaign_id = $1 and status = any($2)`, [id, LIVE_STEP]);
+  if (open[0].n === 0) {
+    // a campaign sent to more contacts later (sendToMore) keeps its first sent time
+    await withTx({ ...EMAIL_ACTOR, source: 'email_campaign' }, (c) =>
+      c.query(`update crm.pc_0058 set status = '{sent}', sent_at = coalesce(sent_at, now()) where pc_0058_id = $1 and status <@ '{sending}'`, [id]));
+    dirtyCampaigns.add(id);
+    log.info({ campaign: id }, 'email campaign sent');
+  }
+}
+
+// Later emails whose time has come, once the email before them is done. One
+// that can't be drawn (its template went away) goes back to draft with the
+// reason, and the rest of the campaign carries on.
+async function startDueSteps(log: Logger): Promise<void> {
+  const { rows: due } = await pool.query(
+    `select s.id::text, s.campaign_id from auth.email_campaign_steps s join crm.pc_0058 k on k.pc_0058_id = s.campaign_id
+     where s.status = 'scheduled' and s.position > 1 and s.scheduled_at <= now()
+       and k.status <@ '{sending}' and k.record_status = 'active'
+       and not exists (select 1 from auth.email_campaign_steps p
+                       where p.campaign_id = s.campaign_id and p.position < s.position and p.status in ('scheduled', 'testing', 'sending'))
+     order by s.scheduled_at`
+  );
+  for (const d of due) {
+    try {
+      await withTx({ ...EMAIL_ACTOR, source: 'email_campaign' }, async (c) => {
+        const campaign = await lockCampaign(c, d.campaign_id);
+        const steps = await loadSteps(c, d.campaign_id, true);
+        const step = steps.find((x) => x.id === d.id);
+        const first = steps.find((x) => x.position === 1);
+        if (!step || !first || step.status !== 'scheduled' || campaign.status !== 'sending') return;
+        const problems = await contentProblems(c, campaign, step);
+        if (problems.length) {
+          await c.query(`update auth.email_campaign_steps set status = 'draft', error = $2 where id = $1`, [step.id, problems.join(' ')]);
+          log.error({ campaign: d.campaign_id, step: step.position, problems }, 'email campaign email could not start; back to draft');
+          return;
+        }
+        const params: unknown[] = [];
+        const sql = followUpSql(step, first.id, campaign.subscription_type, params);
+        const n = await startStep(c, campaign, step, sql, params, marketingSender(await loadEmailSettings(), campaign));
+        log.info({ campaign: d.campaign_id, step: step.position, recipients: n }, 'email campaign email started');
+      });
+    } catch (err) {
+      log.error({ err: (err as Error).message, campaign: d.campaign_id, step: d.id }, 'email campaign email failed to start');
+    }
+  }
+}
 
 async function tick(log: Logger): Promise<void> {
   const s = await loadEmailSettings();
@@ -522,6 +649,7 @@ async function tick(log: Logger): Promise<void> {
           if (campaign.status !== 'scheduled') return;
           if (check.problems.length) {
             await c.query(`update crm.pc_0058 set status = '{draft}' where pc_0058_id = $1`, [d.id]);
+            await c.query(`update auth.email_campaign_steps set status = 'draft' where campaign_id = $1 and status = 'scheduled'`, [d.id]);
             log.error({ campaign: d.id, problems: check.problems }, 'scheduled email campaign could not start; back to draft');
             return;
           }
@@ -532,28 +660,17 @@ async function tick(log: Logger): Promise<void> {
       }
     }
 
+    // later emails whose time came, and A/B tests whose wait is over
+    await startDueSteps(log);
+    await pickDueWinners(log);
+
     const { rows: sending } = await pool.query(
       `select pc_0058_id as id from crm.pc_0058 where status <@ '{sending}' and record_status = 'active' order by pc_0058_id`
     );
     for (const k of sending) {
       // a few batches per campaign per tick, so one large campaign does not hold up the rest
       for (let i = 0; i < 4; i++) if ((await sendCampaignBatch(k.id, log)) < BATCH_MAX) break;
-      const { rows: left } = await pool.query(
-        `select count(*) filter (where status = 'queued' and attempts < $2)::int as queued,
-                count(*) filter (where status = 'queued' and attempts >= $2)::int as stuck
-         from auth.email_outbox where campaign_id = $1`,
-        [k.id, MAX_ATTEMPTS]
-      );
-      if (left[0].queued === 0) {
-        if (left[0].stuck) {
-          await pool.query(`update auth.email_outbox set status = 'failed', error = 'gave up after ${MAX_ATTEMPTS} tries' where campaign_id = $1 and status = 'queued'`, [k.id]);
-        }
-        // a campaign sent to more contacts later (sendToMore) keeps its first sent time
-        await withTx({ ...EMAIL_ACTOR, source: 'email_campaign' }, (c) =>
-          c.query(`update crm.pc_0058 set status = '{sent}', sent_at = coalesce(sent_at, now()) where pc_0058_id = $1 and status <@ '{sending}'`, [k.id]));
-        dirtyCampaigns.add(k.id);
-        log.info({ campaign: k.id }, 'email campaign sent');
-      }
+      await settleCampaign(k.id, log);
     }
   }
   if (dirtyCampaigns.size) {

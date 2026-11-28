@@ -19,3 +19,22 @@ export function BrandMark({ src, size = 24 }: { src: string | null | undefined; 
   if (!src) return <LogoMark size={size} />;
   return <img className="brand-logo" src={src} alt="" width={size} height={size} />;
 }
+
+// Points the browser tab icon at the portal's logo (the same one as the
+// sidebar), or back at the CRM mark in public/favicon.svg when there is none.
+const DEFAULT_FAVICON = '/favicon.svg';
+export function setFavicon(src: string | null | undefined) {
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  if (src) {
+    link.removeAttribute('type'); // a data URL carries its own type
+    link.href = src;
+  } else {
+    link.type = 'image/svg+xml';
+    link.href = DEFAULT_FAVICON;
+  }
+}

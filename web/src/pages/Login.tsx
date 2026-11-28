@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { API_BASE, api, type Me } from '../lib/api';
-import { BrandMark } from '../components/Logo';
+import { BrandMark, setFavicon } from '../components/Logo';
 import { openSignInPopup, watchSignIn } from '../lib/reauth';
 import { Loading } from '../components/Loading';
 
@@ -79,7 +79,10 @@ export function Login({ onSignedIn, reauth, onCancel }: { onSignedIn: (me?: Me) 
 
   useEffect(() => {
     api<{ google?: boolean; microsoft?: boolean; logo?: string | null }>('GET', '/v1/auth/config', undefined, null)
-      .then((c) => setConfig({ google: Boolean(c.google), microsoft: Boolean(c.microsoft), logo: c.logo ?? null }))
+      .then((c) => {
+        setConfig({ google: Boolean(c.google), microsoft: Boolean(c.microsoft), logo: c.logo ?? null });
+        setFavicon(c.logo);
+      })
       .catch(() => setConfig({ google: false, microsoft: false }))
       .finally(() => setChecking(false));
   }, []);

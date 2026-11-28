@@ -9,10 +9,11 @@ import { loadEmailSettings, marketingSender, saveEmailSettings, settingsOut, web
 import { sendEmail } from '../email/send.js';
 import { handleEvent, handleInbound, optOut } from '../email/events.js';
 import { readUnsubscribeToken, unsubscribePageUrl, unsubscribeToken } from '../email/links.js';
-import { checkFooter, renderFooter, campaignTemplate, contactData, loadCampaign, renderCampaignEmail, transactionalLayout, campaignText } from '../email/render.js';
-import { campaignLists, cancelCampaign, checkCampaign, countAudience, listIds, refreshCounts, sampleAudience, sendToMore, startCampaign } from '../email/campaigns.js';
+import { checkFooter, renderFooter, contactData, loadCampaign, renderCampaignEmail, transactionalLayout, campaignText } from '../email/render.js';
+import { campaignLists, cancelCampaign, checkCampaign, countAudience, listIds, recentAudience, refreshCounts, sampleAudience, sendToMore, startCampaign } from '../email/campaigns.js';
 import { EMAIL_ACTOR } from '../email/send.js';
 import { campaignActivity, recipientTimeline } from '../email/activity.js';
+import { loadSteps, pickWinnerNow, removeStep, saveStep, stepsOut, variantCampaign, variantTemplate } from '../email/steps.js';
 import { addTopic, contactTopics, leaveTopic, listTopics, setContactTopics, topicCounts, updateTopic } from '../email/topics.js';
 
 // Email through Postmark (api/src/email/*):
@@ -20,6 +21,8 @@ import { addTopic, contactTopics, leaveTopic, listTopics, setContactTopics, topi
 //                                    POST /v1/email/footers/preview {kind, source}
 //   subscription types               GET/POST /v1/email/subscription-types, PATCH .../:value
 //   campaigns                        /v1/email/campaigns/:id/{check,preview,test,send,send-more,cancel}
+//   a campaign's emails and A/B      GET/POST /v1/email/campaigns/:id/steps, PATCH/DELETE .../steps/:stepId,
+//                                    POST .../steps/:stepId/winner {variant_id}
 //   who did what                     GET /v1/email/campaigns/:id/activity[/:contactId]
 //   audience size of some lists      POST /v1/email/audience {list_ids, subscription_type}
 //   Postmark's calls                 POST /v1/postmark/webhook, /v1/postmark/inbound (basic auth)
@@ -49,16 +52,23 @@ const campaignId = (id: string) => {
   return id;
 };
 
-// Draws the campaign for one contact (given, else the first in the audience).
-export async function previewCampaign(id: string, contactId: unknown) {
-  const campaign = await loadCampaign(id);
-  if (!campaign) throw notFound(`email campaign ${id} not found`);
-  const template = await campaignTemplate(id);
-  if (!template) throw badRequest('Link an email template to the campaign first.');
+// Draws one of the campaign's emails (step, variant: default email 1, variant
+// A) for one contact (given, else the newest in the audience).
+export async function previewCampaign(id: string, contactId: unknown, stepId?: unknown, variantId?: unknown) {
+  const loaded = await loadCampaign(id);
+  if (!loaded) throw notFound(`email campaign ${id} not found`);
+  const steps = await loadSteps(pool, id);
+  const step = stepId === undefined || stepId === null || stepId === '' ? steps[0] : steps.find((x) => x.id === String(stepId));
+  if (!step) throw badRequest('step_id must be one of the campaign\'s emails');
+  const variant = variantId === undefined || variantId === null || variantId === '' ? step.variants[0] : step.variants.find((v) => v.id === String(variantId));
+  if (!variant) throw badRequest('variant_id must be a variant of that email');
+  const campaign = variantCampaign(loaded, variant);
+  const { template, problem } = await variantTemplate(pool, id, variant);
+  if (!template) throw badRequest(`Email ${step.position}${step.variants.length > 1 ? `, variant ${variant.label}` : ''}: ${problem}.`);
   let cid = typeof contactId === 'string' && ID.test(contactId) ? contactId : null;
   if (!cid) {
     try {
-      cid = (await sampleAudience((await campaignLists(pool, id)).map((l) => l.id), 1, campaign.subscription_type))[0]?.id ?? null;
+      cid = (await recentAudience((await campaignLists(pool, id)).map((l) => l.id), 1, campaign.subscription_type))[0]?.id ?? null;
     } catch {
       cid = null;
     }
@@ -75,7 +85,36 @@ export async function previewCampaign(id: string, contactId: unknown) {
   const out = await renderCampaignEmail(campaign, template, who, s, token ? unsubscribePageUrl(token) : '#unsubscribe');
   const sender = marketingSender(s, campaign);
   // who it comes from, when a sender is set (tests are sent from it too)
-  return { contact_id: cid, to: who.email, from: sender.address ? sender : null, ...out };
+  return { contact_id: cid, to: who.email, from: sender.address ? sender : null, step_id: step.id, step: step.position, variant_id: variant.id, variant: variant.label, ...out };
+}
+
+// A test of the campaign, drawn for one contact (previewCampaign), sent to CRM
+// users only: the ones given (user ids, active users with an email), else the
+// caller. Never to the contact. The CRM's "Send a test" and the MCP tool
+// send_email_campaign_test.
+export async function sendCampaignTest(p: Principal, id: string, contactId: unknown, userIds: unknown, stepId?: unknown, variantId?: unknown) {
+  let to: string[];
+  if (userIds === undefined || userIds === null) to = [await myEmail(p)];
+  else {
+    if (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 25 || !userIds.every((v) => typeof v === 'string' && ID.test(v))) {
+      throw badRequest('user_ids must be a list of 1 to 25 user ids', { property: 'user_ids' });
+    }
+    const { rows } = await pool.query(
+      `select pc_0000_id as id, email -> 0 ->> 'value' as email from crm.pc_0000
+       where pc_0000_id = any($1) and record_status = 'active' and status = '{active}'`,
+      [userIds]
+    );
+    const missing = (userIds as string[]).filter((u) => !rows.some((r) => r.id === u && r.email));
+    if (missing.length) throw badRequest(`These users are not active CRM users with an email address: ${missing.join(', ')}`, { property: 'user_ids' });
+    to = [...new Set(rows.map((r) => (r.email as string).toLowerCase()))];
+  }
+  const out = await previewCampaign(id, contactId, stepId, variantId);
+  const sent: string[] = [];
+  for (const addr of to) {
+    await sendEmail({ to: addr, subject: `[Test] ${out.subject}`, html: out.html, text: campaignText(out.html), tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
+    sent.push(addr);
+  }
+  return { sent_to: sent.join(', '), sent, drawn_for: out.contact_id };
 }
 
 export async function emailRoutes(app: FastifyInstance) {
@@ -174,20 +213,79 @@ export async function emailRoutes(app: FastifyInstance) {
     return { ready: c.problems.length === 0, problems: c.problems, recipients: c.recipients, can_send: canApprove(req.principal!) };
   });
 
-  app.post<{ Params: { id: string }; Body: { contact_id?: unknown } }>('/v1/email/campaigns/:id/preview', async (req) => {
+  app.post<{ Params: { id: string }; Body: { contact_id?: unknown; step_id?: unknown; variant_id?: unknown } }>('/v1/email/campaigns/:id/preview', async (req) => {
     requireScope(req.principal!, 'read');
     requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
-    return previewCampaign(campaignId(req.params.id), req.body?.contact_id);
+    return previewCampaign(campaignId(req.params.id), req.body?.contact_id, req.body?.step_id, req.body?.variant_id);
   });
 
-  // The campaign as one contact would get it, sent to the signed-in user only.
-  app.post<{ Params: { id: string }; Body: { contact_id?: unknown } }>('/v1/email/campaigns/:id/test', async (req) => {
+  // ---- a campaign's emails (steps) and A/B variants: email/steps.ts ----
+
+  app.get<{ Params: { id: string } }>('/v1/email/campaigns/:id/steps', async (req) => {
+    requireScope(req.principal!, 'read');
+    requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
+    return { steps: await stepsOut(campaignId(req.params.id)) };
+  });
+
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>('/v1/email/campaigns/:id/steps', async (req) => {
     const p = req.principal!;
     await requireCampaignEdit(p);
-    const to = await myEmail(p);
-    const out = await previewCampaign(campaignId(req.params.id), req.body?.contact_id);
-    const res = await sendEmail({ to, subject: `[Test] ${out.subject}`, html: out.html, text: campaignText(out.html), tag: 'campaign-test', from: out.from ?? undefined, replyable: true });
-    return { sent_to: to, drawn_for: out.contact_id, message_id: res.message_id };
+    const id = campaignId(req.params.id);
+    const out = await saveStep(id, null, req.body ?? {}, p);
+    return { ...out, steps: await stepsOut(id) };
+  });
+
+  app.patch<{ Params: { id: string; stepId: string }; Body: Record<string, unknown> }>('/v1/email/campaigns/:id/steps/:stepId', async (req) => {
+    const p = req.principal!;
+    await requireCampaignEdit(p);
+    const id = campaignId(req.params.id);
+    const out = await saveStep(id, req.params.stepId, req.body ?? {}, p);
+    return { ...out, steps: await stepsOut(id) };
+  });
+
+  app.delete<{ Params: { id: string; stepId: string } }>('/v1/email/campaigns/:id/steps/:stepId', async (req) => {
+    const p = req.principal!;
+    await requireCampaignEdit(p);
+    const id = campaignId(req.params.id);
+    const out = await removeStep(id, req.params.stepId, p);
+    return { ...out, steps: await stepsOut(id) };
+  });
+
+  // Picking an A/B winner early sends it to everyone left: like sending, only
+  // an admin signed in to the CRM in a browser.
+  app.post<{ Params: { id: string; stepId: string }; Body: { variant_id?: unknown } }>('/v1/email/campaigns/:id/steps/:stepId/winner', async (req) => {
+    const p = req.principal!;
+    if (!canApprove(p)) throw forbidden('Only an admin signed in to the CRM can pick the winner.');
+    requireRecentSignIn(p);
+    const id = campaignId(req.params.id);
+    const out = await pickWinnerNow(id, req.params.stepId, String(req.body?.variant_id ?? ''), p);
+    return { ...out, steps: await stepsOut(id) };
+  });
+
+  // The newest contacts in the campaign's audience, to pick who the Preview
+  // tab draws the email for (any other contact can be found by searching).
+  app.get<{ Params: { id: string } }>('/v1/email/campaigns/:id/preview-contacts', async (req) => {
+    requireScope(req.principal!, 'read');
+    requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
+    requireObjectPermission(req.principal!, await getObject('contacts'), 'read');
+    const id = campaignId(req.params.id);
+    const campaign = await loadCampaign(id);
+    if (!campaign) throw notFound(`email campaign ${id} not found`);
+    try {
+      return { contacts: await recentAudience((await campaignLists(pool, id)).map((l) => l.id), 10, campaign.subscription_type) };
+    } catch {
+      // no lists yet, or a list that holds something other than contacts
+      return { contacts: [] };
+    }
+  });
+
+  // The campaign as one contact would get it, sent to CRM users only: the
+  // ones picked (user_ids, active users with an email), else the signed-in
+  // user. Never to the contact it is drawn for.
+  app.post<{ Params: { id: string }; Body: { contact_id?: unknown; user_ids?: unknown; step_id?: unknown; variant_id?: unknown } }>('/v1/email/campaigns/:id/test', async (req) => {
+    const p = req.principal!;
+    await requireCampaignEdit(p);
+    return sendCampaignTest(p, campaignId(req.params.id), req.body?.contact_id, req.body?.user_ids, req.body?.step_id, req.body?.variant_id);
   });
 
   // Sending reaches real inboxes: only an admin signed in to the CRM in a
@@ -231,19 +329,19 @@ export async function emailRoutes(app: FastifyInstance) {
 
   // Who did what: a row per recipient, and one recipient's events in order
   // (email/activity.ts). Only contacts the caller may read are listed.
-  app.get<{ Params: { id: string }; Querystring: { filter?: string; s?: string; limit?: string; offset?: string } }>('/v1/email/campaigns/:id/activity', async (req) => {
+  app.get<{ Params: { id: string }; Querystring: { filter?: string; s?: string; limit?: string; offset?: string; step?: string } }>('/v1/email/campaigns/:id/activity', async (req) => {
     requireScope(req.principal!, 'read');
     requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
     requireObjectPermission(req.principal!, await getObject('contacts'), 'read');
     const q = req.query ?? {};
-    return campaignActivity(req.principal!, campaignId(req.params.id), { filter: q.filter, search: q.s, limit: q.limit, offset: q.offset });
+    return campaignActivity(req.principal!, campaignId(req.params.id), { filter: q.filter, search: q.s, limit: q.limit, offset: q.offset, step: q.step });
   });
 
-  app.get<{ Params: { id: string; contactId: string } }>('/v1/email/campaigns/:id/activity/:contactId', async (req) => {
+  app.get<{ Params: { id: string; contactId: string }; Querystring: { step?: string } }>('/v1/email/campaigns/:id/activity/:contactId', async (req) => {
     requireScope(req.principal!, 'read');
     requireObjectPermission(req.principal!, await getObject('email_campaigns'), 'read');
     requireObjectPermission(req.principal!, await getObject('contacts'), 'read');
-    return recipientTimeline(req.principal!, campaignId(req.params.id), req.params.contactId);
+    return recipientTimeline(req.principal!, campaignId(req.params.id), req.params.contactId, req.query?.step);
   });
 
   // ---- Postmark's calls ----

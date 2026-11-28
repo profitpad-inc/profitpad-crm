@@ -41,6 +41,9 @@ const ORDER: Partial<Record<ActivityFilter, string>> = {
 
 export interface ActivityRow {
   contact_id: string;
+  // which of the campaign's emails (1, 2...) and its A/B variant (null: one variant)
+  step: number;
+  variant: string | null;
   name: string | null;
   email: string;
   status: 'sent' | 'failed';
@@ -63,7 +66,7 @@ export const MAX_ACTIVITY_LIMIT = 200;
 
 // The recipients the caller may read: the send's contact, or the contact it
 // was merged into. sql reads outbox o, email e and contact c; params grows.
-async function scope(p: Principal, campaignId: string, params: unknown[]): Promise<{ from: string; where: string }> {
+async function scope(p: Principal, campaignId: string, params: unknown[], step?: number | null): Promise<{ from: string; where: string }> {
   const contacts = await getObject('contacts');
   params.push(campaignId);
   const campaign = `$${params.length}`;
@@ -72,12 +75,22 @@ async function scope(p: Principal, campaignId: string, params: unknown[]): Promi
     from: `from auth.email_outbox o
       left join crm.pc_0031 e on e.pc_0031_id = o.email_id
       left join crm.pc_0010 c0 on c0.pc_0010_id = o.contact_id
-      join crm.pc_0010 c on c.pc_0010_id = coalesce(c0.merged_into_id, o.contact_id)`,
-    where: `o.campaign_id = ${campaign} and c.record_status = 'active' and ${access}`
+      join crm.pc_0010 c on c.pc_0010_id = coalesce(c0.merged_into_id, o.contact_id)
+      join auth.email_campaign_steps st on st.id = o.step_id
+      left join auth.email_campaign_variants va on va.id = o.variant_id`,
+    where: `o.campaign_id = ${campaign} and c.record_status = 'active' and ${access}${step ? ` and st.position = ${step}` : ''}`
   };
 }
 
-export async function campaignActivity(p: Principal, campaignId: string, opts: { filter?: unknown; search?: unknown; limit?: unknown; offset?: unknown }) {
+// email 1, 2...: a whole number, else every email
+const stepOf = (v: unknown): number | null => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 20) throw badRequest('step must be the number of one of the campaign\'s emails (1, 2...)');
+  return n;
+};
+
+export async function campaignActivity(p: Principal, campaignId: string, opts: { filter?: unknown; search?: unknown; limit?: unknown; offset?: unknown; step?: unknown }) {
   if (!ID.test(campaignId)) throw notFound('not found');
   const filter = (opts.filter ?? 'all') as ActivityFilter;
   if (!(ACTIVITY_FILTERS as readonly string[]).includes(filter)) throw badRequest(`filter must be one of ${ACTIVITY_FILTERS.join(', ')}`);
@@ -86,8 +99,9 @@ export async function campaignActivity(p: Principal, campaignId: string, opts: {
   const { rows: exists } = await pool.query('select 1 from crm.pc_0058 where pc_0058_id = $1', [campaignId]);
   if (!exists[0]) throw notFound(`email campaign ${campaignId} not found`);
 
+  const step = stepOf(opts.step);
   const params: unknown[] = [];
-  const s = await scope(p, campaignId, params);
+  const s = await scope(p, campaignId, params, step);
   let where = `${s.where} and ${WHERE[filter]}`;
   const q = typeof opts.search === 'string' ? opts.search.trim() : '';
   if (q) {
@@ -97,7 +111,8 @@ export async function campaignActivity(p: Principal, campaignId: string, opts: {
   const order = ORDER[filter] ? `${ORDER[filter]} desc nulls last, o.id` : 'o.id';
   const [{ rows }, { rows: total }] = await Promise.all([
     pool.query(
-      `select c.pc_0010_id as contact_id,
+      `select c.pc_0010_id as contact_id, st.position as step,
+         case when (select count(*) from auth.email_campaign_variants x where x.step_id = o.step_id) > 1 then va.label end as variant,
          coalesce(nullif(concat_ws(' ', c.first_name, c.last_name), ''), c.name) as name,
          o.email, o.status, o.error, o.email_id, o.sent_at, e.delivered_at, e.first_opened_at as opened_at, coalesce(e.open_count, 0)::int as open_count,
          e.first_clicked_at as clicked_at, coalesce(e.click_count, 0)::int as click_count, e.replied_at, o.unsubscribed_at, e.bounced_at,
@@ -107,7 +122,7 @@ export async function campaignActivity(p: Principal, campaignId: string, opts: {
     ),
     pool.query(`select count(*)::int as n ${s.from} where ${where}`, params)
   ]);
-  return { results: rows as ActivityRow[], total: total[0].n as number, filter, limit, offset };
+  return { results: rows as ActivityRow[], total: total[0].n as number, filter, step, limit, offset };
 }
 
 export interface TimelineItem {
@@ -129,10 +144,10 @@ function where(payload: Record<string, unknown>): string | null {
   return parts.length ? parts.join(' · ') : null;
 }
 
-export async function recipientTimeline(p: Principal, campaignId: string, contactId: string) {
+export async function recipientTimeline(p: Principal, campaignId: string, contactId: string, step?: unknown) {
   if (!ID.test(campaignId) || !ID.test(contactId)) throw notFound('not found');
   const params: unknown[] = [];
-  const s = await scope(p, campaignId, params);
+  const s = await scope(p, campaignId, params, stepOf(step));
   params.push(contactId);
   const { rows } = await pool.query(
     `select o.status, o.error, o.created_at, o.sent_at, o.unsubscribed_at, o.email, e.pc_0031_id as email_id, e.provider_message_id, e.delivered_at, e.replied_at,

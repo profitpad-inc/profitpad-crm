@@ -162,3 +162,64 @@ test('send to more needs one to 500 contacts', async () => {
   const many = Array.from({ length: SEND_MORE_MAX + 1 }, (_, i) => i.toString(16).padStart(10, '0'));
   await assert.rejects(sendToMore('00000000bb', p, many), /At most 500/);
 });
+
+const { testSize, pickWinner, stepOrderProblems, variantCampaign, checkFromAddress } = await import('./steps.js');
+
+test('an A/B test slice gives every variant a contact and never exceeds the audience', () => {
+  assert.equal(testSize(1000, 1, 20), 1000, 'one variant: everyone, no test');
+  assert.equal(testSize(1000, 2, 20), 200);
+  assert.equal(testSize(1001, 2, 20), 201, 'rounds up');
+  assert.equal(testSize(10, 3, 5), 3, 'at least one per variant');
+  assert.equal(testSize(2, 3, 50), 2, 'never more than the audience');
+  assert.equal(testSize(0, 2, 20), 0);
+});
+
+test('the winner is the best rate, then the other metric, then the earlier label', () => {
+  const r = (label: string, sent: number, opens: number, clicks: number) => ({ id: label, label, sent, opens, clicks });
+  assert.equal(pickWinner([r('A', 100, 30, 5), r('B', 100, 20, 8)], 'clicks')!.label, 'B');
+  assert.equal(pickWinner([r('A', 100, 30, 5), r('B', 100, 20, 8)], 'opens')!.label, 'A');
+  // rates, not counts: B reached fewer people
+  assert.equal(pickWinner([r('A', 200, 20, 10), r('B', 50, 10, 5)], 'clicks')!.label, 'B');
+  // no clicks anywhere: opens decide
+  assert.equal(pickWinner([r('A', 100, 10, 0), r('B', 100, 25, 0)], 'clicks')!.label, 'B');
+  // a full tie, or nothing sent: the earlier label
+  assert.equal(pickWinner([r('B', 100, 10, 1), r('A', 100, 10, 1)], 'clicks')!.label, 'A');
+  assert.equal(pickWinner([r('A', 0, 0, 0), r('B', 0, 0, 0)], 'opens')!.label, 'A');
+  assert.equal(pickWinner([], 'clicks'), null);
+});
+
+test('later emails need a time after the one before and an earlier email to follow up on', () => {
+  const now = new Date('2026-12-01T10:00:00Z');
+  const s = (id: string, position: number, at: string | null, extra: Record<string, unknown> = {}) => ({
+    id, position, scheduled_at: at ? new Date(at) : null, audience: 'all' as const, audience_step_id: null as string | null,
+    status: 'draft', started_at: null as Date | null, ...extra
+  });
+  assert.deepEqual(stepOrderProblems([s('1', 1, null), s('2', 2, '2026-12-02T10:00:00Z')], now), []);
+  assert.deepEqual(stepOrderProblems([s('1', 1, null), s('2', 2, null)], now), ['Email 2 needs a send time.']);
+  assert.deepEqual(stepOrderProblems([s('1', 1, null), s('2', 2, '2026-12-01T09:00:00Z')], now), ['Email 2 must go out after email 1.']);
+  assert.deepEqual(stepOrderProblems([s('1', 1, null), s('2', 2, '2026-12-03T10:00:00Z'), s('3', 3, '2026-12-02T10:00:00Z')], now),
+    ['Email 3 must go out after email 2.']);
+  assert.deepEqual(stepOrderProblems([s('1', 1, null), s('2', 2, '2026-12-02T10:00:00Z', { audience: 'not_opened', audience_step_id: '1' })], now), []);
+  assert.deepEqual(stepOrderProblems([s('1', 1, null), s('2', 2, '2026-12-02T10:00:00Z', { audience: 'not_clicked', audience_step_id: '2' })], now),
+    ['Email 2 can only follow up on an earlier email.']);
+  // emails that went out are not checked again; email 1's real start counts
+  assert.deepEqual(stepOrderProblems([
+    s('1', 1, null, { status: 'sent', started_at: new Date('2026-11-30T10:00:00Z') }),
+    s('2', 2, '2026-12-01T08:00:00Z')
+  ], now), []);
+});
+
+test('a variant\'s own fields win over the campaign\'s, empty ones fall back', () => {
+  const campaign = {
+    id: '00000000aa', name: 'News', subject: 'Campaign subject', preheader: 'Campaign line', from_name: 'Team', from_address: 'team@example.com',
+    audience: null, status: 'draft', scheduled_at: null, subscription_type: 'marketing', subscription_type_label: 'Marketing'
+  };
+  const v = { id: '1', step_id: '1', label: 'B', template_id: null, subject: 'B subject', preheader: '', from_name: null, from_address: 'b@example.com' };
+  const out = variantCampaign(campaign, v);
+  assert.equal(out.subject, 'B subject');
+  assert.equal(out.preheader, 'Campaign line');
+  assert.equal(out.from_name, 'Team');
+  assert.equal(out.from_address, 'b@example.com');
+  assert.equal(checkFromAddress('News@Example.com'), 'news@example.com');
+  assert.throws(() => checkFromAddress('not an address'));
+});

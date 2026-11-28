@@ -485,7 +485,7 @@ function ThemeSettings() {
     <SettingsPage className="wide" title="Theme" description="The logo and colours apply to everyone in this portal. Changes show straight away; save to keep them.">
       <div className="theme-layout">
         <div className="theme-controls">
-          <SettingsSection title="Logo" description="Shown in the sidebar, the phone header and the login page. A square image with a transparent background works best.">
+          <SettingsSection title="Logo" description="Shown in the sidebar, the browser tab, the phone header and the login page. A square image with a transparent background works best.">
             <div className="logo-field">
               <span className="logo-field-tile dark" title="On the sidebar"><BrandMark src={logoDraft} size={36} /></span>
               <span className="logo-field-tile light" title="On the page"><BrandMark src={logoDraft} size={36} /></span>

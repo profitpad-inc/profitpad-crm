@@ -12,6 +12,9 @@ declare
   v_email text;
   v_contact text;
   v_n int;
+  v_step bigint;
+  v_step2 bigint;
+  v_var bigint;
 begin
   perform set_config('crm.actor', 'test', true);
 
@@ -31,12 +34,8 @@ begin
   if not meta.association_allowed('pc_0031', 'pc_0010') then raise exception 'emails still link to contacts'; end if;
 
   perform meta.associate('email_campaigns', v_camp, 'email_templates', v_tpl);
-  begin
-    perform meta.associate('email_campaigns', v_camp, 'email_templates', v_tpl2);
-    raise exception 'a campaign has at most one template';
-  exception when others then
-    if sqlerrm = 'a campaign has at most one template' then raise; end if;
-  end;
+  -- 0165: a campaign may link several templates (one per variant in use)
+  perform meta.associate('email_campaigns', v_camp, 'email_templates', v_tpl2);
   perform meta.associate('emails', v_email, 'email_campaigns', v_camp);
   perform meta.associate('emails', v_email, 'contacts', v_contact);
 
@@ -56,12 +55,42 @@ begin
   exception when unique_violation then null;
   end;
 
-  -- outbox: one row per campaign and contact
-  insert into auth.email_outbox (campaign_id, contact_id, email) values (v_camp, v_contact, 'ann@example.com');
+  -- 0165: a new campaign has email 1 with variant A
+  select s.id, v.id into v_step, v_var from auth.email_campaign_steps s join auth.email_campaign_variants v on v.step_id = s.id
+  where s.campaign_id = v_camp and s.position = 1 and v.label = 'A';
+  if v_step is null then raise exception 'a new campaign gets email 1 with variant A'; end if;
+  insert into auth.email_campaign_steps (campaign_id, position, scheduled_at, audience, audience_step_id)
+  values (v_camp, 2, now() + interval '1 day', 'not_opened', v_step) returning id into v_step2;
+  insert into auth.email_campaign_variants (step_id, label) values (v_step2, 'A');
   begin
-    insert into auth.email_outbox (campaign_id, contact_id, email) values (v_camp, v_contact, 'ann@example.com');
-    raise exception 'one outbox row per campaign and contact';
+    insert into auth.email_campaign_steps (campaign_id, position) values (v_camp, 2);
+    raise exception 'one email per position';
   exception when unique_violation then null;
+  end;
+  begin
+    insert into auth.email_campaign_steps (campaign_id, position, audience) values (v_camp, 3, 'not_clicked');
+    raise exception 'a follow-up condition names an earlier email';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into auth.email_campaign_variants (step_id, label) values (v_step, 'F');
+    raise exception 'at most five variants, A to E';
+  exception when check_violation then null;
+  end;
+
+  -- outbox: one row per email (step) and contact
+  insert into auth.email_outbox (campaign_id, step_id, variant_id, contact_id, email) values (v_camp, v_step, v_var, v_contact, 'ann@example.com');
+  begin
+    insert into auth.email_outbox (campaign_id, step_id, variant_id, contact_id, email) values (v_camp, v_step, v_var, v_contact, 'ann@example.com');
+    raise exception 'one outbox row per email and contact';
+  exception when unique_violation then null;
+  end;
+  -- the same contact gets email 2; held for a winner has no variant yet
+  insert into auth.email_outbox (campaign_id, step_id, contact_id, email, status) values (v_camp, v_step2, v_contact, 'ann@example.com', 'held');
+  begin
+    insert into auth.email_outbox (campaign_id, step_id, contact_id, email) values (v_camp, v_step, v_tpl, 'x@example.com');
+    raise exception 'a queued row needs a variant';
+  exception when check_violation then null;
   end;
 
   -- events: a retried webhook call is recorded once

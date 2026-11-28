@@ -9,13 +9,17 @@ import { confirmDialog } from './confirm';
 import { Select } from './Select';
 import { CampaignActivity, FILTER_PARAM } from './CampaignActivity';
 import { CampaignSendMore } from './CampaignSendMore';
+import { CampaignSendTest } from './CampaignSendTest';
+import { CampaignEmails, type CampaignStep } from './CampaignEmails';
 import { Loading } from './Loading';
+import { primaryValue } from '../lib/multi-values';
 import '../email.css';
 import '../lists.css';
 
 // The middle of an email campaign's record page (api/src/email/campaigns.ts),
 // in tabs (?campaign_tab=):
-//   Campaign  status; who gets it (the contact lists linked to it), then send
+//   Campaign  status; who gets it (the contact lists linked to it), its emails
+//             (CampaignEmails: one or more, each with A/B variants), then send
 //             now or schedule. After it goes out, the counts (each opens the
 //             Activity tab on those recipients) and Send to more (contacts
 //             picked by hand, sent straight away: CampaignSendMore).
@@ -25,7 +29,9 @@ import '../lists.css';
 // The email itself is the linked email template (right column).
 
 interface Check { ready: boolean; problems: string[]; recipients: number; can_send: boolean }
-interface Preview { contact_id: string; to: string | null; subject: string; html: string }
+interface Preview { contact_id: string; to: string | null; subject: string; html: string; step_id?: string; variant_id?: string }
+// a contact the preview can be drawn for
+interface DrawFor { id: string; name: string | null; email: string | null }
 interface LinkedList { id: string; name: string; member_count: number; list_type: string }
 interface SubscriptionType { value: string; label: string; description: string | null }
 
@@ -67,8 +73,19 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   const [countError, setCountError] = useState<string | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  // the campaign's emails (steps) and their variants
+  const [steps, setSteps] = useState<CampaignStep[] | null>(null);
+  // which email and variant the Preview tab draws ("<step id>:<variant id>", empty: email 1, A)
+  const [previewOf, setPreviewOf] = useState('');
+  // who the preview is drawn for: the newest 10 in the audience, or contacts
+  // found by searching (any contact)
+  const [recent, setRecent] = useState<DrawFor[] | null>(null);
+  const [whoQuery, setWhoQuery] = useState('');
+  const [found, setFound] = useState<DrawFor[] | null>(null);
+  const [drawnFor, setDrawnFor] = useState<DrawFor | null>(null);
   const [when, setWhen] = useState('');
   const [sendingMore, setSendingMore] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -100,6 +117,10 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
       .then((r) => setTypes(r.subscription_types)).catch(() => setTypes([]));
   }, []);
   useEffect(() => { setTopic(savedTopic); }, [record.id, savedTopic]);
+
+  const loadSteps = () => api<{ steps: CampaignStep[] }>('GET', `/v1/email/campaigns/${record.id}/steps`)
+    .then((r) => setSteps(r.steps)).catch((e) => setError((e as Error).message));
+  useEffect(() => { loadSteps(); }, [record.id, status, String(p.sent_at ?? '')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadCheck = () => api<Check>('GET', `/v1/email/campaigns/${record.id}/check`).then(setCheck).catch((e) => setError((e as Error).message));
   useEffect(() => { loadCheck(); }, [record.id, savedTopic, status, listIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -150,23 +171,38 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     toast('Subscription type saved.');
   });
 
-  const showPreview = () => run('preview', async () => {
-    setPreview(await api<Preview>('POST', `/v1/email/campaigns/${record.id}/preview`, {}));
+  // drawn for the contact given, else the one it was last drawn for, else the
+  // newest in the audience
+  const previewTarget = (of: string) => {
+    const [step_id, variant_id] = of ? of.split(':') : [];
+    return step_id ? { step_id, variant_id } : {};
+  };
+  const showPreview = (contactId?: string, of: string = previewOf) => run('preview', async () => {
+    const cid = contactId ?? preview?.contact_id;
+    setPreview(await api<Preview>('POST', `/v1/email/campaigns/${record.id}/preview`, { ...(cid ? { contact_id: cid } : {}), ...previewTarget(of) }));
   });
+  const previewOptions = (steps ?? []).flatMap((st) => st.variants.map((v) => ({
+    value: `${st.id}:${v.id}`,
+    label: st.variants.length > 1 ? `Email ${st.position}, variant ${v.label}` : `Email ${st.position}`
+  })));
+  const pickPreview = (of: string) => { setPreviewOf(of); void showPreview(undefined, of); };
 
-  const sendTest = () => run('test', async () => {
-    const r = await api<{ sent_to: string }>('POST', `/v1/email/campaigns/${record.id}/test`, preview ? { contact_id: preview.contact_id } : {});
-    toast(`Test sent to ${r.sent_to}.`);
-  });
+  const drawFor = (id: string) => {
+    const c = [...(found ?? []), ...(recent ?? [])].find((x) => x.id === id);
+    if (c) setDrawnFor(c);
+    void showPreview(id);
+  };
 
   const send = (scheduled: boolean) => run(scheduled ? 'schedule' : 'send', async () => {
     const at = scheduled ? new Date(when) : null;
     if (scheduled && (!when || Number.isNaN(at!.getTime()))) throw new Error('Pick a date and time to send it.');
     const n = check?.recipients ?? 0;
+    const more = (steps?.length ?? 1) > 1 ? ` Emails 2 to ${steps!.length} follow at their own times.` : '';
+    const ab = (steps?.[0]?.variants.length ?? 1) > 1 ? ` Email 1 is an A/B test: its variants go to a test slice first, the winner to the rest.` : '';
     const ok = await confirmDialog(
       scheduled
-        ? `Schedule "${String(p.name ?? 'this campaign')}" for ${at!.toLocaleString()}? It goes to the contacts in its lists then (${n} right now).`
-        : `Send "${String(p.name ?? 'this campaign')}" to ${n} contact${n === 1 ? '' : 's'} now? This can't be undone.`,
+        ? `Schedule "${String(p.name ?? 'this campaign')}" for ${at!.toLocaleString()}? It goes to the contacts in its lists then (${n} right now).${ab}${more}`
+        : `Send "${String(p.name ?? 'this campaign')}" to ${n} contact${n === 1 ? '' : 's'} now? This can't be undone.${ab}${more}`,
       { title: scheduled ? 'Schedule campaign' : 'Send campaign', confirmLabel: scheduled ? 'Schedule' : `Send to ${n}` }
     );
     if (!ok) return;
@@ -204,8 +240,35 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
 
   // the Preview tab draws the email the first time it opens
   useEffect(() => {
-    if (tab === 'preview' && !preview && !busy) showPreview();
+    if (tab !== 'preview') return;
+    if (!preview && !busy) showPreview();
+    if (!recent) {
+      api<{ contacts: DrawFor[] }>('GET', `/v1/email/campaigns/${record.id}/preview-contacts`)
+        .then((r) => setRecent(r.contacts))
+        .catch(() => setRecent([]));
+    }
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // searching for who to draw it for looks through every contact
+  useEffect(() => {
+    const q = whoQuery.trim();
+    if (!q) {
+      setFound(null);
+      return;
+    }
+    setFound(null);
+    const t = setTimeout(() => {
+      api<SearchResult>('QUERY', '/v1/objects/contacts/search', { query: q, limit: 10, properties: ['name', 'email'] })
+        .then((r) => setFound(r.results.map((c) => ({ id: c.id, name: String(c.properties.name ?? '') || null, email: primaryValue(c.properties.email) }))))
+        .catch(() => setFound([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [whoQuery]);
+
+  const whoLabel = (c: DrawFor) => (c.name && c.email ? `${c.name} (${c.email})` : c.name || c.email || c.id);
+  const whoChoices = whoQuery.trim() ? found : recent;
+  const drawnContact = preview ? [drawnFor, ...(recent ?? [])].find((c) => c?.id === preview.contact_id) : null;
+  const whoFace = drawnContact ? whoLabel(drawnContact) : preview?.to ?? `contact ${preview?.contact_id}`;
 
   const fit = () => {
     const f = frame.current;
@@ -229,6 +292,14 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
           <span className="push-right"><StatusPill tone={TONES[status] ?? 'off'}>{status.replace(/^./, (c) => c.toUpperCase())}</StatusPill></span>
         </div>
         {status === 'scheduled' && p.scheduled_at ? <p className="muted">Goes out {new Date(String(p.scheduled_at)).toLocaleString()}.</p> : null}
+        {status === 'sending' && (() => {
+          const testing = steps?.find((st) => st.status === 'testing');
+          const next = steps?.find((st) => st.status === 'scheduled' && st.scheduled_at);
+          return <>
+            {testing && <p className="muted">Email {testing.position} is being A/B tested{testing.ab_test?.winner_due_at ? `: the winner goes out ${new Date(testing.ab_test.winner_due_at).toLocaleString()}` : ''}.</p>}
+            {next && <p className="muted">Email {next.position} goes out {new Date(next.scheduled_at!).toLocaleString()}.</p>}
+          </>;
+        })()}
         {sentCounts && (
           <>
             <div className="campaign-stats">
@@ -298,6 +369,11 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
         </div>
       )}
 
+      <CampaignEmails campaignId={record.id} campaignStatus={status} steps={steps}
+        defaults={{ subject: String(p.subject ?? ''), preheader: String(p.preheader ?? ''), from_name: String(p.from_name ?? ''), from_address: String(p.from_address ?? '') }}
+        audienceSize={editable ? count?.n ?? check?.recipients ?? null : null} canSend={!!check?.can_send}
+        onSaved={(st) => { setSteps(st); setPreview(null); loadCheck(); void reload(); }} />
+
       {(editable || status === 'sending' || status === 'sent') && (
         <div className="card">
           <div className="card-head">
@@ -329,28 +405,48 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
       </>}
 
       {tab === 'activity' && sentCounts && (
-        <CampaignActivity campaignId={record.id} refreshKey={COUNTS.map(([k]) => String(p[k] ?? '')).join(',')} />
+        <CampaignActivity campaignId={record.id} emails={steps?.length ?? 1} refreshKey={COUNTS.map(([k]) => String(p[k] ?? '')).join(',')} />
       )}
 
       {tab === 'preview' && (
       <div className="card">
         <div className="card-head">
           <h3>Email</h3>
+          {previewOptions.length > 1 && (
+            <Select value={previewOf || previewOptions[0].value} onChange={pickPreview} options={previewOptions} disabled={!!busy} aria-label="Which email to draw" />
+          )}
           <span className="push-right campaign-actions">
-            <button className="btn small" disabled={!!busy} onClick={showPreview}><Eye size={14} /> Redraw</button>
-            {editable && <button className="btn small" disabled={!!busy} onClick={sendTest}><Send size={14} /> Send me a test</button>}
+            <button className="btn small" disabled={!!busy} onClick={() => showPreview()}><Eye size={14} /> Redraw</button>
+            {editable && <button className="btn small" disabled={!!busy} onClick={() => setSendingTest(true)}><Send size={14} /> Send a test</button>}
           </span>
         </div>
         {error && <div className="error">{error}</div>}
         {preview ? (
           <>
-            <p className="small muted">Drawn for {preview.to ?? `contact ${preview.contact_id}`}. Subject: <strong>{preview.subject}</strong></p>
+            <div className="campaign-draw-for">
+              <span className="small muted">Drawn for</span>
+              <Select
+                value={preview.contact_id}
+                onChange={drawFor}
+                options={(whoChoices ?? []).map((c) => ({ value: c.id, label: whoLabel(c) }))}
+                loading={whoChoices === null}
+                onSearch={setWhoQuery}
+                face={whoFace}
+                disabled={!!busy}
+                aria-label="Draw the email for"
+              />
+            </div>
+            <p className="small muted">Subject: <strong>{preview.subject}</strong></p>
             <iframe ref={frame} className="campaign-preview" title="Email preview" sandbox="allow-same-origin" srcDoc={preview.html} onLoad={fit} />
           </>
         ) : busy === 'preview' ? <Loading /> : (
           <p className="muted">The email is the email template linked to this campaign, drawn for a contact in the audience with the footer and unsubscribe link added.</p>
         )}
       </div>
+      )}
+
+      {sendingTest && (
+        <CampaignSendTest campaignId={record.id} contactId={preview?.contact_id ?? null} {...previewTarget(previewOf)} onClose={() => setSendingTest(false)} />
       )}
 
       {sendingMore && (

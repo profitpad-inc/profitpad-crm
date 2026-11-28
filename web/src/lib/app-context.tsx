@@ -7,6 +7,7 @@ import {
   resolveMode, saveColorMode, systemPrefersDark, type ColorMode, type Mode, type Theme
 } from './theme';
 import { Loading } from '../components/Loading';
+import { setFavicon } from '../components/Logo';
 
 // the portal's two palettes (Settings, Theme)
 export interface Themes { light: Theme; dark: Theme }
@@ -145,6 +146,8 @@ export function AppProvider({ me, onSignOut, children }: { me: Me; onSignOut: ()
     ]).finally(() => setReady(true));
   }, [reloadObjects, reloadNav, reloadCustomViews]);
 
+  // the tab icon follows the portal's logo, including the live preview in Settings, Theme
+  useEffect(() => setFavicon(logo), [logo]);
   useEffect(() => onSystemModeChange(setSystemDark), []);
   useEffect(() => {
     applyMode(mode);

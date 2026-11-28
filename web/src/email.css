@@ -21,6 +21,10 @@
 .campaign-picked li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .campaign-or { font-size: 13px; }
 
+.campaign-test-users { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 360px; overflow-y: auto; }
+.campaign-test-users label { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; }
+.campaign-draw-for { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.campaign-draw-for .select-face { min-width: 260px; max-width: 100%; }
 iframe.campaign-preview { display: block; width: 100%; min-height: 400px; border: 1px solid var(--hairline); border-radius: var(--radius); background: #fff; }
 
 .email-track { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
@@ -65,3 +69,21 @@ button.campaign-stat:focus-visible { outline: 2px solid var(--primary); outline-
 /* Settings → Email, Footers: the HTML box and its preview */
 .email-footer-code textarea { min-height: 150px; font-size: 12px; }
 .email-footer-preview { display: block; width: 100%; height: 130px; margin-top: 8px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: #f3f4f6; }
+
+/* a campaign's emails and A/B variants (components/CampaignEmails.tsx) */
+.campaign-emails { gap: 12px; }
+.campaign-step { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--hairline); border-radius: var(--radius); }
+.campaign-step.started { background: var(--surface); }
+.campaign-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.campaign-variant-tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.campaign-variant-tab { font: inherit; font-size: 13px; padding: 4px 12px; border: 1px solid var(--hairline); border-radius: 999px; background: none; color: var(--muted-text); cursor: pointer; }
+.campaign-variant-tab.active { border-color: var(--primary); color: var(--text); font-weight: 600; }
+.campaign-variant { display: flex; flex-direction: column; gap: 10px; }
+.campaign-variant .field .select-face, .campaign-variant .field input { width: 100%; }
+.campaign-variant .field-row .field.grow, .campaign-step .field-row .field.grow { flex: 1 1 220px; }
+.campaign-ab { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; border-top: 1px dashed var(--hairline); }
+.campaign-variant-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.campaign-variant-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.campaign-variant-table .campaign-subject { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.campaign-flag svg { vertical-align: -2px; }
+.campaign-preview-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

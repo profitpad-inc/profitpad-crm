@@ -13,7 +13,9 @@ import { createPortal } from 'react-dom';
 // letter jumps to the next choice starting with it. onBlur fires when focus
 // leaves both the button and the open list, like a native select's blur.
 // While `loading`, the list shows the spinner instead of its choices, and so
-// does the closed button unless it has a `face`.
+// does the closed button unless it has a `face`. With `onSearch` the search
+// box is always there and the caller finds the choices (a server search): the
+// list shows `options` as given, and the box stays while they load.
 
 export interface SelectOption { value: string; label: string; disabled?: boolean }
 
@@ -42,7 +44,7 @@ function optionsFrom(children: ReactNode): SelectOption[] {
   return out;
 }
 
-export function Select({ value: raw, onChange, options, children, id, className, style, disabled, autoFocus, openOnMount, onBlur, title, face, search, loading, 'aria-label': ariaLabel }: {
+export function Select({ value: raw, onChange, options, children, id, className, style, disabled, autoFocus, openOnMount, onBlur, title, face, search, onSearch, loading, 'aria-label': ariaLabel }: {
   value: string | number; onChange: (value: string) => void; options?: SelectOption[]; children?: ReactNode;
   id?: string; className?: string; style?: CSSProperties; disabled?: boolean; autoFocus?: boolean; onBlur?: () => void; title?: string;
   // shown on the closed button instead of the picked choice's label
@@ -56,6 +58,9 @@ export function Select({ value: raw, onChange, options, children, id, className,
   // options are still coming: show the spinner (Loading.tsx's ring, inlined so
   // this file stays import-free for custom views)
   loading?: boolean;
+  // the search text as it changes (and '' each time the list opens); the
+  // caller answers with new `options`
+  onSearch?: (query: string) => void;
   'aria-label'?: string;
 }) {
   const value = String(raw);
@@ -69,10 +74,10 @@ export function Select({ value: raw, onChange, options, children, id, className,
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const open = rect !== null;
-  const searchable = !loading && (search ?? all.length >= SEARCH_FROM);
+  const searchable = onSearch ? true : !loading && (search ?? all.length >= SEARCH_FROM);
   const q = query.trim().toLowerCase();
   const exact = q ? all.filter((o) => o.value.toLowerCase() === q) : [];
-  const shown = loading ? [] : q ? [...exact, ...all.filter((o) => !exact.includes(o) && o.label.toLowerCase().includes(q))] : all;
+  const shown = loading ? [] : onSearch ? all : q ? [...exact, ...all.filter((o) => !exact.includes(o) && o.label.toLowerCase().includes(q))] : all;
 
   // when the list last opened by itself (openOnMount), to tell the tap that
   // started the edit from a tap meant for the button
@@ -81,6 +86,7 @@ export function Select({ value: raw, onChange, options, children, id, className,
   const openList = () => {
     if (disabled || !faceRef.current) return;
     setQuery('');
+    onSearch?.('');
     setActive(Math.max(0, all.findIndex((o) => o.value === value)));
     setRect(faceRef.current.getBoundingClientRect());
   };
@@ -276,7 +282,7 @@ export function Select({ value: raw, onChange, options, children, id, className,
                 value={query}
                 placeholder="Search"
                 aria-label="Search"
-                onChange={(e) => { setQuery(e.target.value); setActive(0); }}
+                onChange={(e) => { setQuery(e.target.value); setActive(0); onSearch?.(e.target.value); }}
               />
             )}
             <div className="select-options" role="listbox" aria-label={ariaLabel} ref={listRef}>

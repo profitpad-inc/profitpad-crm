@@ -9,8 +9,10 @@ import { Select } from './Select';
 
 // Who did what with a sent campaign (api/src/email/activity.ts): a row per
 // recipient with when it arrived, was opened, clicked and so on; a row opens
-// to that recipient's events in order. The filter (?recipients=) and the
-// search (?recipient_s=) live in the address, like a table's. The recipient
+// to that recipient's events in order. With several emails in the campaign a
+// contact has a row per email they got, and the email filter (?campaign_step=)
+// narrows to one. The filter (?recipients=) and the search (?recipient_s=)
+// live in the address, like a table's. The recipient
 // count opens the contacts table on the same people, through the "Email
 // campaign: received / opened / ..." filters (api/src/campaign-activity-filter.ts).
 
@@ -28,6 +30,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'failed', label: "Couldn't be sent" }
 ];
 export const FILTER_PARAM = 'recipients';
+export const STEP_PARAM = 'campaign_step';
 
 // The contacts table's filter for each Activity filter. "Couldn't be sent" has
 // none: the campaign filters count only emails that went out, so "All
@@ -49,7 +52,7 @@ function contactsUrl(campaignId: string, filter: string, search: string): string
 }
 
 interface Row {
-  contact_id: string; name: string | null; email: string; status: 'sent' | 'failed'; error: string | null; email_id: string | null;
+  contact_id: string; step: number; variant: string | null; name: string | null; email: string; status: 'sent' | 'failed'; error: string | null; email_id: string | null;
   sent_at: string | null; delivered_at: string | null; opened_at: string | null; open_count: number; clicked_at: string | null; click_count: number;
   replied_at: string | null; unsubscribed_at: string | null; bounced_at: string | null; complained: boolean;
 }
@@ -82,15 +85,15 @@ function Flags({ r }: { r: Row }) {
   return <td><div className="campaign-flags">{flags.map((f) => <span key={f.label} className={`campaign-flag ${f.tone}`} title={f.title}>{f.label}</span>)}</div></td>;
 }
 
-function Timeline({ campaignId, contactId }: { campaignId: string; contactId: string }) {
+function Timeline({ campaignId, contactId, step }: { campaignId: string; contactId: string; step: number }) {
   const [items, setItems] = useState<TimelineItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    api<{ events: TimelineItem[] }>('GET', `/v1/email/campaigns/${campaignId}/activity/${contactId}`)
+    api<{ events: TimelineItem[] }>('GET', `/v1/email/campaigns/${campaignId}/activity/${contactId}?step=${step}`)
       .then((r) => live && setItems(r.events)).catch((e) => live && setError((e as Error).message));
     return () => { live = false; };
-  }, [campaignId, contactId]);
+  }, [campaignId, contactId, step]);
   if (error) return <div className="error">{error}</div>;
   if (!items) return <Loading inline />;
   if (!items.length) return <p className="muted small">No events yet.</p>;
@@ -110,10 +113,13 @@ function Timeline({ campaignId, contactId }: { campaignId: string; contactId: st
   );
 }
 
-export function CampaignActivity({ campaignId, refreshKey }: { campaignId: string; refreshKey?: unknown }) {
+// emails: how many emails the campaign has (1 hides the email filter and column)
+export function CampaignActivity({ campaignId, refreshKey, emails = 1 }: { campaignId: string; refreshKey?: unknown; emails?: number }) {
   const [params, setParams] = useSearchParams();
   const raw = params.get(FILTER_PARAM) ?? 'all';
   const filter = ACTIVITY_FILTERS.some((f) => f.value === raw) ? raw : 'all';
+  const rawStep = Number(params.get(STEP_PARAM));
+  const step = emails > 1 && Number.isInteger(rawStep) && rawStep >= 1 && rawStep <= emails ? rawStep : null;
   const [query, setQuery, settled] = useUrlSearch('recipient_s');
   const [rows, setRows] = useState<Row[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -124,6 +130,7 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
   const fetchPage = (offset: number) => {
     const q = new URLSearchParams({ filter, limit: String(PAGE), offset: String(offset) });
     if (settled) q.set('s', settled);
+    if (step) q.set('step', String(step));
     return api<Page>('GET', `/v1/email/campaigns/${campaignId}/activity?${q}`);
   };
 
@@ -134,7 +141,7 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
     fetchPage(0).then((r) => { if (live) { setRows(r.results); setTotal(r.total); } })
       .catch((e) => live && setError((e as Error).message));
     return () => { live = false; };
-  }, [campaignId, filter, settled, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [campaignId, filter, settled, step, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showMore = async () => {
     setMore(true);
@@ -156,6 +163,16 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
     return next;
   }, { replace: true });
 
+  const setStep = (v: string) => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    if (!v) next.delete(STEP_PARAM);
+    else next.set(STEP_PARAM, v);
+    return next;
+  }, { replace: true });
+
+  const showStep = emails > 1 && !step;
+  const showVariant = !!rows?.some((r) => r.variant);
+  const cols = 5 + (showStep ? 1 : 0) + (showVariant ? 1 : 0);
   const label = ACTIVITY_FILTERS.find((f) => f.value === filter)!.label.toLowerCase();
   const countText = `${total.toLocaleString()} ${total === 1 ? 'recipient' : 'recipients'}`;
   const toContacts = total > 0 ? contactsUrl(campaignId, filter, settled) : null;
@@ -164,6 +181,10 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
     <div className="card campaign-activity" id="campaign-activity">
       <div className="card-head"><h3>Activity</h3></div>
       <div className="list-members-bar">
+        {emails > 1 && (
+          <Select value={step ? String(step) : ''} onChange={setStep} aria-label="Which email"
+            options={[{ value: '', label: 'Every email' }, ...Array.from({ length: emails }, (_, i) => ({ value: String(i + 1), label: `Email ${i + 1}` }))]} />
+        )}
         <Select value={filter} onChange={setFilter} options={ACTIVITY_FILTERS} aria-label="Show recipients who" />
         <div className="table-search list-search">
           <Search size={15} aria-hidden />
@@ -182,6 +203,8 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
               <tr>
                 <th aria-label="Events" />
                 <th>Contact</th>
+                {showStep && <th>Email</th>}
+                {showVariant && <th>Variant</th>}
                 <th>Delivered</th>
                 <th>Opened</th>
                 <th>Clicked</th>
@@ -189,35 +212,37 @@ export function CampaignActivity({ campaignId, refreshKey }: { campaignId: strin
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <Fragment key={r.contact_id}>
-                  <tr className={open === r.contact_id ? 'open' : undefined}>
+              {rows.map((r) => { const key = `${r.step}:${r.contact_id}`; return (
+                <Fragment key={key}>
+                  <tr className={open === key ? 'open' : undefined}>
                     <td className="campaign-expand">
-                      <button className="icon-btn" aria-expanded={open === r.contact_id} aria-label={`Events for ${r.name ?? r.email}`}
-                        onClick={() => setOpen(open === r.contact_id ? null : r.contact_id)}>
-                        {open === r.contact_id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <button className="icon-btn" aria-expanded={open === key} aria-label={`Events for ${r.name ?? r.email}`}
+                        onClick={() => setOpen(open === key ? null : key)}>
+                        {open === key ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
                     </td>
                     <td className="list-name">
                       <Link to={`/objects/contacts/${r.contact_id}`}>{r.name || r.email}</Link>
                       {r.name && <span className="muted small campaign-email">{r.email}</span>}
                     </td>
+                    {showStep && <td>{r.step}</td>}
+                    {showVariant && <td>{r.variant ?? <span className="muted">–</span>}</td>}
                     <TimeCell iso={r.delivered_at} />
                     <TimeCell iso={r.opened_at} count={r.open_count} />
                     <TimeCell iso={r.clicked_at} count={r.click_count} />
                     <Flags r={r} />
                   </tr>
-                  {open === r.contact_id && (
+                  {open === key && (
                     <tr className="campaign-timeline-row">
                       <td />
-                      <td colSpan={5}>
-                        <Timeline campaignId={campaignId} contactId={r.contact_id} />
+                      <td colSpan={cols}>
+                        <Timeline campaignId={campaignId} contactId={r.contact_id} step={r.step} />
                         {r.email_id && <Link className="small" to={`/objects/emails/${r.email_id}`}>Open the email record</Link>}
                       </td>
                     </tr>
                   )}
                 </Fragment>
-              ))}
+              ); })}
             </tbody>
           </table>
         </div>
