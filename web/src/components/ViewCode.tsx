@@ -8,6 +8,7 @@ import { useAddToMenu } from '../lib/use-add-to-menu';
 import { useViewIconPicker } from './IconPicker';
 import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
+import { McpNotice } from './McpNotice';
 import { CodeBlock } from './CodeBlock';
 import { useFillColumn } from '../lib/use-fill-column';
 
@@ -190,6 +191,7 @@ export function ViewCode({ record, onChanged }: { record: CrmRecord; onChanged: 
           {code.unpublished_changes && code.draft_source && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
         </div>
       </div>
+      <McpNotice kind="views" />
       {(error || iconPicker.error) && <div className="error">{error ?? iconPicker.error}</div>}
       {iconPicker.picker}
       {/* one row on wide screens; on phones the version and the part are two rows */}

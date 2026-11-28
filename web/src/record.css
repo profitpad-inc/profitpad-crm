@@ -258,6 +258,7 @@
   width: min(520px, calc(100vw - 48px)); max-height: 340px; background: var(--page-background);
   border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); overflow: hidden;
 }
+.activity-links-pop.up { top: auto; bottom: calc(100% + 6px); }
 .activity-links-nav { display: flex; flex-direction: column; padding: 6px; border-right: 1px solid var(--border); overflow: auto; }
 .activity-links-nav button {
   display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border: 0; border-radius: var(--radius-sm);

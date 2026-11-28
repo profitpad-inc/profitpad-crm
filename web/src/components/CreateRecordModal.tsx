@@ -27,7 +27,9 @@ function daysFromToday(days: number): string {
 // contacts too (one switch per object, on by default).
 // startWith: values the new record takes without asking (a deal's amount and
 // currency); dropdown values this object does not offer are left out.
-export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines, copyLinks, startWith }: {
+// prefill: values the form opens with, still shown and changeable (a list's
+// object when another page asked for a contact list).
+export function CreateRecordModal({ object, onClose, onCreated, associations, copyLines, copyLinks, startWith, prefill }: {
   object: ObjectDef;
   onClose: () => void;
   onCreated: (r: CrmRecord) => void;
@@ -35,6 +37,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
   copyLines?: { object: string; id: string; count: number; label: string };
   copyLinks?: { label: string; groups: { object: string; singular: string; plural: string; records: { id: string; name: string }[] }[] };
   startWith?: Record<string, unknown>;
+  prefill?: Record<string, string>;
 }) {
   const { me, objects } = useApp();
   // a list's object is picked from the objects a list can hold: the main CRM
@@ -55,6 +58,7 @@ export function CreateRecordModal({ object, onClose, onCreated, associations, co
     }
     if (object.api_name === 'quotes' && fields.some((p) => p.api_name === 'expiration_date')) defaults.expiration_date = daysFromToday(QUOTE_EXPIRY_DAYS);
     if (object.api_name === 'lists') defaults.list_type = 'dynamic';
+    for (const [k, v] of Object.entries(prefill ?? {})) if (editable.some((p) => p.api_name === k)) defaults[k] = v;
     return defaults;
   });
   // property: shown under that field when the API says which one failed

@@ -2020,7 +2020,8 @@ function HtmlBody({ html }: { html: string }) {
   const [height, setHeight] = useState(80);
   const fit = () => {
     const doc = frame.current?.contentDocument;
-    if (doc) setHeight(Math.max(40, doc.documentElement.scrollHeight));
+    // capped at 500px in the stream; a longer body scrolls inside the frame
+    if (doc) setHeight(Math.min(500, Math.max(40, doc.documentElement.scrollHeight)));
   };
   // a whole document (a campaign email as sent) is shown as it is, with links
   // still opening in a new tab; a fragment gets the reading styles
@@ -2323,6 +2324,8 @@ function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string
   const codeToName = useMemo(() => new Map(objects.map((o) => [o.object_type_id, o.api_name])), [objects]);
   const [groups, setGroups] = useState<Associated[] | null>(null);
   const [open, setOpen] = useState(false);
+  // opens upward when the room below the trigger can't fit it (the last activity on the page)
+  const [up, setUp] = useState(false);
   const [only, setOnly] = useState('');
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<CrmRecord[] | null>(null);
@@ -2413,11 +2416,19 @@ function ActivityLinks({ object, id, page, onPageLinkChanged }: { object: string
   if (groups === null) return <Loading inline className="muted small" label="Loading associations…" />;
   return (
     <div className="activity-links" ref={ref}>
-      <button className="activity-links-trigger" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button className="activity-links-trigger" aria-expanded={open} onClick={() => {
+        if (!open && ref.current) {
+          const r = ref.current.getBoundingClientRect();
+          const below = window.innerHeight - r.bottom - 8;
+          const above = r.top - 8;
+          setUp(below < 346 && above > below);
+        }
+        setOpen((v) => !v);
+      }}>
         {total} association{total === 1 ? '' : 's'} <ChevronDown size={14} />
       </button>
       {open && (
-        <div className="activity-links-pop" role="dialog" aria-label="Associations">
+        <div className={`activity-links-pop${up ? ' up' : ''}`} role="dialog" aria-label="Associations">
           <nav className="activity-links-nav">
             <button className={only === '' ? 'active' : ''} onClick={() => setOnly('')}><span>Selected</span><span className="num">{total}</span></button>
             {linkable.map((l) => (

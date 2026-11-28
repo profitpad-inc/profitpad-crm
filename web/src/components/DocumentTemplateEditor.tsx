@@ -6,6 +6,7 @@ import { Select } from './Select';
 import { confirmDialog } from './confirm';
 import { CodeTextarea } from './CodeTextarea';
 import { Loading } from './Loading';
+import { McpNotice } from './McpNotice';
 import { CodeBlock } from './CodeBlock';
 import { useFillColumn } from '../lib/use-fill-column';
 
@@ -211,6 +212,7 @@ export function DocumentTemplateEditor({ record, onChanged }: { record: CrmRecor
             </button>
           )}
         </div>
+        <McpNotice kind="document_templates" />
         {error && <div className="error">{error}</div>}
         <div className="tabs">
           <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>

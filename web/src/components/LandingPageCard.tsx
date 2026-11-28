@@ -5,6 +5,7 @@ import { useApp } from '../lib/app-context';
 import { CodeBlock } from './CodeBlock';
 import { confirmDialog } from './confirm';
 import { Loading } from './Loading';
+import { McpNotice } from './McpNotice';
 import { useFillColumn } from '../lib/use-fill-column';
 
 interface LandingPageOut {
@@ -116,6 +117,7 @@ export function LandingPageCard({ record, onChanged }: { record: CrmRecord; onCh
         {published && <button className="btn small" disabled={busy} onClick={unpublish}>Unpublish</button>}
         {page.unpublished_changes && page.draft_html && <button className="btn small primary" disabled={busy} onClick={publish}>Publish</button>}
       </div>
+      <McpNotice kind="landing_pages" />
       {error && <div className="error">{error}</div>}
       <div className="tabs">
         <div className={`tab${which === 'draft' ? ' active' : ''}`}><button onClick={() => setWhich('draft')}>Draft</button></div>

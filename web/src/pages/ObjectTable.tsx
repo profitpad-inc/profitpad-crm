@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { McpNotice, type McpKind } from '../components/McpNotice';
 import { Archive, ArrowDown, Download, ArrowUp, ArrowUpDown, Check, CheckCheck, Columns3, EllipsisVertical, GripVertical, IdCard, ListFilter, ListPlus, Pencil, Plus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import {
   api, can, getSchema, type AssociatedRecord, type AssociationLabel, type Column, type CrmRecord, type FilterGroup, type ObjectDef,
@@ -38,6 +39,8 @@ const MIN_WIDTH = 60;
 const MAX_WIDTH = 1000;
 // created another way (uploads, a parent record, a linked activity, the user form)
 const NO_IMPORT = ['files', 'lines', 'comments', 'users'];
+// objects built through the MCP rather than a builder: their list says so
+const MCP_KINDS: McpKind[] = ['landing_pages', 'views', 'email_templates', 'document_templates'];
 // phone cards: the name is the card's title, then at most this many of the view's other columns
 const CARD_FIELDS = 5;
 // already in the card's title
@@ -114,7 +117,19 @@ function ObjectTableFor({ object }: { object: string }) {
   // a new search or filter is loading while the old results are still shown
   const [reloading, setReloading] = useState(false);
   const lastSearch = useRef(0);
-  const [showCreate, setShowCreate] = useState(false);
+  // ?create=1 opens the create form straight away (other pages link here in a
+  // new tab, like a campaign's "Create a contact list"); create_<property>=value
+  // fills that field. The params are dropped once read.
+  const [showCreate, setShowCreate] = useState(() => searchParams.get('create') === '1');
+  const [prefill] = useState(() => Object.fromEntries([...searchParams].filter(([k]) => k.startsWith('create_')).map(([k, v]) => [k.slice(7), v])));
+  useEffect(() => {
+    if (!searchParams.has('create')) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const k of [...next.keys()]) if (k === 'create' || k.startsWith('create_')) next.delete(k);
+      return next;
+    }, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [showImport, setShowImport] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const isMobile = useIsMobile();
@@ -965,6 +980,7 @@ function ObjectTableFor({ object }: { object: string }) {
           {createButton}
         </div>
       </header>
+      {MCP_KINDS.includes(object as McpKind) && <McpNotice kind={object as McpKind} className="table-notice" />}
 
       <nav className="view-tabs" aria-label="Views">
         {views.map((v) => (
@@ -1438,6 +1454,7 @@ function ObjectTableFor({ object }: { object: string }) {
       {showCreate && object !== 'lines' && !(object === 'users' && canAddUsers) && (
         <CreateRecordModal
           object={schema}
+          prefill={prefill}
           onClose={() => setShowCreate(false)}
           onCreated={(r) => {
             setShowCreate(false);

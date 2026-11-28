@@ -130,7 +130,7 @@
 .campaign-lists li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .campaign-lists li:last-child { border-bottom: 0; }
 .campaign-lists li > a { flex: 1; min-width: 0; }
-.campaign-add-list { max-width: 360px; }
+.campaign-add-list { max-width: 420px; }
 
 /* ---- the create form's explanation of static and dynamic lists ---- */
 .list-type-helps { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

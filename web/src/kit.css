@@ -85,3 +85,15 @@
   .edit-panel { animation: none; }
   .table-skeleton span { animation: none; }
 }
+
+/* "Build it with AI" note (components/McpNotice.tsx) on landing pages, views, email and document templates */
+.mcp-notice { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border-radius: var(--radius-lg); font-size: 13px; line-height: 18px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--page-background)); border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border)); color: var(--text); }
+.mcp-notice > svg { flex: none; margin-top: 2px; color: var(--primary); }
+.mcp-notice .link-btn { color: var(--primary); font-weight: 500; }
+.mcp-notice.table-notice { margin: 4px 0 12px; }
+.mcp-explainer section + section { margin-top: 18px; }
+.mcp-explainer h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.mcp-explainer p { margin: 0 0 8px; line-height: 1.5; }
+.mcp-explainer ol, .mcp-explainer ul { margin: 0 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
+.mcp-explainer .copy-field { margin: 4px 0 8px; }

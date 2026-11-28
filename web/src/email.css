@@ -20,6 +20,7 @@
 .campaign-picked { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .campaign-picked li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .campaign-or { font-size: 13px; }
+.campaign-zone { min-width: 220px; }
 
 .campaign-test-users { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 360px; overflow-y: auto; }
 .campaign-test-users label { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; }
@@ -83,6 +84,8 @@ button.campaign-stat:focus-visible { outline: 2px solid var(--primary); outline-
 .campaign-variant .field-row .field.grow, .campaign-step .field-row .field.grow { flex: 1 1 220px; }
 .campaign-ab { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; border-top: 1px dashed var(--hairline); }
 .campaign-variant-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.campaign-variant-name + .campaign-email { margin-left: 8px; }
+.campaign-variant-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--page-background); font-size: 12px; font-weight: 600; line-height: 1; }
 .campaign-variant-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .campaign-variant-table .campaign-subject { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .campaign-flag svg { vertical-align: -2px; }

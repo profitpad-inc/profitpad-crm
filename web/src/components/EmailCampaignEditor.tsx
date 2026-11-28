@@ -39,6 +39,31 @@ export const TAB_PARAM = 'campaign_tab';
 type CampaignTab = 'campaign' | 'activity' | 'preview';
 
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined;
+// Scheduling time zone: the picked date and time are a wall clock in this zone
+// (the browser's by default), turned into an exact moment before sending.
+const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const ZONES: string[] = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone') ?? [browserZone()];
+
+// "2026-11-30T11:00" read as a wall clock in `zone` (an IANA name) -> Date
+function zonedToDate(local: string, zone: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(local);
+  if (!m) return new Date(NaN);
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' });
+  // how far the zone's clock is ahead of UTC at instant t
+  const offset = (t: number) => {
+    const v = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    return Date.UTC(+v.year, +v.month - 1, +v.day, +v.hour, +v.minute) - t;
+  };
+  // twice, so a guess on the other side of a DST change settles
+  let t = wall - offset(wall);
+  t = wall - offset(t);
+  return new Date(t);
+}
+
+// the "Create a contact list" choice in the add-a-list picker
+const NEW_LIST = '__new_list';
+
 const TONES: Record<string, Tone> = { draft: 'off', scheduled: 'info', sending: 'pending', sent: 'on', canceled: 'warn' };
 
 // each count, and the Activity filter that lists those recipients
@@ -84,6 +109,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   const [found, setFound] = useState<DrawFor[] | null>(null);
   const [drawnFor, setDrawnFor] = useState<DrawFor | null>(null);
   const [when, setWhen] = useState('');
+  const [zone, setZone] = useState(browserZone);
   const [sendingMore, setSendingMore] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -102,7 +128,15 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     }))))
     .catch((e) => setError((e as Error).message));
   useEffect(() => { loadLists(); }, [record.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // contact lists to pick from
+  // contact lists to pick from; looked up again when the window gets focus, so
+  // a list made in another tab ("Create a contact list") shows up
+  const [choicesKey, setChoicesKey] = useState(0);
+  useEffect(() => {
+    if (!editable) return;
+    const again = () => setChoicesKey((k) => k + 1);
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
+  }, [editable]);
   useEffect(() => {
     if (!editable) return;
     api<SearchResult>('QUERY', '/v1/objects/lists/search', {
@@ -111,7 +145,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
     }).then((r) => setChoices(r.results.map((l) => ({
       value: l.id, label: `${String(l.properties.name ?? 'Untitled list')} (${Number(l.properties.member_count ?? 0).toLocaleString()}, ${first(l.properties.list_type) ?? 'dynamic'})`
     })))).catch(() => setChoices([]));
-  }, [editable]);
+  }, [editable, choicesKey]);
   useEffect(() => {
     api<{ subscription_types: SubscriptionType[] }>('GET', '/v1/email/subscription-types')
       .then((r) => setTypes(r.subscription_types)).catch(() => setTypes([]));
@@ -194,14 +228,15 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
   };
 
   const send = (scheduled: boolean) => run(scheduled ? 'schedule' : 'send', async () => {
-    const at = scheduled ? new Date(when) : null;
+    const at = scheduled ? zonedToDate(when, zone) : null;
     if (scheduled && (!when || Number.isNaN(at!.getTime()))) throw new Error('Pick a date and time to send it.');
+    if (scheduled && at!.getTime() <= Date.now()) throw new Error('That time has already passed. Pick a later one.');
     const n = check?.recipients ?? 0;
     const more = (steps?.length ?? 1) > 1 ? ` Emails 2 to ${steps!.length} follow at their own times.` : '';
     const ab = (steps?.[0]?.variants.length ?? 1) > 1 ? ` Email 1 is an A/B test: its variants go to a test slice first, the winner to the rest.` : '';
     const ok = await confirmDialog(
       scheduled
-        ? `Schedule "${String(p.name ?? 'this campaign')}" for ${at!.toLocaleString()}? It goes to the contacts in its lists then (${n} right now).${ab}${more}`
+        ? `Schedule "${String(p.name ?? 'this campaign')}" for ${at!.toLocaleString(undefined, { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' })} ${zone.replace(/_/g, ' ')}${zone !== browserZone() ? ` (${at!.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} your time)` : ''}? It goes to the contacts in its lists then (${n} right now).${ab}${more}`
         : `Send "${String(p.name ?? 'this campaign')}" to ${n} contact${n === 1 ? '' : 's'} now? This can't be undone.${ab}${more}`,
       { title: scheduled ? 'Schedule campaign' : 'Send campaign', confirmLabel: scheduled ? 'Schedule' : `Send to ${n}` }
     );
@@ -291,7 +326,7 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
           <h3>Campaign</h3>
           <span className="push-right"><StatusPill tone={TONES[status] ?? 'off'}>{status.replace(/^./, (c) => c.toUpperCase())}</StatusPill></span>
         </div>
-        {status === 'scheduled' && p.scheduled_at ? <p className="muted">Goes out {new Date(String(p.scheduled_at)).toLocaleString()}.</p> : null}
+        {status === 'scheduled' && p.scheduled_at ? <p className="muted">Goes out {new Date(String(p.scheduled_at)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' })}.</p> : null}
         {status === 'sending' && (() => {
           const testing = steps?.find((st) => st.status === 'testing');
           const next = steps?.find((st) => st.status === 'scheduled' && st.scheduled_at);
@@ -350,10 +385,14 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
             </ul>
           )}
           <Select className="campaign-add-list" value="" aria-label="Add a list" search disabled={!!busy}
-            onChange={(v) => v && addList(v)}
+            onChange={(v) => {
+              if (v === NEW_LIST) window.open('/objects/lists?create=1&create_list_object=contacts', '_blank', 'noopener');
+              else if (v) addList(v);
+            }}
             options={[
-              { value: '', label: choices.some((c) => !listIds.includes(c.value)) ? 'Add a contact list' : 'No other contact lists (make one under Marketing → Lists)' },
-              ...choices.filter((c) => !listIds.includes(c.value))
+              { value: '', label: choices.some((c) => !listIds.includes(c.value)) ? 'Add a contact list' : 'No other contact lists' },
+              ...choices.filter((c) => !listIds.includes(c.value)),
+              { value: NEW_LIST, label: '+ Create a contact list (opens a new tab)' }
             ]} />
           <div className="campaign-count">
             {countError ? <span className="error">{countError}</span>
@@ -391,6 +430,8 @@ export function EmailCampaignEditor({ record, onChanged }: { record: CrmRecord; 
               </button>
               <span className="campaign-or muted">or</span>
               <DatePicker value={when} onChange={setWhen} withTime noPastDays ariaLabel="Send at" />
+              <Select className="campaign-zone" value={zone} onChange={setZone} aria-label="Time zone"
+                options={[...(ZONES.includes(zone) ? [] : [zone]), ...ZONES].map((z) => ({ value: z, label: z.replace(/_/g, ' ') }))} />
               <button className="btn" disabled={!!busy || !check?.ready || !check?.can_send || dirty || !when} onClick={() => send(true)}>
                 <CalendarClock size={14} /> Schedule
               </button>

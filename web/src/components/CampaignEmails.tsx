@@ -386,7 +386,7 @@ function StepResults({ step, canSend, busy, onPick }: {
               <tr key={v.id}>
                 <td>
                   <span className="campaign-variant-name">
-                    {ab ? v.label : step.position}
+                    {ab ? <span className="campaign-variant-pill">{v.label}</span> : step.position}
                     {v.winner && <span className="campaign-flag on" title="Sent to everyone else"><Trophy size={12} /> Winner</span>}
                   </span>
                   {v.template_name && <span className="small muted campaign-email">{v.template_name}</span>}

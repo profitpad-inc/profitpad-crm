@@ -3,6 +3,7 @@ import { Pencil } from 'lucide-react';
 import { api, type CrmRecord } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { CodeBlock } from './CodeBlock';
+import { McpNotice } from './McpNotice';
 import { HtmlEditorModal, htmlPreviewDoc } from './HtmlEditor';
 import { useFillColumn } from '../lib/use-fill-column';
 
@@ -45,6 +46,7 @@ export function EmailTemplateCard({ record, canEdit, onChanged }: { record: CrmR
         <span style={{ flex: 1 }} />
         {canEdit && <button className="btn small" onClick={() => setEditing(true)}><Pencil size={12} /> Edit</button>}
       </div>
+      <McpNotice kind="email_templates" />
       <div className="tabs">
         <span style={{ flex: 1 }} />
         {tab === 'html' && (
