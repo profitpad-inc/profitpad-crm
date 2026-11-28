@@ -75,4 +75,10 @@
   .ec-suggest { left: 14px; max-width: calc(100% - 28px); }
   .ec-toggles { width: 100%; justify-content: flex-end; margin-left: 0; }
   .email-composer .ec-row { flex-wrap: wrap; }
+  /* the typing box fits beside a chip instead of dropping to an empty second line */
+  .ec-chips input { flex-basis: 60px; min-width: 60px; }
 }
+/* when recipients wrap to more lines, the label stays on the first line instead of floating to the middle */
+.email-composer .ec-row:has(> .ec-chips) { align-items: flex-start; }
+.email-composer .ec-row:has(> .ec-chips) > .ec-label { margin-top: 7px; }
+.email-composer .ec-row:has(> .ec-chips) > .ec-chips { min-height: 32px; }

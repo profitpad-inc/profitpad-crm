@@ -236,6 +236,12 @@
 .activity-chevron { flex-shrink: 0; align-self: center; color: var(--muted-text); transition: transform 0.15s; }
 .activity-item.open .activity-chevron { transform: rotate(90deg); }
 .activity-actions { display: inline-flex; gap: 6px; align-self: center; }
+/* open, the head holds buttons, so center everything on one line (baseline left the pill high and the
+   buttons low) and pull the line up so it centers on the 30px icon */
+.record-page .activity-item.open > .activity-body { padding-top: 2px; }
+.activity-item.open > .activity-body > .activity-head { align-items: center; }
+.activity-item.open > .activity-body > .activity-head > .activity-toggle { align-items: center; }
+.activity-actions a.btn { color: var(--text); text-decoration: none; }
 
 /* Activity opened in place */
 .activity-expanded { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
