@@ -43,8 +43,6 @@ export function EmailTemplateCard({ record, canEdit, onChanged }: { record: CrmR
       <div className="card-head">
         <h3>Email</h3>
         {subject && <span className="muted small">{subject}</span>}
-        <span style={{ flex: 1 }} />
-        {canEdit && <button className="btn small" onClick={() => setEditing(true)}><Pencil size={12} /> Edit</button>}
       </div>
       <McpNotice kind="email_templates" />
       <div className="tabs">
@@ -54,6 +52,7 @@ export function EmailTemplateCard({ record, canEdit, onChanged }: { record: CrmR
             <input type="checkbox" role="switch" checked={wrap} onChange={(e) => setWrap(e.target.checked)} /> Wrap lines
           </label>
         )}
+        {canEdit && <button className="btn small template-edit" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>}
         <div className={`tab${tab === 'preview' ? ' active' : ''}`}><button onClick={() => setTab('preview')}>Preview</button></div>
         <div className={`tab${tab === 'html' ? ' active' : ''}`}><button onClick={() => setTab('html')}>HTML</button></div>
       </div>
