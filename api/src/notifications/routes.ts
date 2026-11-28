@@ -17,7 +17,7 @@ function requireAdmin(p: Principal): void {
   if (!hasPermission(p, 'integrations')) throw forbidden('notification email settings need the Integrations permission');
 }
 
-const KINDS = ['mention', 'task_assigned', 'invite', 'api', 'test'];
+const KINDS = ['mention', 'task_assigned', 'invite', 'api', 'test', 'sign_in_as'];
 const STATUSES = ['queued', 'sending', 'sent', 'failed', 'skipped'];
 
 async function settingsOut() {

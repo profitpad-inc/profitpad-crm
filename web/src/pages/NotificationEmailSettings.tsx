@@ -18,7 +18,7 @@ type MailboxProvider = 'google' | 'microsoft';
 type Provider = MailboxProvider | 'postmark';
 type Via = 'mailbox' | 'postmark';
 type Status = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped';
-type Kind = 'mention' | 'task_assigned' | 'invite' | 'api' | 'test';
+type Kind = 'mention' | 'task_assigned' | 'invite' | 'api' | 'test' | 'sign_in_as';
 
 interface Sender {
   provider: Provider;
@@ -61,7 +61,7 @@ interface LogRow {
 }
 
 const PROVIDER_LABEL: Record<Provider, string> = { google: 'Google Workspace', microsoft: 'Microsoft 365', postmark: 'Postmark' };
-const KIND_LABEL: Record<Kind, string> = { mention: 'Mention', task_assigned: 'Task assigned', invite: 'Invite', api: 'API', test: 'Test' };
+const KIND_LABEL: Record<Kind, string> = { mention: 'Mention', task_assigned: 'Task assigned', invite: 'Invite', api: 'API', test: 'Test', sign_in_as: 'Sign in as' };
 const STATUS_LABEL: Record<Status, string> = { queued: 'Waiting', sending: 'Sending', sent: 'Sent', failed: 'Failed', skipped: 'Skipped' };
 const tone = (s: Status): Tone => (s === 'sent' ? 'on' : s === 'failed' ? 'failed' : s === 'skipped' ? 'off' : 'pending');
 interface Detail extends LogRow {

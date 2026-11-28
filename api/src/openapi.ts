@@ -366,7 +366,7 @@ function webhookPaths(): Record<string, Schema> {
 function notificationPaths(): Record<string, Schema> {
   const tags = ['Notification emails'];
   const id = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9]{1,18}$' } };
-  const kind = { type: 'string', enum: ['mention', 'task_assigned', 'invite', 'api', 'test'] };
+  const kind = { type: 'string', enum: ['mention', 'task_assigned', 'invite', 'api', 'test', 'sign_in_as'] };
   const status = { type: 'string', enum: ['queued', 'sending', 'sent', 'failed', 'skipped'] };
   const sender = { type: 'object', nullable: true, properties: {
     provider: { type: 'string', enum: ['google', 'microsoft', 'postmark'] },

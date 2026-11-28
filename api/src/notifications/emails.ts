@@ -33,7 +33,7 @@ const RETRY_AFTER_MS = [60_000, 5 * 60_000];
 const KEEP_DAYS = 90;
 const EXCERPT = 300;
 
-export type Kind = 'mention' | 'task_assigned' | 'invite' | 'api' | 'test';
+export type Kind = 'mention' | 'task_assigned' | 'invite' | 'api' | 'test' | 'sign_in_as';
 export type Status = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped';
 
 // How notifications go out: a Mailboxes service account, or Postmark.
@@ -397,6 +397,44 @@ export async function queueInvite(p: Principal, userId: string): Promise<{ id: s
   );
   wake();
   return { id: rows[0].id, to: u[0].email };
+}
+
+// Tells a user a Super Admin just signed in as them (migration 0166). Written
+// now, since it reports what happened at this moment. Always sent while
+// notification emails are on (no per-user setting); nothing is queued while
+// they are off. Never throws: the sign in must not fail over an email.
+export async function queueSignInAs(p: Principal, user: { id: string; email: string | null }): Promise<void> {
+  try {
+    if (!user.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(user.email)) return;
+    const sender = await loadSender();
+    if (!sender?.enabled) return;
+    const { rows: a } = await pool.query(
+      `select trim(concat_ws(' ', first_name, last_name)) as name, email -> 0 ->> 'value' as email from crm.pc_0000 where pc_0000_id = $1`,
+      [p.userId]
+    );
+    const adminName = a[0]?.name || a[0]?.email || 'A Super Admin';
+    const by = a[0]?.name && a[0]?.email ? `${a[0].name} (${a[0].email})` : adminName;
+    const subject = `${adminName} signed in as you`;
+    const html = layout({
+      heading: subject,
+      bodyHtml:
+        '<p style="margin:0 0 12px">A Super Admin signed in to the CRM as you, usually to help with a question or to check what you see. ' +
+        'Until they go back to their own account, they see the CRM as you do, and any change they make shows under your name.</p>' +
+        '<p style="margin:0">If you did not expect this, ask them or another admin about it.</p>',
+      details: [
+        ['Signed in by', by],
+        ['When', new Date().toUTCString()]
+      ]
+    });
+    await pool.query(
+      `insert into auth.notification_emails (kind, source_object, source_id, user_id, actor_user_id, to_address, subject, html, created_by)
+       values ('sign_in_as', 'pc_0000', $1, $1, $2, $3, $4, $5, $6)`,
+      [user.id, p.userId, user.email, subject, html, p.actor]
+    );
+    wake();
+  } catch {
+    // the security log already records the sign in
+  }
 }
 
 // ---- sending -------------------------------------------------------------------------

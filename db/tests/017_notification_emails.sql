@@ -97,6 +97,10 @@ begin
   if found then raise exception 'users made by system jobs get no invite'; end if;
   perform set_config('crm.actor', 'user:' || v_bob, true);
 
+  -- sign in as (migration 0166): the kind is allowed on the log
+  insert into auth.notification_emails (kind, source_object, source_id, user_id, actor_user_id, to_address, subject, html, created_by)
+    values ('sign_in_as', 'pc_0000', v_ann, v_ann, v_bob, 'ann@example.com', 'Bob signed in as you', '<p>x</p>', 'user:' || v_bob);
+
   -- turned off: nothing more
   update auth.notification_sender set enabled = false;
   insert into crm.pc_0033 (name, owner) values ('Later', array[v_ann]) returning pc_0033_id into v_task;

@@ -7,6 +7,7 @@ import { getObject } from '../registry.js';
 import { isAdmin } from './ui.js';
 import { cleanSignature } from '../signature.js';
 import { onCreate, onWrite } from '../records.js';
+import { queueSignInAs } from '../notifications/emails.js';
 
 // Asked when a user is created, and never cleared afterwards.
 const REQUIRED: { key: string; label: string }[] = [
@@ -188,6 +189,7 @@ export async function userRoutes(app: FastifyInstance) {
       [p.session.id, target]
     );
     await logEvent(req, 'sign_in_as.started', { userId: target, target: { type: 'session', id: p.session.id }, details: { name: rows[0].name, email: rows[0].email } });
+    await queueSignInAs(p, { id: target, email: rows[0].email });
     return { user: { id: rows[0].id, name: rows[0].name, email: rows[0].email } };
   });
 
